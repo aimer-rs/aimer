@@ -1,0 +1,37 @@
+name: aimer CI (android)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: check (android)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # The workspace, tests included, has to keep compiling for Android even
+      # though CI does not run anything on it. The target is added inside the
+      # repository because rust-toolchain.toml pins a toolchain other than the
+      # one the install step above set up, and a target only exists for the
+      # toolchain it was added to.
+      #
+      # The C dependencies (ring, aws-lc) need the NDK's compiler, which the
+      # hosted Ubuntu image provides and cargo-ndk wires up.
+      - name: Check Android
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --locked
+          cargo ndk -t arm64-v8a check --workspace --tests

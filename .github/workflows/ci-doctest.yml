@@ -1,0 +1,37 @@
+name: aimer CI (doctest)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  doctest:
+    name: doctests (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing must not hide what the others say.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos
+          - os: ubuntu-latest
+            name: linux
+          - os: windows-latest
+            name: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # nextest does not run doctests, so they need their own invocation.
+      - name: Run doctests
+        run: cargo test --doc --workspace

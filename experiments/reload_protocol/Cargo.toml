@@ -11,3 +11,8 @@ sha2.workspace = true
 subtle.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
+
+# ring has no system random source on wasm32-unknown-unknown unless it is told
+# to use the browser's, which keeps the workspace compiling for the web.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+ring = { workspace = true, features = ["wasm32_unknown_unknown_js"] }

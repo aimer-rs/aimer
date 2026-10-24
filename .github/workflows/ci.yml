@@ -21,13 +21,16 @@ jobs:
         include:
           - os: macos-latest
             job_name: clippy + tests (macos)
-            targets: x86_64-apple-darwin, aarch64-apple-darwin, aarch64-apple-ios, aarch64-apple-ios-sim, wasm32-unknown-unknown
+            targets: x86_64-apple-darwin, aarch64-apple-darwin
           - os: ubuntu-latest
             job_name: clippy + tests (linux)
-            targets: wasm32-unknown-unknown
+          # aarch64 Linux runs the tests natively rather than cross-compiling
+          # them, so it catches what only an arm64 CPU shows: alignment, SIMD
+          # paths, and anything that assumed x86_64.
+          - os: ubuntu-24.04-arm
+            job_name: clippy + tests (linux-arm64)
           - os: windows-latest
             job_name: clippy + tests (windows)
-            targets: wasm32-unknown-unknown
     steps:
       - uses: actions/checkout@v4
 
@@ -70,7 +73,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Clippy
-        id: check
         run: cargo check --workspace
 
       # Every test runs even when one fails, and the failures are printed again
@@ -78,31 +80,3 @@ jobs:
       # failure code if any test failed, which is what fails the job.
       - name: Run tests with nextest
         run: cargo nextest run --workspace --no-fail-fast --failure-output immediate-final
-
-      # A failing test step skips the steps after it, so this asks to run
-      # regardless, as long as the workspace built. The job still fails at the
-      # end if either this or the tests failed.
-      - name: Run doctests
-        if: ${{ !cancelled() && steps.check.outcome == 'success' }}
-        run: cargo test --doc --workspace
-
-      # The workspace, tests included, has to keep compiling for the mobile
-      # targets even though CI does not run anything on them. The targets are
-      # added here, inside the repository, because rust-toolchain.toml pins a
-      # toolchain other than the one the install step above set up, and a target
-      # only exists for the toolchain it was added to.
-      - name: Check iOS
-        if: ${{ !cancelled() && runner.os == 'macOS' && steps.check.outcome == 'success' }}
-        run: |
-          rustup target add aarch64-apple-ios
-          cargo check --workspace --tests --target aarch64-apple-ios
-
-      # The C dependencies (ring, aws-lc) need the NDK's compiler, which the
-      # hosted Ubuntu image provides and cargo-ndk wires up.
-      - name: Check Android
-        if: ${{ !cancelled() && runner.os == 'Linux' && steps.check.outcome == 'success' }}
-        run: |
-          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          rustup target add aarch64-linux-android
-          cargo install cargo-ndk --locked
-          cargo ndk -t arm64-v8a check --workspace --tests

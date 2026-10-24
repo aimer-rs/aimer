@@ -1,5 +1,3 @@
-use std::io::Read;
-
 use aimer_anteros::{
     CapabilityDecoder, CapabilityDescriptor, CapabilityEncoder, CapabilityError,
     CapabilityGeneration, CapabilityLimits, CapabilityProvider, CapabilityRegistry,
@@ -46,13 +44,7 @@ impl CapabilityProvider for PortableHttpProvider {
         let url = decoder.read_string()?;
         decoder.finish()?;
 
-        let response = reqwest::blocking::get(&url).map_err(|_| CapabilityError::Unavailable)?;
-        let status = response.status().as_u16();
-        let mut body = Vec::new();
-        response
-            .take(u64::from(portable_http_max_body_bytes()) + 1)
-            .read_to_end(&mut body)
-            .map_err(|_| CapabilityError::Unavailable)?;
+        let (status, body) = get(&url)?;
         if body.len() > portable_http_max_body_bytes() as usize {
             return Err(CapabilityError::LimitExceeded);
         }
@@ -63,4 +55,28 @@ impl CapabilityProvider for PortableHttpProvider {
         encoder.write_bytes(&body)?;
         Ok(encoder.into_bytes())
     }
+}
+
+/// Fetches `url`, reading at most one byte past the body limit so the caller
+/// can tell an oversized body from one that exactly fits.
+#[cfg(not(target_arch = "wasm32"))]
+fn get(url: &str) -> CapabilityResult<(u16, Vec<u8>)> {
+    use std::io::Read;
+
+    let response = reqwest::blocking::get(url).map_err(|_| CapabilityError::Unavailable)?;
+    let status = response.status().as_u16();
+    let mut body = Vec::new();
+    response
+        .take(u64::from(portable_http_max_body_bytes()) + 1)
+        .read_to_end(&mut body)
+        .map_err(|_| CapabilityError::Unavailable)?;
+    Ok((status, body))
+}
+
+/// A browser cannot block on a request, and hot reload is rejected for the web,
+/// so the capability is registered (the crate still has to compile for wasm32)
+/// but never reachable.
+#[cfg(target_arch = "wasm32")]
+fn get(_url: &str) -> CapabilityResult<(u16, Vec<u8>)> {
+    Err(CapabilityError::Unavailable)
 }

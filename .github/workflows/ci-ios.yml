@@ -1,0 +1,32 @@
+name: aimer CI (ios)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: check (ios)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # The workspace, tests included, has to keep compiling for iOS even though
+      # CI does not run anything on it. The target is added inside the
+      # repository because rust-toolchain.toml pins a toolchain other than the
+      # one the install step above set up, and a target only exists for the
+      # toolchain it was added to.
+      - name: Check iOS
+        run: |
+          rustup target add aarch64-apple-ios
+          cargo check --workspace --tests --target aarch64-apple-ios

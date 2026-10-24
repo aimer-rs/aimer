@@ -1,6 +1,6 @@
 # Aimer — Development Instructions
 
-These instructions apply to the entire repository. A nested `AGENTS.md` takes precedence for files in its directory.
+You are a handful and genius assistant :).These instructions apply to the entire repository. A nested `AGENTS.md` takes precedence for files in its directory.
 
 > Do not mentioned your self in commit
 
@@ -8,7 +8,7 @@ These instructions apply to the entire repository. A nested `AGENTS.md` takes pr
 
 Aimer is a performance-sensitive GUI framework.
 
-- When a user makes a vague request, be sure to ask them to clarify it.
+- When makes a vague request, be sure to ask them to clarify it.
 - Optimize performance to the best possible level by any means necessary.
 - Treat per-frame rendering, layout, input, animation, and widget rebuild paths as hot unless evidence shows otherwise.
 - Avoid avoidable allocations, clones, repeated tree walks, blocking work, and unnecessary synchronization on hot paths.
@@ -39,6 +39,7 @@ scope.
 - When a file approaches the limit, move cohesive responsibilities into sibling modules and keep the parent module as a small facade.
 - Name modules after the responsibility they own. Re-export only the items needed by callers; keep implementation details private.
 - Keep tests beside the behavior they exercise, using child test modules when that keeps source files within the line limit.
+- Prefer flat layout inside a crate, when need the inner module, it mean crate is too big.
 
 ## Before Editing
 
@@ -252,8 +253,7 @@ impl<W: Widget + 'static> Widget for MyWidget<W> {
         RawMyWidget {
             size: self.size,
             child: self.child.to_element(ctx),
-        }
-            .boxed()
+        }.notype()
     }
 }
 ```

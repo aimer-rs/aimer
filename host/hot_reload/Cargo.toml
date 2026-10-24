@@ -39,8 +39,11 @@ aimer_text.workspace = true
 aimer_utils.workspace = true
 aimer_venus.workspace = true
 aimer_widget.workspace = true
-reqwest = { workspace = true, features = ["blocking"] }
 tokio = { workspace = true, features = ["rt", "time"] }
+
+# A blocking request cannot exist in a browser, so wasm32 builds go without it.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { workspace = true, features = ["blocking"] }
 
 [dev-dependencies]
 aimer_ctxmenu.workspace = true
