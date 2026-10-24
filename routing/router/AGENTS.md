@@ -33,9 +33,9 @@ The router resolves URLs including query strings into a typed match with named-r
 routes working.
 
 - Introduce RouteMatch { path_params, query_params } and extend the Route trait in
- crates/aimer_router/src/router.rs with a default name() method.
+ routing/router/src/router.rs with a default name() method.
 - Update Route::parse/format handling to split and re-emit ?query=... in addition to path segments.
-- Extend the macro in crates/aimer_macro/src/codegen/router.rs to accept name = "..." and query placeholders,
+- Extend the macro in support/macro/src/codegen/router.rs to accept name = "..." and query placeholders,
  generating a name→variant builder table and query parse/format arms.
 - Add push_named(name, params) to NavigatorController in navigator.rs.
 - Write failing inline #[cfg(test)] tests first for round-trip parse/format of named and query routes, then
@@ -55,11 +55,11 @@ routes working.
 ### Step 3: Nested routes with Shell & Outlet
  A persistent shell frame stays mounted while an inner Outlet swaps between child routes.
 
-- Create crates/aimer_router/src/outlet.rs Outlet widget reading the active child from injected shell state and
- crates/aimer_router/src/shell.rs Shell persistent frame.
+- Create routing/router/src/outlet.rs Outlet widget reading the active child from injected shell state and
+ routing/router/src/shell.rs Shell persistent frame.
 - Extend the macro to support a #[shell] variant embedding a child route enum and generate build that renders
  the shell + passes the child to the Outlet.
-- Export the new modules from crates/aimer_router/src/lib.rs.
+- Export the new modules from routing/router/src/lib.rs.
 - Add tests asserting the shell instance persists while outlet content changes; implement after tests fail.
 
 ### Step 4: StatefulShellRoute: per-branch history stacks
@@ -75,7 +75,7 @@ routes working.
 ### Step 5: Docs, example app, and milestone updates
  A working shell example and accurate documentation ship alongside the new features.
 
-- Build a sample stateful-shell app in jaime/ new screens + updated jaime/src/routing.rs demonstrating named
+- Build a sample stateful-shell app in jaime/ new screens + updated app/jaime/src/routing.rs demonstrating named
  routes, a redirect/guard, and a tabbed shell.
 - Rewrite aimer_book/src/guide/route.md to document named routes, query params, redirects, shells, and
  per-branch stacks, and fix the existing :id vs {} placeholder drift.

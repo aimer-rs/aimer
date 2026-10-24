@@ -8,7 +8,7 @@ use super::outline::{GlyphOutline, OutlinePoint};
 use super::svg::{SvgGlyph, SvgPath};
 use super::{FontMetrics, SfntError, SfntFace};
 use crate::svg::{SvgFillRule, SvgPathCommand};
-use crate::text_pipeline::glyph_rasterizer::RasterizedGlyph;
+use crate::glyph_rasterizer::RasterizedGlyph;
 
 mod coverage;
 
@@ -248,7 +248,7 @@ pub(crate) fn rasterize_face_glyphs_cached(
                 font_size,
                 *subpixel_x,
                 *subpixel_y,
-                crate::text_pipeline::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
+                crate::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
                 cache,
             )
         })
@@ -260,13 +260,13 @@ pub(crate) fn rasterize_face_glyphs_cached(
 pub(crate) fn rasterize_face_glyphs_into<F>(
     face: &SfntFace<'_>,
     metrics: &FontMetrics,
-    glyphs: &[crate::text_pipeline::glyph_rasterizer::GlyphKey],
+    glyphs: &[crate::glyph_rasterizer::GlyphKey],
     font_size: f32,
     cache: &mut GlyphRasterCache,
     emit: F,
 ) -> bool
 where
-    F: FnMut(crate::text_pipeline::glyph_rasterizer::GlyphKey, RasterizedGlyph),
+    F: FnMut(crate::glyph_rasterizer::GlyphKey, RasterizedGlyph),
 {
     rasterize_face_glyphs_into_with_coordinates(
         face,
@@ -289,15 +289,15 @@ where
 pub(crate) fn rasterize_face_glyphs_into_with_coordinates<F, C>(
     face: &SfntFace<'_>,
     metrics: &FontMetrics,
-    glyphs: &[crate::text_pipeline::glyph_rasterizer::GlyphKey],
+    glyphs: &[crate::glyph_rasterizer::GlyphKey],
     font_size: f32,
     cache: &mut GlyphRasterCache,
     mut coordinates_for: C,
     mut emit: F,
 ) -> bool
 where
-    F: FnMut(crate::text_pipeline::glyph_rasterizer::GlyphKey, RasterizedGlyph),
-    C: FnMut(crate::text_pipeline::glyph_rasterizer::GlyphKey, &mut dyn FnMut(&[f32])),
+    F: FnMut(crate::glyph_rasterizer::GlyphKey, RasterizedGlyph),
+    C: FnMut(crate::glyph_rasterizer::GlyphKey, &mut dyn FnMut(&[f32])),
 {
     let has_metric_variations = face.has_horizontal_metric_variations();
     let advances = if has_metric_variations {

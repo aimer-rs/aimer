@@ -26,7 +26,7 @@
 //! Ids start at [`SYSTEM_FALLBACK_ID_BASE`], which keeps them clear of the
 //! per-script platform-independent lanes and of fonts registered at runtime.
 //!
-//! [`GlyphRasterizer`]: crate::text_pipeline::glyph_rasterizer::GlyphRasterizer
+//! [`GlyphRasterizer`]: crate::glyph_rasterizer::GlyphRasterizer
 //!
 //! On Apple, the discovery and private-glyph compatibility path is available
 //! only with the `apple-core-text` feature. Without it, this module leaves
@@ -39,7 +39,7 @@ use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 use crate::font::TextLanguage;
 use crate::text_layout::FontId;
-use crate::text_pipeline::font_resolver::{FontRecord, REGULAR_WEIGHT};
+use crate::font_resolver::{FontRecord, REGULAR_WEIGHT};
 
 /// First font id handed out to a dynamically resolved system face.
 ///
@@ -357,7 +357,7 @@ pub(crate) fn system_primary_font() -> Option<FontRecord> {
         feature = "apple-core-text"
     )))]
     {
-        crate::text_pipeline::font_resolver::system_primary_font()
+        crate::font_resolver::system_primary_font()
     }
 }
 
@@ -368,7 +368,7 @@ pub(crate) fn system_monospace_font(font_id: FontId) -> Option<FontRecord> {
         feature = "apple-core-text"
     ))]
     {
-        use crate::text_pipeline::apple_fonts::system_font_path;
+        use crate::apple_fonts::system_font_path;
 
         for family in ["SF Mono", "Menlo", "Monaco", "Courier New"] {
             let Some(path) = system_font_path(family) else {
@@ -392,7 +392,7 @@ pub(crate) fn system_monospace_font(font_id: FontId) -> Option<FontRecord> {
         feature = "apple-core-text"
     )))]
     {
-        crate::text_pipeline::font_resolver::system_monospace_font(font_id)
+        crate::font_resolver::system_monospace_font(font_id)
     }
 }
 
@@ -419,7 +419,7 @@ pub(crate) fn system_monospace_font(font_id: FontId) -> Option<FontRecord> {
 /// neighbouring script sits in the rasterizer's own chain and is consulted
 /// first, so [`GlyphRasterizer`] applies the same probes before accepting one.
 ///
-/// [`GlyphRasterizer`]: crate::text_pipeline::glyph_rasterizer::GlyphRasterizer
+/// [`GlyphRasterizer`]: crate::glyph_rasterizer::GlyphRasterizer
 pub(crate) fn script_probes(codepoint: char) -> &'static [char] {
     /// Simplified-only Han characters, absent from Japanese-only faces.
     const HAN: [char; 3] = ['吗', '顶', '这'];
@@ -697,7 +697,7 @@ fn record_decodes_codepoint(record: &FontRecord, codepoint: char) -> bool {
     let Some(data) = record.data() else {
         return false;
     };
-    let Ok(face) = crate::text_pipeline::aimer_font::SfntFace::from_bytes(
+    let Ok(face) = crate::aimer_font::SfntFace::from_bytes(
         data.as_ref(),
         record.collection_index,
     ) else {
@@ -735,7 +735,7 @@ fn record_decodes_codepoint(record: &FontRecord, codepoint: char) -> bool {
 ))]
 fn platform_draws_glyph(record: &FontRecord, glyph_id: u16) -> bool {
     record.path().is_some_and(|path| {
-        crate::text_pipeline::core_text_raster::draws_glyph(path, record.collection_index, glyph_id)
+        crate::core_text_raster::draws_glyph(path, record.collection_index, glyph_id)
     })
 }
 
@@ -772,7 +772,7 @@ fn resolve_face_for_codepoint(
     requirement: ScriptRequirement,
     weight: u16,
 ) -> Option<ResolvedFace> {
-    use crate::text_pipeline::apple_fonts::{
+    use crate::apple_fonts::{
         SystemFaceSource, fallback_font_path_for_probes, font_paths_for_codepoint,
         language_fallback_sources,
     };
@@ -881,7 +881,7 @@ fn face_drawing(
                 strict_weight,
                 |collection_index, glyph_id| {
                     accept_platform
-                        && crate::text_pipeline::core_text_raster::draws_glyph(
+                        && crate::core_text_raster::draws_glyph(
                             path,
                             collection_index,
                             glyph_id,
@@ -934,7 +934,7 @@ fn face_in_data_drawing(
     let mut candidates = Vec::new();
     for collection_index in 0..64 {
         let Ok(face) =
-            crate::text_pipeline::aimer_font::SfntFace::from_bytes(data, collection_index)
+            crate::aimer_font::SfntFace::from_bytes(data, collection_index)
         else {
             break;
         };
@@ -1161,7 +1161,7 @@ mod tests {
         let font_id = 0x3fff_ff00;
         let record = FontRecord::from_bytes(
             font_id,
-            include_bytes!("../../../fonts/GoogleSans-Regular.ttf").to_vec(),
+            include_bytes!("../fonts/GoogleSans-Regular.ttf").to_vec(),
         )
         .expect("the bundled test face should be readable");
         let requirement = ScriptRequirement::probes('你');
@@ -1332,7 +1332,7 @@ mod tests {
     ))]
     #[test]
     fn a_face_covering_only_half_of_han_is_not_chosen_for_it() {
-        use crate::text_pipeline::apple_fonts::font_paths_for_codepoint;
+        use crate::apple_fonts::font_paths_for_codepoint;
 
         let required: Vec<char> = std::iter::once('你')
             .chain(script_probes('你').iter().copied())

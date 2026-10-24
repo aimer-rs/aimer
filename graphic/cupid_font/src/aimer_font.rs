@@ -1601,7 +1601,7 @@ impl AimerFontState {
     #[inline]
     pub(crate) fn can_shape_text_with_script_hint(
         text: &str,
-        script: Option<crate::pipeline::text_pipeline::unicode_script::Script>,
+        script: Option<crate::unicode_script::Script>,
         language: Option<crate::font::TextLanguage>,
         vertical: bool,
     ) -> bool {
@@ -2546,7 +2546,7 @@ fn is_sfnt_signature(tag: Tag) -> bool {
 const MAX_FUZZ_FONT_BYTES: usize = 4 * 1024 * 1024;
 
 /// Exercises the bounded SFNT reader from a cargo-fuzz target.
-pub(crate) fn fuzz_directory(data: &[u8]) {
+pub fn fuzz_directory(data: &[u8]) {
     let Some((&selector, font_bytes)) = data.split_first() else {
         return;
     };
@@ -2571,7 +2571,7 @@ pub(crate) fn fuzz_directory(data: &[u8]) {
 
 /// Exercises glyph, composite, CFF, and CFF2 outline paths from a cargo-fuzz
 /// target while keeping each iteration's work bounded.
-pub(crate) fn fuzz_outlines(data: &[u8]) {
+pub fn fuzz_outlines(data: &[u8]) {
     let Some((&selector, font_bytes)) = data.split_first() else {
         return;
     };
@@ -3092,7 +3092,7 @@ pub(crate) mod tests {
         use super::AimerFontState;
 
         let data = FontData::Shared(Arc::from(
-            &include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf")[..],
+            &include_bytes!("../fonts/JetBrainsMono-Regular.ttf")[..],
         ));
         let state = AimerFontState::from_font_data(data, 0)
             .expect("checked-in font should build a cached state");
@@ -3119,7 +3119,7 @@ pub(crate) mod tests {
         use super::AimerFontState;
 
         let data = FontData::Shared(Arc::from(
-            &include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf")[..],
+            &include_bytes!("../fonts/JetBrainsMono-Regular.ttf")[..],
         ));
         let mut state = AimerFontState::from_font_data(data, 0)
             .expect("checked-in font should build a cached state");
@@ -3162,7 +3162,7 @@ pub(crate) mod tests {
         use super::AimerFontState;
 
         let data = FontData::Shared(Arc::from(
-            &include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf")[..],
+            &include_bytes!("../fonts/JetBrainsMono-Regular.ttf")[..],
         ));
         let mut scalar = AimerFontState::from_font_data(data.clone(), 0)
             .expect("checked-in font should build a cached state");
@@ -3226,7 +3226,7 @@ pub(crate) mod tests {
         use super::AimerFontState;
 
         let data = FontData::Shared(Arc::from(
-            &include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf")[..],
+            &include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf")[..],
         ));
         let mut state = AimerFontState::from_font_data(data, 0)
             .expect("the bundled variable CJK face should build a cached state");
@@ -4137,7 +4137,7 @@ pub(crate) mod tests {
 
     #[test]
     fn reads_a_checked_in_true_type_font_without_the_legacy_parser() {
-        let bytes = include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf");
+        let bytes = include_bytes!("../fonts/JetBrainsMono-Regular.ttf");
         let face = SfntFace::from_bytes(bytes, 0).expect("checked-in TTF should parse");
         let metrics = face.metrics().expect("checked-in metrics should parse");
 
@@ -4348,7 +4348,7 @@ pub(crate) mod tests {
             32.0,
             0,
             0,
-            crate::text_pipeline::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
+            crate::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
             &mut cache,
         )
         .expect("COLR outline should rasterize");
@@ -4382,7 +4382,7 @@ pub(crate) mod tests {
                 font_size,
                 0,
                 0,
-                crate::text_pipeline::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
+                crate::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
                 &mut cache,
             )
             .expect("COLR outline should rasterize");
@@ -4441,7 +4441,7 @@ pub(crate) mod tests {
             32.0,
             0,
             0,
-            crate::text_pipeline::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
+            crate::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
             &mut cache,
         )
         .expect("SVG glyph should rasterize");
@@ -4506,7 +4506,7 @@ pub(crate) mod tests {
 
     #[test]
     fn reads_a_checked_in_cjk_font_coverage() {
-        let bytes = include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf");
+        let bytes = include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf");
         let face = SfntFace::from_bytes(bytes, 0).expect("checked-in CJK TTF should parse");
 
         assert!(face.covers(0x4e00).expect("CJK coverage should parse"));
@@ -4623,7 +4623,7 @@ pub(crate) mod tests {
 
     #[test]
     fn shapes_latin_ligatures_and_pair_kerning_from_open_type_tables() {
-        let face = SfntFace::from_bytes(include_bytes!("../../../fonts/GoogleSans-Regular.ttf"), 0)
+        let face = SfntFace::from_bytes(include_bytes!("../fonts/GoogleSans-Regular.ttf"), 0)
             .expect("the checked-in shaping fixture must parse");
 
         let office = super::shape_latin_run(&face, "office")
@@ -4949,7 +4949,7 @@ pub(crate) mod tests {
 
     #[test]
     fn shapes_google_sans_devanagari_through_the_owned_path() {
-        let face = SfntFace::from_bytes(include_bytes!("../../../fonts/GoogleSans-Regular.ttf"), 0)
+        let face = SfntFace::from_bytes(include_bytes!("../fonts/GoogleSans-Regular.ttf"), 0)
             .expect("Google Sans must parse");
         let shaped = super::shape_run_with_options(&face, "कि", None, false)
             .expect("Google Sans Indic shaping should parse")
@@ -4968,7 +4968,7 @@ pub(crate) mod tests {
 
     #[test]
     fn shapes_southeast_asian_runs_through_the_owned_path() {
-        let face = SfntFace::from_bytes(include_bytes!("../../../fonts/GoogleSans-Regular.ttf"), 0)
+        let face = SfntFace::from_bytes(include_bytes!("../fonts/GoogleSans-Regular.ttf"), 0)
             .expect("Google Sans must parse");
         let cases = [
             (
@@ -5070,7 +5070,7 @@ pub(crate) mod tests {
 
     #[test]
     fn keeps_myanmar_on_compatibility_path_when_the_face_has_no_coverage() {
-        let face = SfntFace::from_bytes(include_bytes!("../../../fonts/GoogleSans-Regular.ttf"), 0)
+        let face = SfntFace::from_bytes(include_bytes!("../fonts/GoogleSans-Regular.ttf"), 0)
             .expect("Google Sans must parse");
         assert!(
             super::shape_run_with_options(&face, "မင်္ဂလာပါ", None, false)

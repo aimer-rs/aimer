@@ -138,7 +138,12 @@ impl SvgGeometryCache {
         self.mesh_for_with_analytic_aa(geometry, style, physical_scale, false)
     }
 
-    pub(crate) fn mesh_for_with_analytic_aa(
+    /// Like `mesh_for`, but lets the caller choose whether the mesh is built
+    /// for analytic anti-aliasing.
+    ///
+    /// `analytic_aa` is part of the cache key, so the same geometry meshed with
+    /// and without it is cached as two separate meshes.
+    pub fn mesh_for_with_analytic_aa(
         &mut self,
         geometry: &SvgGeometry,
         style: SvgMeshStyle,
@@ -1521,7 +1526,7 @@ mod tests {
         let svg = format!(
             r##"<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="{path}" stroke="#000000" stroke-width="{width}" stroke-linecap="{cap}" stroke-linejoin="{join}"/></svg>"##
         );
-        let parsed = crate::svg::parser::parse_svg_document(svg.as_bytes()).unwrap();
+        let parsed = crate::parser::parse_svg_document(svg.as_bytes()).unwrap();
         let node = parsed.scene.nodes.iter().find(|node| node.geometry.is_some()).unwrap();
         let stroke = node.stroke.as_ref().unwrap();
         let style = SvgMeshStyle::Stroke {

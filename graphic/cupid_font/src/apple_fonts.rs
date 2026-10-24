@@ -50,7 +50,7 @@ use objc2_core_text::{
 };
 
 use crate::font::TextLanguage;
-use crate::text_pipeline::font_resolver::REGULAR_WEIGHT;
+use crate::font_resolver::REGULAR_WEIGHT;
 
 /// Point size used for the transient `CTFont` instances created here.
 ///
@@ -759,7 +759,7 @@ mod tests {
     /// `required` — the acceptance rule the fallback resolver applies.
     fn any_face_decodes_all(data: &[u8], required: &[char]) -> bool {
         (0..64).any(|index| {
-            let Ok(face) = crate::text_pipeline::aimer_font::SfntFace::from_bytes(data, index)
+            let Ok(face) = crate::aimer_font::SfntFace::from_bytes(data, index)
             else {
                 return false;
             };
@@ -830,7 +830,7 @@ mod tests {
         // SAFETY: a null matrix requests the identity transform.
         let font = unsafe { CTFont::with_name(&name, LOOKUP_FONT_SIZE, std::ptr::null()) };
         let data = font_table_data(&font).expect("system fonts expose their tables");
-        let face = crate::text_pipeline::aimer_font::SfntFace::from_bytes(&data, 0)
+        let face = crate::aimer_font::SfntFace::from_bytes(&data, 0)
             .expect("the reassembled sfnt must parse");
         let glyph_id = face
             .glyph_index('A' as u32)

@@ -43,7 +43,7 @@ fn page() -> impl Widget {
     controller.forward_from_first_tick();
     let icon = Svg::new(
         SvgDocument::from_svg(include_bytes!(
-            "../../jaime/assets/loading-1-svgrepo-com.svg"
+            "../../../app/jaime/assets/loading-1-svgrepo-com.svg"
         ))
         .expect("the bundled loading icon SVG should be valid"),
     )

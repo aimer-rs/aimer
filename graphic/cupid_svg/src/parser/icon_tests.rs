@@ -47,7 +47,7 @@ fn rounded_rectangles_preserve_radii_and_validate_boundaries() {
 #[test]
 fn lucide_current_color_inherits_and_resolves_filled_details() {
     let parsed = parse_svg_document(include_bytes!(
-        "../../../../crates/aimer_lucide/icons/chart-scatter.svg"
+        "../../../../widgets/lucide/icons/chart-scatter.svg"
     )).expect("Lucide currentColor is valid SVG");
     let black = SvgColor::rgba8(0, 0, 0, 255);
     assert!(parsed.scene.nodes.iter().all(|node| {

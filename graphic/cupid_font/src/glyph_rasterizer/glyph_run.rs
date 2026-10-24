@@ -19,15 +19,15 @@ use super::GlyphKey;
 /// in it names the same `font_id` and is drawn at `font_size`. That is what
 /// makes one resolved face and one scaler enough for the whole run.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct GlyphRun {
-    pub(crate) font_size: f32,
-    pub(crate) keys: Vec<GlyphKey>,
+pub struct GlyphRun {
+    pub font_size: f32,
+    pub keys: Vec<GlyphKey>,
 }
 
 impl GlyphRun {
     /// The face every glyph of this run is drawn from.
     #[inline]
-    pub(crate) fn font_id(&self) -> super::FontId {
+    pub fn font_id(&self) -> super::FontId {
         self.keys[0].font_id
     }
 }
@@ -38,20 +38,20 @@ impl GlyphRun {
 /// glyphs already reduce it to noise — while keeping enough runs for the
 /// worker pool to spread a freshly scrolled paragraph or code block across its
 /// threads. Raising this trades parallelism for a saving that is already spent.
-pub(crate) const MAX_GLYPHS_PER_RUN: usize = 32;
+pub const MAX_GLYPHS_PER_RUN: usize = 32;
 /// Maximum sequential batch size used by the synchronous preload path.
 ///
 /// Unlike worker preparation, this path does not need to preserve parallel
 /// work stealing. A larger batch amortizes face lookup and cache insertion
 /// overhead while the worker-facing limit above keeps parallel jobs balanced.
-pub(crate) const SEQUENTIAL_MAX_GLYPHS_PER_RUN: usize = 128;
+pub const SEQUENTIAL_MAX_GLYPHS_PER_RUN: usize = 128;
 
 /// Groups `glyphs` into the runs a worker rasterizes.
 ///
 /// This is [`group_into_runs`] at the length the renderer uses; the length is a
 /// parameter there only so tests can state it.
 #[inline]
-pub(crate) fn glyph_runs(glyphs: Vec<(GlyphKey, f32)>) -> Vec<GlyphRun> {
+pub fn glyph_runs(glyphs: Vec<(GlyphKey, f32)>) -> Vec<GlyphRun> {
     group_into_runs(glyphs, MAX_GLYPHS_PER_RUN)
 }
 
@@ -64,7 +64,7 @@ pub(crate) fn glyph_runs(glyphs: Vec<(GlyphKey, f32)>) -> Vec<GlyphRun> {
 /// Grouping is a sort, so glyphs are not returned in the order they were
 /// collected. Nothing downstream depends on that order: each result carries
 /// the key it belongs to.
-pub(crate) fn group_into_runs(mut glyphs: Vec<(GlyphKey, f32)>, max_run: usize) -> Vec<GlyphRun> {
+pub fn group_into_runs(mut glyphs: Vec<(GlyphKey, f32)>, max_run: usize) -> Vec<GlyphRun> {
     debug_assert!(max_run > 0, "a run must be able to hold a glyph");
 
     glyphs.sort_unstable_by_key(|(key, font_size)| {

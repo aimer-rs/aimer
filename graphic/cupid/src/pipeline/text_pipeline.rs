@@ -1,29 +1,23 @@
-pub(crate) mod aimer_font;
+// The font engine (parsing, shaping, fallback, rasterization, layout) lives in
+// `aimer_cupid_font`. The modules are re-exported here so the paths the
+// preparation code and downstream crates use keep resolving.
 #[cfg(all(
     any(target_os = "ios", target_os = "macos"),
     feature = "apple-core-text"
 ))]
-pub(crate) mod apple_fonts;
+pub(crate) use aimer_cupid_font::{apple_fonts, core_text_raster};
+pub(crate) use aimer_cupid_font::{
+    aimer_font, font_resolver, glyph_metrics, system_fallback, unicode_script,
+};
+pub use aimer_cupid_font::{glyph_rasterizer, text_layout};
+
 mod cache_key;
-#[cfg(all(
-    any(target_os = "ios", target_os = "macos"),
-    feature = "apple-core-text"
-))]
-pub(crate) mod core_text_raster;
 mod deferred_preparation;
-mod font_resolver;
 pub mod glyph_atlas;
-mod glyph_metrics;
-pub mod glyph_rasterizer;
 mod layout_cache;
 mod paint_cache;
 mod preparation_batch;
-pub(crate) mod system_fallback;
-pub mod text_layout;
-mod unicode_script;
 pub use self::text_layout::{TextHorizontalAlign, TextWritingMode};
-#[cfg(test)]
-mod phase0_baseline;
 #[cfg(test)]
 mod phase6_verification;
 

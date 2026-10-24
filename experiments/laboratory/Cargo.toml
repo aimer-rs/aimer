@@ -38,7 +38,7 @@ aimer_widget.workspace = true
 # so it is taken from the branch it was released on and renamed; both packages
 # are called `aimer`, and cargo keeps them apart because their sources differ.
 [dev-dependencies]
-aimer = { path = ".." }
+aimer = { path = "../.." }
 aimer_events.workspace = true
 aimer_widget.workspace = true
 #aimer_legacy = { package = "aimer", git = "https://github.com/Cottons29/aimer.git", branch = "1.97.1-alpha-1" }

@@ -14,7 +14,7 @@ import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[1]
 device = sys.argv[1]
-host = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else root / "jaime/builds/ios/Jaime/main.swift"
+host = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else root / "app/jaime/builds/ios/Jaime/main.swift"
 bundle_id = "dev.aimers.input-regression"
 sdk = subprocess.check_output(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"], text=True).strip()
 with tempfile.TemporaryDirectory(prefix="aimer-ios-input-") as temporary:

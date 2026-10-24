@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::backend::TextureUsage;
-use crate::backend::vulkan_surface_format::{SurfaceFormatClass, select_surface_format};
+use crate::vulkan_surface_format::{SurfaceFormatClass, select_surface_format};
 use ash::vk;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 

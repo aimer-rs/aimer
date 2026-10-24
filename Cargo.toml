@@ -195,138 +195,173 @@ required-features = ["wgpu"]
 resolver = "3"
 members = [
     ".",
-    "jaime",
-    "aimer_quiver",
-    "aimer_cupid",
-    "aimer_rubick",
-    "aimer_venus",
-    "aimer_anteros",
-    "aimer_laboratory",
-    "crates/aimer_widget",
-    "crates/aimer_container",
-    "crates/aimer_flex",
-    "crates/aimer_grid",
-    "crates/aimer_scroll",
-    "crates/aimer_space",
-    "crates/aimer_color",
-    "crates/aimer_input",
-    "crates/aimer_canvas",
-    "crates/aimer_attribute",
-    "crates/aimer_utils",
-    "crates/aimer_animation",
-    "crates/aimer_events",
-    "crates/aimer_focus",
-    "crates/aimer_router",
-    "crates/aimer_assets",
-    "crates/aimer_style",
-    "crates/aimer_text",
-    "crates/aimer_macro",
-    "crates/aimer_provider",
-    "crates/aimer_std",
-    "crates/aimer_markdown",
-    "crates/aimer_svg",
-    "crates/aimer_native",
-    "crates/aimer_haptics",
-    "crates/aimer_modal",
-    "crates/aimer_dnd",
-    "crates/aimer_ffi_utils",
-    "crates/aimer_ctxmenu",
-    "crates/aimer_reload_protocol",
-    "crates/aimer_reload_server",
-    "crates/aimer_wasm_guest",
-    "crates/aimer_accessibility",
-    "crates/aimer_selection",
-    "crates/aimer_indicator",
-    "crates/aimer_range",
-    "crates/aimer_form",
-    "crates/aimer_picker",
-    "crates/aimer_feedback",
-    "crates/aimer_navigation",
-    "crates/aimer_data_view",
-    "crates/aimer_i18n",
-    "crates/aimer_media",
-    "crates/aimer_storage",
-    "crates/aimer_persist",
-    "crates/aimer_vault",
-    "crates/aimer_passkey",
-    "crates/aimer_shape",
-    "crates/aimer_collapsible",
-    "crates/aimer_simd",
-    "crates/aimer_decoration",
-    "crates/aimer_lucide",
-    "crates/aimer_frame_stats",
-    "crates/aimer_platform",
-    "crates/aimer_render",
-    "crates/aimer_hot_reload",
-    "crates/aimer_window",
+    # cores
+    "cores/rubick",
+    "cores/venus",
+    "cores/color",
+    "cores/std",
+    "cores/ffi_utils",
+    "cores/shape",
+    "cores/simd",
+    # contracts
+    "contracts/accessibility",
+    "contracts/form",
+    "contracts/data_view",
+    "contracts/i18n",
+    "contracts/media",
+    # support
+    "support/attribute",
+    "support/utils",
+    "support/events",
+    "support/macro",
+    # system
+    "system/native",
+    "system/haptics",
+    # services
+    "services/storage",
+    "services/vault",
+    "services/passkey",
+    # graphic
+    "graphic/cupid",
+    "graphic/cupid_svg",
+    "graphic/cupid_font",
+    "graphic/cupid_gpu",
+    "graphic/cupid_wgpu",
+    "graphic/cupid_metal",
+    "graphic/cupid_vulkan",
+    "graphic/cupid_opengl",
+    "graphic/cupid_dx12",
+    "graphic/cupid_webgl",
+    "graphic/cupid_webgpu",
+    "graphic/canvas",
+    "graphic/render",
+    # framework
+    "framework/quiver",
+    "framework/widget",
+    "framework/animation",
+    "framework/focus",
+    "framework/style",
+    "framework/provider",
+    "framework/persist",
+    "framework/decoration",
+    # layout
+    "layout/container",
+    "layout/flex",
+    "layout/grid",
+    "layout/scroll",
+    "layout/space",
+    # overlay
+    "overlay/modal",
+    "overlay/ctxmenu",
+    # widgets
+    "widgets/input",
+    "widgets/assets",
+    "widgets/text",
+    "widgets/markdown",
+    "widgets/svg",
+    "widgets/lucide",
+    # controls
+    "controls/dnd",
+    "controls/selection",
+    "controls/indicator",
+    "controls/range",
+    "controls/picker",
+    "controls/feedback",
+    "controls/collapsible",
+    # routing
+    "routing/router",
+    "routing/navigation",
+    # host
+    "host/anteros",
+    "host/frame_stats",
+    "host/platform",
+    "host/hot_reload",
+    "host/window",
+    # app
+    "app/jaime",
+    # experiments
+    "experiments/laboratory",
+    "experiments/reload_protocol",
+    "experiments/reload_server",
+    "experiments/wasm_guest",
 ]
 
 [workspace.dependencies]
 
-aimer_cupid = { path = "aimer_cupid", default-features = false, features = [
+aimer_cupid = { path = "graphic/cupid", default-features = false, features = [
     "apple-core-text",
     "native",
 ] }
-aimer_simd = { path = "crates/aimer_simd" }
-aimer_rubick = { path = "aimer_rubick" }
-aimer_venus = { path = "aimer_venus" }
-aimer_quiver = { path = "aimer_quiver", default-features = false }
-aimer_frame_stats = { path = "crates/aimer_frame_stats" }
-aimer_platform = { path = "crates/aimer_platform" }
-aimer_render = { path = "crates/aimer_render", default-features = false }
-aimer_hot_reload = { path = "crates/aimer_hot_reload" }
-aimer_window = { path = "crates/aimer_window" }
-aimer_canvas = { path = "crates/aimer_canvas" }
-aimer_animation = { path = "crates/aimer_animation" }
-aimer_input = { path = "crates/aimer_input" }
-aimer_container = { path = "crates/aimer_container" }
-aimer_decoration = { path = "crates/aimer_decoration" }
-aimer_flex = { path = "crates/aimer_flex" }
-aimer_grid = { path = "crates/aimer_grid" }
-aimer_scroll = { path = "crates/aimer_scroll" }
-aimer_space = { path = "crates/aimer_space" }
-aimer_widget = { path = "crates/aimer_widget" }
-aimer_color = { path = "crates/aimer_color" }
-aimer_attribute = { path = "crates/aimer_attribute" }
-aimer_utils = { path = "crates/aimer_utils" }
-aimer_events = { path = "crates/aimer_events" }
-aimer_focus = { path = "crates/aimer_focus" }
-aimer_text = { path = "crates/aimer_text" }
-aimer_router = { path = "crates/aimer_router" }
-aimer_assets = { path = "crates/aimer_assets" }
-aimer_style = { path = "crates/aimer_style" }
-aimer_std = { path = "crates/aimer_std" }
-aimer_macro = { path = "crates/aimer_macro" }
-aimer_provider = { path = "crates/aimer_provider" }
-aimer_svg = { path = "crates/aimer_svg" }
-aimer_lucide = { path = "crates/aimer_lucide" }
-aimer_markdown = { path = "crates/aimer_markdown" }
-aimer_modal = { path = "crates/aimer_modal" }
-aimer_dnd = { path = "crates/aimer_dnd" }
-aimer_accessibility = { path = "crates/aimer_accessibility" }
-aimer_selection = { path = "crates/aimer_selection" }
-aimer_indicator = { path = "crates/aimer_indicator" }
-aimer_range = { path = "crates/aimer_range" }
-aimer_form = { path = "crates/aimer_form" }
-aimer_picker = { path = "crates/aimer_picker" }
-aimer_feedback = { path = "crates/aimer_feedback" }
-aimer_navigation = { path = "crates/aimer_navigation" }
-aimer_data_view = { path = "crates/aimer_data_view" }
-aimer_i18n = { path = "crates/aimer_i18n" }
-aimer_media = { path = "crates/aimer_media" }
-aimer_storage = { path = "crates/aimer_storage" }
-aimer_persist = { path = "crates/aimer_persist" }
-aimer_vault = { path = "crates/aimer_vault" }
-aimer_passkey = { path = "crates/aimer_passkey" }
-aimer_shape = { path = "crates/aimer_shape" }
-aimer_collapsible = { path = "crates/aimer_collapsible" }
-aimer_native = { path = "crates/aimer_native" }
-aimer_haptics = { path = "crates/aimer_haptics" }
-aimer_ctxmenu = { path = "crates/aimer_ctxmenu" }
-aimer_anteros = { path = "aimer_anteros" }
-aimer_reload_protocol = { path = "crates/aimer_reload_protocol" }
-aimer_reload_server = { path = "crates/aimer_reload_server" }
-aimer_wasm_guest = { path = "crates/aimer_wasm_guest" }
+aimer_simd = { path = "cores/simd" }
+aimer_cupid_svg = { path = "graphic/cupid_svg" }
+aimer_cupid_font = { path = "graphic/cupid_font" }
+aimer_cupid_gpu = { path = "graphic/cupid_gpu" }
+aimer_cupid_wgpu = { path = "graphic/cupid_wgpu" }
+aimer_cupid_metal = { path = "graphic/cupid_metal" }
+aimer_cupid_vulkan = { path = "graphic/cupid_vulkan" }
+aimer_cupid_opengl = { path = "graphic/cupid_opengl" }
+aimer_cupid_dx12 = { path = "graphic/cupid_dx12" }
+aimer_cupid_webgl = { path = "graphic/cupid_webgl" }
+aimer_cupid_webgpu = { path = "graphic/cupid_webgpu" }
+aimer_rubick = { path = "cores/rubick" }
+aimer_venus = { path = "cores/venus" }
+aimer_quiver = { path = "framework/quiver", default-features = false }
+aimer_frame_stats = { path = "host/frame_stats" }
+aimer_platform = { path = "host/platform" }
+aimer_render = { path = "graphic/render", default-features = false }
+aimer_hot_reload = { path = "host/hot_reload" }
+aimer_window = { path = "host/window" }
+aimer_canvas = { path = "graphic/canvas" }
+aimer_animation = { path = "framework/animation" }
+aimer_input = { path = "widgets/input" }
+aimer_container = { path = "layout/container" }
+aimer_decoration = { path = "framework/decoration" }
+aimer_flex = { path = "layout/flex" }
+aimer_grid = { path = "layout/grid" }
+aimer_scroll = { path = "layout/scroll" }
+aimer_space = { path = "layout/space" }
+aimer_widget = { path = "framework/widget" }
+aimer_color = { path = "cores/color" }
+aimer_attribute = { path = "support/attribute" }
+aimer_utils = { path = "support/utils" }
+aimer_events = { path = "support/events" }
+aimer_focus = { path = "framework/focus" }
+aimer_text = { path = "widgets/text" }
+aimer_router = { path = "routing/router" }
+aimer_assets = { path = "widgets/assets" }
+aimer_style = { path = "framework/style" }
+aimer_std = { path = "cores/std" }
+aimer_macro = { path = "support/macro" }
+aimer_provider = { path = "framework/provider" }
+aimer_svg = { path = "widgets/svg" }
+aimer_lucide = { path = "widgets/lucide" }
+aimer_markdown = { path = "widgets/markdown" }
+aimer_modal = { path = "overlay/modal" }
+aimer_dnd = { path = "controls/dnd" }
+aimer_accessibility = { path = "contracts/accessibility" }
+aimer_selection = { path = "controls/selection" }
+aimer_indicator = { path = "controls/indicator" }
+aimer_range = { path = "controls/range" }
+aimer_form = { path = "contracts/form" }
+aimer_picker = { path = "controls/picker" }
+aimer_feedback = { path = "controls/feedback" }
+aimer_navigation = { path = "routing/navigation" }
+aimer_data_view = { path = "contracts/data_view" }
+aimer_i18n = { path = "contracts/i18n" }
+aimer_media = { path = "contracts/media" }
+aimer_storage = { path = "services/storage" }
+aimer_persist = { path = "framework/persist" }
+aimer_vault = { path = "services/vault" }
+aimer_passkey = { path = "services/passkey" }
+aimer_shape = { path = "cores/shape" }
+aimer_collapsible = { path = "controls/collapsible" }
+aimer_native = { path = "system/native" }
+aimer_haptics = { path = "system/haptics" }
+aimer_ctxmenu = { path = "overlay/ctxmenu" }
+aimer_anteros = { path = "host/anteros" }
+aimer_reload_protocol = { path = "experiments/reload_protocol" }
+aimer_reload_server = { path = "experiments/reload_server" }
+aimer_wasm_guest = { path = "experiments/wasm_guest" }
 
 # Generic Dependencies
 

@@ -1,0 +1,25 @@
+[package]
+name = "aimer_cupid_webgl"
+version = "0.1.0"
+edition = "2024"
+description = "The browser WebGL2 backend for the Cupid rendering engine"
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+web-sys = { workspace = true, features = [
+    "HtmlCanvasElement",
+    "WebGl2RenderingContext",
+    "WebGlBuffer",
+    "WebGlFramebuffer",
+    "WebGlProgram",
+    "WebGlRenderbuffer",
+    "WebGlSampler",
+    "WebGlShader",
+    "WebGlTexture",
+    "WebGlUniformLocation",
+    "WebGlVertexArrayObject",
+] }

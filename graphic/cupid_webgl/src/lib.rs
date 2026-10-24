@@ -1,4 +1,12 @@
 //! Direct browser WebGL2 backend used by Cupid's generic renderer.
+//!
+//! The crate is empty on every target but wasm32; `aimer_cupid` selects it with
+//! its `web` feature.
+
+#![cfg(target_arch = "wasm32")]
+
+// `crate::backend::..` is how this code has always named the contract.
+pub(crate) use aimer_cupid_gpu as backend;
 
 mod pipeline;
 mod trait_impl;
@@ -46,17 +54,17 @@ impl std::error::Error for WebGl2Error {}
 
 /// A direct WebGL2 implementation of Cupid's generic GPU backend.
 pub struct WebGl2Backend {
-    pub(super) shared: Rc<WebGl2Shared>,
+    pub(crate) shared: Rc<WebGl2Shared>,
 }
 
-pub(super) struct WebGl2Shared {
-    pub(super) gl: WebGl2RenderingContext,
-    pub(super) canvas: HtmlCanvasElement,
-    pub(super) limits: GpuLimits,
-    pub(super) max_texture_units: u32,
-    pub(super) max_vertex_attributes: u32,
-    pub(super) max_uniform_buffer_bindings: u32,
-    pub(super) next_id: Cell<u32>,
+pub(crate) struct WebGl2Shared {
+    pub(crate) gl: WebGl2RenderingContext,
+    pub(crate) canvas: HtmlCanvasElement,
+    pub(crate) limits: GpuLimits,
+    pub(crate) max_texture_units: u32,
+    pub(crate) max_vertex_attributes: u32,
+    pub(crate) max_uniform_buffer_bindings: u32,
+    pub(crate) next_id: Cell<u32>,
     framebuffer_cache: RefCell<HashMap<FramebufferKey, WebGlFramebuffer>>,
 }
 
@@ -127,14 +135,14 @@ impl WebGl2Backend {
 }
 
 impl WebGl2Shared {
-    pub(super) fn allocate_id(&self) -> u32 {
+    pub(crate) fn allocate_id(&self) -> u32 {
         let id = self.next_id.get();
         self.next_id
             .set(id.checked_add(1).expect("WebGL resource id overflow"));
         id
     }
 
-    pub(super) fn invalidate_framebuffers_for(&self, texture: u32) {
+    pub(crate) fn invalidate_framebuffers_for(&self, texture: u32) {
         let mut cache = self.framebuffer_cache.borrow_mut();
         cache.retain(|key, framebuffer| {
             let keep = !key

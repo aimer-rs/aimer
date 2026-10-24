@@ -9,4 +9,4 @@ wasm-runtime-tests = ["aimer_anteros/wasm-hot-reload"]
 
 [dependencies]
 crossbeam.workspace = true
-aimer_anteros = { path = "../../aimer_anteros", default-features = false }
+aimer_anteros = { path = "../../host/anteros", default-features = false }

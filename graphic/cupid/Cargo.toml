@@ -15,28 +15,29 @@ native = [
     "dep:objc2-foundation",
     "dep:objc2-quartz-core",
     "dep:objc2-metal",
-    "dep:block2",
+    "dep:aimer_cupid_metal",
+    "dep:aimer_cupid_vulkan",
+    "dep:aimer_cupid_opengl",
+    "dep:aimer_cupid_dx12",
     "dep:objc2-app-kit",
     "dep:windows",
     "dep:ash",
-    "dep:ash-window",
 ]
 # Keep the WGPU adapter optional so a WGPU-only build can disable default
 # features and omit the native API dependency set.
-wgpu = ["dep:wgpu", "dep:winit"]
-frame-stats = []
+wgpu = ["dep:wgpu", "dep:winit", "dep:aimer_cupid_wgpu"]
+frame-stats = ["aimer_cupid_metal?/frame-stats"]
 # Keep optional checked-in fallback faces out of native downstream binaries
 # unless an application explicitly opts into deterministic bundled rendering.
 # wasm always carries the generic Latin/monospace faces because browsers do not
 # expose readable system font files to Cupid.
-bundled-fonts = []
+bundled-fonts = ["aimer_cupid_font/bundled-fonts"]
 # The production profile owns standard-font parsing, shaping, fallback-aware
 # resolution, and rasterization. The optional Apple-private backend is kept
 # separate below so the portable path remains available on every platform.
 apple-core-text = [
+    "aimer_cupid_font/apple-core-text",
     "dep:objc2-core-foundation",
-    "dep:objc2-core-text",
-    "dep:objc2-core-graphics",
 ]
 # Native Direct3D 12 windowed demo.
 dx12-demo = ["native", "dep:winit"]
@@ -44,47 +45,7 @@ dx12-demo = ["native", "dep:winit"]
 vulkan-demo = ["native", "dep:winit"]
 opengl-demo = ["native", "dep:winit"]
 # Browser GPU APIs used by the target-selected WebGPU/WebGL2 backends.
-web = [
-    "web-sys/Gpu",
-    "web-sys/GpuAdapter",
-    "web-sys/GpuAdapterInfo",
-    "web-sys/GpuBindGroup",
-    "web-sys/GpuBindGroupDescriptor",
-    "web-sys/GpuBindGroupLayout",
-    "web-sys/GpuBindGroupLayoutDescriptor",
-    "web-sys/GpuBuffer",
-    "web-sys/GpuBufferDescriptor",
-    "web-sys/GpuCanvasAlphaMode",
-    "web-sys/GpuCanvasConfiguration",
-    "web-sys/GpuCanvasContext",
-    "web-sys/GpuCommandBuffer",
-    "web-sys/GpuCommandEncoder",
-    "web-sys/GpuCommandEncoderDescriptor",
-    "web-sys/GpuDevice",
-    "web-sys/GpuExtent3dDict",
-    "web-sys/GpuIndexFormat",
-    "web-sys/GpuPipelineLayout",
-    "web-sys/GpuPipelineLayoutDescriptor",
-    "web-sys/GpuQueue",
-    "web-sys/GpuRenderPassColorAttachment",
-    "web-sys/GpuRenderPassDescriptor",
-    "web-sys/GpuRenderPassEncoder",
-    "web-sys/GpuRenderPipeline",
-    "web-sys/GpuRenderPipelineDescriptor",
-    "web-sys/GpuSampler",
-    "web-sys/GpuSamplerDescriptor",
-    "web-sys/GpuShaderModule",
-    "web-sys/GpuShaderModuleDescriptor",
-    "web-sys/GpuSupportedLimits",
-    "web-sys/GpuTexelCopyBufferInfo",
-    "web-sys/GpuTexelCopyBufferLayout",
-    "web-sys/GpuTexelCopyTextureInfo",
-    "web-sys/GpuTexture",
-    "web-sys/GpuTextureAspect",
-    "web-sys/GpuTextureDescriptor",
-    "web-sys/GpuTextureFormat",
-    "web-sys/GpuTextureView",
-]
+web = ["dep:aimer_cupid_webgl", "dep:aimer_cupid_webgpu"]
 # Optional windowed demo for the direct OpenGL backend.
 metal-demo = [
     "native",
@@ -142,12 +103,20 @@ aimer_utils = { workspace = true, features = ["time-cost"] }
 aimer_rubick.workspace = true
 aimer_color.workspace = true
 aimer_shape.workspace = true
-aimer_simd.workspace = true
+aimer_cupid_svg.workspace = true
+aimer_cupid_font.workspace = true
+aimer_cupid_gpu.workspace = true
+aimer_cupid_vulkan = { workspace = true, optional = true }
+aimer_cupid_opengl = { workspace = true, optional = true }
+aimer_cupid_dx12 = { workspace = true, optional = true }
+aimer_cupid_webgl = { workspace = true, optional = true }
+aimer_cupid_webgpu = { workspace = true, optional = true }
 
 
 
 #############
 wgpu = { workspace = true, optional = true }
+aimer_cupid_wgpu = { workspace = true, optional = true }
 winit = { version = "0.30.12", default-features = false, optional = true, features = [
     "android-native-activity",
     "rwh_06",
@@ -158,8 +127,6 @@ winit = { version = "0.30.12", default-features = false, optional = true, featur
 ] }
 raw-window-handle = { workspace = true, optional = true }
 bytemuck.workspace = true
-unicode-bidi.workspace = true
-unicode-linebreak.workspace = true
 unicode-segmentation.workspace = true
 # Cupid decodes PNG/JPEG/TIFF font strikes and the example image. Keep the
 # image crate's broad default-format and rayon features out of this crate.
@@ -168,16 +135,14 @@ image = { workspace = true, default-features = false, features = [
     "png",
     "tiff",
 ] }
-thiserror.workspace = true
 hashbrown.workspace = true
 smallvec.workspace = true
-dirs.workspace = true
-memmap2 = "0.9.11"
 
 [dev-dependencies]
-naga = { workspace = true, features = ["spv-out"] }
+aimer_cupid_font = { workspace = true, features = ["test-counters"] }
 
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+aimer_cupid_metal = { workspace = true, optional = true }
 objc2-core-foundation = { workspace = true, optional = true, features = [
     "std",
     "CFArray",
@@ -188,26 +153,6 @@ objc2-core-foundation = { workspace = true, optional = true, features = [
     "CFNumber",
     "CFString",
     "CFURL",
-] }
-objc2-core-text = { workspace = true, optional = true, features = [
-    "std",
-    "CTFont",
-    "CTFontDescriptor",
-    "CTFontManager",
-    # Enables `kCTFontWeightTrait`, which is how a fallback query asks the
-    # cascade for the face a bold or light run should be drawn in.
-    "CTFontTraits",
-    # Enables the glyph drawing and bounding-rect entry points, which take
-    # Core Graphics types.
-    "objc2-core-graphics",
-] }
-objc2-core-graphics = { workspace = true, optional = true, features = [
-    "std",
-    "CGBitmapContext",
-    "CGColorSpace",
-    "CGContext",
-    "CGFont",
-    "CGImage",
 ] }
 objc2 = { workspace = true, optional = true }
 objc2-app-kit = { workspace = true, optional = true, features = [
@@ -264,7 +209,6 @@ objc2-metal = { workspace = true, optional = true, features = [
     "MTLTypes",
     "MTLVertexDescriptor",
 ] }
-block2 = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures.workspace = true
@@ -292,4 +236,3 @@ windows = { workspace = true, optional = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 ash = { workspace = true, optional = true }
-ash-window = { workspace = true, optional = true }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ash::vk;
 
 use super::*;
-use crate::backend::vulkan_descriptor_kind::{DescriptorKind, descriptor_kind};
+use crate::vulkan_descriptor_kind::{DescriptorKind, descriptor_kind};
 
 pub(super) struct VulkanRenderPassObject {
     pub(super) core: Arc<VulkanCore>,

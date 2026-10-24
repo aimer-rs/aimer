@@ -11,9 +11,9 @@ use super::text_layout::{
 };
 use crate::font::{FontFamily, FontRegistration, FontRegistry, FontStyle, FontWeight};
 
-const CJK_FONT: &[u8] = include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf");
-const LATIN_FONT: &[u8] = include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf");
-const RTL_FONT: &[u8] = include_bytes!("../../../fonts/GoogleSans-Regular.ttf");
+const CJK_FONT: &[u8] = include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf");
+const LATIN_FONT: &[u8] = include_bytes!("../fonts/JetBrainsMono-Regular.ttf");
+const RTL_FONT: &[u8] = include_bytes!("../fonts/GoogleSans-Regular.ttf");
 
 fn baseline_rasterizer() -> (GlyphRasterizer, FontFamily) {
     let family = FontRegistry::register(FontRegistration {

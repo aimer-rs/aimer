@@ -868,8 +868,8 @@ pub struct MaterialShader;
 impl MaterialShader {
     /// Returns the bundled shader source without exposing a GPU handle.
     #[inline]
-    pub const fn source() -> &'static str {
-        include_str!("shaders/wgsl/material.wgsl")
+    pub fn source() -> &'static str {
+        crate::backend::BuiltinShader::Material.wgsl_str()
     }
 }
 

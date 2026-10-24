@@ -149,20 +149,7 @@ pub struct SvgPipeline<B: crate::backend::GpuBackend = crate::backend::DefaultGp
 #[cfg(feature = "wgpu")]
 #[inline]
 fn svg_shader_source() -> &'static str {
-    #[cfg(target_os = "android")]
-    {
-        concat!(
-            include_str!("./shaders/wgsl/android_color.wgsl"),
-            include_str!("./shaders/wgsl/svg.wgsl")
-        )
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        concat!(
-            include_str!("./shaders/wgsl/color.wgsl"),
-            include_str!("./shaders/wgsl/svg.wgsl")
-        )
-    }
+    crate::backend::BuiltinShader::Svg.wgsl_str()
 }
 
 // ── Backend-generic pipeline implementation ─────────────────────────────────

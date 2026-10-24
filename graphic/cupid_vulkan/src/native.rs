@@ -80,10 +80,10 @@ pub(super) struct VulkanShared {
     pub(super) present_queue: Option<vk::Queue>,
     pub(super) graphics_family: u32,
     pub(super) present_family: Option<u32>,
-    pub(in crate::backend::vulkan) allocator: MemoryAllocator,
+    pub(in crate::native) allocator: MemoryAllocator,
     pub(super) queue_lock: Mutex<()>,
     pub(super) present_lock: Mutex<()>,
-    pub(in crate::backend::vulkan) in_flight: Mutex<Vec<commands::InFlight>>,
+    pub(in crate::native) in_flight: Mutex<Vec<commands::InFlight>>,
 }
 
 /// Native Vulkan implementation of [`GpuBackend`].
@@ -113,7 +113,7 @@ pub struct VulkanTexture(pub(super) Arc<VulkanTextureInner>);
 pub(super) struct VulkanTextureInner {
     pub(super) core: Arc<VulkanCore>,
     pub(super) raw: vk::Image,
-    pub(in crate::backend::vulkan) allocation: Option<Allocation>,
+    pub(in crate::native) allocation: Option<Allocation>,
     pub(super) size: (u32, u32, u32),
     pub(super) format: vk::Format,
     pub(super) dimension: TextureDimension,
@@ -190,7 +190,7 @@ pub(super) struct VulkanRenderPipelineInner {
     pub(super) core: Arc<VulkanCore>,
     pub(super) raw: vk::Pipeline,
     pub(super) layout: VulkanPipelineLayout,
-    pub(in crate::backend::vulkan) _compatible_render_pass: Arc<pipeline::VulkanRenderPassObject>,
+    pub(in crate::native) _compatible_render_pass: Arc<pipeline::VulkanRenderPassObject>,
 }
 
 /// A Vulkan shader module containing SPIR-V.

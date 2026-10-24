@@ -1651,6 +1651,8 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         width: u32,
         height: u32,
     ) -> (f32, DamageSet) {
+        #[cfg(feature = "frame-stats")]
+        let slow_frame = aimer_utils::AnimInstant::now();
         aimer_widget::begin_paint_frame(width, height);
         let rebuild_generation_before = aimer_widget::rebuild_invalidation_generation();
         // The rebuild generation less the advances that only kept an animating
@@ -1743,6 +1745,8 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
             prepared_root = Some(root.id());
         }
 
+        #[cfg(feature = "frame-stats")]
+        let slow_rebuilt = slow_frame.elapsed();
         if let Some(root) = root {
             aimer_modal::prepare_retained_render_tree(root.as_ref(), &build_ctx);
         }
@@ -1818,6 +1822,8 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         #[cfg(feature = "wasm-hot-reload")]
         let animation_only_targets: Option<Vec<(ElementId, &dyn Element)>> = None;
 
+        #[cfg(feature = "frame-stats")]
+        let slow_synced = slow_frame.elapsed();
         // Stale entries from earlier work must not be mistaken for this frame's.
         let _ = aimer_widget::take_unmapped_draws();
         {
@@ -1846,6 +1852,8 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
             }
             aimer_widget::set_frame_rebuilt_roots(&[]);
         }
+        #[cfg(feature = "frame-stats")]
+        let slow_drawn = slow_frame.elapsed();
 
         match self
             .window_render_tree
@@ -1867,6 +1875,26 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         }
 
         self.window_render_tree.settle_unmapped_draws();
+
+        // The periodic report averages thirty frames, which hides one frame that
+        // hitches. A frame past two display intervals at 60 Hz is named on its own.
+        #[cfg(feature = "frame-stats")]
+        {
+            let total = slow_frame.elapsed();
+            if total >= std::time::Duration::from_millis(25) {
+                let ms = |duration: std::time::Duration| duration.as_secs_f64() * 1_000.0;
+                aimer_utils::warn!(
+                    "[slow-frame] build={:.1}ms rebuild={:.1}ms sync={:.1}ms draw={:.1}ms resync={:.1}ms full-syncs={} scoped-syncs={}",
+                    ms(total),
+                    ms(slow_rebuilt),
+                    ms(slow_synced - slow_rebuilt),
+                    ms(slow_drawn - slow_synced),
+                    ms(total - slow_drawn),
+                    self.window_render_tree.sync_counts.full,
+                    self.window_render_tree.sync_counts.scoped,
+                );
+            }
+        }
 
         #[cfg(feature = "frame-stats")]
         if let Some(root) = root {

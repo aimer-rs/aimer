@@ -13,10 +13,10 @@ use std::cell::RefCell;
 
 use super::{Reader, SfntError, SfntFace, Tag};
 use crate::font::TextLanguage;
-use crate::text_pipeline::glyph_rasterizer::NORMAL_GLYPH_WEIGHT;
+use crate::glyph_rasterizer::NORMAL_GLYPH_WEIGHT;
 use hashbrown::HashMap;
 
-use crate::pipeline::text_pipeline::unicode_script::Script;
+use crate::unicode_script::Script;
 
 mod compiled;
 mod context;

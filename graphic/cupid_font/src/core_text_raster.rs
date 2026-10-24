@@ -48,8 +48,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::text_pipeline::font_resolver::mapped_font_file;
-use crate::text_pipeline::glyph_rasterizer::RasterizedGlyph;
+use crate::font_resolver::mapped_font_file;
+use crate::glyph_rasterizer::RasterizedGlyph;
 use objc2_core_foundation::{CFDictionary, CFNumber, CFRetained, CFString, CFURL, CGPoint, CGRect};
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGBitmapContextGetBytesPerRow, CGColorSpace, CGContext, CGGlyph,
@@ -103,7 +103,7 @@ const BOUNDS_PADDING: f32 = 1.0;
 /// face is pinned to, so a cache entry corresponds to exactly one
 /// rasterization size and weight.
 ///
-/// [`GlyphKey`]: crate::text_pipeline::glyph_rasterizer::GlyphKey
+/// [`GlyphKey`]: crate::glyph_rasterizer::GlyphKey
 type FontKey = (PathBuf, u32, u32, u16);
 
 /// Fonts built so far, including the files the platform refused (`None`).
@@ -122,7 +122,7 @@ thread_local! {
 /// nothing, and neither does the absence of `glyf`. A glyph the platform
 /// renders as blank — a space, or an unimplemented slot — reports `false`.
 ///
-/// [`system_fallback`]: crate::text_pipeline::system_fallback
+/// [`system_fallback`]: crate::system_fallback
 pub(crate) fn draws_glyph(path: &Path, collection_index: u32, glyph_id: u16) -> bool {
     // Emptiness does not depend on the weight a glyph is drawn at, so the
     // probe always asks for the neutral one and shares its font.
@@ -156,7 +156,7 @@ pub(crate) fn draws_glyph(path: &Path, collection_index: u32, glyph_id: u16) -> 
 /// Returns `None` when the face cannot be built, when the glyph is blank, or
 /// when its bitmap would exceed [`MAX_GLYPH_EXTENT`].
 ///
-/// [`GlyphAtlas`]: crate::text_pipeline::glyph_atlas::GlyphAtlas
+/// [`GlyphAtlas`]: crate::glyph_atlas::GlyphAtlas
 pub(crate) fn rasterize_glyph(
     path: &Path,
     collection_index: u32,
@@ -565,7 +565,7 @@ fn descriptor_name(descriptor: &CTFontDescriptor) -> Option<String> {
 /// Returns the PostScript name recorded in the font file itself.
 fn postscript_name(path: &Path, collection_index: u32) -> Option<String> {
     let data = mapped_font_file(path)?;
-    crate::text_pipeline::aimer_font::SfntFace::from_bytes(data.as_ref(), collection_index)
+    crate::aimer_font::SfntFace::from_bytes(data.as_ref(), collection_index)
         .ok()?
         .name(6)
         .ok()
@@ -579,16 +579,16 @@ mod tests {
     /// The face carrying Simplified Chinese on Apple platforms, whose outlines
     /// live in a private table.
     fn simplified_chinese_face() -> Option<(PathBuf, u32, u16)> {
-        crate::text_pipeline::apple_fonts::font_paths_for_codepoint(
+        crate::apple_fonts::font_paths_for_codepoint(
             '吗',
-            crate::text_pipeline::font_resolver::REGULAR_WEIGHT,
+            crate::font_resolver::REGULAR_WEIGHT,
         )
         .into_iter()
         .find_map(|path| {
             let data = mapped_font_file(&path)?;
             (0..64).find_map(|index| {
                 let face =
-                    crate::text_pipeline::aimer_font::SfntFace::from_bytes(data.as_ref(), index)
+                    crate::aimer_font::SfntFace::from_bytes(data.as_ref(), index)
                         .ok()?;
                 let glyph_id = face.glyph_index('吗' as u32).ok().flatten()?;
                 (glyph_id != 0).then_some((path.clone(), index, glyph_id))
@@ -804,15 +804,15 @@ mod tests {
 
     #[test]
     fn draws_color_emoji_as_straight_alpha_rgba() {
-        let path = crate::text_pipeline::apple_fonts::font_paths_for_codepoint(
+        let path = crate::apple_fonts::font_paths_for_codepoint(
             '😀',
-            crate::text_pipeline::font_resolver::REGULAR_WEIGHT,
+            crate::font_resolver::REGULAR_WEIGHT,
         )
         .into_iter()
         .next()
         .expect("emoji resolve to a font file");
         let data = mapped_font_file(&path).expect("the emoji file is readable");
-        let face = crate::text_pipeline::aimer_font::SfntFace::from_bytes(data.as_ref(), 0)
+        let face = crate::aimer_font::SfntFace::from_bytes(data.as_ref(), 0)
             .expect("the emoji file holds a face");
         let glyph_id = face
             .glyph_index('😀' as u32)

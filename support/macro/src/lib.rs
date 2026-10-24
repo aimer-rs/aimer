@@ -1040,7 +1040,7 @@ aimer_widget = {{ path = {:?}, features = ["portable-guest"] }}
 aimer_anteros = {{ path = {:?} }}
 "#,
             macro_crate,
-            workspace_root.join("crates/aimer_widget"),
+            workspace_root.join("framework/widget"),
             workspace_root.join("aimer_anteros"),
         )
     }
@@ -1621,7 +1621,7 @@ aimer_widget = {{ path = {:?}, features = ["portable-guest"] }}
 aimer_anteros = {{ path = {:?} }}
 "#,
             macro_crate,
-            workspace_root.join("crates/aimer_widget"),
+            workspace_root.join("framework/widget"),
             workspace_root.join("aimer_anteros"),
         )
     }
@@ -2159,7 +2159,7 @@ aimer_widget = {{ path = {:?}, features = ["portable-guest"] }}
 aimer_anteros = {{ path = {:?} }}
 "#,
             macro_crate,
-            workspace_root.join("crates/aimer_widget"),
+            workspace_root.join("framework/widget"),
             workspace_root.join("aimer_anteros"),
         )
     }
@@ -2439,7 +2439,7 @@ aimer_anteros = {{ path = {:?}, features = ["wasm-hot-reload"] }}
 
     fn fixture_source() -> String {
         let guest_module = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../aimer_anteros/tests/support/guest_module.rs");
+            .join("../../host/anteros/tests/support/guest_module.rs");
         FIXTURE_SOURCE.replace(
             "\"__AIMER_GUEST_MODULE_PATH__\"",
             &format!("{guest_module:?}"),

@@ -9,7 +9,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use super::glyph_metrics::GlyphMetrics;
 use super::glyph_rasterizer::{GlyphKey, GlyphPreparationContext, GlyphRasterizer, ShapedRunGlyph};
 use crate::font::{FontFamily, FontStyle, FontWeight, TextLanguage};
-use crate::text_pipeline::unicode_script::Script;
+use crate::unicode_script::Script;
 
 pub type FontId = u32;
 
@@ -79,8 +79,9 @@ pub enum TextWritingMode {
 }
 
 impl TextWritingMode {
+    /// Returns whether text runs in vertical columns rather than horizontal lines.
     #[inline]
-    pub(crate) const fn is_vertical(self) -> bool {
+    pub const fn is_vertical(self) -> bool {
         matches!(self, Self::VerticalRl)
     }
 }
@@ -1037,7 +1038,12 @@ pub enum TextHorizontalAlign {
     Right,
 }
 
-pub(crate) fn line_alignment_offsets(
+/// Returns how far each line must shift right to sit at `alignment` inside a
+/// box `bounds_width` wide.
+///
+/// The offset is never negative: a line at least as wide as the box, and every
+/// left-aligned line, gets `0.0`.
+pub fn line_alignment_offsets(
     line_widths: &[f32],
     bounds_width: f32,
     alignment: TextHorizontalAlign,
@@ -1055,7 +1061,12 @@ pub(crate) fn line_alignment_offsets(
         .collect()
 }
 
-pub(crate) fn positioned_line_widths(glyphs: &[PositionedGlyph]) -> Vec<f32> {
+/// Returns the width of each line, indexed by `line_index`.
+///
+/// A line's width is the farthest `line_x + advance` reached by any of its
+/// glyphs. The result is empty for no glyphs, and a line with no glyphs reports
+/// `0.0`.
+pub fn positioned_line_widths(glyphs: &[PositionedGlyph]) -> Vec<f32> {
     let line_count = glyphs
         .iter()
         .map(|glyph| glyph.line_index)
@@ -1112,7 +1123,7 @@ pub fn layout_paragraph_with_shaper(
 /// entries; the trailing entry marks the mandatory break at the end of the
 /// paragraph and the leading one is always `false`, since a paragraph start is
 /// not a break opportunity.
-pub(crate) fn line_break_opportunities(text: &str) -> Vec<bool> {
+pub fn line_break_opportunities(text: &str) -> Vec<bool> {
     let mut allowed = Vec::new();
     line_break_opportunities_into(text, &mut allowed);
     allowed
@@ -2745,7 +2756,7 @@ pub fn shape_text_styled_with_writing_mode(
 
 /// Shapes a worker-local span with the requested writing mode.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn prepare_shaped_text_with_writing_mode(
+pub fn prepare_shaped_text_with_writing_mode(
     context: &mut GlyphPreparationContext,
     text: &str,
     font_size: f32,
@@ -3012,7 +3023,7 @@ pub fn layout_shaped_text_with_interaction_with_bounds(
 
 /// Produces the cache value consumed by the renderer and, on the Aimer path,
 /// by interaction consumers.
-pub(crate) fn layout_shaped_text_result(
+pub fn layout_shaped_text_result(
     shaped_text: &ShapedText,
     origin_x: f32,
     origin_y: f32,
@@ -3024,7 +3035,7 @@ pub(crate) fn layout_shaped_text_result(
 /// Produces a cached layout with separate horizontal and vertical wrapping
 /// bounds. Horizontal callers retain the same behavior as
 /// [`layout_shaped_text_result`].
-pub(crate) fn layout_shaped_text_result_with_bounds(
+pub fn layout_shaped_text_result_with_bounds(
     shaped_text: &ShapedText,
     origin_x: f32,
     origin_y: f32,
@@ -3499,7 +3510,7 @@ mod tests {
     fn shaped_glyph_ranges_preserve_ligature_source_clusters() {
         let layout = layout_paragraph_with_shaper(
             "office",
-            include_bytes!("../../../fonts/GoogleSans-Regular.ttf"),
+            include_bytes!("../fonts/GoogleSans-Regular.ttf"),
             0,
             FontMetrics::new(12.0, -4.0, 2.0),
             TextLayoutOptions::new(16.0, 0.0, 0.0, 200.0),
@@ -3747,7 +3758,7 @@ mod tests {
         let text = "שלום abc";
         let layout = layout_paragraph_with_shaper(
             text,
-            include_bytes!("../../../fonts/GoogleSans-Regular.ttf"),
+            include_bytes!("../fonts/GoogleSans-Regular.ttf"),
             0,
             FontMetrics::new(12.0, -4.0, 2.0),
             TextLayoutOptions::new(16.0, 0.0, 0.0, 200.0),
@@ -4176,7 +4187,7 @@ mod tests {
         assert!(
             rasterizer
                 .register_font_bytes(
-                    include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf").to_vec()
+                    include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf").to_vec()
                 )
                 .is_some(),
             "the deterministic CJK fixture must be readable"
@@ -4242,7 +4253,7 @@ mod tests {
         let mut rasterizer = GlyphRasterizer::primary_only();
         rasterizer
             .register_font_bytes(
-                include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf").to_vec(),
+                include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf").to_vec(),
             )
             .expect("the bundled CJK fallback should register");
         rasterizer.reset_shape_call_count();

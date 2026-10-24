@@ -297,21 +297,8 @@ impl<B: crate::backend::GpuBackend> ImagePipeline<B> {
     const INITIAL_CAPACITY: usize = 64;
 
     #[inline]
-    const fn get_source() -> &'static str {
-        #[cfg(target_os = "android")]
-        {
-            concat!(
-                include_str!("./shaders/wgsl/android_color.wgsl"),
-                include_str!("./shaders/wgsl/image.wgsl")
-            )
-        }
-        #[cfg(not(target_os = "android"))]
-        {
-            concat!(
-                include_str!("./shaders/wgsl/color.wgsl"),
-                include_str!("./shaders/wgsl/image.wgsl")
-            )
-        }
+    fn get_source() -> &'static str {
+        crate::backend::BuiltinShader::Image.wgsl_str()
     }
 
     #[inline]

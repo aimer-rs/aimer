@@ -669,7 +669,7 @@ fn a_neighbour_of_a_resizing_builder_keeps_a_hit_area_that_follows_it() {
     // updated, so it only learns that it moved by being walked.
     let icon = aimer_svg::Svg::new(
         aimer_svg::SvgDocument::from_svg(include_bytes!(
-            "../../../../jaime/assets/loading-1-svgrepo-com.svg"
+            "../../../../../app/jaime/assets/loading-1-svgrepo-com.svg"
         ))
         .expect("the bundled loading icon SVG should be valid"),
     )

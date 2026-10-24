@@ -12,7 +12,7 @@ frame-stats = []
 
 
 [dependencies]
-aimer_anteros = { path = "../../aimer_anteros", default-features = false }
+aimer_anteros = { path = "../../host/anteros", default-features = false }
 aimer_color.workspace = true
 aimer_attribute.workspace = true
 aimer_macro.workspace = true

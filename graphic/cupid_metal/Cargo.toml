@@ -1,0 +1,64 @@
+[package]
+name = "aimer_cupid_metal"
+version = "0.1.0"
+edition = "2024"
+description = "The native Metal backend for the Cupid rendering engine"
+
+[features]
+# Per-frame GPU timing through command buffer completion handlers.
+frame-stats = []
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+bytemuck.workspace = true
+objc2.workspace = true
+block2.workspace = true
+# NSString for shader source and labels, NSError for the fallible Metal
+# constructors, NSRange/NSValue for region and clear-color plumbing.
+objc2-foundation = { workspace = true, features = [
+    "std",
+    "NSError",
+    "NSObject",
+    "NSRange",
+    "NSString",
+    "NSValue",
+] }
+objc2-quartz-core = { workspace = true, features = [
+    "std",
+    "CALayer",
+    "CAMetalLayer",
+    "objc2-core-foundation",
+    "objc2-metal",
+] }
+# Each MTL* feature turns on one generated submodule, so the list is exactly the
+# surface this crate touches. `bitflags` is required for the
+# MTLResourceOptions / MTLTextureUsage / MTLUsagePageRange newtype operators.
+objc2-metal = { workspace = true, features = [
+    "std",
+    "bitflags",
+    "block2",
+    "objc2-core-foundation",
+    "MTLAllocation",
+    "MTLArgument",
+    "MTLBlitCommandEncoder",
+    "MTLBuffer",
+    "MTLCommandBuffer",
+    "MTLCommandEncoder",
+    "MTLCommandQueue",
+    "MTLDepthStencil",
+    "MTLDevice",
+    "MTLDrawable",
+    "MTLLibrary",
+    "MTLPipeline",
+    "MTLPixelFormat",
+    "MTLRenderCommandEncoder",
+    "MTLRenderPass",
+    "MTLRenderPipeline",
+    "MTLResource",
+    "MTLSampler",
+    "MTLTexture",
+    "MTLTypes",
+    "MTLVertexDescriptor",
+] }

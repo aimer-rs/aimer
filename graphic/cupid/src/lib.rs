@@ -1,11 +1,21 @@
 pub mod backend;
+#[cfg(all(test, feature = "native", not(feature = "wgpu")))]
+mod backend_tests {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    mod metal;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    mod opengl;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    mod vulkan;
+}
 pub mod compositor;
 pub mod custom_pipeline;
 #[doc(hidden)]
 pub mod damage_region;
 pub mod draw_cmd;
 pub mod draw_cmd_v2;
-pub mod font;
+// Font parsing, shaping and rasterization live in `aimer_cupid_font`.
+pub use aimer_cupid_font::font;
 pub mod frame;
 #[cfg(feature = "wgpu")]
 pub mod gpu_context;
@@ -18,10 +28,12 @@ pub mod canvas;
 mod lru_map;
 mod pipeline;
 #[cfg(feature = "wgpu")]
-pub mod pipeline_cache;
+pub use aimer_cupid_wgpu::pipeline_cache;
 pub mod renderer;
 pub mod shape;
-pub mod svg;
+// SVG parsing and tessellation live in `aimer_cupid_svg`; the path stays so
+// `aimer_cupid::svg` and `crate::svg` keep resolving.
+pub use aimer_cupid_svg as svg;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm_fonts;
 

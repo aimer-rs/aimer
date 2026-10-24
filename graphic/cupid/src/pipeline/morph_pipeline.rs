@@ -323,9 +323,9 @@ mod tests {
 
     #[test]
     fn every_shader_reads_the_same_interface() {
-        let wgsl = include_str!("shaders/wgsl/morph.wgsl");
-        let metal = include_str!("shaders/metal/morph.metal");
-        let hlsl = include_str!("shaders/dx12/morph.hlsl");
+        let wgsl = crate::backend::BuiltinShader::Morph.wgsl_str();
+        let metal = include_str!("../../../cupid_metal/shaders/metal/morph.metal");
+        let hlsl = include_str!("../../../cupid_dx12/shaders/dx12/morph.hlsl");
         for name in ["rect_from", "rect_to", "timing", "shape", "noise"] {
             for (language, source) in [("wgsl", wgsl), ("metal", metal), ("hlsl", hlsl)] {
                 assert!(source.contains(name), "{language} shader lacks `{name}`");

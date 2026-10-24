@@ -41,28 +41,28 @@ impl GpuBackend for WebGl2Backend {
     }
 
     fn rect_shader_source(&self) -> &'static [u8] {
-        include_bytes!("../../pipeline/shaders/opengl/rect.glslpack")
+        crate::backend::glslpack::RECT
     }
 
     fn builtin_shader_source(&self, shader: BuiltinShader) -> &'static [u8] {
         match shader {
-            BuiltinShader::Image => include_bytes!("../../pipeline/shaders/opengl/image.glslpack"),
-            BuiltinShader::Text => include_bytes!("../../pipeline/shaders/opengl/text.glslpack"),
+            BuiltinShader::Image => crate::backend::glslpack::IMAGE,
+            BuiltinShader::Text => crate::backend::glslpack::TEXT,
             BuiltinShader::TextColor => {
-                include_bytes!("../../pipeline/shaders/opengl/text_color.glslpack")
+                crate::backend::glslpack::TEXT_COLOR
             }
             BuiltinShader::TextDecoration => {
-                include_bytes!("../../pipeline/shaders/opengl/text_decoration.glslpack")
+                crate::backend::glslpack::TEXT_DECORATION
             }
-            BuiltinShader::Svg => include_bytes!("../../pipeline/shaders/opengl/svg.glslpack"),
+            BuiltinShader::Svg => crate::backend::glslpack::SVG,
             BuiltinShader::FrameComposite => {
-                include_bytes!("../../pipeline/shaders/opengl/frame_composite.glslpack")
+                crate::backend::glslpack::FRAME_COMPOSITE
             }
             BuiltinShader::Material => {
-                include_bytes!("../../pipeline/shaders/opengl/material.glslpack")
+                crate::backend::glslpack::MATERIAL
             }
             BuiltinShader::Morph => {
-                include_bytes!("../../pipeline/shaders/opengl/morph.glslpack")
+                crate::backend::glslpack::MORPH
             }
         }
     }

@@ -1,7 +1,12 @@
 //! Native Direct3D 12 implementation of Cupid's experimental GPU backend.
 //!
-//! Built-in and custom pipeline sources are HLSL. Cupid's `dx12` feature is
-//! Windows-only and does not enable WGPU.
+//! Built-in and custom pipeline sources are HLSL. The crate is empty on every
+//! target but Windows; `aimer_cupid` selects it with its `native` feature.
+
+#![cfg(target_os = "windows")]
+
+// `crate::backend::..` is how this code has always named the contract.
+pub(crate) use aimer_cupid_gpu as backend;
 
 mod commands;
 mod pipeline;
@@ -172,7 +177,7 @@ impl Dx12Backend {
         self.collect_retired();
     }
 
-    pub(super) fn collect_retired(&self) {
+    pub(crate) fn collect_retired(&self) {
         let completed = unsafe { self.shared.fence.GetCompletedValue() };
         self.shared
             .retired
@@ -279,7 +284,7 @@ pub struct Dx12Surface {
 
 /// An acquired swap-chain buffer and its render-target view.
 pub struct Dx12SurfaceFrame {
-    pub(super) texture: Dx12Texture,
+    pub(crate) texture: Dx12Texture,
     view: Dx12TextureView,
     swap_chain: IDXGISwapChain3,
     shared: Arc<BackendShared>,
@@ -521,27 +526,27 @@ impl GpuBackend for Dx12Backend {
     }
 
     fn rect_shader_source(&self) -> &'static [u8] {
-        include_str!("../pipeline/shaders/dx12/rect.hlsl").as_bytes()
+        include_str!("../shaders/dx12/rect.hlsl").as_bytes()
     }
 
     fn builtin_shader_source(&self, shader: BuiltinShader) -> &'static [u8] {
         match shader {
-            BuiltinShader::Image => include_str!("../pipeline/shaders/dx12/image.hlsl").as_bytes(),
-            BuiltinShader::Text => include_str!("../pipeline/shaders/dx12/text.hlsl").as_bytes(),
+            BuiltinShader::Image => include_str!("../shaders/dx12/image.hlsl").as_bytes(),
+            BuiltinShader::Text => include_str!("../shaders/dx12/text.hlsl").as_bytes(),
             BuiltinShader::TextColor => {
-                include_str!("../pipeline/shaders/dx12/text_color.hlsl").as_bytes()
+                include_str!("../shaders/dx12/text_color.hlsl").as_bytes()
             }
             BuiltinShader::TextDecoration => {
-                include_str!("../pipeline/shaders/dx12/text_decoration.hlsl").as_bytes()
+                include_str!("../shaders/dx12/text_decoration.hlsl").as_bytes()
             }
-            BuiltinShader::Svg => include_str!("../pipeline/shaders/dx12/svg.hlsl").as_bytes(),
+            BuiltinShader::Svg => include_str!("../shaders/dx12/svg.hlsl").as_bytes(),
             BuiltinShader::FrameComposite => {
-                include_str!("../pipeline/shaders/dx12/frame_composite.hlsl").as_bytes()
+                include_str!("../shaders/dx12/frame_composite.hlsl").as_bytes()
             }
             BuiltinShader::Material => {
-                include_str!("../pipeline/shaders/dx12/material.hlsl").as_bytes()
+                include_str!("../shaders/dx12/material.hlsl").as_bytes()
             }
-            BuiltinShader::Morph => include_str!("../pipeline/shaders/dx12/morph.hlsl").as_bytes(),
+            BuiltinShader::Morph => include_str!("../shaders/dx12/morph.hlsl").as_bytes(),
         }
     }
 
@@ -915,7 +920,7 @@ fn sampler_compare(
     }
 }
 
-pub(super) fn create_committed_resource<T: Interface>(
+pub(crate) fn create_committed_resource<T: Interface>(
     device: &ID3D12Device,
     properties: &D3D12_HEAP_PROPERTIES,
     desc: &D3D12_RESOURCE_DESC,

@@ -8,7 +8,9 @@
 
 use std::ops::Range;
 
-use crate::backend::*;
+use aimer_cupid_gpu::*;
+
+pub mod pipeline_cache;
 
 // ── Backend struct ─────────────────────────────────────────────────────────
 

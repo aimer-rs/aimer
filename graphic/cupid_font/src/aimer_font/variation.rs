@@ -1433,7 +1433,7 @@ mod tests {
 
     #[test]
     fn reads_the_weight_axis_of_the_bundled_variable_cjk_face() {
-        let bytes = include_bytes!("../../../../fonts/NotoSansJP-VariableFont_wght.ttf");
+        let bytes = include_bytes!("../../fonts/NotoSansJP-VariableFont_wght.ttf");
         let face = SfntFace::from_bytes(bytes, 0).expect("bundled CJK face should parse");
         let axis = face
             .weight_axis()
@@ -1513,7 +1513,7 @@ mod tests {
 
     #[test]
     fn applies_the_regular_weight_to_a_default_thin_outline() {
-        let bytes = include_bytes!("../../../../fonts/NotoSansJP-VariableFont_wght.ttf");
+        let bytes = include_bytes!("../../fonts/NotoSansJP-VariableFont_wght.ttf");
         let face = SfntFace::from_bytes(bytes, 0).expect("bundled CJK face should parse");
         let metrics = face.metrics().expect("metrics should parse");
         let glyph_id = face
@@ -1534,7 +1534,7 @@ mod tests {
 
     #[test]
     fn applies_the_heavy_weight_to_the_google_sans_t_outline() {
-        let bytes = include_bytes!("../../../../fonts/GoogleSans-VariableFont_GRAD,opsz,wght.ttf");
+        let bytes = include_bytes!("../../fonts/GoogleSans-VariableFont_GRAD,opsz,wght.ttf");
         let face = SfntFace::from_bytes(bytes, 0).expect("Google Sans should parse");
         let metrics = face.metrics().expect("metrics should parse");
         let glyph_id = face
@@ -1555,7 +1555,7 @@ mod tests {
 
     #[test]
     fn composite_google_sans_t_uses_varied_child_shapes() {
-        let bytes = include_bytes!("../../../../fonts/GoogleSans-VariableFont_GRAD,opsz,wght.ttf");
+        let bytes = include_bytes!("../../fonts/GoogleSans-VariableFont_GRAD,opsz,wght.ttf");
         let face = SfntFace::from_bytes(bytes, 0).expect("Google Sans should parse");
         let metrics = face.metrics().expect("metrics should parse");
         let glyph_id = face

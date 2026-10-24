@@ -1,0 +1,11 @@
+[package]
+name = "aimer_cupid_opengl"
+version = "0.1.0"
+edition = "2024"
+description = "The direct OpenGL backend for the Cupid rendering engine"
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+raw-window-handle.workspace = true

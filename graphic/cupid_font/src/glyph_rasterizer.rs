@@ -10,23 +10,23 @@ use hashbrown::{HashMap, HashSet};
 
 use unicode_segmentation::UnicodeSegmentation;
 
-pub(super) use self::glyph_run::{
+pub use self::glyph_run::{
     GlyphRun, SEQUENTIAL_MAX_GLYPHS_PER_RUN, glyph_runs, group_into_runs,
 };
 use super::text_layout::FontId;
 use crate::font::{FontFamily, FontRegistry, FontStyle, FontWeight, TextLanguage};
-use crate::text_pipeline::font_resolver::{
+use crate::font_resolver::{
     FallbackScript, FontData, FontRecord, SharedFontRecord, fallback_script_for_codepoint,
     fallback_script_for_font_id, shared_fallback_chain_for_script,
 };
-use crate::text_pipeline::glyph_metrics::{self, GlyphMetrics};
-use crate::text_pipeline::system_fallback::{
+use crate::glyph_metrics::{self, GlyphMetrics};
+use crate::system_fallback::{
     SYSTEM_FALLBACK_ID_BASE, ScriptRequirement, WEIGHT_MATCH_TOLERANCE, fallback_by_id,
     fallback_glyph_for_codepoint, script_probes,
 };
 #[cfg(not(any(feature = "bundled-fonts", target_arch = "wasm32", test)))]
-use crate::text_pipeline::system_fallback::{system_monospace_font, system_primary_font};
-use crate::text_pipeline::unicode_script::Script;
+use crate::system_fallback::{system_monospace_font, system_primary_font};
+use crate::unicode_script::Script;
 
 // Counts the glyph lookups made for characters, so tests can show that
 // measuring a run resolves each distinct character once. Compiled out of every
@@ -47,7 +47,7 @@ pub(crate) fn key_lookups() -> usize {
 /// must be available locally there.
 #[cfg(any(feature = "bundled-fonts", target_arch = "wasm32", test))]
 const PRIMARY_FONT: &[u8] =
-    include_bytes!("../../../fonts/GoogleSans-VariableFont_GRAD,opsz,wght.ttf");
+    include_bytes!("../fonts/GoogleSans-VariableFont_GRAD,opsz,wght.ttf");
 const MONOSPACE_FONT_ID: FontId = 0x7fff_fffe;
 /// Stable id reserved for the self-rasterized CJK fallback.
 ///
@@ -56,7 +56,7 @@ const MONOSPACE_FONT_ID: FontId = 0x7fff_fffe;
 /// from ids assigned to runtime registrations and the platform fallback lanes.
 const BUNDLED_CJK_FONT_ID: FontId = 0x2000_0000;
 #[cfg(any(feature = "bundled-fonts", test))]
-const BUNDLED_CJK_FONT: &[u8] = include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf");
+const BUNDLED_CJK_FONT: &[u8] = include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf");
 #[cfg(any(feature = "bundled-fonts", test))]
 static BUNDLED_CJK_RECORD: OnceLock<Option<FontRecord>> = OnceLock::new();
 
@@ -192,14 +192,19 @@ pub struct ShapedRunGlyph {
     pub cluster: usize,
 }
 
+/// The extra copies of a glyph that synthetic emphasis draws to bring a face
+/// designed lighter than the request up to the requested weight.
+///
+/// Each copy is a horizontal offset from the glyph's own position.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct SyntheticWeightPlan {
+pub struct SyntheticWeightPlan {
     extra_offsets: [f32; 2],
     extra_count: u8,
 }
 
 impl SyntheticWeightPlan {
-    pub(crate) fn extra_offsets(&self) -> &[f32] {
+    /// The horizontal offsets of the additional copies, one entry per copy.
+    pub fn extra_offsets(&self) -> &[f32] {
         &self.extra_offsets[..usize::from(self.extra_count)]
     }
 
@@ -267,7 +272,7 @@ fn monospace_font_record() -> Option<FontRecord> {
         .get_or_init(|| {
             FontRecord::from_static_bytes(
                 MONOSPACE_FONT_ID,
-                include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf"),
+                include_bytes!("../fonts/JetBrainsMono-Regular.ttf"),
             )
         })
         .clone()
@@ -317,7 +322,7 @@ fn rasterize_platform_glyph(
     weight: u16,
     advance_width: f32,
 ) -> Option<RasterizedGlyph> {
-    crate::text_pipeline::core_text_raster::rasterize_glyph(
+    crate::core_text_raster::rasterize_glyph(
         record.path()?,
         record.collection_index,
         glyph_id,
@@ -404,7 +409,7 @@ pub fn point_inside(contours: &[Vec<(f32, f32)>], x: f32, y: f32) -> bool {
 /// caches. Fallback discovery remains lazy when the source rasterizer has not
 /// loaded its fallback chain yet.
 #[derive(Clone)]
-pub(super) struct FontSnapshot {
+pub struct FontSnapshot {
     primary: SharedFontRecord,
     family_faces: Arc<[SharedFamilyFontRecord]>,
     registered_font_revision: u64,
@@ -425,7 +430,7 @@ pub(super) struct FontSnapshot {
     aimer_faces: Arc<
         [(
             FontId,
-            crate::text_pipeline::aimer_font::SharedParsedAimerFont,
+            crate::aimer_font::SharedParsedAimerFont,
         )],
     >,
 }
@@ -442,12 +447,13 @@ struct SharedFamilyFontRecord {
 ///
 /// This context contains no atlas, GPU object, canvas state, or renderer cache.
 /// Its rasterizer and scratch buffers are never shared between workers.
-pub(super) struct GlyphPreparationContext {
+pub struct GlyphPreparationContext {
     rasterizer: GlyphRasterizer,
 }
 
 impl GlyphPreparationContext {
-    pub(super) fn new(snapshot: FontSnapshot) -> Self {
+    /// Creates a context that rasterizes with the fonts captured in `snapshot`.
+    pub fn new(snapshot: FontSnapshot) -> Self {
         Self {
             rasterizer: GlyphRasterizer::from_font_snapshot(snapshot),
         }
@@ -463,7 +469,7 @@ impl GlyphPreparationContext {
     /// then resolved, mapped and scaled once instead of once per glyph.
     /// Coverage that was released to stay within the cache budget is drawn
     /// again, since the renderer asking for a run needs the bitmaps.
-    pub(super) fn prepare_glyph_run(&mut self, run: &GlyphRun) -> Vec<(GlyphKey, RasterizedGlyph)> {
+    pub fn prepare_glyph_run(&mut self, run: &GlyphRun) -> Vec<(GlyphKey, RasterizedGlyph)> {
         self.rasterizer.discard_partial_bitmaps(&run.keys);
         self.rasterizer.rasterize_run(&run.keys, run.font_size);
 
@@ -545,7 +551,7 @@ pub struct GlyphRasterizer {
     /// re-cloning Arc<[u8]> on every `shape_cluster` call.
     font_bytes_cache: HashMap<FontId, FontData>,
     /// Cached parsed Aimer face and OpenType layout state per font id.
-    aimer_font_cache: HashMap<FontId, Option<crate::text_pipeline::aimer_font::AimerFontState>>,
+    aimer_font_cache: HashMap<FontId, Option<crate::aimer_font::AimerFontState>>,
     /// Reusable storage for the current raster batch. Keeping this alongside
     /// the rasterizer avoids allocating one pending/output vector per run.
     run_buffers: RunBuffers,
@@ -555,9 +561,9 @@ pub struct GlyphRasterizer {
     /// chain and re-entering the process-wide system resolver for each one.
     /// Entries are cleared whenever the available face set changes.
     resolved_codepoint_cache: HashMap<(char, ScriptRequirement, u16), (FontId, u16, bool)>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-counters"))]
     shape_call_count: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-counters"))]
     rasterize_call_count: usize,
     #[cfg(test)]
     simple_ltr_path_count: usize,
@@ -665,9 +671,9 @@ impl GlyphRasterizer {
             aimer_font_cache: HashMap::default(),
             run_buffers: RunBuffers::default(),
             resolved_codepoint_cache: HashMap::default(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-counters"))]
             shape_call_count: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-counters"))]
             rasterize_call_count: 0,
             #[cfg(test)]
             simple_ltr_path_count: 0,
@@ -708,9 +714,9 @@ impl GlyphRasterizer {
             aimer_font_cache: HashMap::default(),
             run_buffers: RunBuffers::default(),
             resolved_codepoint_cache: HashMap::default(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-counters"))]
             shape_call_count: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-counters"))]
             rasterize_call_count: 0,
             #[cfg(test)]
             simple_ltr_path_count: 0,
@@ -720,7 +726,7 @@ impl GlyphRasterizer {
     }
 
     /// Captures immutable font ownership for worker-local CPU preparation.
-    pub(super) fn font_snapshot(&mut self) -> FontSnapshot {
+    pub fn font_snapshot(&mut self) -> FontSnapshot {
         self.refresh_registered_family_faces();
         let aimer_faces = self.prewarm_aimer_snapshot_faces();
         FontSnapshot {
@@ -779,7 +785,7 @@ impl GlyphRasterizer {
     /// The same grapheme boundaries and run announcement used by shaping are
     /// used here, so this only moves resolution earlier; it does not change
     /// face choice or glyph output.
-    pub(super) fn warm_fallbacks_for_text(
+    pub fn warm_fallbacks_for_text(
         &mut self,
         text: &str,
         font_size: f32,
@@ -854,7 +860,7 @@ impl GlyphRasterizer {
     ) -> Arc<
         [(
             FontId,
-            crate::text_pipeline::aimer_font::SharedParsedAimerFont,
+            crate::aimer_font::SharedParsedAimerFont,
         )],
     > {
         let mut font_ids =
@@ -900,7 +906,7 @@ impl GlyphRasterizer {
                 (
                     *font_id,
                     Some(
-                        crate::text_pipeline::aimer_font::AimerFontState::from_shared(
+                        crate::aimer_font::AimerFontState::from_shared(
                             shared.clone(),
                         ),
                     ),
@@ -944,9 +950,9 @@ impl GlyphRasterizer {
             aimer_font_cache,
             run_buffers: RunBuffers::default(),
             resolved_codepoint_cache: (*snapshot.resolved_codepoint_cache).clone(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-counters"))]
             shape_call_count: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-counters"))]
             rasterize_call_count: 0,
             #[cfg(test)]
             simple_ltr_path_count: 0,
@@ -955,12 +961,12 @@ impl GlyphRasterizer {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-counters"))]
     pub fn reset_shape_call_count(&mut self) {
         self.shape_call_count = 0;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-counters"))]
     pub fn shape_call_count(&self) -> usize {
         self.shape_call_count
     }
@@ -980,12 +986,12 @@ impl GlyphRasterizer {
         self.reused_shape_output_count
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-counters"))]
     pub fn reset_rasterize_call_count(&mut self) {
         self.rasterize_call_count = 0;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-counters"))]
     pub fn rasterize_call_count(&self) -> usize {
         self.rasterize_call_count
     }
@@ -1533,7 +1539,7 @@ impl GlyphRasterizer {
 
     /// Returns the additional positioned copies needed to normalize a glyph's
     /// weight. Synthetic emphasis uses one copy shifted to the right.
-    pub(crate) fn synthetic_weight_plan_for_codepoint(
+    pub fn synthetic_weight_plan_for_codepoint(
         &mut self,
         key: GlyphKey,
         requested: u16,
@@ -1832,7 +1838,7 @@ impl GlyphRasterizer {
             self.aimer_font_cache
                 .get(&font_id)
                 .and_then(|state| state.as_ref())
-                .and_then(crate::text_pipeline::aimer_font::AimerFontState::design_weight)
+                .and_then(crate::aimer_font::AimerFontState::design_weight)
         };
         let weight = shared_weight.or_else(|| {
             self.font_record_by_id(font_id)
@@ -1854,7 +1860,7 @@ impl GlyphRasterizer {
             .aimer_font_cache
             .get(&font_id)
             .and_then(|state| state.as_ref())
-            .is_some_and(crate::text_pipeline::aimer_font::AimerFontState::has_weight_variations);
+            .is_some_and(crate::aimer_font::AimerFontState::has_weight_variations);
         self.variable_font_cache.insert(font_id, variable);
         variable
     }
@@ -2114,9 +2120,9 @@ impl GlyphRasterizer {
             .and_then(|data| {
                 let collection_index = self.collection_index_for_font_id(font_id);
                 if font_id == self.primary.id {
-                    crate::text_pipeline::aimer_font::primary_state(data, collection_index)
+                    crate::aimer_font::primary_state(data, collection_index)
                 } else {
-                    crate::text_pipeline::aimer_font::AimerFontState::from_font_data(
+                    crate::aimer_font::AimerFontState::from_font_data(
                         data,
                         collection_index,
                     )
@@ -2175,12 +2181,12 @@ impl GlyphRasterizer {
         let cache = &mut self.cache;
         let retained_bitmap_bytes = &mut self.retained_bitmap_bytes;
         let advance_cache = &mut self.advance_cache;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-counters"))]
         let rasterize_call_count = &mut self.rasterize_call_count;
 
         match aimer_font_cache.get_mut(&font_id) {
             Some(Some(state)) => state.rasterize_glyphs_into(pending, font_size, |key, glyph| {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-counters"))]
                 {
                     *rasterize_call_count += 1;
                 }
@@ -2288,7 +2294,7 @@ impl GlyphRasterizer {
         self.draw_fallback_run(first.font_id, &fallback, font_size, &mut prepared);
 
         for (key, glyph) in prepared.drain(..) {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-counters"))]
             {
                 self.rasterize_call_count += 1;
             }
@@ -2442,20 +2448,27 @@ impl GlyphRasterizer {
         self.cache.len()
     }
 
-    pub(super) fn needs_prepared_glyph(&mut self, key: GlyphKey, needs_bitmap: bool) -> bool {
+    /// Returns whether `key` still has to be prepared: it is not cached yet, or
+    /// `needs_bitmap` is set and only its metrics are cached.
+    pub fn needs_prepared_glyph(&mut self, key: GlyphKey, needs_bitmap: bool) -> bool {
         self.refresh_registered_family_faces();
         self.cache
             .get(&key)
             .is_none_or(|glyph| needs_bitmap && glyph.bitmap.is_empty())
     }
 
-    pub(super) fn commit_prepared_glyph(&mut self, key: GlyphKey, glyph: RasterizedGlyph) {
+    /// Stores a glyph prepared elsewhere, such as by
+    /// [`GlyphPreparationContext::prepare_glyph_run`], so later lookups of `key`
+    /// hit the cache. Its advance and metrics are recorded as well.
+    pub fn commit_prepared_glyph(&mut self, key: GlyphKey, glyph: RasterizedGlyph) {
         self.advance_cache.insert(key, glyph.advance_width);
         glyph_metrics::store(key, &glyph);
         self.insert_cached_glyph(key, glyph);
     }
 
-    pub(super) fn cached_glyph_descriptor(&mut self, key: GlyphKey) -> Option<(bool, u32, u32)> {
+    /// Returns `(is_color, width, height)` of the cached glyph for `key`, or
+    /// `None` when it is not cached.
+    pub fn cached_glyph_descriptor(&mut self, key: GlyphKey) -> Option<(bool, u32, u32)> {
         self.refresh_registered_family_faces();
         self.cache
             .get(&key)
@@ -2705,7 +2718,7 @@ impl GlyphRasterizer {
             && font_size > 0.0
             && let Some(data) = record.data()
             && let Some(metrics) =
-                crate::text_pipeline::aimer_font::primary_metrics(data, record.collection_index)
+                crate::aimer_font::primary_metrics(data, record.collection_index)
         {
             return metrics.scaled_line_metrics(font_size);
         }
@@ -3010,7 +3023,7 @@ impl GlyphRasterizer {
                 let shaped_glyphs = shaped.glyphs;
                 let has_horizontal_metric_variations =
                     !vertical && state.has_horizontal_metric_variations();
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-counters"))]
                 {
                     self.shape_call_count += 1;
                 }
@@ -3037,7 +3050,7 @@ impl GlyphRasterizer {
                         cluster: glyph.cluster,
                     }
                 }));
-                crate::text_pipeline::aimer_font::recycle_shaped_glyphs(shaped_glyphs);
+                crate::aimer_font::recycle_shaped_glyphs(shaped_glyphs);
                 return;
             }
         }
@@ -3053,7 +3066,7 @@ mod tests {
 
     use super::*;
     use crate::font::{FontFamily, FontRegistration, FontRegistry, FontStyle, FontWeight};
-    use crate::text_pipeline::text_layout::{layout_shaped_text, shape_text_styled};
+    use crate::text_layout::{layout_shaped_text, shape_text_styled};
 
     fn assert_send_sync<T: Send + Sync>() {}
 
@@ -3298,7 +3311,7 @@ mod tests {
     fn aimer_font_rasterization_is_the_standard_glyph_path() {
         let mut rasterizer = GlyphRasterizer::primary_only();
         let key = rasterizer.glyph_key_for_codepoint('A', 16.0);
-        let expected = crate::text_pipeline::aimer_font::rasterize_font_glyph(
+        let expected = crate::aimer_font::rasterize_font_glyph(
             PRIMARY_FONT,
             0,
             key.glyph_id,
@@ -3364,7 +3377,7 @@ mod tests {
         let mut rasterizer = GlyphRasterizer::primary_only();
         let font_id = rasterizer
             .register_font_bytes(
-                crate::text_pipeline::aimer_font::tests::arabic_joining_font_for_test(),
+                crate::aimer_font::tests::arabic_joining_font_for_test(),
             )
             .expect("the Arabic shaping fixture must register");
         let shaped = rasterizer.shape_run_with_font_id("ببب", 1000.0, font_id, FontWeight::Normal);
@@ -3460,12 +3473,12 @@ mod tests {
 
         let latin = FontRecord::from_static_bytes(
             0x2000_0001,
-            include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf"),
+            include_bytes!("../fonts/JetBrainsMono-Regular.ttf"),
         )
         .expect("the checked-in Latin quality face must load");
         let cjk = FontRecord::from_static_bytes(
             0x2000_0002,
-            include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf"),
+            include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf"),
         )
         .expect("the checked-in CJK quality face must load");
 
@@ -3482,7 +3495,7 @@ mod tests {
             let mut stats = RasterQualityStats::default();
 
             for font_size in SIZES {
-                let aimer = crate::text_pipeline::aimer_font::rasterize_font_glyphs(
+                let aimer = crate::aimer_font::rasterize_font_glyphs(
                     data.as_ref(),
                     record.collection_index,
                     &glyph_ids
@@ -3494,7 +3507,7 @@ mod tests {
                 let reference = glyph_ids
                     .iter()
                     .map(|glyph_id| {
-                        crate::text_pipeline::aimer_font::rasterize_font_glyph(
+                        crate::aimer_font::rasterize_font_glyph(
                             data.as_ref(),
                             record.collection_index,
                             *glyph_id,
@@ -3640,8 +3653,8 @@ mod tests {
         feature = "apple-core-text"
     ))]
     fn japanese_only_han_face(next_id: FontId) -> FontRecord {
-        use crate::text_pipeline::apple_fonts::font_paths_for_codepoint;
-        use crate::text_pipeline::font_resolver::REGULAR_WEIGHT;
+        use crate::apple_fonts::font_paths_for_codepoint;
+        use crate::font_resolver::REGULAR_WEIGHT;
 
         let draws = |record: &FontRecord, codepoint: char| {
             record
@@ -3784,8 +3797,8 @@ mod tests {
         feature = "apple-core-text"
     ))]
     fn platform_only_chinese_face(next_id: FontId) -> FontRecord {
-        use crate::text_pipeline::apple_fonts::font_paths_for_codepoint;
-        use crate::text_pipeline::font_resolver::REGULAR_WEIGHT;
+        use crate::apple_fonts::font_paths_for_codepoint;
+        use crate::font_resolver::REGULAR_WEIGHT;
 
         font_paths_for_codepoint('吗', REGULAR_WEIGHT)
             .into_iter()
@@ -3814,8 +3827,8 @@ mod tests {
         feature = "apple-core-text"
     ))]
     fn decodable_kana_face(next_id: FontId) -> (FontRecord, u16) {
-        use crate::text_pipeline::apple_fonts::font_paths_for_codepoint;
-        use crate::text_pipeline::font_resolver::REGULAR_WEIGHT;
+        use crate::apple_fonts::font_paths_for_codepoint;
+        use crate::font_resolver::REGULAR_WEIGHT;
 
         font_paths_for_codepoint('に', REGULAR_WEIGHT)
             .into_iter()
@@ -4465,7 +4478,7 @@ mod tests {
         let mut rasterizer = GlyphRasterizer::primary_only();
         let font_id = rasterizer
             .register_font_bytes(
-                include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf").to_vec(),
+                include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf").to_vec(),
             )
             .expect("the bundled variable CJK face should register");
 
@@ -5007,12 +5020,12 @@ mod tests {
     fn registry_replacement_invalidates_all_face_derived_caches() {
         let family = FontRegistry::register(FontRegistration {
             family: "cupid-face-cache-replacement-test",
-            bytes: include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf"),
+            bytes: include_bytes!("../fonts/JetBrainsMono-Regular.ttf"),
             weight: FontWeight::Normal,
             style: FontStyle::Normal,
         })
         .expect("the original face should register");
-        let replacement = include_bytes!("../../../fonts/GoogleSans-Regular.ttf");
+        let replacement = include_bytes!("../fonts/GoogleSans-Regular.ttf");
         let mut rasterizer = GlyphRasterizer::primary_only();
         let key = rasterizer.glyph_key_for_family_codepoint(
             'A',
@@ -5118,7 +5131,7 @@ mod tests {
     fn registry_removal_invalidates_cached_face_and_falls_back_to_primary() {
         let family = FontRegistry::register(FontRegistration {
             family: "cupid-face-cache-removal-test",
-            bytes: include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf"),
+            bytes: include_bytes!("../fonts/JetBrainsMono-Regular.ttf"),
             weight: FontWeight::Normal,
             style: FontStyle::Normal,
         })
@@ -5254,7 +5267,7 @@ mod tests {
         let mut rasterizer = GlyphRasterizer::primary_only();
         let fallback_id = rasterizer
             .register_font_bytes(
-                include_bytes!("../../../fonts/NotoSansJP-VariableFont_wght.ttf").to_vec(),
+                include_bytes!("../fonts/NotoSansJP-VariableFont_wght.ttf").to_vec(),
             )
             .expect("the bundled CJK fallback should register");
 

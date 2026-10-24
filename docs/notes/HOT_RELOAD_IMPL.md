@@ -151,9 +151,9 @@ points; they do not imply that runtime code already exists.
 
 ### `aimer_anteros`
 
-- `aimer_anteros/Cargo.toml` exposes an empty default feature set and an explicit `wasm-hot-reload` feature that alone
+- `host/anteros/Cargo.toml` exposes an empty default feature set and an explicit `wasm-hot-reload` feature that alone
   enables the optional `wasmi` dependency.
-- `aimer_anteros/src/runtime.rs` contains the feature-gated `Runtime` seam for isolated proof calls plus
+- `host/anteros/src/runtime.rs` contains the feature-gated `Runtime` seam for isolated proof calls plus
   `GuestInstance`, which owns one persistent `wasmi::Store` and memory across callback/state ABI calls. These paths use
   explicit per-export fuel, fail-closed module/memory/table/call-depth ceilings, store limiters, checked guest-memory
   access, exact deallocation, copied output, canonical model validation, and stable Aimer-owned error classification.
@@ -174,9 +174,9 @@ points; they do not imply that runtime code already exists.
 
 ### Permanent host lifecycle in `aimer_quiver`
 
-- `aimer_quiver/src/aimer_app.rs` owns the long-lived `winit` event loop, Cupid setup, Venus installation, platform
+- `framework/quiver/src/aimer_app.rs` owns the long-lived `winit` event loop, Cupid setup, Venus installation, platform
   hooks, redraw requests, and initial widget installation.
-- `aimer_quiver/src/handler.rs` owns the retained `widget_root` inside the application handler and processes host events
+- `framework/quiver/src/handler.rs` owns the retained `widget_root` inside the application handler and processes host events
   and redraws.
 - These components form the permanent host. They MUST remain alive while guest generations are replaced.
 - Root replacement and native-state carry must be integrated at an event-loop safe point in the handler; a network or
@@ -184,9 +184,9 @@ points; they do not imply that runtime code already exists.
 
 ### Native element reconciliation in `aimer_widget`
 
-- `crates/aimer_widget/src/lib.rs` exposes `carry_element_state`, and `crates/aimer_widget/src/key.rs` supplies keyed
+- `framework/widget/src/lib.rs` exposes `carry_element_state`, and `framework/widget/src/key.rs` supplies keyed
   identity used during reconciliation.
-- `crates/aimer_widget/src/reconciliation_plan.rs` exposes side-effect-free structural planning with explicit root,
+- `framework/widget/src/reconciliation_plan.rs` exposes side-effect-free structural planning with explicit root,
   keyed, and positional matches. Plans revalidate compatibility and unique ownership before commit; only commit runs
   established state carry, identity transfer, focus cleanup, and element-tree generation advancement.
 - The reconciliation path may transfer retained runtime state from matching old elements to new elements and may move
@@ -198,7 +198,7 @@ points; they do not imply that runtime code already exists.
 
 ### `page_storage` is not guest serialization
 
-- `crates/aimer_widget/src/page_storage.rs` stores type-erased native values for widget-tree use.
+- `framework/widget/src/page_storage.rs` stores type-erased native values for widget-tree use.
 - Its values depend on native Rust types and process-local ownership. The storage format is not stable across
   independent guest compilations and cannot cross the WASM boundary.
 - The hot-reload runtime MUST define a separate, versioned guest-state bundle with bounded binary encoding and explicit
@@ -208,7 +208,7 @@ points; they do not imply that runtime code already exists.
 
 ### Generation cleanup in `aimer_venus`
 
-- `aimer_venus/src/scheduler.rs` provides `TaskScope`; dropping a scope cancels futures spawned within that scope.
+- `cores/venus/src/scheduler.rs` provides `TaskScope`; dropping a scope cancels futures spawned within that scope.
 - Each guest generation can own one `TaskScope` as the base cancellation boundary for asynchronous guest work.
 - A `TaskScope` does not automatically account for timers, subscriptions, requests, callbacks, or platform handles
   created outside scoped futures. The runtime needs a generation-owned resource registry for those resources.
@@ -1676,7 +1676,7 @@ unsupported rather than falling back to unauthenticated, plaintext, or native-dy
 
 - Xcode 27.0 `devicectl` was inspected first and exposes no supported arbitrary app-port forwarding operation, so
   Approach A is insufficient with the current supported tooling.
-- `aimer_anteros/device_tests/ios_transport` built and signed a maintained proof app for a physical iPhone 14 Pro
+- `host/anteros/device_tests/ios_transport` built and signed a maintained proof app for a physical iPhone 14 Pro
   (`iPhone15,2`) running iOS 27.0. `devicectl` delivered fresh credentials through its private child environment,
   Swift `NetService` advertised only a generated non-secret `_aimer-reload._tcp` instance, and the CLI resolved it
   through Bonjour after the normal local-network permission grant.
@@ -1704,19 +1704,19 @@ MUST preserve ownership and acyclic dependencies.
 The root-level `aimer_anteros` crate is organized into focused modules:
 
 ```text
-aimer_anteros/src/lib.rs
-aimer_anteros/src/adapter.rs
-aimer_anteros/src/codec.rs
-aimer_anteros/src/event.rs
-aimer_anteros/src/identity.rs
-aimer_anteros/src/model.rs
-aimer_anteros/src/state.rs
-aimer_anteros/src/widget_ir.rs
-aimer_anteros/src/runtime.rs
-aimer_anteros/src/abi.rs
-aimer_anteros/src/capability.rs
-aimer_anteros/src/generation.rs
-aimer_anteros/src/reload.rs
+host/anteros/src/lib.rs
+host/anteros/src/adapter.rs
+host/anteros/src/codec.rs
+host/anteros/src/event.rs
+host/anteros/src/identity.rs
+host/anteros/src/model.rs
+host/anteros/src/state.rs
+host/anteros/src/widget_ir.rs
+host/anteros/src/runtime.rs
+host/anteros/src/abi.rs
+host/anteros/src/capability.rs
+host/anteros/src/generation.rs
+host/anteros/src/reload.rs
 ```
 
 The portable source-level contracts, canonical models/codecs, schema declarations, and conformance adapters are always
@@ -1742,10 +1742,10 @@ remain absent from the `aimer_haptics` and WASM guest dependency graphs.
 Proposed new crate `crates/aimer_wasm_guest`:
 
 ```text
-crates/aimer_wasm_guest/src/lib.rs
-crates/aimer_wasm_guest/src/exports.rs
-crates/aimer_wasm_guest/src/memory.rs
-crates/aimer_wasm_guest/src/diagnostic.rs
+experiments/wasm_guest/src/lib.rs
+experiments/wasm_guest/src/exports.rs
+experiments/wasm_guest/src/memory.rs
+experiments/wasm_guest/src/diagnostic.rs
 ```
 
 It depends on the portable, feature-disabled `aimer_anteros` surface, generates/implements exact exports, and remains
@@ -1781,14 +1781,14 @@ on `aimer_reload_protocol`, not `aimer_anteros` internals, and cannot mutate wid
 
 ### Host integration
 
-- `aimer_quiver/src/aimer_app.rs` installs the optional development runtime/service during permanent-host startup.
-- `aimer_quiver/src/handler.rs` owns the coherent active snapshot, reload event command, event barrier, safe-point
+- `framework/quiver/src/aimer_app.rs` installs the optional development runtime/service during permanent-host startup.
+- `framework/quiver/src/handler.rs` owns the coherent active snapshot, reload event command, event barrier, safe-point
   commit, and frame request.
-- A focused `aimer_quiver/src/hot_reload.rs` SHOULD bridge authenticated server commands to `aimer_anteros` and build
+- A focused `framework/quiver/src/hot_reload.rs` SHOULD bridge authenticated server commands to `aimer_anteros` and build
   prepared commit records, behind an explicit development feature.
-- `crates/aimer_widget/src/reconcile.rs` and related key modules own non-mutating reconciliation planning plus final
+- `framework/widget/src/reconcile.rs` and related key modules own non-mutating reconciliation planning plus final
   native-state carry.
-- `aimer_venus/src/scheduler.rs` remains the `TaskScope` provider; generation registries live in `aimer_anteros`.
+- `cores/venus/src/scheduler.rs` remains the `TaskScope` provider; generation registries live in `aimer_anteros`.
 
 ### CLI integration
 
@@ -1873,7 +1873,7 @@ and native dependency exclusion checks are implemented. Production host/guest bu
 real-platform reconnect/diagnostic matrix are still open; therefore the complete product phase is not yet closed.
 
 **Physical-iOS interpreter evidence (2026-08-18):** The maintained
-`aimer_anteros/device_tests/ios` static-library harness built for `aarch64-apple-ios`, installed on a physical iPhone 14
+`host/anteros/device_tests/ios` static-library harness built for `aarch64-apple-ios`, installed on a physical iPhone 14
 Pro (`iPhone15,2`) running iOS 27.0, and terminated with `AIMER_WASM_DEVICE_PROOF_RESULT=0`. The signed payload had no
 dynamic-code entitlement, its load commands and imports contained no JIT/executable-memory API, and the same binary
 proved both the deterministic result and structured `TrapCode::OutOfFuel` path. This proves interpreted execution; the
@@ -2175,7 +2175,7 @@ on every covered failure; the Phase 6 reload owner now destroys rejected and sup
 **Implement:**
 
 - Add reload coordinator, prepared commit records, candidate supersession, and rollback cleanup.
-- Add coherent active snapshots and reload commands to `aimer_quiver/src/handler.rs`.
+- Add coherent active snapshots and reload commands to `framework/quiver/src/handler.rs`.
 - Integrate disconnected materialization and final native state carry.
 - Add the event/state-transfer barrier and bounded deterministic replay.
 
@@ -2194,7 +2194,7 @@ every queued logical event once in order, continues after a removed callback, an
 plus attempted and delivered counts. Queue overflow returns ownership of the undispatched event rather than dropping it.
 
 The `wasm-hot-reload` Quiver feature now exposes `HeadlessReloadHost` and owned `ReloadCommand` in
-`aimer_quiver/src/handler.rs`. Queuing cannot mutate the active tree; `process_safe_point` is the only installation seam
+`framework/quiver/src/handler.rs`. Queuing cannot mutate the active tree; `process_safe_point` is the only installation seam
 and requests exactly one frame after success. Its `AnyElement` specialization validates Aimer reconciliation before
 commit and performs keyed/positional identity and native runtime-state carry only after every fallible candidate step.
 Headless tests cover delayed coherent installation, one-frame behavior, rejection, native carry, old-resource cleanup,
@@ -2263,7 +2263,7 @@ thread. The listener waits for the authoritative host response even if the clien
 host disconnect, and dropping a pending candidate produce stable rejections that preserve the recorded active
 generation. Every Anteros transaction
 boundary maps exhaustively to a protocol stage, and a real `ReloadCommit` supplies the generation reported as committed.
-The bridge and listener are absent unless `aimer_quiver/wasm-hot-reload` is explicitly enabled; that feature remains
+The bridge and listener are absent unless `framework/quiver/wasm-hot-reload` is explicitly enabled; that feature remains
 native-only and debug-only.
 
 Deterministic coverage now includes canonical/golden vectors, every terminal and frame truncation boundary, header and
@@ -2272,7 +2272,7 @@ keys, sequence gaps/duplicates, chunk overlaps, digest/length limits, interrupti
 duplicate terminal requests, reconnect recovery, and pending-candidate cancellation.
 
 The coverage-guided campaign is implemented as three durable `cargo-fuzz` targets in
-`crates/aimer_reload_protocol/fuzz`: untrusted connection bytes, a complete authenticated transcript whose first input
+`experiments/reload_protocol/fuzz`: untrusted connection bytes, a complete authenticated transcript whose first input
 byte selects a mutation, and terminal-result decoding. The authenticated target runs both protocol halves over an
 in-memory duplex stream, so a campaign never depends on operating-system sockets, and a stalled peer becomes an end of
 stream instead of parking both halves. Every iteration asserts that only an unmutated transcript reaches the runtime
@@ -2387,7 +2387,7 @@ unsupported tooling, and unreachable hosts.
 any module is uploaded, and the physical device uses the authenticated encrypted local-network route instead. Route and
 provisioning cleanup are owned values that run exactly one recorded command when dropped.
 
-`aimer_quiver/tests/reload_conformance.rs` drives the end-to-end scenarios over the real authenticated listener,
+`framework/quiver/tests/reload_conformance.rs` drives the end-to-end scenarios over the real authenticated listener,
 protocol bridge, and headless safe point: initial install with exactly one requested frame, a stateful reload preserving
 guest and native runtime state, a schema migration reporting reset-safe entries, callback rebinding with rejected
 retired-generation events, compile retention followed by a later successful commit, an injected pre-commit failure mapped
@@ -2492,9 +2492,9 @@ review are blocking gates; none is replaced by a guessed constant or a host-only
 | Area                       | Required coverage                                                                                                                                                              | Primary location                                                        |
 |----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
 | ABI envelopes/codecs       | Round trips, golden vectors, every truncation boundary, overflow, unknown versions/types/flags, trailing bytes, invalid UTF-8/bool/float, canonical order                      | `aimer_anteros` inline tests and fixture corpus                        |
-| Guest memory               | Negative/overflowing pointers and lengths, exact-end ranges, growth invalidation, allocation/deallocation tuples, undersized/oversized output, copy-before-call                | `aimer_anteros/src/abi` tests                                           |
-| Widget IR                  | Graph validity, depth/count limits, widget/property schemas, duplicate identities, unknown optional/required data, zero side effects on failure                                | Core codec plus `aimer_anteros/src/widget_ir.rs` tests                  |
-| Runtime engine             | Imports/exports/signatures, no WASI, allowed proposals, traps, fuel, memory/table/stack/instance limits, store isolation                                                       | `aimer_anteros/src/engine.rs` integration fixtures                      |
+| Guest memory               | Negative/overflowing pointers and lengths, exact-end ranges, growth invalidation, allocation/deallocation tuples, undersized/oversized output, copy-before-call                | `host/anteros/src/abi` tests                                           |
+| Widget IR                  | Graph validity, depth/count limits, widget/property schemas, duplicate identities, unknown optional/required data, zero side effects on failure                                | Core codec plus `host/anteros/src/widget_ir.rs` tests                  |
+| Runtime engine             | Imports/exports/signatures, no WASI, allowed proposals, traps, fuel, memory/table/stack/instance limits, store isolation                                                       | `host/anteros/src/engine.rs` integration fixtures                      |
 | Adapter parity             | Same app/state/capability/event traces produce canonical-equivalent IR, callback IDs, state, diagnostics                                                                       | Shared conformance fixture crate/tests                                  |
 | Callbacks/events           | Rebinding, removed/duplicate IDs, schemas, sequence replay, wrong/retired generations, queued event replay                                                                     | Core and generation/reload tests                                        |
 | Capabilities/resources     | Authorization, signatures, staging classes, handle ownership, quotas, task/timer/subscription/request cancellation, disposal traps                                             | Capability/generation tests with fake host services                     |
@@ -2505,7 +2505,7 @@ review are blocking gates; none is replaced by a guessed constant or a host-only
 | CLI policy                 | Exhaustive matrix, defaults, stable errors, no silent coercion, no hot-reload setup in AOT modes                                                                               | `aimer_cli/src/config.rs` tests                                         |
 | Watch/pipeline             | Coalescing, ignore rules, one-build invariant, dirty follow-up, compile retention, stage order, reconnect, cleanup                                                             | `aimer_cli` run integration tests with fake compiler/transport          |
 | Platform adapters          | Command construction, device selection, secret redaction, route ownership/cleanup, timeout diagnostics                                                                         | Per-target CLI adapter tests                                            |
-| Real targets               | Full-state success/rollback/reconnect scenario on every native target                                                                                                          | Scripted proof runs recorded in `aimer_anteros/HOT_RELOAD_PROOF_RUNS.md` |
+| Real targets               | Full-state success/rollback/reconnect scenario on every native target                                                                                                          | Scripted proof runs recorded in `host/anteros/HOT_RELOAD_PROOF_RUNS.md` |
 | Release exclusion          | Cargo feature/dependency graph, symbols/strings, packaged files, entitlements/permissions, closed ports                                                                        | Build scripts/CI artifact inspection                                    |
 | Reliability                | Repeated reload/reject/cancel/reconnect soak, memory/resource counters return to baseline                                                                                      | Long-running integration harness                                        |
 

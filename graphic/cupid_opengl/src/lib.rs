@@ -1,4 +1,12 @@
 //! Direct OpenGL backend for native Windows/Linux windows and Android GLES 3.
+//!
+//! The crate is empty on every target but Linux and Android; `aimer_cupid`
+//! selects it with its `native` feature.
+
+#![cfg(any(target_os = "linux", target_os = "android"))]
+
+// `crate::backend::..` is how this code has always named the contract.
+pub(crate) use aimer_cupid_gpu as backend;
 
 mod context;
 mod gl;
@@ -47,7 +55,7 @@ pub struct OpenGlError {
 }
 
 impl OpenGlError {
-    pub(super) fn new(operation: &'static str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(operation: &'static str, message: impl Into<String>) -> Self {
         Self {
             operation,
             message: message.into(),
@@ -65,22 +73,22 @@ impl std::error::Error for OpenGlError {}
 
 /// Native OpenGL device/context wrapper used by Cupid's generic renderer.
 pub struct OpenGlBackend {
-    pub(super) shared: Rc<OpenGlShared>,
+    pub(crate) shared: Rc<OpenGlShared>,
 }
 
-pub(super) struct OpenGlShared {
+pub(crate) struct OpenGlShared {
     context: NativeContext,
-    pub(super) gl: GlFns,
-    pub(super) limits: GpuLimits,
-    pub(super) max_texture_units: u32,
-    pub(super) max_vertex_attributes: u32,
-    pub(super) max_uniform_buffer_bindings: u32,
-    pub(super) framebuffer_cache: RefCell<HashMap<FramebufferKey, GLuint>>,
-    pub(super) state: GlStateCache,
+    pub(crate) gl: GlFns,
+    pub(crate) limits: GpuLimits,
+    pub(crate) max_texture_units: u32,
+    pub(crate) max_vertex_attributes: u32,
+    pub(crate) max_uniform_buffer_bindings: u32,
+    pub(crate) framebuffer_cache: RefCell<HashMap<FramebufferKey, GLuint>>,
+    pub(crate) state: GlStateCache,
 }
 
 #[derive(Default)]
-pub(super) struct GlStateCache {
+pub(crate) struct GlStateCache {
     program: Cell<Option<GLuint>>,
     vertex_array: Cell<Option<GLuint>>,
     read_framebuffer: Cell<Option<GLuint>>,
@@ -95,18 +103,18 @@ pub(super) struct GlStateCache {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(super) struct FramebufferKey {
-    pub(super) attachments: Vec<(u32, u32, u32, i32)>,
-    pub(super) color_count: usize,
+pub(crate) struct FramebufferKey {
+    pub(crate) attachments: Vec<(u32, u32, u32, i32)>,
+    pub(crate) color_count: usize,
 }
 
 #[derive(Clone)]
-pub struct OpenGlBuffer(pub(super) Rc<OpenGlBufferInner>);
+pub struct OpenGlBuffer(pub(crate) Rc<OpenGlBufferInner>);
 
-pub(super) struct OpenGlBufferInner {
-    pub(super) shared: Rc<OpenGlShared>,
-    pub(super) raw: GLuint,
-    pub(super) size: u64,
+pub(crate) struct OpenGlBufferInner {
+    pub(crate) shared: Rc<OpenGlShared>,
+    pub(crate) raw: GLuint,
+    pub(crate) size: u64,
 }
 
 impl Drop for OpenGlBufferInner {
@@ -119,14 +127,14 @@ impl Drop for OpenGlBufferInner {
 }
 
 #[derive(Clone)]
-pub struct OpenGlTexture(pub(super) Rc<OpenGlTextureInner>);
+pub struct OpenGlTexture(pub(crate) Rc<OpenGlTextureInner>);
 
-pub(super) struct OpenGlTextureInner {
-    pub(super) shared: Rc<OpenGlShared>,
-    pub(super) raw: GLuint,
-    pub(super) target: u32,
-    pub(super) size: (u32, u32, u32),
-    pub(super) format: OpenGlTextureFormat,
+pub(crate) struct OpenGlTextureInner {
+    pub(crate) shared: Rc<OpenGlShared>,
+    pub(crate) raw: GLuint,
+    pub(crate) target: u32,
+    pub(crate) size: (u32, u32, u32),
+    pub(crate) format: OpenGlTextureFormat,
 }
 
 impl Drop for OpenGlTextureInner {
@@ -139,13 +147,13 @@ impl Drop for OpenGlTextureInner {
 }
 
 #[derive(Clone)]
-pub struct OpenGlTextureView(pub(super) Rc<OpenGlTextureViewInner>);
+pub struct OpenGlTextureView(pub(crate) Rc<OpenGlTextureViewInner>);
 
-pub(super) struct OpenGlTextureViewInner {
-    pub(super) target: OpenGlViewTarget,
+pub(crate) struct OpenGlTextureViewInner {
+    pub(crate) target: OpenGlViewTarget,
 }
 
-pub(super) enum OpenGlViewTarget {
+pub(crate) enum OpenGlViewTarget {
     Surface {
         size: Cell<(u32, u32)>,
     },
@@ -157,7 +165,7 @@ pub(super) enum OpenGlViewTarget {
 }
 
 impl OpenGlTextureView {
-    pub(super) fn gl_view_size(&self) -> (u32, u32) {
+    pub(crate) fn gl_view_size(&self) -> (u32, u32) {
         match &self.0.target {
             OpenGlViewTarget::Surface { size } => size.get(),
             OpenGlViewTarget::Texture { texture, level, .. } => (
@@ -169,11 +177,11 @@ impl OpenGlTextureView {
 }
 
 #[derive(Clone)]
-pub struct OpenGlSampler(pub(super) Rc<OpenGlSamplerInner>);
+pub struct OpenGlSampler(pub(crate) Rc<OpenGlSamplerInner>);
 
-pub(super) struct OpenGlSamplerInner {
-    pub(super) shared: Rc<OpenGlShared>,
-    pub(super) raw: GLuint,
+pub(crate) struct OpenGlSamplerInner {
+    pub(crate) shared: Rc<OpenGlShared>,
+    pub(crate) raw: GLuint,
 }
 
 impl Drop for OpenGlSamplerInner {
@@ -186,19 +194,19 @@ impl Drop for OpenGlSamplerInner {
 }
 
 impl OpenGlShared {
-    pub(super) fn use_program(&self, program: GLuint) {
+    pub(crate) fn use_program(&self, program: GLuint) {
         if self.state.program.replace(Some(program)) != Some(program) {
             unsafe { (self.gl.use_program)(program) };
         }
     }
 
-    pub(super) fn bind_vertex_array(&self, array: GLuint) {
+    pub(crate) fn bind_vertex_array(&self, array: GLuint) {
         if self.state.vertex_array.replace(Some(array)) != Some(array) {
             unsafe { (self.gl.bind_vertex_array)(array) };
         }
     }
 
-    pub(super) fn bind_framebuffer(&self, target: u32, framebuffer: GLuint) {
+    pub(crate) fn bind_framebuffer(&self, target: u32, framebuffer: GLuint) {
         let draw_changed = target != gl::READ_FRAMEBUFFER
             && self.state.draw_framebuffer.replace(Some(framebuffer)) != Some(framebuffer);
         let read_changed = target != gl::DRAW_FRAMEBUFFER
@@ -208,21 +216,21 @@ impl OpenGlShared {
         }
     }
 
-    pub(super) fn set_viewport(&self, x: i32, y: i32, width: i32, height: i32) {
+    pub(crate) fn set_viewport(&self, x: i32, y: i32, width: i32, height: i32) {
         let viewport = (x, y, width, height);
         if self.state.viewport.replace(Some(viewport)) != Some(viewport) {
             unsafe { (self.gl.viewport)(x, y, width, height) };
         }
     }
 
-    pub(super) fn set_scissor(&self, x: i32, y: i32, width: i32, height: i32) {
+    pub(crate) fn set_scissor(&self, x: i32, y: i32, width: i32, height: i32) {
         let scissor = (x, y, width, height);
         if self.state.scissor.replace(Some(scissor)) != Some(scissor) {
             unsafe { (self.gl.scissor)(x, y, width, height) };
         }
     }
 
-    pub(super) fn set_capability(&self, capability: u32, enabled: bool) {
+    pub(crate) fn set_capability(&self, capability: u32, enabled: bool) {
         let changed = self
             .state
             .capabilities
@@ -240,13 +248,13 @@ impl OpenGlShared {
         }
     }
 
-    pub(super) fn active_texture(&self, unit: u32) {
+    pub(crate) fn active_texture(&self, unit: u32) {
         if self.state.active_texture.replace(Some(unit)) != Some(unit) {
             unsafe { (self.gl.active_texture)(gl::TEXTURE0 + unit) };
         }
     }
 
-    pub(super) fn bind_texture(&self, unit: u32, target: u32, texture: GLuint) {
+    pub(crate) fn bind_texture(&self, unit: u32, target: u32, texture: GLuint) {
         self.active_texture(unit);
         let changed = self
             .state
@@ -259,14 +267,14 @@ impl OpenGlShared {
         }
     }
 
-    pub(super) fn bind_sampler(&self, unit: u32, sampler: GLuint) {
+    pub(crate) fn bind_sampler(&self, unit: u32, sampler: GLuint) {
         let changed = self.state.samplers.borrow_mut().insert(unit, sampler) != Some(sampler);
         if changed {
             unsafe { (self.gl.bind_sampler)(unit, sampler) };
         }
     }
 
-    pub(super) fn bind_uniform_buffer(
+    pub(crate) fn bind_uniform_buffer(
         &self,
         point: u32,
         buffer: GLuint,
@@ -285,19 +293,19 @@ impl OpenGlShared {
         }
     }
 
-    pub(super) fn invalidate_program(&self, program: GLuint) {
+    pub(crate) fn invalidate_program(&self, program: GLuint) {
         if self.state.program.get() == Some(program) {
             self.state.program.set(None);
         }
     }
 
-    pub(super) fn invalidate_vertex_array(&self, array: GLuint) {
+    pub(crate) fn invalidate_vertex_array(&self, array: GLuint) {
         if self.state.vertex_array.get() == Some(array) {
             self.state.vertex_array.set(None);
         }
     }
 
-    pub(super) fn invalidate_framebuffer(&self, framebuffer: GLuint) {
+    pub(crate) fn invalidate_framebuffer(&self, framebuffer: GLuint) {
         if self.state.read_framebuffer.get() == Some(framebuffer) {
             self.state.read_framebuffer.set(None);
         }
@@ -306,28 +314,28 @@ impl OpenGlShared {
         }
     }
 
-    pub(super) fn invalidate_buffer(&self, buffer: GLuint) {
+    pub(crate) fn invalidate_buffer(&self, buffer: GLuint) {
         self.state
             .uniform_buffers
             .borrow_mut()
             .retain(|_, (bound, _, _)| *bound != buffer);
     }
 
-    pub(super) fn invalidate_sampler(&self, sampler: GLuint) {
+    pub(crate) fn invalidate_sampler(&self, sampler: GLuint) {
         self.state
             .samplers
             .borrow_mut()
             .retain(|_, bound| *bound != sampler);
     }
 
-    pub(super) fn invalidate_texture(&self, texture: GLuint) {
+    pub(crate) fn invalidate_texture(&self, texture: GLuint) {
         self.state
             .textures
             .borrow_mut()
             .retain(|_, bound| *bound != texture);
     }
 
-    pub(super) fn invalidate_framebuffers_for(&self, texture: GLuint) {
+    pub(crate) fn invalidate_framebuffers_for(&self, texture: GLuint) {
         let mut cache = self.framebuffer_cache.borrow_mut();
         let stale: Vec<_> = cache
             .iter()
@@ -369,6 +377,26 @@ impl Drop for OpenGlShared {
 }
 
 impl OpenGlBackend {
+    /// Returns the oldest pending `glGetError` code, or `0` when the driver has
+    /// nothing to report.
+    ///
+    /// A diagnostic for tests and tooling that render through this backend and
+    /// want to know whether the driver objected. Reading the code clears it.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the backend's context cannot be made current on this thread.
+    #[doc(hidden)]
+    pub fn pending_gl_error(&self) -> Result<u32, OpenGlError> {
+        self.shared
+            .context
+            .make_current()
+            .map_err(|message| OpenGlError::new("make current", message))?;
+        // SAFETY: the context was just made current on this thread, which is
+        // what `glGetError` requires.
+        Ok(unsafe { (self.shared.gl.get_error)() })
+    }
+
     /// Creates an OpenGL 3.3 Core backend and an attached window surface.
     pub fn new_windowed<W>(
         window: Arc<W>,

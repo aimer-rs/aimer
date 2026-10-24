@@ -1,0 +1,17 @@
+[package]
+name = "aimer_cupid_vulkan"
+version = "0.1.0"
+edition = "2024"
+description = "The native Vulkan backend for the Cupid rendering engine"
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+ash.workspace = true
+ash-window.workspace = true
+raw-window-handle.workspace = true
+
+[dev-dependencies]
+# `examples/vulkan_shadergen.rs` regenerates the checked-in SPIR-V.
+naga = { workspace = true, features = ["spv-out"] }

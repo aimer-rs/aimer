@@ -78,9 +78,9 @@ aimer_provider = {{ path = {:?} }}
 serde = {{ version = "1.0.228", features = ["derive"], optional = true }}
 "#,
             macro_crate,
-            workspace_root.join("crates/aimer_widget"),
+            workspace_root.join("framework/widget"),
             workspace_root.join("aimer_anteros"),
-            workspace_root.join("crates/aimer_provider"),
+            workspace_root.join("framework/provider"),
         )
     }
 

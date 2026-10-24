@@ -75,7 +75,7 @@ impl FontWeight {
 /// # Examples
 ///
 /// ```
-/// use aimer_cupid::font::TextLanguage;
+/// use aimer_cupid_font::font::TextLanguage;
 ///
 /// // A field bound to a Chinese keyboard keeps its Chinese face even when
 /// // every character it holds is also written in Japanese.
@@ -102,7 +102,7 @@ impl TextLanguage {
     /// # Examples
     ///
     /// ```
-    /// use aimer_cupid::font::TextLanguage;
+    /// use aimer_cupid_font::font::TextLanguage;
     ///
     /// assert_eq!(TextLanguage::from_tag("zh-Hans"), Some(TextLanguage::Chinese));
     /// assert_eq!(TextLanguage::from_tag("ja-JP"), Some(TextLanguage::Japanese));
@@ -301,7 +301,7 @@ fn style_distance(requested: FontStyle, candidate: FontStyle) -> u8 {
 }
 
 fn font_bytes_are_valid(bytes: &[u8]) -> bool {
-    crate::pipeline::text_pipeline::aimer_font::validate_font(bytes).is_ok()
+    crate::aimer_font::validate_font(bytes).is_ok()
 }
 
 pub struct FontRegistry;
@@ -561,7 +561,7 @@ mod tests {
                 font_bytes_are_valid(bytes),
                 "bundled {name} face is not valid"
             );
-            let face = crate::pipeline::text_pipeline::aimer_font::SfntFace::from_bytes(bytes, 0)
+            let face = crate::aimer_font::SfntFace::from_bytes(bytes, 0)
                 .unwrap_or_else(|error| panic!("bundled {name} face is not readable: {error:?}"));
             assert!(
                 face.has_standard_outline(),

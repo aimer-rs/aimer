@@ -1,0 +1,9 @@
+[package]
+name = "aimer_cupid_svg"
+version = "0.1.0"
+edition = "2024"
+description = "SVG parsing, scene types and path tessellation for the Cupid rendering engine"
+
+[dependencies]
+aimer_color.workspace = true
+thiserror.workspace = true

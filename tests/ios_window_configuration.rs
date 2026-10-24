@@ -3,7 +3,7 @@
 
 #[test]
 fn ios_bundle_distinguishes_mouse_clicks_from_finger_touches_on_older_ios() {
-    let info = include_str!("../jaime/builds/ios/Jaime/Info.plist");
+    let info = include_str!("../app/jaime/builds/ios/Jaime/Info.plist");
     let value = info
         .split_once("<key>UIApplicationSupportsIndirectInputEvents</key>")
         .expect("iOS 14–16 require an explicit opt-in for indirect pointer touches")
@@ -16,8 +16,8 @@ fn ios_bundle_distinguishes_mouse_clicks_from_finger_touches_on_older_ios() {
 
 #[test]
 fn ios_bundle_allows_continuous_ipad_resizing() {
-    let info = include_str!("../jaime/builds/ios/Jaime/Info.plist");
-    let project = include_str!("../jaime/builds/ios/Jaime.xcodeproj/project.pbxproj");
+    let info = include_str!("../app/jaime/builds/ios/Jaime/Info.plist");
+    let project = include_str!("../app/jaime/builds/ios/Jaime.xcodeproj/project.pbxproj");
     assert!(
         !info.contains("<key>UIRequiresFullScreen</key>"),
         "UIRequiresFullScreen selects discrete resizing on iPadOS 27"

@@ -1,0 +1,73 @@
+[package]
+name = "aimer_cupid_font"
+version = "0.1.0"
+edition = "2024"
+description = "Font parsing, shaping, fallback and glyph rasterization for the Cupid rendering engine"
+
+[features]
+default = []
+# Apple's Core Text as an additional rasterization and fallback backend on
+# macOS and iOS. The portable path stays available on every platform.
+apple-core-text = [
+    "dep:objc2-core-foundation",
+    "dep:objc2-core-text",
+    "dep:objc2-core-graphics",
+]
+# Embed the checked-in Google Sans, JetBrains Mono and CJK faces. Native builds
+# leave them out unless an application opts in; wasm always carries the generic
+# Latin/monospace faces because a browser exposes no readable system fonts.
+bundled-fonts = []
+# Expose the shape and rasterize call counters that `aimer_cupid`'s tests read
+# to prove a cache hit skipped the work. Only dev-dependencies enable it.
+test-counters = []
+
+[dependencies]
+aimer_cupid_svg.workspace = true
+aimer_simd.workspace = true
+aimer_utils.workspace = true
+hashbrown.workspace = true
+unicode-bidi.workspace = true
+unicode-linebreak.workspace = true
+unicode-segmentation.workspace = true
+# Decodes the PNG/JPEG/TIFF strikes of bitmap and color fonts. The image crate's
+# broad default-format and rayon features stay off.
+image = { workspace = true, default-features = false, features = [
+    "jpeg",
+    "png",
+    "tiff",
+] }
+dirs.workspace = true
+memmap2 = "0.9.11"
+
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+objc2-core-foundation = { workspace = true, optional = true, features = [
+    "std",
+    "CFArray",
+    "CFCharacterSet",
+    "CFData",
+    "CFDictionary",
+    "CFLocale",
+    "CFNumber",
+    "CFString",
+    "CFURL",
+] }
+objc2-core-text = { workspace = true, optional = true, features = [
+    "std",
+    "CTFont",
+    "CTFontDescriptor",
+    "CTFontManager",
+    # Enables `kCTFontWeightTrait`, which is how a fallback query asks the
+    # cascade for the face a bold or light run should be drawn in.
+    "CTFontTraits",
+    # Enables the glyph drawing and bounding-rect entry points, which take
+    # Core Graphics types.
+    "objc2-core-graphics",
+] }
+objc2-core-graphics = { workspace = true, optional = true, features = [
+    "std",
+    "CGBitmapContext",
+    "CGColorSpace",
+    "CGContext",
+    "CGFont",
+    "CGImage",
+] }

@@ -1,0 +1,11 @@
+[package]
+name = "aimer_cupid_wgpu"
+version = "0.1.0"
+edition = "2024"
+description = "The wgpu backend for the Cupid rendering engine"
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+aimer_utils.workspace = true
+dirs.workspace = true
+wgpu.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "aimer_cupid_dx12"
+version = "0.1.0"
+edition = "2024"
+description = "The native Direct3D 12 backend for the Cupid rendering engine"
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+aimer_utils.workspace = true
+windows.workspace = true

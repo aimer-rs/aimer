@@ -131,7 +131,7 @@ mod tests {
         mod capability_guest {
             include!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/../aimer_anteros/tests/support/guest_module.rs"
+                "/../../host/anteros/tests/support/guest_module.rs"
             ));
         }
 
@@ -1187,11 +1187,12 @@ mod tests {
             static MODULE: OnceLock<Vec<u8>> = OnceLock::new();
             MODULE.get_or_init(|| {
                 let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .parent()
+                    .ancestors()
+                    .nth(2)
                     .unwrap()
                     .to_path_buf();
                 let fixture =
-                    workspace.join("crates/aimer_wasm_guest/fixtures/stateful_guest/Cargo.toml");
+                    workspace.join("experiments/wasm_guest/fixtures/stateful_guest/Cargo.toml");
                 let target = workspace.join("target/candidate-preparation-fixture");
                 let status = Command::new(env!("CARGO"))
                     .args([
@@ -1216,11 +1217,12 @@ mod tests {
 
         fn stateful_guest_module_with_feature(feature: &str) -> Vec<u8> {
             let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .parent()
+                .ancestors()
+                .nth(2)
                 .unwrap()
                 .to_path_buf();
             let fixture =
-                workspace.join("crates/aimer_wasm_guest/fixtures/stateful_guest/Cargo.toml");
+                workspace.join("experiments/wasm_guest/fixtures/stateful_guest/Cargo.toml");
             let target = workspace
                 .join("target/candidate-preparation-fixture")
                 .join(feature);

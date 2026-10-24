@@ -67,7 +67,7 @@ impl Default for RunAdvances {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::text_pipeline::glyph_rasterizer::key_lookups;
+    use crate::glyph_rasterizer::key_lookups;
 
     const PROSE: &str = "Paragraph 12: The compositor keeps this decorated scrolling row on the \
         live culled path because its container owns clipping and hit-test bounds. Text shaping \

@@ -78,7 +78,7 @@ Run the steps in order without restarting the app. Every step has an observable 
 | 9    | change a native provider or capability contract                              | the CLI reports the named native-restart reason instead of pushing a module           |
 | 10   | stop the CLI                                                                 | the route, provisioned session file, and listener are gone; the app exits cleanly     |
 
-The equivalent host-side scenarios run without a device in `aimer_quiver/tests/reload_conformance.rs`, so a real run
+The equivalent host-side scenarios run without a device in `framework/quiver/tests/reload_conformance.rs`, so a real run
 proves the transport and tooling rather than the reload logic.
 
 ## 5. Recorded evidence
@@ -93,11 +93,11 @@ proves the transport and tooling rather than the reload logic.
 | Linux                         | not recorded    | not recorded             | —                              |
 
 Adapter behavior itself is covered without devices by `aimer_cli/src/commands/run/hot_reload/route/` unit tests, and the
-host-side reload scenarios by `aimer_quiver/tests/reload_conformance.rs`.
+host-side reload scenarios by `framework/quiver/tests/reload_conformance.rs`.
 
 The 2026-08-18 transport proofs are described in `HOT_RELOAD_IMPL.md` section 18 and live in
-`aimer_anteros/device_tests/ios_transport`. Full-state runs use the standalone application in
-`aimer_anteros/device_tests/full_state_app`. The phase 9 platform gate stays open until every row has a passing full
+`host/anteros/device_tests/ios_transport`. Full-state runs use the standalone application in
+`host/anteros/device_tests/full_state_app`. The phase 9 platform gate stays open until every row has a passing full
 acceptance scenario.
 
 ## 6. macOS partial run — 2026-08-19
@@ -105,7 +105,7 @@ acceptance scenario.
 - Host: macOS 27.0 arm64; Xcode 27.0 (`27A5228h`); `rustc 1.99.0-nightly (8ab9fdff5 2026-07-30)`.
 - Source: base revision `83a6a542a5f2d29a1071a408feecb831a0cc9f6f` plus the uncommitted milestone-IV/V working tree. This is development
   evidence, not release evidence for that base revision.
-- Command: `aimer +nightly run -Z hot-reload` from `aimer_anteros/device_tests/full_state_app`.
+- Command: `aimer +nightly run -Z hot-reload` from `host/anteros/device_tests/full_state_app`.
 - Initial launch emitted one canonical readiness line, authenticated over loopback, uploaded `5,603,780` bytes, and
   committed generation 1 without exposing the token in CLI status.
 - `widget-body` and `schema-migration` each produced one build and one commit without restarting process `82243`; the
@@ -131,7 +131,7 @@ and Android require the external native targets listed in section 2 and remain h
 - Host: macOS 27.0 arm64 (`26A5416b`); Xcode 27.0 (`27A5228h`); `rustc 1.99.0-nightly (8ab9fdff5 2026-07-30)`.
 - Source: base revision `83a6a542a5f2d29a1071a408feecb831a0cc9f6f` plus the uncommitted milestone-IV/V working tree. The temporary
   fault injection described below was removed immediately after the run.
-- Command from `aimer_anteros/device_tests/full_state_app`:
+- Command from `host/anteros/device_tests/full_state_app`:
   ```sh
   AIMER_PROOF_INTERRUPT_AFTER_ACK_REQUEST=5 cargo +nightly run --manifest-path ../../../Cargo.toml -p aimer_cli -- +nightly run -Z hot-reload --target macos
   ```
@@ -157,7 +157,7 @@ actions rather than repeating all ten steps in one uninterrupted run. The cross-
 - Host: macOS 27.0 arm64 (`26A5416b`); Xcode 27.0 (`27A5228h`); `rustc 1.99.0-nightly (8ab9fdff5 2026-07-30)`.
 - Source: base revision `83a6a542a5f2d29a1071a408feecb831a0cc9f6f` plus the uncommitted milestone-IV/V working tree. The temporary
   fault injection described below was removed immediately after the run.
-- Command from `aimer_anteros/device_tests/full_state_app`:
+- Command from `host/anteros/device_tests/full_state_app`:
   ```sh
   AIMER_PROOF_INTERRUPT_AFTER_ACK_REQUEST=6 cargo +nightly run --manifest-path ../../../Cargo.toml -p aimer_cli -- +nightly run -Z hot-reload --target macos
   ```

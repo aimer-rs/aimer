@@ -299,11 +299,29 @@ mod tests {
 
     #[test]
     fn cached_aimer_layout_keeps_render_and_interaction_views_together() {
+        use crate::font::{FontRegistration, FontRegistry, FontStyle, FontWeight};
         use crate::text_pipeline::glyph_rasterizer::GlyphRasterizer;
-        use crate::text_pipeline::text_layout::{layout_shaped_text_result, shape_text};
+        use crate::text_pipeline::text_layout::{layout_shaped_text_result, shape_text_styled};
 
+        // The "ffi" ligature below needs a face that has one. Register the
+        // checked-in face instead of relying on the host's default font.
+        let family = FontRegistry::register(FontRegistration {
+            family: "aimer-layout-cache-test",
+            bytes: include_bytes!("../../../../cupid_font/fonts/GoogleSans-Regular.ttf"),
+            weight: FontWeight::Normal,
+            style: FontStyle::Normal,
+        })
+        .expect("the checked-in face must register");
         let mut rasterizer = GlyphRasterizer::new();
-        let shaped = shape_text(&mut rasterizer, "office", 16.0);
+        let shaped = shape_text_styled(
+            &mut rasterizer,
+            "office",
+            16.0,
+            family,
+            FontWeight::Normal,
+            FontStyle::Normal,
+            None,
+        );
         let layout = layout_shaped_text_result(&shaped, 0.0, 16.0, 0.0);
         let mut cache = LayoutCache::new(8);
         let cache_key = key("office", 0.0);

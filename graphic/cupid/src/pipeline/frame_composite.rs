@@ -89,7 +89,7 @@ impl<B: crate::backend::GpuBackend> FrameCompositePipeline<B> {
 mod tests {
     #[test]
     fn shader_uses_one_direct_texture_load() {
-        let shader = include_str!("shaders/wgsl/frame_composite.wgsl");
+        let shader = crate::backend::BuiltinShader::FrameComposite.wgsl_str();
         assert_eq!(shader.matches("textureLoad").count(), 1);
         assert!(!shader.contains("textureSample"));
     }

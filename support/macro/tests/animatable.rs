@@ -180,7 +180,7 @@ fn check_case(name: &str, source: &str) -> Output {
 
 fn fixture_manifest(name: &str) -> String {
     let macro_crate = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let animation_crate = macro_crate.join("../aimer_animation");
+    let animation_crate = macro_crate.join("../../framework/animation");
     format!(
         r#"[package]
 name = "aimer_macro_animatable_{name}"

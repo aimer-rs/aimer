@@ -1,4 +1,12 @@
 //! Direct browser WebGPU backend implemented with `web-sys`.
+//!
+//! The crate is empty on every target but wasm32; `aimer_cupid` selects it with
+//! its `web` feature.
+
+#![cfg(target_arch = "wasm32")]
+
+// `crate::backend::..` is how this code has always named the contract.
+pub(crate) use aimer_cupid_gpu as backend;
 
 mod pipeline;
 mod trait_impl;
@@ -66,16 +74,16 @@ impl std::error::Error for WebGpuError {}
 
 /// A direct browser WebGPU implementation of Cupid's generic GPU backend.
 pub struct WebGpuBackend {
-    pub(super) shared: Rc<WebGpuShared>,
+    pub(crate) shared: Rc<WebGpuShared>,
 }
 
-pub(super) struct WebGpuShared {
-    pub(super) device: GpuDevice,
-    pub(super) queue: GpuQueue,
-    pub(super) context: GpuCanvasContext,
-    pub(super) canvas: HtmlCanvasElement,
-    pub(super) format: WebGpuTextureFormat,
-    pub(super) limits: GpuLimits,
+pub(crate) struct WebGpuShared {
+    pub(crate) device: GpuDevice,
+    pub(crate) queue: GpuQueue,
+    pub(crate) context: GpuCanvasContext,
+    pub(crate) canvas: HtmlCanvasElement,
+    pub(crate) format: WebGpuTextureFormat,
+    pub(crate) limits: GpuLimits,
 }
 
 /// A texture format understood by this browser WebGPU backend.
@@ -235,7 +243,7 @@ impl WebGpuBackend {
 }
 
 impl WebGpuShared {
-    pub(super) fn get_surface_texture(&self) -> Result<web_sys::GpuTexture, JsValue> {
+    pub(crate) fn get_surface_texture(&self) -> Result<web_sys::GpuTexture, JsValue> {
         self.context.get_current_texture()
     }
 }

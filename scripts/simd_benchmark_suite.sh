@@ -12,7 +12,8 @@ cd "$repo_dir"
 cargo test -p aimer_flex --release -- --ignored --nocapture
 cargo test -p aimer_scroll --release -- --ignored --nocapture
 cargo test -p aimer_animation --release -- --ignored --nocapture
-cargo test -p aimer_cupid --release -- --ignored --nocapture
+# The color-layer and scan-conversion profiles live with the font engine.
+cargo test -p aimer_cupid -p aimer_cupid_font --release -- --ignored --nocapture
 
 # The low-level profiles are necessary but not sufficient: keep the paired
 # native frame control beside them so a kernel is not accepted on microbench

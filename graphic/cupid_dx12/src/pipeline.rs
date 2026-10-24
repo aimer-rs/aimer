@@ -699,21 +699,21 @@ mod tests {
 
     /// Every HLSL source the DX12 backend compiles at startup.
     const SHADERS: &[(&str, &str)] = &[
-        ("rect", include_str!("../../pipeline/shaders/dx12/rect.hlsl")),
-        ("image", include_str!("../../pipeline/shaders/dx12/image.hlsl")),
-        ("text", include_str!("../../pipeline/shaders/dx12/text.hlsl")),
-        ("text_color", include_str!("../../pipeline/shaders/dx12/text_color.hlsl")),
+        ("rect", include_str!("../shaders/dx12/rect.hlsl")),
+        ("image", include_str!("../shaders/dx12/image.hlsl")),
+        ("text", include_str!("../shaders/dx12/text.hlsl")),
+        ("text_color", include_str!("../shaders/dx12/text_color.hlsl")),
         (
             "text_decoration",
-            include_str!("../../pipeline/shaders/dx12/text_decoration.hlsl"),
+            include_str!("../shaders/dx12/text_decoration.hlsl"),
         ),
-        ("svg", include_str!("../../pipeline/shaders/dx12/svg.hlsl")),
+        ("svg", include_str!("../shaders/dx12/svg.hlsl")),
         (
             "frame_composite",
-            include_str!("../../pipeline/shaders/dx12/frame_composite.hlsl"),
+            include_str!("../shaders/dx12/frame_composite.hlsl"),
         ),
-        ("material", include_str!("../../pipeline/shaders/dx12/material.hlsl")),
-        ("morph", include_str!("../../pipeline/shaders/dx12/morph.hlsl")),
+        ("material", include_str!("../shaders/dx12/material.hlsl")),
+        ("morph", include_str!("../shaders/dx12/morph.hlsl")),
     ];
 
     // FXC runs on the CPU, so this catches HLSL errors without a D3D12 device.

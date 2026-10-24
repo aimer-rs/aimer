@@ -1086,7 +1086,7 @@ mod tests {
 
         // Test-only fixture: production builds do not pull the optional
         // bundled-fonts feature merely to exercise registration validation.
-        const TEST_FONT: &[u8] = include_bytes!("../aimer_cupid/fonts/JetBrainsMono-Regular.ttf");
+        const TEST_FONT: &[u8] = include_bytes!("../graphic/cupid_font/fonts/JetBrainsMono-Regular.ttf");
 
         #[test]
         fn named_font_registration_is_validated_and_stable() {

@@ -28,12 +28,12 @@ be enabled by default until the open blocking gates below have passing evidence.
 
 | Boundary | Threat | Required control | Evidence |
 |---|---|---|---|
-| Module transfer | unauthorized upload, transcript change, replay, sequence gap, oversized staging | mutual nonce transcript authentication, per-connection directional keys, authenticated encryption, strict sequence/length/digest checks, explicit limits | protocol vectors and mutation tests; three Phase 7 fuzz campaigns; `aimer_reload_protocol/fuzz` |
+| Module transfer | unauthorized upload, transcript change, replay, sequence gap, oversized staging | mutual nonce transcript authentication, per-connection directional keys, authenticated encryption, strict sequence/length/digest checks, explicit limits | protocol vectors and mutation tests; three Phase 7 fuzz campaigns; `experiments/reload_protocol/fuzz` |
 | Token injection and storage | secret in process arguments, logs, diagnostics, launch announcements, or persistent files | CSPRNG credentials, redacted types, private child environment or standard input, zeroization, owned Android file cleanup, bounded expiry | adapter and redaction tests in `aimer_cli`; `launch.rs`, `readiness.rs`, and route cleanup guards |
 | Listener discovery | forged Bonjour/readiness data, public bind, route confusion | discovery carries only a session digest; stream authentication remains mandatory; every target except physical iOS requires loopback; advertised and bound ports must agree | route/readiness tests and Phase 0 transport proofs |
 | Guest module | WASI, undeclared imports, shared memory, threads, unsupported proposals, start-function effects | strict import/export/signature validation, proposal allowlist, no WASI, no shared memory, isolated `wasmi` store | `aimer_anteros` runtime and guest ABI tests |
 | Guest memory | negative, overflowing, stale, or overlapping ranges; output-size substitution | checked integer conversion and exact ranges, copy-before-call, fresh memory lookup after growth, disjoint migration buffers, bounded negotiation | guest-memory and persistent ABI tests; safe Rust host implementation |
-| Portable documents | malformed lengths, invalid UTF-8/bool/float, noncanonical order, deep/cyclic graphs, oversized payloads | checked bounded codecs and model validation before factory or capability side effects | golden/truncation/adversarial tests; `aimer_anteros/fuzz` envelope and portable-document targets |
+| Portable documents | malformed lengths, invalid UTF-8/bool/float, noncanonical order, deep/cyclic graphs, oversized payloads | checked bounded codecs and model validation before factory or capability side effects | golden/truncation/adversarial tests; `host/anteros/fuzz` envelope and portable-document targets |
 | Capabilities | undeclared authority, ABI drift, quota bypass, cross-generation handle use | deny-by-default manifest negotiation, contract fingerprint, generation ownership, per-kind limits, staged-effect classes, explicit retirement | capability registry/staging/generation tests and native/WASM parity fixtures |
 | Candidate staging | failed candidate emits haptics/network/subscriptions or mutates the active tree | dormant reversible resources, irreversible-effect rejection, disconnected materialization, side-effect-free reconciliation planning | Phase 4–6 staging, failure-injection, and headless safe-point tests |
 | Resource exhaustion | guest loop, memory/table/stack growth, event flood, module upload, registry growth | per-call fuel, explicit runtime/model/protocol/state/resource limits, bounded FIFO, one-build/one-commit invariants | limit and overflow tests plus repeated commit/rejection soak coverage |
@@ -68,7 +68,7 @@ toolchain floor.
 The protocol codecs, authenticated server, host guest-memory range handling,
 CLI workflow, and Quiver reload bridge contain no `unsafe` blocks. The one
 reload-related boundary is the WASM32 guest proxy's `aimer_capability_call`
-import in `aimer_anteros/src/capability.rs`. Its call site documents that input
+import in `host/anteros/src/capability.rs`. Its call site documents that input
 and output slices stay live for the synchronous call, the host validates every
 range, and no pointer is retained after return. Platform UI/renderer FFI outside
 the reload subsystem requires its own existing platform review and is not made

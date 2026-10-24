@@ -324,7 +324,7 @@ pub(crate) const REGULAR_WEIGHT: u16 = 400;
 
 fn face_metadata(data: FontData, collection_index: u32) -> Option<bool> {
     let face =
-        crate::text_pipeline::aimer_font::SfntFace::from_font_data(data, collection_index).ok()?;
+        crate::aimer_font::SfntFace::from_font_data(data, collection_index).ok()?;
     face.metrics().ok()?;
     face.table(*b"cmap")?;
     Some(face.has_color_tables() || face.has_apple_private_color_tables())
@@ -431,7 +431,7 @@ impl FontRecord {
     #[allow(dead_code)]
     pub(crate) fn ensure_face(&self) -> Option<()> {
         let data = self.data()?;
-        crate::text_pipeline::aimer_font::SfntFace::from_font_data(data, self.collection_index)
+        crate::aimer_font::SfntFace::from_font_data(data, self.collection_index)
             .ok()?;
         Some(())
     }
@@ -456,7 +456,7 @@ impl FontRecord {
         let Some(data) = self.data() else {
             return false;
         };
-        crate::text_pipeline::aimer_font::SfntFace::from_font_data(data, self.collection_index)
+        crate::aimer_font::SfntFace::from_font_data(data, self.collection_index)
             .ok()
             .is_some_and(|face| face.has_standard_outline())
     }
@@ -464,7 +464,7 @@ impl FontRecord {
     /// Returns a face's design weight from its `OS/2` table.
     pub(crate) fn design_weight(&self) -> Option<u16> {
         let data = self.data()?;
-        crate::text_pipeline::aimer_font::SfntFace::from_bytes(data.as_ref(), self.collection_index)
+        crate::aimer_font::SfntFace::from_bytes(data.as_ref(), self.collection_index)
             .ok()?
             .design_weight()
     }
@@ -482,14 +482,14 @@ impl FontRecord {
         }
         let data = self.data()?;
         let metrics =
-            crate::text_pipeline::aimer_font::metrics_from_font_data(data, self.collection_index)
+            crate::aimer_font::metrics_from_font_data(data, self.collection_index)
                 .ok()?;
         Some(metrics.scaled_line_metrics(font_size))
     }
 
     pub(crate) fn glyph_index(&self, codepoint: char) -> Option<u16> {
         let data = self.data()?;
-        crate::text_pipeline::aimer_font::SfntFace::from_font_data(data, self.collection_index)
+        crate::aimer_font::SfntFace::from_font_data(data, self.collection_index)
             .ok()?
             .glyph_index(codepoint as u32)
             .ok()?
@@ -506,7 +506,7 @@ pub fn advance_width_from_face(
         return None;
     }
     let face =
-        crate::text_pipeline::aimer_font::SfntFace::from_bytes(bytes, collection_index).ok()?;
+        crate::aimer_font::SfntFace::from_bytes(bytes, collection_index).ok()?;
     let metrics = face.metrics().ok()?;
     let advance = face.glyph_advance_with_metrics(glyph_id, metrics).ok()??;
     let scale = font_size / f32::from(metrics.units_per_em);
@@ -519,7 +519,7 @@ pub fn advance_width_from_face(
 ///
 /// Probe groups exist only for platforms without a system-provided cascade
 /// list. Apple platforms resolve fonts per codepoint through Core Text — see
-/// [`system_fallback`](crate::text_pipeline::system_fallback) — and therefore
+/// [`system_fallback`](crate::system_fallback) — and therefore
 /// need no hardcoded script table at all.
 #[cfg(not(any(target_os = "ios", target_os = "macos")))]
 #[allow(dead_code)]
@@ -589,7 +589,7 @@ static PROBE_GROUPS: &[ProbeGroup] = &[
 /// ranges).
 #[cfg(all(not(any(target_os = "ios", target_os = "macos"))))]
 fn face_matches_probes(
-    face: &crate::text_pipeline::aimer_font::SfntFace<'_>,
+    face: &crate::aimer_font::SfntFace<'_>,
     probes: &[char],
     hint_color: bool,
 ) -> Option<bool> {
@@ -826,7 +826,7 @@ fn build_fallback_chain_for_scripts(
                 };
                 let data = &mapping[..];
                 for collection_index in 0..64 {
-                    let Ok(face) = crate::text_pipeline::aimer_font::SfntFace::from_bytes(
+                    let Ok(face) = crate::aimer_font::SfntFace::from_bytes(
                         data,
                         collection_index,
                     ) else {
@@ -879,7 +879,7 @@ fn build_fallback_chain_for_scripts(
         let data = &mapping[..];
         for collection_index in 0..64 {
             let Ok(face) =
-                crate::text_pipeline::aimer_font::SfntFace::from_bytes(data, collection_index)
+                crate::aimer_font::SfntFace::from_bytes(data, collection_index)
             else {
                 break;
             };
@@ -1050,7 +1050,7 @@ fn fontconfig_font_record(
             continue;
         };
         let Ok(face) =
-            crate::text_pipeline::aimer_font::SfntFace::from_bytes(&mapping, collection_index)
+            crate::aimer_font::SfntFace::from_bytes(&mapping, collection_index)
         else {
             continue;
         };
@@ -1152,7 +1152,7 @@ fn system_font_record_from_paths(
         let data = &mapping[..];
         for collection_index in 0..64 {
             let Ok(face) =
-                crate::text_pipeline::aimer_font::SfntFace::from_bytes(data, collection_index)
+                crate::aimer_font::SfntFace::from_bytes(data, collection_index)
             else {
                 break;
             };
@@ -1380,7 +1380,7 @@ fn claim_warm_up(started: &AtomicBool) -> bool {
 ///
 /// This is a no-op where no chain is built: Apple platforms resolve fallbacks
 /// per codepoint through the system instead (see
-/// [`system_fallback`](crate::text_pipeline::system_fallback)), and wasm has no
+/// [`system_fallback`](crate::system_fallback)), and wasm has no
 /// threads to spare the UI one.
 #[inline]
 pub fn warm_fallbacks_in_background() {
@@ -1419,7 +1419,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     use super::{FontData, FontRecord, cached_font_file, mapped_font_file, publish_font_file};
 
-    const TEST_FONT: &[u8] = include_bytes!("../../../fonts/JetBrainsMono-Regular.ttf");
+    const TEST_FONT: &[u8] = include_bytes!("../fonts/JetBrainsMono-Regular.ttf");
 
     #[test]
     fn fallback_lane_classifier_keeps_scripts_distinct() {
@@ -1523,7 +1523,7 @@ mod tests {
     #[test]
     fn file_backed_font_data_is_memory_mapped_instead_of_heap_copied() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src/pipeline/text_pipeline/font_resolver.rs");
+            .join("src/font_resolver.rs");
         let record = FontRecord {
             id: 1,
             bytes: None,
