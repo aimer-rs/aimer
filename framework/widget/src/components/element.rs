@@ -89,7 +89,7 @@ pub use retained_window::{
 };
 pub use event::{
     ElementPath, EventDispatchContext, EventDispatcher, broadcast_event, dispatch_event,
-    dispatch_focused_event,
+    dispatch_focused_event, focus_is_settling_between_events,
 };
 
 static NEXT_ELEMENT_ID: AtomicU64 = AtomicU64::new(1);

@@ -410,6 +410,12 @@ pub(crate) struct RawTextField {
     pub preedit_text: Cell<String>,
     pub preedit_cursor: Cell<Option<(usize, usize)>>,
     pub ime_enabled: Cell<bool>,
+    /// Whether a keyboard that was held back is still wanted.
+    ///
+    /// Shared with the timer that raises it, so that losing focus, or a rebuilt
+    /// field that took this one's place and then lost it, cancels the raise.
+    #[cfg(target_os = "ios")]
+    keyboard_pending: RefCell<Rc<Cell<bool>>>,
     pub ime_cursor_area: Cell<Option<ImeCaretArea>>,
     pub padding: LayoutSpacing,
     /// Shared presentation state consumed by the retained caret child.
@@ -494,6 +500,9 @@ impl Rebuildable for RawTextField {
         self.scroll_y_extent.set(old.scroll_y_extent.get());
         self.reveal_caret.set(old.reveal_caret.get());
         self.ime_enabled.set(old.ime_enabled.get());
+        #[cfg(target_os = "ios")]
+        self.keyboard_pending
+            .replace(Rc::clone(&old.keyboard_pending.borrow()));
         self.preedit_cursor.set(old.preedit_cursor.get());
         self.ime_cursor_area.set(old.ime_cursor_area.get());
         let selection = old.selection.borrow().as_ref().map(|selection| {
@@ -623,6 +632,8 @@ impl RawTextField {
             preedit_text: Cell::new(String::new()),
             preedit_cursor: Cell::new(None),
             ime_enabled: Cell::new(false),
+            #[cfg(target_os = "ios")]
+            keyboard_pending: RefCell::new(Rc::new(Cell::new(false))),
             ime_cursor_area: Cell::new(None),
             padding: config.padding,
             caret_context,
@@ -754,7 +765,7 @@ impl RawTextField {
             return;
         }
         #[cfg(target_os = "ios")]
-        ios_keyboard::show_keyboard();
+        self.raise_ios_keyboard();
         #[cfg(target_os = "android")]
         android_keyboard::show_keyboard();
         #[cfg(not(any(target_os = "ios", target_os = "android", target_arch = "wasm32")))]
@@ -765,6 +776,30 @@ impl RawTextField {
         wasm_request_keyboard(true, self.input_type);
     }
 
+    /// Raises the iOS keyboard, now for a user's touch and after
+    /// [`KEYBOARD_SETTLE_DELAY`] for a focus the frame settled by itself.
+    ///
+    /// The delayed raise runs on the field's caret scope, so it dies with the
+    /// field, and only if the keyboard is still wanted when the timer fires.
+    #[cfg(target_os = "ios")]
+    fn raise_ios_keyboard(&self) {
+        let delay = keyboard_delay(aimer_widget::focus_is_settling_between_events());
+        let (Some(delay), Some(scope), Some(venus)) =
+            (delay, self.caret_scope, aimer_venus::Venus::current())
+        else {
+            ios_keyboard::show_keyboard();
+            return;
+        };
+        let pending = Rc::clone(&self.keyboard_pending.borrow());
+        pending.set(true);
+        venus.spawn_in(scope, async move {
+            tokio::time::sleep(delay).await;
+            if pending.replace(false) {
+                ios_keyboard::show_keyboard();
+            }
+        });
+    }
+
     /// Turns platform text input off and forgets the reported caret area.
     fn disable_platform_ime(&self) {
         self.ime_cursor_area.set(None);
@@ -772,7 +807,10 @@ impl RawTextField {
             return;
         }
         #[cfg(target_os = "ios")]
-        ios_keyboard::dismiss_keyboard();
+        {
+            self.keyboard_pending.borrow().set(false);
+            ios_keyboard::dismiss_keyboard();
+        }
         #[cfg(target_os = "android")]
         android_keyboard::dismiss_keyboard();
         #[cfg(not(any(target_os = "ios", target_os = "android", target_arch = "wasm32")))]

@@ -858,6 +858,7 @@ impl EventDispatcher {
     /// is what the notified elements returned, so a caller can tell whether the
     /// change needs another frame.
     pub fn settle_focus(&mut self, root: &dyn Element) -> EventResult {
+        let _settling = SettlingBetweenEvents::enter();
         self.synchronize_path_index_for_current_tree(root);
         self.synchronize_focus(root)
     }
@@ -1962,6 +1963,39 @@ fn find_structural_elements<'a>(
         element.structural_children(&mut |child| pending.push(child));
     }
     found
+}
+
+/// Reports whether the focus change being delivered was decided between input
+/// events — by [`EventDispatcher::settle_focus`] at the end of a frame — rather
+/// than by an event the user is making.
+///
+/// An element told [`ElementEvent::FocusGained`] can ask which it was.
+#[inline]
+pub fn focus_is_settling_between_events() -> bool {
+    SETTLING_BETWEEN_EVENTS.with(Cell::get)
+}
+
+thread_local! {
+    static SETTLING_BETWEEN_EVENTS: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Marks [`EventDispatcher::settle_focus`] as running for as long as it lives.
+///
+/// A guard rather than a pair of calls so that a panic in a notified element
+/// cannot leave the next, user-made, focus change looking settled.
+struct SettlingBetweenEvents;
+
+impl SettlingBetweenEvents {
+    fn enter() -> Self {
+        SETTLING_BETWEEN_EVENTS.with(|flag| flag.set(true));
+        Self
+    }
+}
+
+impl Drop for SettlingBetweenEvents {
+    fn drop(&mut self) {
+        SETTLING_BETWEEN_EVENTS.with(|flag| flag.set(false));
+    }
 }
 
 mod routing;

@@ -1898,6 +1898,7 @@ mod tests {
     mod shadow_clip_origin;
     mod stack_bar_touch;
     mod autofocus_settles;
+    mod focus_origin;
     mod window_drag;
     mod text_field_caret;
     mod text_field_in_scrollable;

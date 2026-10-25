@@ -1,3 +1,25 @@
+/// How long the soft keyboard is held back when a page raises it on its own.
+///
+/// A page that autofocuses its field raises the keyboard on the frame that
+/// builds the page, which is the frame its route transition starts on. The
+/// platform builds its keyboard on the main thread, and on the first use that
+/// is a hundred milliseconds or more of work in the middle of the transition,
+/// so the page appears to freeze. Waiting out a typical page transition lets
+/// the page arrive first; the keyboard then has its own animation to rise in.
+const KEYBOARD_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Returns how long to hold the soft keyboard back for a focus change, or
+/// `None` to raise it at once.
+///
+/// A user's touch is answered immediately, as every native field does. Only a
+/// focus that a frame settled by itself, see
+/// [`aimer_widget::focus_is_settling_between_events`], has nobody waiting on
+/// the keyboard and can afford to let a transition finish first.
+#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+fn keyboard_delay(settled_between_events: bool) -> Option<std::time::Duration> {
+    settled_between_events.then_some(KEYBOARD_SETTLE_DELAY)
+}
+
 #[cfg(target_os = "ios")]
 mod ios_keyboard {
     use std::ffi::{CStr, c_char, c_void};
@@ -592,6 +614,8 @@ fn wasm_request_keyboard(show: bool, input_type: InputType) {
 mod ime_caret_area_tests {
     //! What a field tells the platform about its caret.
 
+    use super::{KEYBOARD_SETTLE_DELAY, keyboard_delay};
+
     use super::ImeCaretArea;
     use super::test_support::focused_field;
     use crate::TextEditingController as TextFieldController;
@@ -603,6 +627,16 @@ mod ime_caret_area_tests {
             width: 1.0,
             height: 16.0,
         }
+    }
+
+    #[test]
+    fn a_touch_raises_the_keyboard_at_once() {
+        assert_eq!(keyboard_delay(false), None);
+    }
+
+    #[test]
+    fn a_focus_the_frame_settled_waits_out_the_transition() {
+        assert_eq!(keyboard_delay(true), Some(KEYBOARD_SETTLE_DELAY));
     }
 
     #[test]
