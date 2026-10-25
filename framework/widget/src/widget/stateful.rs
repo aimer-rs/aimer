@@ -3603,7 +3603,7 @@ mod tests {
 /// something else) has no such guarantee about what the rest of the frame must
 /// do, and keeps the ordinary full frame it always had.
 #[inline]
-fn request_state_frame(window: aimer_events::window::WindowKey) {
+pub(crate) fn request_state_frame(window: aimer_events::window::WindowKey) {
     aimer_events::window::with_window_scope(window, || {
         if aimer_venus::is_polling_task() {
             request_scoped_frame();

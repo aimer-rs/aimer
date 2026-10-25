@@ -1,4 +1,5 @@
 mod snapshot_task;
+mod watch;
 
 pub use snapshot_task::{AsyncSnapshotError, FutureSnapshotExt, SnapshotTask};
 

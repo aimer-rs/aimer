@@ -1,10 +1,12 @@
 //! Parts of a `build` output that survive from one build to the next.
 
+use std::any::Any;
+
 use crate::key::Key;
 use crate::widget::Widget;
 use crate::widget::child_builder::ChildBuilder;
 
-use super::BuildContext;
+use super::{BuildConsumer, BuildContext};
 
 /// The retained parts one build scope keeps between its builds.
 ///
@@ -16,6 +18,9 @@ pub(super) struct Slots {
     /// that just ended asked for it.
     build: u64,
     slots: Vec<Slot>,
+    /// Values other than widgets that a scope keeps between its builds, such as
+    /// a running request. Released by the same rule as `slots`.
+    values: Vec<ValueSlot>,
 }
 
 struct Slot {
@@ -23,6 +28,13 @@ struct Slot {
     /// The build that last asked for this slot.
     requested: u64,
     child: ChildBuilder,
+}
+
+struct ValueSlot {
+    key: Key,
+    /// The build that last asked for this slot.
+    requested: u64,
+    value: Box<dyn Any>,
 }
 
 impl Slots {
@@ -34,12 +46,54 @@ impl Slots {
 
     /// Ends a build: a slot this build did not ask for is released, so a part
     /// the owner stopped showing does not keep its element alive.
+    ///
+    /// Returns the values that were released. Dropping one can run arbitrary
+    /// code, such as cancelling a request, so the caller drops them after it has
+    /// given up its borrow of these slots.
     #[inline]
-    pub(super) fn end_build(&mut self) {
+    pub(super) fn end_build(&mut self) -> Vec<Box<dyn Any>> {
+        let build = self.build;
         if !self.slots.is_empty() {
-            let build = self.build;
             self.slots.retain(|slot| slot.requested == build);
         }
+        let mut released = Vec::new();
+        let mut index = 0;
+        while index < self.values.len() {
+            if self.values[index].requested == build {
+                index += 1;
+            } else {
+                released.push(self.values.swap_remove(index).value);
+            }
+        }
+        released
+    }
+
+    /// Returns the value kept under `key`, if there is one of type `V`, and
+    /// counts it as asked for by this build.
+    fn get_value<V: Any + Clone>(&mut self, key: &Key) -> Option<V> {
+        let build = self.build;
+        let slot = self.values.iter_mut().find(|slot| &slot.key == key)?;
+        let value = slot.value.downcast_ref::<V>()?.clone();
+        slot.requested = build;
+        Some(value)
+    }
+
+    /// Keeps `value` under `key` for the following builds.
+    ///
+    /// A value already kept under the key, of any type, is replaced and
+    /// returned for the caller to drop.
+    fn insert_value<V: Any>(&mut self, key: Key, value: V) -> Option<Box<dyn Any>> {
+        let build = self.build;
+        if let Some(slot) = self.values.iter_mut().find(|slot| slot.key == key) {
+            slot.requested = build;
+            return Some(std::mem::replace(&mut slot.value, Box::new(value)));
+        }
+        self.values.push(ValueSlot {
+            key,
+            requested: build,
+            value: Box::new(value),
+        });
+        None
     }
 
     fn get(&mut self, key: &Key) -> Option<ChildBuilder> {
@@ -124,5 +178,22 @@ impl BuildContext<'_> {
         let child = ChildBuilder::slot_from_widget(build());
         consumer.retained.borrow_mut().insert(key, child.clone());
         child
+    }
+}
+
+impl BuildConsumer {
+    /// Returns the value of type `V` this scope keeps under `key`, counting it
+    /// as asked for by the build in progress.
+    ///
+    /// A value kept under `key` with another type is not returned.
+    pub(crate) fn retained_value<V: Any + Clone>(&self, key: &Key) -> Option<V> {
+        self.retained.borrow_mut().get_value(key)
+    }
+
+    /// Keeps `value` under `key` until a build of this scope stops asking for
+    /// it or the scope ends.
+    pub(crate) fn retain_value<V: Any>(&self, key: Key, value: V) {
+        let displaced = self.retained.borrow_mut().insert_value(key, value);
+        drop(displaced);
     }
 }

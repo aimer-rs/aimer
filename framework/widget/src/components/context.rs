@@ -16,10 +16,12 @@ use tokio::runtime::Handle;
 
 use crate::components::element::DirtySource;
 
+mod current;
 mod retain;
 mod type_id_hasher;
 mod window_handle;
 
+pub use current::{ActiveBuildContext, NoActiveBuildContext};
 pub use window_handle::{HeadlessWindowState, WindowHandle};
 
 pub use type_id_hasher::{InheritedStates, TypeIdHasher};
@@ -585,8 +587,10 @@ impl<'a> BuildContext<'a> {
         callback: impl FnOnce(&Self) -> R,
     ) -> R {
         consumer.begin_build();
+        let _scope = current::BuildScope::enter(self);
         let result = self.with_state(CurrentBuildConsumer(consumer.clone()), callback);
-        consumer.retained.borrow_mut().end_build();
+        let released = consumer.retained.borrow_mut().end_build();
+        drop(released);
         result
     }
 
@@ -888,5 +892,105 @@ mod tests {
         assert_eq!(cleanup_count.get(), 1);
         consumer.mark_needs_rebuild();
         assert!(dirty.get());
+    }
+
+    #[test]
+    fn current_is_the_context_being_built() {
+        let mut context = context();
+        context.scale = 2.5;
+        let consumer = BuildConsumer::new(Rc::new(Cell::new(false)));
+
+        context.with_build_consumer(consumer, |built| {
+            let current = BuildContext::current();
+            assert!(std::ptr::eq(current.get(), built));
+            assert_eq!(current.get().scale, 2.5);
+            assert!(current.is_live());
+            // SAFETY: a build scope is active and `built` outlives this block.
+            let unchecked = unsafe { BuildContext::unchecked_current() };
+            assert!(std::ptr::eq(unchecked, built));
+        });
+    }
+
+    #[test]
+    fn there_is_no_current_context_outside_a_build() {
+        assert_eq!(BuildContext::try_current().err(), Some(NoActiveBuildContext));
+
+        let context = context();
+        let consumer = BuildConsumer::new(Rc::new(Cell::new(false)));
+        context.with_build_consumer(consumer, |_| {});
+
+        assert!(BuildContext::try_current().is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "no widget build is running on this thread")]
+    fn current_panics_outside_a_build() {
+        let _ = BuildContext::current();
+    }
+
+    #[test]
+    fn nested_builds_see_their_own_context_and_restore_the_outer_one() {
+        let mut outer_context = context();
+        outer_context.scale = 1.5;
+        let mut inner_context = context();
+        inner_context.scale = 3.0;
+        let consumer = || BuildConsumer::new(Rc::new(Cell::new(false)));
+
+        outer_context.with_build_consumer(consumer(), |_| {
+            let outer = BuildContext::current();
+            inner_context.with_build_consumer(consumer(), |_| {
+                assert_eq!(BuildContext::current().get().scale, 3.0);
+                // The outer guard is still valid while a nested build runs.
+                assert!(outer.is_live());
+                assert_eq!(outer.get().scale, 1.5);
+            });
+            assert_eq!(BuildContext::current().get().scale, 1.5);
+        });
+    }
+
+    #[test]
+    fn a_guard_is_not_live_once_its_build_has_ended() {
+        let context = context();
+        let consumer = BuildConsumer::new(Rc::new(Cell::new(false)));
+
+        let escaped = context.with_build_consumer(consumer, |_| BuildContext::current());
+
+        assert!(!escaped.is_live());
+    }
+
+    #[test]
+    #[should_panic(expected = "build that created it has ended")]
+    fn using_a_guard_after_its_build_ended_panics() {
+        let context = context();
+        let consumer = BuildConsumer::new(Rc::new(Cell::new(false)));
+
+        let escaped = context.with_build_consumer(consumer, |_| BuildContext::current());
+
+        let _ = escaped.get();
+    }
+
+    #[test]
+    fn a_guard_does_not_match_a_later_build_at_the_same_depth() {
+        let context = context();
+        let consumer = BuildConsumer::new(Rc::new(Cell::new(false)));
+        let escaped = context.with_build_consumer(consumer.clone(), |_| BuildContext::current());
+
+        context.with_build_consumer(consumer, |_| {
+            assert!(BuildContext::try_current().is_ok());
+            assert!(!escaped.is_live());
+        });
+    }
+
+    #[test]
+    fn a_panicking_build_leaves_no_current_context_behind() {
+        let context = context();
+        let consumer = BuildConsumer::new(Rc::new(Cell::new(false)));
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            context.with_build_consumer(consumer, |_| panic!("build failed"));
+        }));
+
+        assert!(result.is_err());
+        assert!(BuildContext::try_current().is_err());
     }
 }
