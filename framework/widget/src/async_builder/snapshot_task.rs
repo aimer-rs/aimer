@@ -45,6 +45,9 @@ struct SnapshotState<T, E> {
     runtime: Weak<Venus>,
     // The task holds only a Weak to this state: the last handle owns cancellation.
     scope: Option<TaskScope>,
+    /// Runs after every completion, once the snapshot has been written and its
+    /// borrow released, so it may read the snapshot.
+    wake: Option<Box<dyn Fn()>>,
 }
 
 impl<T, E> SnapshotState<T, E> {
@@ -56,6 +59,9 @@ impl<T, E> SnapshotState<T, E> {
             runtime.abort(timer);
         }
         *self.snapshot.borrow_mut() = snapshot;
+        if let Some(wake) = &self.wake {
+            wake();
+        }
     }
 }
 
@@ -170,34 +176,89 @@ pub trait FutureSnapshotExt<T: 'static, E: 'static>:
     /// [`AsyncSnapshotError::RuntimeUnavailable`]. Errors from the operation are
     /// preserved inside [`AsyncSnapshotError::Future`].
     fn waitme(self) -> SnapshotTask<T, E> {
-        let runtime = Venus::current();
-        let scope = runtime.as_ref().map(|runtime| runtime.scope());
-        let state = Rc::new(SnapshotState {
-            snapshot: RefCell::new(if runtime.is_some() {
-                AsyncSnapshot::Waiting
-            } else {
-                AsyncSnapshot::Error(AsyncSnapshotError::RuntimeUnavailable)
-            }),
-            task: Cell::new(None),
-            timeout_task: Cell::new(None),
-            runtime: runtime.as_ref().map_or_else(Weak::new, Rc::downgrade),
-            scope,
-        });
-        if let Some(runtime) = runtime {
-            let target = Rc::downgrade(&state);
-            let scope = state.scope.as_ref().expect("a runtime owns a task scope").id();
-            state.task.set(Some(runtime.spawn_in(scope, async move {
-                let result = self.await;
-                if let Some(state) = target.upgrade() {
-                    state.complete(match result {
-                        Ok(value) => AsyncSnapshot::Data(value),
-                        Err(error) => AsyncSnapshot::Error(AsyncSnapshotError::Future(error)),
-                    });
-                }
-            })));
-        }
-        SnapshotTask { state }
+        spawn_snapshot(self, None)
     }
+
+    /// Runs this future once for the widget being built and returns its live
+    /// snapshot, rebuilding that widget when the snapshot changes.
+    ///
+    /// Call it from `build`. The first build that asks for `key` moves the
+    /// future into Venus; every later build of the same widget that asks for
+    /// the same `key` gets the same [`SnapshotTask`] back and drops the new
+    /// future unpolled. When the future finishes, the widget is marked dirty
+    /// and a frame is requested, so the next build reads the result.
+    ///
+    /// # The key is the dependency list
+    ///
+    /// Like [`BuildContext::retain`], the key says what the future depends on.
+    /// Put whatever the future reads into it: when it changes, the previous
+    /// future is cancelled and a new one starts. A key a build stops asking for
+    /// cancels its future, as does unmounting the widget.
+    ///
+    /// A key identifies a future within one widget, not across the tree. Using
+    /// the same key twice in one build returns the same task for both calls.
+    /// Reusing a key for a different `T` or `E` replaces the earlier future.
+    ///
+    /// # Outside a build
+    ///
+    /// Nothing is retained and nothing is rebuilt: the call behaves like
+    /// [`FutureSnapshotExt::waitme`], and panics in debug builds, because a
+    /// widget that never rebuilds is a bug rather than a use.
+    ///
+    /// ```ignore
+    /// fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    ///     let user = fetch_user(self.id).watch(format!("user:{}", self.id));
+    ///     match &*user.read() {
+    ///         AsyncSnapshot::Waiting => Spinner::new().boxed(),
+    ///         AsyncSnapshot::Data(user) => Profile::new(user).boxed(),
+    ///         AsyncSnapshot::Error(_) => ErrorView::new().boxed(),
+    ///     }
+    /// }
+    /// ```
+    #[track_caller]
+    fn watch(self, key: impl Into<crate::Key>) -> SnapshotTask<T, E> {
+        super::watch::watch_future(self, key.into())
+    }
+}
+
+/// Moves `future` into the installed runtime and returns its live snapshot.
+///
+/// `wake` runs after every completion of the snapshot, on the UI thread.
+pub(super) fn spawn_snapshot<F, T: 'static, E: 'static>(
+    future: F,
+    wake: Option<Box<dyn Fn()>>,
+) -> SnapshotTask<T, E>
+where
+    F: Future<Output = Result<T, E>> + 'static,
+{
+    let runtime = Venus::current();
+    let scope = runtime.as_ref().map(|runtime| runtime.scope());
+    let state = Rc::new(SnapshotState {
+        snapshot: RefCell::new(if runtime.is_some() {
+            AsyncSnapshot::Waiting
+        } else {
+            AsyncSnapshot::Error(AsyncSnapshotError::RuntimeUnavailable)
+        }),
+        task: Cell::new(None),
+        timeout_task: Cell::new(None),
+        runtime: runtime.as_ref().map_or_else(Weak::new, Rc::downgrade),
+        scope,
+        wake,
+    });
+    if let Some(runtime) = runtime {
+        let target = Rc::downgrade(&state);
+        let scope = state.scope.as_ref().expect("a runtime owns a task scope").id();
+        state.task.set(Some(runtime.spawn_in(scope, async move {
+            let result = future.await;
+            if let Some(state) = target.upgrade() {
+                state.complete(match result {
+                    Ok(value) => AsyncSnapshot::Data(value),
+                    Err(error) => AsyncSnapshot::Error(AsyncSnapshotError::Future(error)),
+                });
+            }
+        })));
+    }
+    SnapshotTask { state }
 }
 
 impl<F, T: 'static, E: 'static> FutureSnapshotExt<T, E> for F
