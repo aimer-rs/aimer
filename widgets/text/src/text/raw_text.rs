@@ -43,6 +43,9 @@ struct PlainDecorationCache {
 struct RawTextAuxCache {
     paragraph: Option<Paragraph>,
     plain_decorations: Option<PlainDecorationCache>,
+    /// The parent size, as `[width, height]` bits, the text was last recorded
+    /// against. See [`RawTextWidget::local_v2_paint_needs_recording`].
+    recorded_parent_size: Option<[u32; 2]>,
 }
 
 /// Low-level element that lays out and paints one run of text.
@@ -262,6 +265,7 @@ impl RawTextWidget {
         include_paint_outsets: bool,
         before_foreground: impl FnOnce(&aimer_canvas::Canvas),
     ) -> bool {
+        self.note_recorded_parent_size(ctx);
         let mut before_foreground = Some(before_foreground);
         if let Some(data) = self.local_v2_paragraph_paint_data(ctx) {
             let outset_left = if include_paint_outsets {
@@ -390,6 +394,22 @@ impl RawTextWidget {
         ))
     }
 
+    fn parent_size_bits(ctx: &BuildContext) -> [u32; 2] {
+        [
+            ctx.parent_size.width.to_bits(),
+            ctx.parent_size.height.to_bits(),
+        ]
+    }
+
+    /// Remembers the parent size this text is being recorded against.
+    fn note_recorded_parent_size(&self, ctx: &BuildContext) {
+        let bits = Self::parent_size_bits(ctx);
+        self.cache.with_extra(|slot: &mut Option<RawTextAuxCache>| {
+            slot.get_or_insert_with(RawTextAuxCache::default)
+                .recorded_parent_size = Some(bits);
+        });
+    }
+
     fn uses_paragraph_layout(&self) -> bool {
         self.line_height != LineHeight::Normal
             || self.text_indent != 0.0
@@ -430,6 +450,23 @@ impl Drawable for RawTextWidget {
         let canvas = aimer_canvas::Canvas::of(ctx);
         assert!(self.record_local_v2_into(&canvas, ctx, Vec2d { x: 0.0, y: 0.0 }, true, |_| {},));
         canvas.finish();
+    }
+
+    /// The recorded text aligns, wraps and clips inside its parent's box, not
+    /// its own, so it goes stale when the parent changes size while the text
+    /// does not: centered text in a window that was resized is still where the
+    /// old window's middle was. The node's own bounds say nothing about this.
+    ///
+    /// Runs for every text node each frame, so it is one borrow and two integer
+    /// compares. A text that was never recorded has nothing to refresh; its
+    /// first recording is requested by the render node itself.
+    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+        let now = Self::parent_size_bits(ctx);
+        self.cache.with_extra(|slot: &mut Option<RawTextAuxCache>| {
+            slot.as_ref()
+                .and_then(|aux| aux.recorded_parent_size)
+                .is_some_and(|recorded| recorded != now)
+        })
     }
 
     fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {

@@ -568,7 +568,13 @@ impl<'a> SfntFace<'a> {
     /// Reports whether the portable rasterizer must decline this face.
     pub(crate) fn requires_platform_rasterization(&self) -> bool {
         if self.apple_private.is_empty() {
-            return self.has_apple_private_color_tables() && !self.has_standard_outline();
+            // Private color strikes inside `sbix` decide on their own, unlike
+            // the directory tags below where a public outline takes
+            // precedence: a color face has no outline to prefer. The iOS
+            // emoji face keeps a `glyf` table whose emoji entries are empty,
+            // and honoring it made the owned path return blank glyphs
+            // instead of declining to the platform.
+            return self.has_apple_private_color_tables();
         }
         self.apple_private
             .requires_platform_raster(self.has_standard_outline())
@@ -4301,11 +4307,10 @@ pub(crate) mod tests {
         );
     }
 
-    #[test]
-    fn classifies_emjc_graphic_type_inside_sbix_as_private_color_data() {
-        let (head, mut hhea, mut maxp, hmtx) = metrics_tables();
-        hhea[34..36].copy_from_slice(&1_u16.to_be_bytes());
-        maxp[4..6].copy_from_slice(&1_u16.to_be_bytes());
+    /// An `sbix` table with one strike holding one glyph whose graphic type is
+    /// `graphic_type`. The three payload bytes are never decoded by the
+    /// classification under test.
+    fn one_glyph_sbix(graphic_type: &[u8; 4]) -> Vec<u8> {
         let record_start = 12;
         let record_end = record_start + 8 + 3;
         let mut sbix = Vec::new();
@@ -4319,8 +4324,17 @@ pub(crate) mod tests {
         sbix.extend_from_slice(&(record_end as u32).to_be_bytes());
         sbix.extend_from_slice(&0_i16.to_be_bytes());
         sbix.extend_from_slice(&0_i16.to_be_bytes());
-        sbix.extend_from_slice(b"emjc");
+        sbix.extend_from_slice(graphic_type);
         sbix.extend_from_slice(&[0x01, 0x02, 0x03]);
+        sbix
+    }
+
+    #[test]
+    fn classifies_emjc_graphic_type_inside_sbix_as_private_color_data() {
+        let (head, mut hhea, mut maxp, hmtx) = metrics_tables();
+        hhea[34..36].copy_from_slice(&1_u16.to_be_bytes());
+        maxp[4..6].copy_from_slice(&1_u16.to_be_bytes());
+        let sbix = one_glyph_sbix(b"emjc");
 
         let bytes = sfnt_with_tables(&[
             (*b"head", head.as_slice()),
@@ -4333,6 +4347,80 @@ pub(crate) mod tests {
 
         assert!(face.has_apple_private_color_tables());
         assert!(face.requires_platform_rasterization());
+    }
+
+    /// The iOS emoji face (`AppleColorEmoji-160px.ttc`) keeps a `glyf` table
+    /// whose emoji entries are empty, beside `emjc` strikes only the platform
+    /// can decode. Treating that placeholder as "a public outline" sent the
+    /// face down the owned path, which found nothing to draw and returned a
+    /// blank glyph instead of declining, so every emoji vanished on iOS.
+    #[test]
+    fn emjc_color_face_with_placeholder_outlines_still_routes_to_the_platform() {
+        let (head, mut hhea, mut maxp, hmtx) = metrics_tables();
+        hhea[34..36].copy_from_slice(&1_u16.to_be_bytes());
+        maxp[4..6].copy_from_slice(&1_u16.to_be_bytes());
+        let sbix = one_glyph_sbix(b"emjc");
+        let placeholder_glyf = [0_u8; 4];
+
+        let bytes = sfnt_with_tables(&[
+            (*b"glyf", placeholder_glyf.as_slice()),
+            (*b"head", head.as_slice()),
+            (*b"hhea", hhea.as_slice()),
+            (*b"hmtx", hmtx.as_slice()),
+            (*b"maxp", maxp.as_slice()),
+            (*b"sbix", sbix.as_slice()),
+        ]);
+        let face = SfntFace::from_bytes(&bytes, 0).expect("emoji face should parse");
+
+        assert!(face.has_standard_outline());
+        assert!(face.has_apple_private_color_tables());
+        assert!(
+            face.requires_platform_rasterization(),
+            "private color strikes must reach the platform even beside a glyf table"
+        );
+
+        let metrics = face.metrics().expect("emoji face metrics should parse");
+        let mut cache = super::rasterize::GlyphRasterCache::default();
+        assert!(
+            super::rasterize::rasterize_face_glyph(
+                &face,
+                &metrics,
+                0,
+                16.0,
+                0,
+                0,
+                super::super::glyph_rasterizer::NORMAL_GLYPH_WEIGHT,
+                &mut cache,
+            )
+            .is_none(),
+            "declining is what hands the glyph to the platform rasterizer"
+        );
+    }
+
+    /// The other side of the rule: a bitmap emoji face whose strikes are
+    /// public formats (`png `) is decoded by the owned path, outline table or
+    /// not, and must not be pushed onto the platform.
+    #[test]
+    fn public_sbix_color_face_with_outlines_stays_on_the_owned_path() {
+        let (head, mut hhea, mut maxp, hmtx) = metrics_tables();
+        hhea[34..36].copy_from_slice(&1_u16.to_be_bytes());
+        maxp[4..6].copy_from_slice(&1_u16.to_be_bytes());
+        let sbix = one_glyph_sbix(b"png ");
+        let glyf = [0_u8; 4];
+
+        let bytes = sfnt_with_tables(&[
+            (*b"glyf", glyf.as_slice()),
+            (*b"head", head.as_slice()),
+            (*b"hhea", hhea.as_slice()),
+            (*b"hmtx", hmtx.as_slice()),
+            (*b"maxp", maxp.as_slice()),
+            (*b"sbix", sbix.as_slice()),
+        ]);
+        let face = SfntFace::from_bytes(&bytes, 0).expect("public sbix face should parse");
+
+        assert!(face.has_standard_outline());
+        assert!(!face.has_apple_private_color_tables());
+        assert!(!face.requires_platform_rasterization());
     }
 
     #[test]

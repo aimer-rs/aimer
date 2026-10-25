@@ -2787,6 +2787,11 @@ impl GlyphRasterizer {
         style: FontStyle,
     ) -> Option<FontId> {
         let base_char = cluster.chars().find(|codepoint| !codepoint.is_control())?;
+        if let Some(emoji_face) =
+            self.emoji_presentation_face(cluster, base_char, font_size, weight)
+        {
+            return Some(emoji_face);
+        }
         if family == FontFamily::SANS_SERIF {
             // SANS_SERIF is the fixed primary family. Re-entering the
             // family-record selector here only repeats a primary cmap probe
@@ -2800,6 +2805,40 @@ impl GlyphRasterizer {
             self.glyph_key_for_family_codepoint(base_char, font_size, family, weight, style)
                 .font_id,
         )
+    }
+
+    /// The color emoji face `cluster` must be drawn in, when its text asks for
+    /// emoji presentation and a color face can draw it.
+    ///
+    /// `U+FE0F` after a character that defaults to text presentation (`❤`,
+    /// `♥`, `☺`) is how text says "the emoji, please". The face is otherwise
+    /// chosen from the base character alone, which for these characters is a
+    /// monochrome symbols face, or the primary face's own `♥`.
+    ///
+    /// ASCII bases are left to their text face: they are the keycap bases
+    /// (`#`, `*`, digits), and the emoji face's glyph for one of them is only
+    /// the keycap's body. Returns `None` when there is no color face on the
+    /// platform or it has no glyph for `base`, so the ordinary choice stands.
+    fn emoji_presentation_face(
+        &mut self,
+        cluster: &str,
+        base: char,
+        font_size: f32,
+        weight: FontWeight,
+    ) -> Option<FontId> {
+        if base.is_ascii() || !cluster.contains('\u{FE0F}') {
+            return None;
+        }
+        // Ask for a character every color emoji face draws, rather than
+        // searching the fallback chain for one: the chain resolves it the same
+        // way text that is already an emoji would be.
+        let emoji = self
+            .glyph_key_for_codepoint_at_weight('\u{1F600}', font_size, weight)
+            .font_id;
+        if !self.font_record_by_id(emoji)?.is_color {
+            return None;
+        }
+        self.glyph_index_for_font(emoji, base).map(|_| emoji)
     }
 
     pub fn shape_run_for_family(

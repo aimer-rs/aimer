@@ -1902,6 +1902,7 @@ mod tests {
     mod text_field_caret;
     mod text_field_in_scrollable;
     mod text_field_chrome;
+    mod text_follows_resize;
     mod stack_occlusion;
     mod scalable_overflow;
     mod scalable_text;

@@ -4272,6 +4272,69 @@ mod tests {
         assert_eq!(font_ids[0], font_ids[2]);
     }
 
+    /// `❤` and `♥` default to text presentation, and `U+FE0F` is how text asks
+    /// for the emoji form. Resolving the face from the base character alone
+    /// gave `❤️` the monochrome glyph of a symbols font on macOS.
+    #[cfg(all(
+        any(target_os = "ios", target_os = "macos"),
+        feature = "apple-core-text"
+    ))]
+    #[test]
+    fn emoji_presentation_selector_draws_text_default_symbols_as_color_emoji() {
+        let mut rasterizer = GlyphRasterizer::new();
+
+        for symbol in ['\u{2764}', '\u{2665}', '\u{263A}'] {
+            let text = format!("{symbol}\u{FE0F}");
+            let shaped = shape_text(&mut rasterizer, &text, 16.0);
+
+            assert_eq!(shaped.clusters.len(), 1, "{text:?} is one grapheme");
+            let key = shaped.clusters[0]
+                .glyphs
+                .first()
+                .unwrap_or_else(|| panic!("{text:?} must shape to a glyph"))
+                .key;
+            let glyph = rasterizer.glyph_metrics_for_key(key, 16.0);
+            assert!(
+                glyph.is_color,
+                "{symbol:?} + U+FE0F must use the color emoji face, not a text symbol face"
+            );
+            assert!(
+                glyph.width > 0 && glyph.height > 0,
+                "{symbol:?} + U+FE0F must have a visible bitmap"
+            );
+        }
+    }
+
+    /// Keycaps are `U+FE0F` sequences too, but their bases are ASCII digits the
+    /// text face already draws; the selector must not move them to the emoji
+    /// face as a standalone digit.
+    #[cfg(all(
+        any(target_os = "ios", target_os = "macos"),
+        feature = "apple-core-text"
+    ))]
+    #[test]
+    fn emoji_presentation_selector_leaves_ascii_keycap_bases_alone() {
+        let mut rasterizer = GlyphRasterizer::new();
+        let resolve = |rasterizer: &mut GlyphRasterizer, cluster: &str| {
+            rasterizer.font_id_for_family_cluster(
+                cluster,
+                16.0,
+                FontFamily::SANS_SERIF,
+                FontWeight::Normal,
+                FontStyle::Normal,
+            )
+        };
+
+        assert_eq!(
+            resolve(&mut rasterizer, "1\u{FE0F}\u{20E3}"),
+            resolve(&mut rasterizer, "1"),
+        );
+        assert_eq!(
+            resolve(&mut rasterizer, "#\u{FE0F}"),
+            resolve(&mut rasterizer, "#"),
+        );
+    }
+
     #[cfg(all(
         any(target_os = "ios", target_os = "macos"),
         feature = "apple-core-text"

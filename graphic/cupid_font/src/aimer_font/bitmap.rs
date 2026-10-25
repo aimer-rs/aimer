@@ -247,7 +247,14 @@ impl SbixTable {
         if !font_size.is_finite() || font_size <= 0.0 {
             return None;
         }
-        let strike = best_strike(&self.strikes, font_size, |strike| strike.ppem)?;
+        // The nearest strike that has this glyph at all: a font may add a glyph
+        // to only some of its sizes.
+        let strike = best_strike_where(
+            &self.strikes,
+            font_size,
+            |strike| strike.ppem,
+            |strike| strike.image(table, glyph_id, 0).is_some(),
+        )?;
         let image = strike.image(table, glyph_id, 0)?;
         let decoded = decode_image(image.kind, image.bytes)?;
         let scale = font_size / f32::from(strike.ppem);
@@ -982,7 +989,21 @@ fn scaled_dimension(value: u32, scale: f32) -> Option<u32> {
 }
 
 fn best_strike<T>(strikes: &[T], font_size: f32, ppem: impl Fn(&T) -> u16) -> Option<&T> {
-    strikes.iter().min_by(|left, right| {
+    best_strike_where(strikes, font_size, ppem, |_| true)
+}
+
+/// The strike nearest `font_size` among those `usable` accepts.
+///
+/// Strikes are not guaranteed to hold the same glyphs: a font may add a newer
+/// glyph to only some sizes, and the nearest strike is useless to a glyph it
+/// lacks while a farther one can draw it.
+fn best_strike_where<T>(
+    strikes: &[T],
+    font_size: f32,
+    ppem: impl Fn(&T) -> u16,
+    usable: impl Fn(&T) -> bool,
+) -> Option<&T> {
+    strikes.iter().filter(|strike| usable(strike)).min_by(|left, right| {
         let left_ppem = f32::from(ppem(left));
         let right_ppem = f32::from(ppem(right));
         let left_distance = (left_ppem - font_size).abs();
@@ -1087,6 +1108,63 @@ mod tests {
         assert_eq!(glyph.advance_width, 7.0);
         assert!(glyph.is_color);
         assert_eq!(glyph.bitmap.len(), 4);
+    }
+
+    /// Apple Color Emoji ships newer emoji (the grey heart, for one) in only
+    /// some of its strikes. The strike nearest the requested size may hold no
+    /// bitmap for a glyph that a larger one has, and giving up there turned
+    /// the glyph into a blank.
+    #[test]
+    fn sbix_uses_the_nearest_strike_that_has_the_glyph() {
+        let png = tiny_png();
+        let (empty_strike, full_strike) = (16usize, 32usize);
+        let data_start = 4 + 3 * 4; // header plus three glyph offsets
+        let record_len = 8 + png.len();
+        let mut table = Vec::new();
+        table.extend_from_slice(&1_u16.to_be_bytes());
+        table.extend_from_slice(&0_u16.to_be_bytes());
+        table.extend_from_slice(&2_u32.to_be_bytes());
+        table.extend_from_slice(&(empty_strike as u32).to_be_bytes());
+        table.extend_from_slice(&(full_strike as u32).to_be_bytes());
+        // The 16 ppem strike: two glyphs, neither with a bitmap.
+        table.extend_from_slice(&16_u16.to_be_bytes());
+        table.extend_from_slice(&72_u16.to_be_bytes());
+        for _ in 0..3 {
+            table.extend_from_slice(&(data_start as u32).to_be_bytes());
+        }
+        // The 32 ppem strike: glyph 1 has a PNG.
+        table.extend_from_slice(&32_u16.to_be_bytes());
+        table.extend_from_slice(&72_u16.to_be_bytes());
+        table.extend_from_slice(&(data_start as u32).to_be_bytes());
+        table.extend_from_slice(&(data_start as u32).to_be_bytes());
+        table.extend_from_slice(&((data_start + record_len) as u32).to_be_bytes());
+        table.extend_from_slice(&0_i16.to_be_bytes());
+        table.extend_from_slice(&0_i16.to_be_bytes());
+        table.extend_from_slice(b"png ");
+        table.extend_from_slice(png);
+
+        let parsed = parse_sbix(&table, 2, 2048, false)
+            .expect("valid sbix")
+            .expect("two strikes");
+
+        let glyph = parsed
+            .rasterize(&table, 1, 16.0, 7.0)
+            .expect("the larger strike must supply a glyph the nearest one lacks");
+        assert!(glyph.is_color);
+        assert!(glyph.width > 0 && glyph.height > 0);
+        assert!(
+            parsed.rasterize(&table, 0, 16.0, 7.0).is_none(),
+            "a glyph no strike holds is still absent"
+        );
+    }
+
+    #[test]
+    fn nearest_usable_strike_skips_strikes_that_fail_the_check() {
+        let strikes = [20_u16, 32_u16, 64_u16];
+        let selected = best_strike_where(&strikes, 16.0, |strike| *strike, |strike| *strike >= 32);
+        assert_eq!(selected, Some(&32));
+        let none = best_strike_where(&strikes, 16.0, |strike| *strike, |_| false);
+        assert_eq!(none, None);
     }
 
     #[test]

@@ -928,9 +928,16 @@ mod family_metrics_tests {
         );
 
         assert!(widths.len() > 1, "the sample must wrap at {max_width}px");
+        // A line may stop short by the longest run that has no break inside it.
+        // In this sample that is `好！）`: `！` and `）` may not start a line, so
+        // they travel with the ideograph before them, three ems that move to the
+        // next line together. Where that run falls depends on the width of the
+        // Latin prefix, and so on the host's sans-serif face. Rewinding to the
+        // last Latin space instead would stop near 60px, far outside this.
+        let longest_unbreakable_run = font_size * 3.0;
         for (index, width) in widths.iter().enumerate().take(widths.len() - 1) {
             assert!(
-                *width > max_width - font_size * 1.5,
+                *width > max_width - longest_unbreakable_run,
                 "line {index} stopped at {width}px of {max_width}px"
             );
         }

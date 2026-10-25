@@ -155,7 +155,8 @@ impl MaterialDrawRequest {
     /// does not fit the shared body and is appended to it.
     pub const GRADIENT_VERSION: u8 = 4;
     /// Exact byte length of [`Self::encode`] for a [`MaterialKind::Gradient`].
-    pub const GRADIENT_PACKET_LEN: usize = Self::PACKET_LEN + aimer_cupid::material::GRADIENT_PACKET_EXTENSION_LEN;
+    pub const GRADIENT_PACKET_LEN: usize =
+        Self::PACKET_LEN + aimer_cupid::material::GRADIENT_PACKET_EXTENSION_LEN;
     /// Maximum blur accepted by the bridge.
     pub const MAX_BLUR_RADIUS: f32 = 96.0;
     /// Maximum shadow blur accepted by the bridge.

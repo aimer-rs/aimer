@@ -1,0 +1,16 @@
+[test-groups]
+# `aimer_vault`'s platform tests use the machine's real secret store, and there
+# is only one per machine. nextest runs every test in its own process, so left
+# alone they all talk to the same store at once. On Linux that store is a single
+# gnome-keyring daemon, which does not survive it: under concurrent clients it
+# exits, D-Bus starts a fresh one with no unlocked keyring, and every request
+# after that fails or waits for an unlock prompt nobody can answer.
+secret-store = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(aimer_vault) & binary(platform_vault)'
+test-group = 'secret-store'
+# These tests take milliseconds when the store answers, so a test that is still
+# running after this is waiting on a prompt that will never be answered. Fail it
+# instead of holding the job until the runner's own limit.
+slow-timeout = { period = "30s", terminate-after = 2 }
