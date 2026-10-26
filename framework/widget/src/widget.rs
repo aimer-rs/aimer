@@ -268,14 +268,6 @@ unsafe impl<W: DynWidget> aimer_rubick::ErasedFrom<W> for dyn DynWidget {
 #[repr(transparent)]
 pub struct AnyWidget(Rubick<dyn DynWidget, 8>);
 
-
-impl<T: Widget> From<T> for AnyWidget {
-
-    fn from(value: T) -> Self {
-        value.notype()
-    }
-}
-
 impl AnyWidget {
     /// Payload bytes a widget may occupy and still be stored inside the handle.
     ///
