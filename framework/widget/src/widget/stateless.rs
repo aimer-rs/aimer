@@ -11,12 +11,52 @@ use crate::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutElement,
     Rebuildable, VisitorElement, Widget,
 };
-// StatelessWidget is effectively just a Widget.
-// We rely on direct Widget implementation to avoid blanket implementation
-// conflicts. The trait is kept for backward compatibility if needed, but
-// generally users should implement Widget directly.
-
+/// A widget that describes its UI purely from its own fields and the
+/// [`BuildContext`], and owns no mutable state of its own.
+///
+/// Implement [`build`](StatelessWidget::build) and put
+/// `#[derive(StatelessWidget)]` on the struct; that is all a stateless widget
+/// needs. The derive writes the [`Widget`] impl for you, so there is no
+/// `to_element` to implement by hand — prefer it over implementing `Widget`
+/// directly. The trait alone does not make a type a `Widget`, which is what
+/// lets the derive avoid a blanket impl that would conflict with every
+/// hand-written `Widget`. The generated element keeps the widget itself rather
+/// than a copy, so it can call `build` again whenever it is marked dirty.
+///
+/// `build` therefore may run many times — after a parent rebuild, or when the
+/// window is resized and `build` read something such as `MediaQuery` from the
+/// context. Treat it as a pure description: derive everything from `self` and
+/// `ctx`, and leave timers, subscriptions and other side effects out of it. If
+/// the widget has to remember something between builds — a counter, a hover
+/// flag, an animation controller — it needs a
+/// [`StatefulWidget`](crate::StatefulWidget) instead.
+///
+/// A named struct with a field `key: Option<Key>` has that key forwarded to
+/// its element, which gives the widget a stable identity across rebuilds.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use aimer::*;
+///
+/// #[derive(StatelessWidget)]
+/// struct Greeting {
+///     name: String,
+/// }
+///
+/// impl StatelessWidget for Greeting {
+///     fn build(&self, _ctx: &BuildContext) -> impl Widget {
+///         Text::new(format!("Hello, {}", self.name))
+///     }
+/// }
+/// ```
 pub trait StatelessWidget {
+    /// Describes the UI for the current configuration.
+    ///
+    /// Called every time the widget's element is built or rebuilt, with `&self`
+    /// because the widget is kept for later rebuilds. Keep it cheap and free of
+    /// side effects: it sits on the rebuild path and can run on every frame
+    /// that invalidates the widget.
     fn build(&self, ctx: &BuildContext) -> impl Widget;
 }
 

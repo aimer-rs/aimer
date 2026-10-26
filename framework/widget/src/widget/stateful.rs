@@ -809,9 +809,42 @@ impl<S: 'static> StateUpdater<S> {
     }
 }
 
+/// A widget whose UI depends on data that changes while it is on screen.
+///
+/// The split is deliberate. The widget is only *configuration*: the immutable
+/// props a parent passes down, rebuilt freely and thrown away. Everything that
+/// must survive a rebuild — a counter, hover or focus flags, scroll offsets,
+/// animation progress — lives in the [`State`](StatefulWidget::State) that
+/// [`create_state`](StatefulWidget::create_state) returns. The element owns that
+/// state and keeps it alive for as long as the widget stays in the tree.
+///
+/// When a parent rebuilds and emits this widget again, the new widget creates a
+/// fresh state, but the framework keeps the *live* one so runtime data is not
+/// lost, and hands the fresh one to [`State::adopt_config_from`] so the live
+/// state picks up the new props. `create_state` can therefore run on every
+/// parent rebuild: keep it cheap and move the props into the state instead of
+/// cloning them.
+///
+/// Put `#[derive(StatefulWidget)]` on the struct and implement [`State`] for
+/// the type returned by `create_state`; that is all a stateful widget needs. The
+/// derive writes the [`Widget`] impl for you, so there is no `to_element` to
+/// implement by hand — prefer it over implementing `Widget` directly. A named
+/// struct with a field `key: Option<Key>` has that key forwarded to the
+/// element, which keeps the state attached to the same widget when siblings are
+/// reordered. A widget with nothing to remember should be a
+/// [`StatelessWidget`](crate::StatelessWidget).
+///
+/// # Examples
+///
+/// See [`State`] for a complete widget with a state that changes.
 pub trait StatefulWidget: Sized {
+    /// The state this widget creates, which owns every field that changes.
     type State: State<Self>;
 
+    /// Returns this widget.
+    ///
+    /// Lets generic code that only knows `W: StatefulWidget` reach the widget
+    /// through a method call.
     fn widget(&self) -> &Self
     where
         Self: Sized,
@@ -827,6 +860,72 @@ pub trait StatefulWidget: Sized {
     fn create_state(self) -> Self::State;
 }
 
+/// The mutable half of a [`StatefulWidget`]: the data that changes, and the
+/// UI built from it.
+///
+/// # Lifecycle
+///
+/// 1. [`StatefulWidget::create_state`] builds the state from the widget.
+/// 2. [`init_state`](State::init_state) runs once, handing the state a
+///    [`StateUpdater`].
+/// 3. [`build`](State::build) describes the UI, and runs again after every
+///    mutation applied through the updater.
+/// 4. When a parent re-emits the widget, the live state is kept and
+///    [`adopt_config_from`](State::adopt_config_from) copies the new props
+///    into it.
+///
+/// # Changing state
+///
+/// `build` and the other hooks take `&self` or `&mut self` only while the
+/// framework is calling them, so a callback cannot hold the state. It holds
+/// the [`StateUpdater`] instead — store it in `init_state` — and describes the
+/// change as a closure with [`StateUpdater::set_state`]. The closure is queued
+/// and applied on the render thread at the next rebuild, and several calls in
+/// one frame cause a single rebuild. The updater is `Copy` but belongs to the
+/// UI thread: it is neither `Send` nor `Sync`.
+///
+/// Calling `set_state` on an updater that `init_state` never stored panics
+/// with an error that points at the missing line.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use aimer::*;
+///
+/// #[derive(StatefulWidget)]
+/// struct Counter {
+///     start: i32,
+/// }
+///
+/// struct CounterState {
+///     updater: StateUpdater<Self>,
+///     count: i32,
+/// }
+///
+/// impl StatefulWidget for Counter {
+///     type State = CounterState;
+///
+///     fn create_state(self) -> CounterState {
+///         CounterState {
+///             updater: StateUpdater::empty(),
+///             count: self.start,
+///         }
+///     }
+/// }
+///
+/// impl State<Counter> for CounterState {
+///     fn init_state(&mut self, updater: StateUpdater<Self>) {
+///         self.updater = updater;
+///     }
+///
+///     fn build(&self, _ctx: &BuildContext) -> impl Widget {
+///         // Hand this to a button's press handler: it rebuilds with `count + 1`.
+///         let updater = self.updater;
+///         let _increment = move || updater.set_state(|state| state.count += 1);
+///         Text::new(format!("Count: {}", self.count))
+///     }
+/// }
+/// ```
 pub trait State<W: StatefulWidget> {
     /// Called once after the state is created, providing a [`StateUpdater`]
     /// handle. Store the updater in your state struct to later call

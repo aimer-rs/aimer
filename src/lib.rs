@@ -183,6 +183,7 @@ pub mod console {
 // wasm dependencies
 pub use aimer_provider as provider;
 pub use aimer_router as router;
+#[doc(hidden)]
 pub use wasm_bindgen;
 
 pub use aimer_std::case;
