@@ -100,6 +100,7 @@ pub use aimer_passkey as passkey;
 pub use aimer_lucide as icons;
 #[cfg(feature = "icons")]
 pub use aimer_lucide::Icons;
+pub use aimer_screen as screen;
 pub use aimer_scroll::*;
 pub use aimer_space::*;
 #[cfg(feature = "svg")]
@@ -1340,7 +1341,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         use std::cell::Cell;
         use std::rc::Rc;
 
-        use aimer::provider::media_query::MediaQuery;
+        use aimer::screen::MediaQuery;
         use aimer::quiver::winit::dpi::PhysicalSize;
         use aimer::quiver::winit::event::WindowEvent;
         use aimer::{

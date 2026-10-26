@@ -276,3 +276,65 @@ async fn retained_feedback_refreshes_border_insets_and_rounded_clipping() {
     assert_eq!(decoration_paint(root.as_ref(), &ctx), Color::RED.into());
     assert_eq!(mounted_elements(root.as_ref()), mounted);
 }
+
+/// A button is as big as its label, not as big as the flex line it sits in.
+/// `Row` offers a child the whole cross axis and `Column` the whole main one,
+/// so a container that fills its constraint made the button, and the area that
+/// answers presses, as tall as the row.
+#[tokio::test]
+async fn a_button_in_a_flex_hugs_its_child_on_both_axes() {
+    use aimer_container::SizedBox;
+    use aimer_flex::{Column, Row};
+
+    let mut ctx = button_context();
+    ctx.parent_size = ResolvedSize { width: 300.0, height: 200.0 };
+    ctx.box_constraint.max_width = 300.0;
+    ctx.box_constraint.max_height = 200.0;
+    let button = || {
+        Button::new()
+            .decoration(BoxDecoration::new().background_color(Color::WHITE))
+            .child(SizedBox::new().width(30).height(20))
+    };
+
+    let row = Row::new().children([button()]).to_element(&ctx);
+    row.update(&ctx);
+    let size = row.computed_size(&ctx);
+    assert_eq!((size.width, size.height), (30.0, 20.0), "row");
+
+    let column = Column::new().children([button()]).to_element(&ctx);
+    column.update(&ctx);
+    let size = column.computed_size(&ctx);
+    assert_eq!((size.width, size.height), (30.0, 20.0), "column");
+}
+
+/// The usual label button wraps its text in an automatic, padded container.
+#[tokio::test]
+async fn a_button_with_a_padded_label_container_does_not_fill_the_flex() {
+    use aimer_container::{Container, SizedBox};
+    use aimer_flex::{Column, Row};
+    use aimer_style::LayoutSpacing;
+
+    let mut ctx = button_context();
+    ctx.parent_size = ResolvedSize { width: 300.0, height: 200.0 };
+    ctx.box_constraint.max_width = 300.0;
+    ctx.box_constraint.max_height = 200.0;
+    let button = || {
+        Button::new()
+            .decoration(BoxDecoration::new().background_color(Color::WHITE).border_radius(12))
+            .child(
+                Container::new()
+                    .padding(LayoutSpacing::new().left(24).right(24).top(12).bottom(12))
+                    .child(SizedBox::new().width(50).height(10)),
+            )
+    };
+
+    let row = Row::new().children([button()]).to_element(&ctx);
+    row.update(&ctx);
+    let size = row.computed_size(&ctx);
+    assert_eq!((size.width, size.height), (98.0, 34.0), "row");
+
+    let column = Column::new().children([button()]).to_element(&ctx);
+    column.update(&ctx);
+    let size = column.computed_size(&ctx);
+    assert_eq!((size.width, size.height), (98.0, 34.0), "column");
+}

@@ -60,6 +60,12 @@ pub enum AimerNativePlatformEvent {
     Back(crate::system_back::BackSignal),
     /// Links were posted from the platform (see [`crate::link_inbox`]).
     OpenLinks,
+    /// The device's folds or hinges changed, reported by a platform bridge from
+    /// a thread other than the event loop's (Android's `ScreenBridge`).
+    ///
+    /// The new value waits in `aimer_screen`'s inbox; handling this event
+    /// applies it on the event-loop thread.
+    ScreenChanged,
     /// One window of a multi-window host has a frame to draw.
     ///
     /// Where [`Self::FrameReady`] wakes the application as a whole, this names

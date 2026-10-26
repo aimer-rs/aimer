@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use aimer::Dimension::Percent;
 use aimer::animation::{AnimatedSwitcher, curves};
-use aimer::provider::media_query::MediaQuery;
+use aimer::screen::MediaQuery;
 use aimer::style::{
     FontWeight, LayoutSpacing, Spacing, TextDecoration, TextStyle, Theme, ThemeData,
 };

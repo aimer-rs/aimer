@@ -28,6 +28,7 @@ aimer_device.workspace = true
 aimer_haptics.workspace = true
 aimer_quiver.workspace = true
 aimer_input.workspace = true
+aimer_screen.workspace = true
 aimer_scroll.workspace = true
 aimer_space.workspace = true
 wasm-bindgen.workspace = true
@@ -219,6 +220,7 @@ members = [
     "system/native",
     "system/haptics",
     "system/device",
+    "system/screen",
     # services
     "services/storage",
     "services/vault",
@@ -360,6 +362,7 @@ aimer_collapsible = { path = "controls/collapsible" }
 aimer_native = { path = "system/native" }
 aimer_haptics = { path = "system/haptics" }
 aimer_device = { path = "system/device" }
+aimer_screen = { path = "system/screen" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
 aimer_anteros = { path = "host/anteros" }
 aimer_reload_protocol = { path = "experiments/reload_protocol" }

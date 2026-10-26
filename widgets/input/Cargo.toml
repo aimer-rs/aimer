@@ -42,3 +42,6 @@ tokio = {workspace = true, features = ["rt-multi-thread", "macros", "time"]}
 wasm-bindgen-futures = "0.4.50"
 wasm-bindgen = { workspace = true }
 web-sys = { workspace = true, features = ["Window", "Document", "Element", "HtmlInputElement", "HtmlElement", "CssStyleDeclaration", "HtmlCollection", "KeyboardEvent", "KeyboardEventInit", "InputEvent", "CompositionEvent", "EventTarget", "Navigator", "Clipboard"] }
+
+[dev-dependencies]
+aimer_flex.workspace = true

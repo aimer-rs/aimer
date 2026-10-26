@@ -550,6 +550,119 @@ async fn an_auto_width_container_under_an_unbounded_width_paints_locally() {
     assert!(max_width > LOCAL_V2_CONTAINER_EXTENT_LIMIT);
 }
 
+fn fit_probe(fit: bool, max_width: f32, max_height: f32) -> (ResolvedSize, ResolvedSize) {
+    let mut ctx = context();
+    ctx.box_constraint = BoxConstraint {
+        min_width: 0.0,
+        min_height: 0.0,
+        max_width,
+        max_height,
+    };
+    let mut container = Container::new()
+        .padding(LayoutSpacing::all(5))
+        .margin(LayoutSpacing::all(2));
+    if fit {
+        container = container.fit_content();
+    }
+    let element = container
+        .child(SizedBox::new().width(30).height(20))
+        .to_element(&ctx);
+    (element.computed_size(&ctx), element.content_size(&ctx))
+}
+
+#[tokio::test]
+async fn an_auto_container_fills_a_bounded_constraint_unless_it_fits_its_content() {
+    let (filled, _) = fit_probe(false, 200.0, 100.0);
+    assert_eq!((filled.width, filled.height), (200.0, 100.0));
+
+    // 30 x 20 child + 5 padding and 2 margin on every side.
+    let (fitted, content) = fit_probe(true, 200.0, 100.0);
+    assert_eq!((fitted.width, fitted.height), (44.0, 34.0));
+    assert_eq!((content.width, content.height), (30.0, 20.0));
+}
+
+#[tokio::test]
+async fn a_fitted_container_never_outgrows_its_constraint() {
+    let (fitted, _) = fit_probe(true, 30.0, 20.0);
+    assert_eq!((fitted.width, fitted.height), (30.0, 20.0));
+}
+
+#[tokio::test]
+async fn a_fitted_container_falls_back_when_the_child_reports_no_extent() {
+    for (max_width, max_height, expected) in [
+        // A row offers an unbounded width and a bounded height.
+        (f32::MAX / 4.0, 100.0, (200.0 + 14.0, 60.0 + 14.0)),
+        (400.0, 300.0, (200.0 + 14.0, 60.0 + 14.0)),
+        // The fallback is still capped by what the constraint allows.
+        (100.0, 40.0, (100.0, 40.0)),
+    ] {
+        let mut ctx = context();
+        ctx.box_constraint = BoxConstraint {
+            min_width: 0.0,
+            min_height: 0.0,
+            max_width,
+            max_height,
+        };
+        let element = Container::new()
+            .padding(LayoutSpacing::all(5))
+            .margin(LayoutSpacing::all(2))
+            .fit_content()
+            .child(SizedBox::new())
+            .to_element(&ctx);
+        let size = element.computed_size(&ctx);
+        assert_eq!((size.width, size.height), expected, "{max_width} x {max_height}");
+    }
+}
+
+/// A button's label usually sits in an automatic container of its own for
+/// padding. That inner container fills whatever it is offered, so the fitted
+/// one has to measure it without a bound or it would hug nothing.
+#[tokio::test]
+async fn a_fitted_container_hugs_an_automatic_container_child() {
+    let mut ctx = context();
+    ctx.box_constraint = BoxConstraint {
+        min_width: 0.0,
+        min_height: 0.0,
+        max_width: 400.0,
+        max_height: 300.0,
+    };
+    let element = Container::new()
+        .fit_content()
+        .child(
+            Container::new()
+                .padding(LayoutSpacing::new().left(24).right(24).top(12).bottom(12))
+                .child(SizedBox::new().width(50).height(10)),
+        )
+        .to_element(&ctx);
+    let size = element.computed_size(&ctx);
+    assert_eq!((size.width, size.height), (98.0, 34.0));
+    let content = element.content_size(&ctx);
+    assert_eq!((content.width, content.height), (98.0, 34.0));
+
+    // Content wider than the room is capped, and is measured against that room.
+    ctx.box_constraint.max_width = 60.0;
+    let size = element.computed_size(&ctx);
+    assert_eq!((size.width, size.height), (60.0, 34.0));
+}
+
+#[tokio::test]
+async fn a_fitted_container_keeps_an_explicit_size_and_hugs_the_other_axis() {
+    let mut ctx = context();
+    ctx.box_constraint = BoxConstraint {
+        min_width: 0.0,
+        min_height: 0.0,
+        max_width: 200.0,
+        max_height: 100.0,
+    };
+    let element = Container::new()
+        .width(120)
+        .fit_content()
+        .child(SizedBox::new().width(30).height(20))
+        .to_element(&ctx);
+    let size = element.computed_size(&ctx);
+    assert_eq!((size.width, size.height), (120.0, 20.0));
+}
+
 #[tokio::test]
 async fn a_bounded_container_is_unchanged_by_the_unbounded_handling() {
     let probe = unbounded_container(400.0, 300.0);

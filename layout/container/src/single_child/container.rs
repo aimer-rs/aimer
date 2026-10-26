@@ -43,6 +43,7 @@ pub struct Container<T = RequiredChild, D: Decoration + 'static = BoxDecoration>
     pub margin: LayoutSpacing,
     pub box_decoration: D,
     decoration_source: Option<Rc<dyn RetainedBoxDecoration>>,
+    fit: bool,
     pub color: Option<Color>,
     pub child: T,
 }
@@ -67,6 +68,7 @@ impl Container {
             margin: LayoutSpacing::default(),
             box_decoration: BoxDecoration::default(),
             decoration_source: None,
+            fit: false,
             color: None,
             child: RequiredChild,
         }
@@ -150,6 +152,7 @@ impl<D: Decoration + 'static> Container<RequiredChild, D> {
             margin: self.margin,
             box_decoration: decoration,
             decoration_source: None,
+            fit: self.fit,
             color: self.color,
             child: self.child,
         }
@@ -166,6 +169,22 @@ impl<D: Decoration + 'static> Container<RequiredChild, D> {
         let mut container = self.decoration(BoxDecoration::default());
         container.decoration_source = Some(source);
         container
+    }
+
+    /// Makes every [`Dimension::Auto`] axis hug the child instead of filling.
+    ///
+    /// An automatic container normally takes all the room its parent offers,
+    /// which is wrong for a control that should be as big as its label: inside
+    /// a `Row` it would span the row's height and inside a `Column` its width,
+    /// both for painting and for pointer hits. A fitted container is instead
+    /// as large as its child plus padding, decoration insets and margin, and
+    /// never larger than the constraint. An axis on which the child reports no
+    /// extent falls back to 200 x 60 logical pixels (before the same additions
+    /// and cap). Pixel and percentage dimensions are unaffected.
+    #[inline]
+    pub fn fit_content(mut self) -> Self {
+        self.fit = true;
+        self
     }
 
     /// Sets a solid background color.
@@ -192,6 +211,7 @@ impl<D: Decoration + 'static> Container<RequiredChild, D> {
             margin: self.margin,
             box_decoration: self.box_decoration,
             decoration_source: self.decoration_source,
+            fit: self.fit,
             color: self.color,
             child,
         }
@@ -222,7 +242,9 @@ impl<W: Widget, D: Decoration + 'static> Widget for Container<W, D> {
                 .decoration_source
                 .map(decoration::RetainedDecorationState::new),
             cache: LayoutCache::new(),
-            flags: std::cell::Cell::new(if self.color.is_some() { HAS_COLOR } else { 0 }),
+            flags: std::cell::Cell::new(
+                if self.color.is_some() { HAS_COLOR } else { 0 } | if self.fit { FIT } else { 0 },
+            ),
             bounds: InteractionBounds::new(),
             paint_state: std::cell::Cell::new(ContainerPaintState::new(self.color)),
         }
@@ -259,6 +281,12 @@ pub struct RawContainer<T: Element, D: Decoration = BoxDecoration> {
 const RAW: u8 = 1;
 const HAS_COLOR: u8 = 2;
 const RECORDED: u8 = 4;
+const FIT: u8 = 8;
+/// What a fitted container assumes, in logical pixels, for an axis on which its
+/// child reports no extent at all (a placeholder, or a box with no content).
+/// Collapsing to nothing would leave a control that cannot be seen or pressed.
+const FIT_FALLBACK_WIDTH: f32 = 200.0;
+const FIT_FALLBACK_HEIGHT: f32 = 60.0;
 
 #[derive(Clone, Copy, Default)]
 struct ContainerPaintState {
@@ -298,12 +326,31 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
     #[inline]
     fn can_delegate_paint_islands(&self) -> bool {
         self.decoration_source.is_none()
+            && !self.fits_content()
             && self.width == Dimension::Auto
             && self.height == Dimension::Auto
             && self.padding == LayoutSpacing::default()
             && self.margin == LayoutSpacing::default()
             && self.fallback_background().is_none()
             && self.decoration().is_empty()
+    }
+
+    /// Replaces an extent the child failed to report on a fitted container.
+    #[inline]
+    fn fit_fallback(&self, size: ResolvedSize, scale: f32) -> ResolvedSize {
+        if !self.fits_content() {
+            return size;
+        }
+        ResolvedSize {
+            width: if size.width > 0.0 { size.width } else { FIT_FALLBACK_WIDTH * scale },
+            height: if size.height > 0.0 { size.height } else { FIT_FALLBACK_HEIGHT * scale },
+        }
+    }
+
+    /// Whether automatic axes hug the child; see [`Container::fit_content`].
+    #[inline]
+    fn fits_content(&self) -> bool {
+        self.flags.get() & FIT != 0
     }
 
     /// A container is *opaque* when it paints a background — either an explicit

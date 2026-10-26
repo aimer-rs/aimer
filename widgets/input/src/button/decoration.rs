@@ -48,13 +48,13 @@ impl<W: Widget + 'static> ButtonState<W> {
             self.is_pressed.set(false);
             let decoration = self.custom_for(false, false)
                 .unwrap_or_else(|| Rc::new(self.decoration_for(false, false)));
-            return Container::new().decoration(decoration).child(child).boxed();
+            return Container::new().fit_content().decoration(decoration).child(child).boxed();
         }
         if self.custom_decorations[1..].iter().all(Option::is_none)
             && self.hover_decoration.is_none() && self.press_decoration.is_none()
         {
             let decoration = self.custom_decorations[0].as_ref().unwrap().clone();
-            let child = Container::new().decoration(decoration).child(child);
+            let child = Container::new().fit_content().decoration(decoration).child(child);
             return self.wrap_input(child, visual::Feedback::Fixed {
                 hover: self.is_hover.clone(), pressed: self.is_pressed.clone(),
             });
@@ -67,7 +67,7 @@ impl<W: Widget + 'static> ButtonState<W> {
         });
         let builder = Rc::new(move |state: ButtonVisualState| {
             let index = usize::from(state.is_hovered) | (usize::from(state.is_pressed) << 1);
-            Container::new().decoration(decorations[index].clone()).child(child.clone()).boxed()
+            Container::new().fit_content().decoration(decorations[index].clone()).child(child.clone()).boxed()
         });
         let (child, feedback) = visual::Feedback::visual(self, builder);
         self.wrap_input(child, feedback)

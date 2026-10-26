@@ -1,5 +1,48 @@
 use super::*;
 
+impl<T: Element, D: Decoration> RawContainer<T, D> {
+    /// Measures the child of a container whose size follows it.
+    ///
+    /// `available` is the room inside padding and decoration; `unbounded` and
+    /// `fit` say which axes derive their size from the child. An unbounded axis
+    /// is offered no limit, and so is a fitted one, because an automatic child
+    /// (a padded label, say) would otherwise fill the room and the container
+    /// would hug nothing. Only a fitted axis whose child turned out larger than
+    /// the room is measured again against it, so text can wrap there.
+    fn measure_child(
+        &self, ctx: &BuildContext, available: (f32, f32), unbounded: (bool, bool),
+        fit: (bool, bool),
+    ) -> ResolvedSize {
+        let mut child_ctx = ctx.clone();
+        child_ctx.box_constraint.max_width = if unbounded.0 || fit.0 { f32::MAX } else { available.0 };
+        child_ctx.box_constraint.max_height = if unbounded.1 || fit.1 { f32::MAX } else { available.1 };
+        // The child is laid out in the space inside the padding, so a bounded
+        // axis is measured against that parent, as `local_v2_child_context`
+        // hands it down. A parent size left at the container's own would be
+        // cached by the layouts below, which are keyed by the constraint
+        // alone. An unbounded axis keeps the parent it was offered: a scroll
+        // view leaves the viewport there for children that fill their parent.
+        child_ctx.parent_size = ResolvedSize {
+            width: if unbounded.0 { ctx.parent_size.width } else { available.0 },
+            height: if unbounded.1 { ctx.parent_size.height } else { available.1 },
+        };
+        let mut size = self.fit_fallback(self.child.computed_size(&child_ctx), ctx.scale);
+
+        let wider = fit.0 && size.width > available.0;
+        let taller = fit.1 && size.height > available.1;
+        if wider || taller {
+            if wider {
+                child_ctx.box_constraint.max_width = available.0;
+            }
+            if taller {
+                child_ctx.box_constraint.max_height = available.1;
+            }
+            size = self.fit_fallback(self.child.computed_size(&child_ctx), ctx.scale);
+        }
+        size
+    }
+}
+
 impl<T: Element, D: Decoration> LayoutElement for RawContainer<T, D> {
     fn event_tree_bounds(&self) -> Option<(Vec2d, Vec2d)> {
         // These bounds follow paint transforms such as scroll offsets, which
@@ -53,8 +96,13 @@ impl<T: Element, D: Decoration> LayoutElement for RawContainer<T, D> {
         // child
         let width_unbounded = matches!(self.width, Dimension::Auto) && box_width > threshold;
         let height_unbounded = matches!(self.height, Dimension::Auto) && box_height > threshold;
+        // A fitted container also hugs the child on a bounded automatic axis;
+        // the child is then measured against what the box leaves it.
+        let fit = self.fits_content();
+        let width_fit = fit && !width_unbounded && matches!(self.width, Dimension::Auto);
+        let height_fit = fit && !height_unbounded && matches!(self.height, Dimension::Auto);
 
-        let result = if width_unbounded || height_unbounded {
+        let result = if width_unbounded || height_unbounded || width_fit || height_fit {
             let capped_w = box_width.min(threshold);
             let capped_h = box_height.min(threshold);
 
@@ -65,44 +113,31 @@ impl<T: Element, D: Decoration> LayoutElement for RawContainer<T, D> {
 
             let [bl, bt, br, bb] = self.decoration_insets(capped_w, capped_h, scale);
 
-            let mut child_ctx = ctx.clone();
-            child_ctx.box_constraint.max_width = if width_unbounded {
-                f32::MAX
-            } else {
-                (box_width - p_left - bl - p_right - br).max(0.0)
-            };
-            child_ctx.box_constraint.max_height = if height_unbounded {
-                f32::MAX
-            } else {
-                (box_height - p_top - bt - p_bottom - bb).max(0.0)
-            };
-            // The child is laid out in the space inside the padding, so a bounded
-            // axis is measured against that parent, as `local_v2_child_context`
-            // hands it down. A parent size left at the container's own would be
-            // cached by the layouts below, which are keyed by the constraint
-            // alone. An unbounded axis keeps the parent it was offered: a scroll
-            // view leaves the viewport there for children that fill their parent.
-            child_ctx.parent_size = ResolvedSize {
-                width: if width_unbounded {
-                    ctx.parent_size.width
-                } else {
-                    child_ctx.box_constraint.max_width
-                },
-                height: if height_unbounded {
-                    ctx.parent_size.height
-                } else {
-                    child_ctx.box_constraint.max_height
-                },
-            };
-            let child_size = self.child.computed_size(&child_ctx);
+            let child_size = self.measure_child(
+                ctx,
+                (
+                    (box_width - p_left - bl - p_right - br).max(0.0),
+                    (box_height - p_top - bt - p_bottom - bb).max(0.0),
+                ),
+                (width_unbounded, height_unbounded),
+                (width_fit, height_fit),
+            );
 
             let final_w = if width_unbounded {
                 child_size.width + p_left + p_right + bl + br + m_left + m_right
+            } else if width_fit {
+                (child_size.width + p_left + p_right + bl + br).min(box_width.max(0.0))
+                    + m_left
+                    + m_right
             } else {
                 box_width + m_left + m_right
             };
             let final_h = if height_unbounded {
                 child_size.height + p_top + p_bottom + bt + bb + m_top + m_bottom
+            } else if height_fit {
+                (child_size.height + p_top + p_bottom + bt + bb).min(box_height.max(0.0))
+                    + m_top
+                    + m_bottom
             } else {
                 box_height + m_top + m_bottom
             };
@@ -152,6 +187,10 @@ impl<T: Element, D: Decoration> LayoutElement for RawContainer<T, D> {
 
         let width_unbounded = matches!(self.width, Dimension::Auto) && box_width > threshold;
         let height_unbounded = matches!(self.height, Dimension::Auto) && box_height > threshold;
+        // See `computed_size`.
+        let fit = self.fits_content();
+        let width_fit = fit && !width_unbounded && matches!(self.width, Dimension::Auto);
+        let height_fit = fit && !height_unbounded && matches!(self.height, Dimension::Auto);
 
         let b_w = box_width.max(0.0);
         let b_h = box_height.max(0.0);
@@ -165,44 +204,33 @@ impl<T: Element, D: Decoration> LayoutElement for RawContainer<T, D> {
 
         let [b_left, b_top, b_right, b_bottom] = self.decoration_insets(capped_w, capped_h, scale);
 
-        let result = if width_unbounded || height_unbounded {
-            let mut child_ctx = ctx.clone();
-            child_ctx.box_constraint.max_width = if width_unbounded {
-                f32::MAX
-            } else {
-                (b_w - p_left - b_left - p_right - b_right).max(0.0)
-            };
-            child_ctx.box_constraint.max_height = if height_unbounded {
-                f32::MAX
-            } else {
-                (b_h - p_top - b_top - p_bottom - b_bottom).max(0.0)
-            };
-            // See `computed_size`: a bounded axis is measured against the parent
-            // the child is laid out in, an unbounded one keeps the viewport.
-            child_ctx.parent_size = ResolvedSize {
-                width: if width_unbounded {
-                    ctx.parent_size.width
-                } else {
-                    child_ctx.box_constraint.max_width
-                },
-                height: if height_unbounded {
-                    ctx.parent_size.height
-                } else {
-                    child_ctx.box_constraint.max_height
-                },
-            };
-            let child_size = self.child.computed_size(&child_ctx);
+        let result = if width_unbounded || height_unbounded || width_fit || height_fit {
+            let child_size = self.measure_child(
+                ctx,
+                (
+                    (b_w - p_left - b_left - p_right - b_right).max(0.0),
+                    (b_h - p_top - b_top - p_bottom - b_bottom).max(0.0),
+                ),
+                (width_unbounded, height_unbounded),
+                (width_fit, height_fit),
+            );
 
+            let inner_w = (b_w - p_left - p_right - b_left - b_right).max(0.0);
+            let inner_h = (b_h - p_top - p_bottom - b_top - b_bottom).max(0.0);
             ResolvedSize {
                 width: if width_unbounded {
                     child_size.width
+                } else if width_fit {
+                    child_size.width.min(inner_w)
                 } else {
-                    (b_w - p_left - p_right - b_left - b_right).max(0.0)
+                    inner_w
                 },
                 height: if height_unbounded {
                     child_size.height
+                } else if height_fit {
+                    child_size.height.min(inner_h)
                 } else {
-                    (b_h - p_top - p_bottom - b_top - b_bottom).max(0.0)
+                    inner_h
                 },
             }
         } else {

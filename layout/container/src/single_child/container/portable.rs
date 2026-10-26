@@ -46,6 +46,7 @@ impl<T: Widget> Widget for PortableContainer<T> {
             margin: self.margin,
             box_decoration: self.box_decoration,
             decoration_source: self.decoration_source,
+            fit: false,
             color: self.color,
             child: self.child,
         }

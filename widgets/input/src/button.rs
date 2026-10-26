@@ -564,12 +564,13 @@ impl<W: Widget + 'static> State<Button<W>> for ButtonState<W> {
         if self.is_disabled {
             self.is_pressed.set(false);
             return Container::new()
+                .fit_content()
                 .box_decoration(self.decoration_for(false, false))
                 .child(child)
                 .boxed();
         }
         let decoration = Rc::new(decoration::ButtonDecoration::new(self));
-        let child = Container::new().retained_box_decoration(decoration.clone()).child(child);
+        let child = Container::new().fit_content().retained_box_decoration(decoration.clone()).child(child);
 
         self.wrap_input(child, visual::Feedback::Decoration(decoration))
     }
