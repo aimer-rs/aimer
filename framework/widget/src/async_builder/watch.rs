@@ -161,7 +161,7 @@ mod tests {
                         polls.set(polls.get() + 1);
                         if fail { Err("failed") } else { Ok::<u32, &'static str>(id) }
                     }
-                    .watch(format!("job:{id}"));
+                    .watch(("job", id));
                     probe.seen.borrow_mut().push(label(&task.read()));
                     Leaf.boxed()
                 },
@@ -277,7 +277,7 @@ mod tests {
                 move |_| {
                     if ask.get() {
                         let id = key.get();
-                        let _ = cancellable(id, dropped.clone()).watch(format!("job:{id}"));
+                        let _ = cancellable(id, dropped.clone()).watch(("job", id));
                     }
                     Leaf.boxed()
                 },

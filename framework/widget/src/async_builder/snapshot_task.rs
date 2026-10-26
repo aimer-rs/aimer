@@ -199,6 +199,10 @@ pub trait FutureSnapshotExt<T: 'static, E: 'static>:
     /// the same key twice in one build returns the same task for both calls.
     /// Reusing a key for a different `T` or `E` replaces the earlier future.
     ///
+    /// `watch` runs on every build, so prefer a key that is free to make: an
+    /// integer, `("tag", integer)`, or [`Key::Static`](crate::Key::Static). A
+    /// key made from a `&str` or a `String` allocates on each build.
+    ///
     /// # Outside a build
     ///
     /// Nothing is retained and nothing is rebuilt: the call behaves like
@@ -207,7 +211,7 @@ pub trait FutureSnapshotExt<T: 'static, E: 'static>:
     ///
     /// ```ignore
     /// fn build(&self, _ctx: &BuildContext) -> impl Widget {
-    ///     let user = fetch_user(self.id).watch(format!("user:{}", self.id));
+    ///     let user = fetch_user(self.id).watch(("user", self.id));
     ///     match &*user.read() {
     ///         AsyncSnapshot::Waiting => Spinner::new().boxed(),
     ///         AsyncSnapshot::Data(user) => Profile::new(user).boxed(),
