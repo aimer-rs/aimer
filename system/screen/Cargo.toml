@@ -1,0 +1,22 @@
+[package]
+name = "aimer_screen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
+
+[dependencies]
+aimer_widget.workspace = true
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2.workspace = true
+objc2-ui-kit = { workspace = true, features = ["std", "UIDevice", "UIOrientation"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+ndk-context.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { workspace = true, features = ["Window", "Screen", "ScreenOrientation", "OrientationType"] }

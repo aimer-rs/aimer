@@ -530,6 +530,35 @@ pub extern "system" fn Java_com_aimer_AimerActivity_nativeOpenLink<'caller>(
 /// invoked and `3` cancelled, matching the constants in `AimerActivity`. It is
 /// called on the JVM's UI thread, so it only queues the signal: the app's
 /// back handlers live on the event-loop thread.
+/// The display's folds and hinges, from `ScreenBridge` (see `aimer_screen`'s
+/// `android/` directory).
+///
+/// `encoded` is `aimer_screen`'s wire form; an empty string means no features.
+/// Called on the JVM's UI thread, so it posts the list to a thread-safe inbox and
+/// wakes the event loop, which applies it on its own thread.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_aimer_ScreenBridge_nativeDisplayFeatures<'caller>(
+    mut env: jni::EnvUnowned<'caller>,
+    _class: jni::objects::JClass<'caller>,
+    encoded: jni::objects::JString<'caller>,
+) {
+    env.with_env(|env| -> Result<(), jni::errors::Error> {
+        let encoded = String::from(encoded.mutf8_chars(env)?);
+        aimer_screen::post_display_features(aimer_screen::decode_display_features(&encoded));
+        let Some(proxy) = EVENT_PROXY.get() else {
+            // Applied by the first `ScreenChanged` or refresh after start-up.
+            aimer_utils::debug!("nativeDisplayFeatures: EVENT_PROXY not initialized yet");
+            return Ok(());
+        };
+        if let Err(e) = proxy.send_event(AimerNativePlatformEvent::ScreenChanged) {
+            aimer_utils::error!("nativeDisplayFeatures: failed to send event: {:?}", e);
+        }
+        Ok(())
+    })
+    .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
+}
+
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_aimer_AimerActivity_nativeBack<'caller>(
@@ -1629,7 +1658,8 @@ fn start_event_loop(
         // without an explicit reference, the linker may garbage-collect them out of
         // the final `cdylib`, which would make the soft-keyboard text bridge fail
         // with `UnsatisfiedLinkError`.
-        let _keep_jni: [*const (); 6] = [
+        let _keep_jni: [*const (); 7] = [
+            Java_com_aimer_ScreenBridge_nativeDisplayFeatures as *const (),
             Java_com_aimer_AimerActivity_nativeOpenLink as *const (),
             Java_com_aimer_AimerActivity_nativeBack as *const (),
             Java_com_aimer_AimerActivity_nativeInsertText as *const (),

@@ -2219,6 +2219,10 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         // view. A rotation reports it again, as a resize.
         crate::system_safe_area::announce(window);
 
+        // Which way the device is turned, for the same reason: it is asked once
+        // the window is up, and again whenever the window changes shape.
+        aimer_screen::refresh();
+
         // A browser changes the reservation without winit hearing about it, so
         // its own resize notifications are subscribed to here.
         crate::system_safe_area::start_observing(window);

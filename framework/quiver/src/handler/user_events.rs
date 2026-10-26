@@ -21,6 +21,13 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
     match event {
         // Answered by the windowed loop, which can also leave the app.
         AimerNativePlatformEvent::Back(_) => {}
+        AimerNativePlatformEvent::ScreenChanged => {
+            // A fold or hinge moved: widgets that follow the display features
+            // were marked, and need a frame to show it.
+            if aimer_screen::apply_pending() > 0 {
+                app.request_full_redraw();
+            }
+        }
         AimerNativePlatformEvent::OpenLinks => {
             crate::link_inbox::deliver_posted_links();
             // Opening a link changes navigator state, which asks for its own frame.

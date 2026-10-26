@@ -226,6 +226,7 @@ impl WindowEventHandler {
                 }
                 Self::refresh_system_appearance(app);
                 Self::refresh_safe_area(app);
+                Self::refresh_screen();
                 app.request_full_redraw();
             }
 
@@ -375,6 +376,18 @@ impl WindowEventHandler {
         if let Some(window) = app.native_window() {
             crate::system_safe_area::announce(window);
         }
+    }
+
+    /// Re-reads which way the device is turned after the window's geometry moved.
+    ///
+    /// A rotation reaches the application as a resize, never as an event that
+    /// names the device orientation, so this asks the platform at the same moments
+    /// the safe area is re-read: one query per event that could have changed the
+    /// answer, none per frame. The widgets that follow the orientation are marked
+    /// here, and the frame the resize already asks for rebuilds them. Platforms
+    /// that do not rotate answer nothing, and nothing is marked.
+    fn refresh_screen() {
+        aimer_screen::refresh();
     }
 
     fn handle_touch<W: Widget + 'static>(item: Touch, app: &mut AimerApplicationHandler<W>) {
@@ -1058,6 +1071,7 @@ impl WindowEventHandler {
         // A window that changed shape may have changed the region the system
         // reserves in it: on a phone, this event is the rotation.
         Self::refresh_safe_area(app);
+        Self::refresh_screen();
 
         if let Some(root) = app.active_root() {
             root.invalidate_layout();
