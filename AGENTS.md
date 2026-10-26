@@ -97,17 +97,17 @@ Additional test rules:
 - Prefer using the git url with a specific commit hash or tag for introduce external crate when possible.
 - Declare shared dependencies in root `[workspace.dependencies]`, then use `<dependency>.workspace = true` in member
   crates.
-- New crate names use the `aimer_*` prefix.
+- New crate names use the `aimer_*` prefix. but it has no prefix at folder name
 - Route public umbrella-crate re-exports through `src/lib.rs`. Use `pub use aimer_xxxx as xxxx` when exposing a crate
   under a shorter public name.
 - Keep source files at or below 2,000 lines (inline-unittest excluded). Split by responsibility before exceeding that
   limit.
-  `gesture/drag.rs`; do not introduce `mod.rs` files.
 - Add comments for invariants and non-obvious decisions, not for code that is already self-explanatory.
 - Do not run `cargo fmt`. Preserve the surrounding formatting style in edited code.
 - Add documentation comments to new public APIs. Document purpose, important invariants, panics/errors, safety
   requirements, and a useful example when appropriate. Follow Rust standard-library style, but keep documentation
   proportional to the API.
+- no need to care about the `aimer_portable_guest` or hot-reload ralated feature because it just experiments.
 
 Example: 
 ```rust
@@ -198,7 +198,7 @@ impl FocusScope {
     /// Attaches `child` and erases the resulting widget's concrete type.
     #[inline]
     pub fn box_child<W: Widget + 'static>(self, child: W) -> AnyWidget {
-        self.child(child).boxed()
+        self.child(child).notype()
     }
 }
 ```

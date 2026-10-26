@@ -24,6 +24,7 @@ aimer_decoration.workspace = true
 aimer_flex.workspace = true
 aimer_focus.workspace = true
 aimer_grid.workspace = true
+aimer_device.workspace = true
 aimer_haptics.workspace = true
 aimer_quiver.workspace = true
 aimer_input.workspace = true
@@ -217,6 +218,7 @@ members = [
     # system
     "system/native",
     "system/haptics",
+    "system/device",
     # services
     "services/storage",
     "services/vault",
@@ -357,6 +359,7 @@ aimer_shape = { path = "cores/shape" }
 aimer_collapsible = { path = "controls/collapsible" }
 aimer_native = { path = "system/native" }
 aimer_haptics = { path = "system/haptics" }
+aimer_device = { path = "system/device" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
 aimer_anteros = { path = "host/anteros" }
 aimer_reload_protocol = { path = "experiments/reload_protocol" }

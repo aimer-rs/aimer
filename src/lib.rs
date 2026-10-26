@@ -33,6 +33,7 @@ pub use aimer_dnd::{
 };
 pub use aimer_events as events;
 pub use aimer_events::element::ElementEvent;
+pub use aimer_device as device;
 pub use aimer_feedback as feedback;
 pub use aimer_flex::*;
 pub use aimer_focus as focus;

@@ -20,17 +20,17 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            job_name: clippy + tests (macos)
+            job_name: clippy + tests ({aarch64/x86_64}-apple-darwin)
             targets: x86_64-apple-darwin, aarch64-apple-darwin
           - os: ubuntu-latest
-            job_name: clippy + tests (linux)
+            job_name: clippy + tests (x86_64-unknown-linux-gnu)
           # aarch64 Linux runs the tests natively rather than cross-compiling
           # them, so it catches what only an arm64 CPU shows: alignment, SIMD
           # paths, and anything that assumed x86_64.
           - os: ubuntu-24.04-arm
-            job_name: clippy + tests (linux-arm64)
+            job_name: clippy + tests (aarch64-unknown-linux-gnu)
           - os: windows-latest
-            job_name: clippy + tests (windows)
+            job_name: clippy + tests (x86_64-pc-windows-msvc)
     steps:
       - uses: actions/checkout@v4
 
