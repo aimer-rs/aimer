@@ -9,7 +9,7 @@ pub use aimer_assets::img_widget::source::ImageSource;
 pub use aimer_assets::{
     FontError, FontFamily, FontRegistration, FontRegistry, FontStyle, FontWeight, *,
 };
-pub use aimer_attribute::dimension::Dimension;
+pub use aimer_attribute::dimension::{Dimension, NumberExt};
 pub use aimer_attribute::position::Vec2d;
 pub use aimer_attribute::size::{ResolvedSize, Size};
 pub use aimer_canvas as canvas;

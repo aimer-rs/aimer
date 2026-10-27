@@ -17,18 +17,18 @@ use crate::{
 /// Implement [`build`](StatelessWidget::build) and put
 /// `#[derive(StatelessWidget)]` on the struct; that is all a stateless widget
 /// needs. The derive writes the [`Widget`] impl for you, so there is no
-/// `to_element` to implement by hand — prefer it over implementing `Widget`
+/// `to_element` to implement by hand, prefer it over implementing `Widget`
 /// directly. The trait alone does not make a type a `Widget`, which is what
 /// lets the derive avoid a blanket impl that would conflict with every
 /// hand-written `Widget`. The generated element keeps the widget itself rather
 /// than a copy, so it can call `build` again whenever it is marked dirty.
 ///
-/// `build` therefore may run many times — after a parent rebuild, or when the
+/// `build` therefore may run many times, after a parent rebuild, or when the
 /// window is resized and `build` read something such as `MediaQuery` from the
 /// context. Treat it as a pure description: derive everything from `self` and
 /// `ctx`, and leave timers, subscriptions and other side effects out of it. If
-/// the widget has to remember something between builds — a counter, a hover
-/// flag, an animation controller — it needs a
+/// the widget has to remember something between builds, a counter, a hover
+/// flag, an animation controller, it needs a
 /// [`StatefulWidget`](crate::StatefulWidget) instead.
 ///
 /// A named struct with a field `key: Option<Key>` has that key forwarded to
@@ -120,7 +120,7 @@ impl Widget for NamedWidget {
             return child;
         }
         // A `NamedWidget` only wraps an already-built element; it has no build
-        // closure of its own, so it is not self-rebuildable — it still forwards
+        // closure of its own, so it is not self-rebuildable, it still forwards
         // rebuild/dirty marking to its child.
         StatelessElement::wrapper(child, None, self.name).boxed()
     }

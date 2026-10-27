@@ -8,6 +8,6 @@ pub mod size;
 pub use bounds::Bounds;
 pub use constraints::BoxConstraint;
 pub use devices::platform::Platform;
-pub use dimension::{CacheBounds, Dimension};
+pub use dimension::{CacheBounds, Dimension, NumberExt};
 pub use position::Vec2d;
 pub use size::{ResolvedSize, Size};

@@ -76,6 +76,53 @@ impl Dimension {
     }
 }
 
+/// Builds a [`Dimension`] straight from a number literal.
+///
+/// Implemented for every primitive integer and float, so `16.px()` and
+/// `50.pc()` read as the unit they stand for, without naming `Dimension` or
+/// wrapping the value in a variant.
+///
+/// The number becomes the variant's `f32` with an `as` cast. Integers beyond
+/// `f32`'s 24-bit mantissa lose their low bits, and a value outside the `f32`
+/// range saturates to infinity, exactly as `value as f32` does. Neither is
+/// checked, because layout sizes are far inside that range.
+///
+/// # Examples
+///
+/// ```
+/// use aimer_attribute::{Dimension, dimension::NumberExt};
+///
+/// assert_eq!(16.px(), Dimension::Px(16.0));
+/// assert_eq!(50.pc(), Dimension::Percent(50.0));
+/// assert_eq!(0.5f32.px(), Dimension::Px(0.5));
+/// ```
+pub trait NumberExt: Sized {
+    /// Returns [`Dimension::Px`] holding this number, in logical pixels.
+    fn px(self) -> Dimension;
+
+    /// Returns [`Dimension::Percent`] holding this number, where `100` is the
+    /// whole parent extent.
+    fn pc(self) -> Dimension;
+}
+
+macro_rules! impl_number_ext {
+    ($($number:ty),* $(,)?) => {$(
+        impl NumberExt for $number {
+            #[inline]
+            fn px(self) -> Dimension {
+                Dimension::Px(self as f32)
+            }
+
+            #[inline]
+            fn pc(self) -> Dimension {
+                Dimension::Percent(self as f32)
+            }
+        }
+    )*};
+}
+
+impl_number_ext!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64);
+
 // `bound` is wrapped in a `Cell` so it can be mutated through a shared
 // `&self` (during layout/draw) soundly. The previous version stored a bare
 // `Option<Bounds>` and mutated it via a `&raw const ... as *mut` cast, which
@@ -153,6 +200,55 @@ impl CacheBounds {
             return false;
         };
         bound.x <= x && x <= bound.x + bound.width && bound.y <= y && y <= bound.y + bound.height
+    }
+}
+
+#[cfg(test)]
+mod number_ext_tests {
+    use super::*;
+
+    #[test]
+    fn px_and_pc_build_the_matching_dimension() {
+        assert_eq!(100.px(), Dimension::Px(100.0));
+        assert_eq!(50.pc(), Dimension::Percent(50.0));
+        assert_eq!(1.5f32.px(), Dimension::Px(1.5));
+        assert_eq!(33.3f64.pc(), Dimension::Percent(33.3f64 as f32));
+    }
+
+    #[test]
+    fn every_primitive_number_implements_the_trait() {
+        assert_eq!(7i8.px(), Dimension::Px(7.0));
+        assert_eq!(7i16.px(), Dimension::Px(7.0));
+        assert_eq!(7i32.px(), Dimension::Px(7.0));
+        assert_eq!(7i64.px(), Dimension::Px(7.0));
+        assert_eq!(7i128.px(), Dimension::Px(7.0));
+        assert_eq!(7isize.px(), Dimension::Px(7.0));
+        assert_eq!(7u8.px(), Dimension::Px(7.0));
+        assert_eq!(7u16.px(), Dimension::Px(7.0));
+        assert_eq!(7u32.px(), Dimension::Px(7.0));
+        assert_eq!(7u64.px(), Dimension::Px(7.0));
+        assert_eq!(7u128.px(), Dimension::Px(7.0));
+        assert_eq!(7usize.px(), Dimension::Px(7.0));
+        assert_eq!(7f32.pc(), Dimension::Percent(7.0));
+        assert_eq!(7f64.pc(), Dimension::Percent(7.0));
+    }
+
+    #[test]
+    fn boundary_values_convert_without_panicking() {
+        assert_eq!(0.px(), Dimension::Px(0.0));
+        assert_eq!((-8).px(), Dimension::Px(-8.0));
+        assert_eq!(u64::MAX.px(), Dimension::Px(u64::MAX as f32));
+        assert_eq!(f64::MAX.px(), Dimension::Px(f32::INFINITY));
+        match f32::NAN.pc() {
+            Dimension::Percent(value) => assert!(value.is_nan()),
+            other => panic!("expected Percent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolves_like_the_equivalent_variant() {
+        assert_eq!(40.px().resolve(200.0, 2.0), 80.0);
+        assert_eq!(25.pc().resolve(200.0, 2.0), 50.0);
     }
 }
 

@@ -79,7 +79,7 @@ unsafe impl Sync for SyncRebuildFn {}
 /// Wrapped in `UnsafeCell` so `adopt_state_from` can *repoint* it to the OLD
 /// element's state cell alongside `rebuild_fn`: after adoption the live element
 /// reads the OLD cell, so its config-refresh machinery (`state_any` +
-/// `adopt_config_fn`) must reference that SAME cell — otherwise a later
+/// `adopt_config_fn`) must reference that SAME cell, otherwise a later
 /// reconcile that uses this element as the `old` side would refresh an
 /// orphaned cell while the live `rebuild_fn` keeps reading a stale one.
 /// Safety: the rendering pipeline is single-threaded.
@@ -313,8 +313,8 @@ struct StateUpdaterInner<S> {
     state: Rc<SyncState<S>>,
     dirty_source: Rc<DirtySource>,
     failure: Rc<FailureState>,
-    /// The window the element was built for, so a state update made later —
-    /// by a timer, by a finished request — asks that window for its frame no
+    /// The window the element was built for, so a state update made later,
+    /// by a timer, by a finished request, asks that window for its frame no
     /// matter which window is active when it happens.
     window: aimer_events::window::WindowKey,
 }
@@ -561,7 +561,7 @@ impl<S: 'static> StateUpdater<S> {
     /// }
     /// ```
     ///
-    /// Wait — that's still `id.clone()`. The real win is that `set_state_with`
+    /// Wait, that's still `id.clone()`. The real win is that `set_state_with`
     /// accepts a *reference* and clones internally, so from an `Fn` closure you
     /// can write:
     ///
@@ -713,7 +713,7 @@ impl<S: 'static> StateUpdater<S> {
         };
         slot.try_resolve(|slot| match slot {
             UpdaterSlot::Native(inner) => {
-                // Safety: single-threaded rendering pipeline — no concurrent mutation.
+                // Safety: single-threaded rendering pipeline, no concurrent mutation.
                 let state = unsafe {
                     (&*inner.state.0.get())
                         .as_ref()
@@ -813,8 +813,8 @@ impl<S: 'static> StateUpdater<S> {
 ///
 /// The split is deliberate. The widget is only *configuration*: the immutable
 /// props a parent passes down, rebuilt freely and thrown away. Everything that
-/// must survive a rebuild — a counter, hover or focus flags, scroll offsets,
-/// animation progress — lives in the [`State`](StatefulWidget::State) that
+/// must survive a rebuild, a counter, hover or focus flags, scroll offsets,
+/// animation progress, lives in the [`State`](StatefulWidget::State) that
 /// [`create_state`](StatefulWidget::create_state) returns. The element owns that
 /// state and keeps it alive for as long as the widget stays in the tree.
 ///
@@ -828,7 +828,7 @@ impl<S: 'static> StateUpdater<S> {
 /// Put `#[derive(StatefulWidget)]` on the struct and implement [`State`] for
 /// the type returned by `create_state`; that is all a stateful widget needs. The
 /// derive writes the [`Widget`] impl for you, so there is no `to_element` to
-/// implement by hand — prefer it over implementing `Widget` directly. A named
+/// implement by hand, prefer it over implementing `Widget` directly. A named
 /// struct with a field `key: Option<Key>` has that key forwarded to the
 /// element, which keeps the state attached to the same widget when siblings are
 /// reordered. A widget with nothing to remember should be a
@@ -854,8 +854,8 @@ pub trait StatefulWidget: Sized {
 
     /// Consumes this widget and creates the state it configures.
     ///
-    /// The widget is gone once this returns — its element keeps the state
-    /// instead — so an implementation moves its props into the state rather than
+    /// The widget is gone once this returns, its element keeps the state
+    /// instead, so an implementation moves its props into the state rather than
     /// cloning them.
     fn create_state(self) -> Self::State;
 }
@@ -878,7 +878,7 @@ pub trait StatefulWidget: Sized {
 ///
 /// `build` and the other hooks take `&self` or `&mut self` only while the
 /// framework is calling them, so a callback cannot hold the state. It holds
-/// the [`StateUpdater`] instead — store it in `init_state` — and describes the
+/// the [`StateUpdater`] instead, store it in `init_state`, and describes the
 /// change as a closure with [`StateUpdater::set_state`]. The closure is queued
 /// and applied on the render thread at the next rebuild, and several calls in
 /// one frame cause a single rebuild. The updater is `Copy` but belongs to the
@@ -929,7 +929,7 @@ pub trait StatefulWidget: Sized {
 pub trait State<W: StatefulWidget> {
     /// Called once after the state is created, providing a [`StateUpdater`]
     /// handle. Store the updater in your state struct to later call
-    /// `set_state()` from event handlers or callbacks — similar to
+    /// `set_state()` from event handlers or callbacks, similar to
     /// Flutter's `setState`.
     fn init_state(&mut self, updater: StateUpdater<Self>)
     where
@@ -939,8 +939,8 @@ pub trait State<W: StatefulWidget> {
     /// built element for the *same* stateful widget (e.g. a window resize, or a
     /// parent `set_state` that re-emits this widget with new props).
     ///
-    /// The framework preserves this (the *live*) state object — keeping runtime
-    /// fields such as hover/focus/scroll/animation progress — but the freshly
+    /// The framework preserves this (the *live*) state object, keeping runtime
+    /// fields such as hover/focus/scroll/animation progress, but the freshly
     /// built `new` state carries the up-to-date widget *configuration* (the
     /// props passed down from the parent, e.g. a `TextButton`'s `style` /
     /// `hover_style` / `on_press`, or a selected/disabled flag). Move those
@@ -1038,7 +1038,7 @@ pub struct StatefulElement {
     child: SyncChild,
     /// Marked when this element (or its state's own `set_state`) requests a
     /// rebuild. Wrapped in `RefCell` so `adopt_state_from` can *repoint* it to
-    /// the OLD element's flag during reconciliation — see `adopt_state_from`
+    /// the OLD element's flag during reconciliation, see `adopt_state_from`
     /// for why the live element must share the flag the preserved state's
     /// captured updater flips.
     pub dirty: RefCell<Rc<Cell<bool>>>,
@@ -1210,7 +1210,7 @@ impl StatefulElement {
         );
 
         {
-            // Safety: single-threaded — we are the only accessor during construction.
+            // Safety: single-threaded, we are the only accessor during construction.
             let s = unsafe {
                 (&mut *state_cell.0.get())
                     .as_mut()
@@ -1286,7 +1286,7 @@ impl StatefulElement {
         });
 
         let child = {
-            // Safety: single-threaded — initial build during construction.
+            // Safety: single-threaded, initial build during construction.
             let s = unsafe {
                 (&*state_cell.0.get())
                     .as_ref()
@@ -1367,7 +1367,7 @@ impl StatefulElement {
     ///
     /// Uses element reconciliation: before replacing the child, tries to update
     /// it in-place via `try_update_element`. If the child's type and key
-    /// match the new element's, the child is updated without replacement —
+    /// match the new element's, the child is updated without replacement,
     /// preserving nested `StatefulElement` state, GPU resources, and
     /// reducing allocations.
     ///
@@ -1427,10 +1427,10 @@ impl StatefulElement {
         // its `NavigatorController`) is re-published into the *current* frame's
         // context before descendants rebuild and look it up.
         //
-        // Otherwise a nested consumer rebuilt during `propagate_rebuild` — such
+        // Otherwise a nested consumer rebuilt during `propagate_rebuild`, such
         // as a header calling `NavigatorController::of` on a window resize,
         // where `mark_needs_rebuild` dirties the whole tree and the frame's
-        // `BuildContext` starts with an empty `inherited_states` map — would
+        // `BuildContext` starts with an empty `inherited_states` map, would
         // look up state the provider has not re-inserted yet this frame and
         // panic ("No Navigator found in context").
         let new_child = {
@@ -1502,7 +1502,7 @@ impl StatefulElement {
 
 /// If both elements are `StatefulElement`s with the same `debug_name`, adopt
 /// the live state from `old` into `new`. This is the rescue path that runs
-/// even when the element tree shape changed — it ensures nested stateful
+/// even when the element tree shape changed, it ensures nested stateful
 /// widgets (e.g. tab buttons, form inputs) keep their runtime state across
 /// a parent rebuild.
 ///
@@ -1652,8 +1652,8 @@ fn carry_keyed_child_state_in_context<'a>(
 /// Hands the subtree below a keyed stateful element over to the element that
 /// replaced it.
 ///
-/// A keyed element keeps its own state wherever it reappears — it is looked up
-/// by key, not by position — but the subtree it rebuilds from that state is
+/// A keyed element keeps its own state wherever it reappears, it is looked up
+/// by key, not by position, but the subtree it rebuilds from that state is
 /// constructed anew, and everything below it is ordinary unkeyed state: a
 /// request an `AsyncBuilder` already completed, a scroll offset, an animation
 /// halfway through. Without this hand-over all of it starts over whenever an
@@ -1662,16 +1662,16 @@ fn carry_keyed_child_state_in_context<'a>(
 ///
 /// Unlike the walk below an unkeyed element, this one cannot assume the two
 /// subtrees line up. A keyed element deliberately outlives changes to what it
-/// contains — one route transition keeps its identity while the page inside it
-/// is replaced — so a pair is only descended into once both sides agree on what
+/// contains, one route transition keeps its identity while the page inside it
+/// is replaced, so a pair is only descended into once both sides agree on what
 /// they are. Everything else keeps the state it was built with, which is how a
 /// navigation still gets its new page.
 ///
 /// Keys nested below this one are resolved first, and by key rather than by
 /// position: the walk that follows deliberately steps over keyed elements, and
 /// the pass that would otherwise claim them stopped at this element. A section
-/// that names itself inside a page inside a keyed route transition — the shape
-/// `website/src/screen/home_screen.rs` builds — would otherwise be the one
+/// that names itself inside a page inside a keyed route transition, the shape
+/// `website/src/screen/home_screen.rs` builds, would otherwise be the one
 /// thing an ancestor's rebuild resets.
 fn carry_state_below_keyed(old: &StatefulElement, new: &StatefulElement, ctx: &BuildContext) {
     if std::ptr::eq(old, new) {
@@ -1738,8 +1738,8 @@ fn carry_matching_state(old: &dyn Element, new: &dyn Element, ctx: &BuildContext
 ///
 /// The positional walk below reaches every child an element owns, which covers
 /// almost everything. What it cannot reach is a container that materializes its
-/// children on demand — a freshly built one has none, so there is no pair to walk
-/// — or state a container keeps beside them, such as a measurement of a list too
+/// children on demand, a freshly built one has none, so there is no pair to walk
+///, or state a container keeps beside them, such as a measurement of a list too
 /// long to measure again. Both are handed over here instead; see
 /// [`Rebuildable::adopt_runtime_state_from`].
 ///
@@ -1815,7 +1815,7 @@ impl StatefulElement {
     /// on the next frame.
     ///
     /// Called by `update_from_widget` when a parent's reconciliation replaces
-    /// an entire subtree — without this, a freshly-constructed
+    /// an entire subtree, without this, a freshly-constructed
     /// `StatefulElement` (with `current_index: 0`) would shadow the live
     /// one (with `current_index: 2`).
     pub(crate) fn adopt_state_from(&self, old: &StatefulElement, ctx: &BuildContext) {
@@ -1870,13 +1870,13 @@ impl StatefulElement {
 
         // Refresh the *configuration* stored in the preserved live state from
         // the freshly-built element. We keep `old`'s state cell (its runtime
-        // state — hover, scroll offset, selected tab, animation progress, …),
+        // state, hover, scroll offset, selected tab, animation progress, …),
         // but that same cell also holds whatever props the widget copied from
         // its parent at `create_state` time (e.g. a `TextButton`'s `style` /
         // `hover_style` / `on_press`, a selected/disabled flag). Without this
         // refresh a widget re-emitted with different props after a parent
         // rebuild (a window resize, a parent `set_state`) would keep rendering
-        // its *stale* props — the classic symptom being a tab whose highlight
+        // its *stale* props, the classic symptom being a tab whose highlight
         // stays stuck on the initially-selected button even though the live
         // selection moved on. `self` is the fresh element and carries the
         // up-to-date config in its state; hand it to `old`'s config hook.
@@ -1922,9 +1922,9 @@ impl StatefulElement {
         // `old`'s cell, but `self` was constructed with `state_any` /
         // `adopt_config_fn` bound to its OWN (now-orphaned) fresh cell. If we
         // left them pointing there, a *subsequent* reconcile that uses `self` as
-        // the `old` side — which a single window resize does trigger (the eager
+        // the `old` side, which a single window resize does trigger (the eager
         // rebuild below reconciles this subtree, and the follow-up
-        // `carry_child_state` pass reconciles it again) — would refresh the
+        // `carry_child_state` pass reconciles it again), would refresh the
         // ORPHANED cell while the live `rebuild_fn` keeps reading `old`'s cell,
         // so the freshly-built config would never reach what actually renders
         // and the selected/highlight styling would freeze on a stale value.
@@ -1936,7 +1936,7 @@ impl StatefulElement {
         }
         *self.state_storage.borrow_mut() = live_storage;
 
-        // Materialize the adopted state *immediately*, during reconciliation —
+        // Materialize the adopted state *immediately*, during reconciliation,
         // do not defer to the next `draw`.
         //
         // The child we were constructed with was built from this widget's
@@ -1944,8 +1944,8 @@ impl StatefulElement {
         // waiting for `draw` → `rebuild_if_dirty` to regenerate it is not
         // enough: on a window resize the rebuilt element is frequently *culled*
         // by a scroll viewport (its `draw`, and hence `rebuild_if_dirty`, never
-        // runs) or sits behind a wrapper whose rebuild cascade — which walks
-        // `visit_children` — never reaches it (containers such as `Container`
+        // runs) or sits behind a wrapper whose rebuild cascade, which walks
+        // `visit_children`, never reaches it (containers such as `Container`
         // and `Row`/`Column` expose their children only through
         // `event_children`). In those cases the adopted `rebuild_fn` would never
         // execute and the user's state would silently snap back to the initial
@@ -2528,7 +2528,7 @@ mod tests {
     impl crate::widget::PortableWidget for LeafProbe {}
 
     /// One of two interchangeable "pages" below the keyed element, distinguished
-    /// only by the name it builds under — the shape a route's pages have.
+    /// only by the name it builds under, the shape a route's pages have.
     #[derive(Clone)]
     struct ProbePage {
         name: &'static str,
@@ -3397,12 +3397,12 @@ mod tests {
     }
 
     /// A keyed element is found by key, so it keeps its state wherever it
-    /// reappears — but the subtree it rebuilds from that state is built anew,
+    /// reappears, but the subtree it rebuilds from that state is built anew,
     /// and what lives below it is unkeyed.
     ///
     /// This is the route transition an application wraps every page in: a theme
-    /// change rebuilds the shell above it, and the request the page completed —
-    /// an `AsyncBuilder`'s snapshot — must not start over because the switcher
+    /// change rebuilds the shell above it, and the request the page completed,
+    /// an `AsyncBuilder`'s snapshot, must not start over because the switcher
     /// between them was rebuilt.
     #[test]
     fn state_below_a_keyed_element_outlives_a_rebuild_of_its_ancestor() {
@@ -3436,7 +3436,7 @@ mod tests {
     ///
     /// One route transition keeps its identity across every route. When the page
     /// inside it is replaced, the outgoing page's state must stay with the
-    /// outgoing page — handing it to the page that replaced it would render the
+    /// outgoing page, handing it to the page that replaced it would render the
     /// route that was navigated away from.
     #[test]
     fn a_replaced_page_below_a_keyed_element_keeps_its_own_state() {

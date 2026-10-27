@@ -3,17 +3,17 @@ use crate::align_example::align_example;
 use crate::animatable_example::animatable_example;
 use crate::animated::MyAnimatedList;
 use crate::animated_layout_example::animated_layout_example;
+use crate::animated_text_field_example::AnimatedTextFieldExample;
 use crate::animated_theme::AnimatedThemeExample;
 use crate::assets_media_example::assets_media_example;
 use crate::async_builder::async_builder_example;
 use crate::backdrop_filter_example::backdrop_filter_example;
 use crate::collapsible_list_example::collapsible_list_example;
-use crate::container_transform_example::container_transform_example;
 use crate::color_sync::ColorSync;
+use crate::container_transform_example::container_transform_example;
 use crate::custom_animated_theme::custom_animated_theme_example;
 use crate::custom_font::custom_font_example;
 use crate::custom_shape_example::custom_shape_example;
-use crate::animated_text_field_example::AnimatedTextFieldExample;
 use crate::custom_text_field_caret_example::CustomTextFieldCaretExample;
 use crate::data_view_example::data_view_example;
 use crate::dnd_completion_example::dnd_completion_example;
@@ -22,14 +22,13 @@ use crate::feedback_example::feedback_example;
 use crate::file_drop_zone::FileDropShowcase;
 use crate::floating::FloatingShowcase;
 use crate::focus_node_example::FocusNodeExample;
+use crate::foreground_decoration_example::foreground_decoration_example;
 use crate::form_example::form_example;
 use crate::glass_liquid_example::glass_liquid_example;
+use crate::gradient_example::gradient_example;
 use crate::http_request_button::http_request_button_example;
-use crate::passkey_example::passkey_example;
 use crate::i18n_example::i18n_example;
 use crate::justify_content_example::justify_content_example;
-use crate::foreground_decoration_example::foreground_decoration_example;
-use crate::gradient_example::gradient_example;
 use crate::light_edge_example::light_edge_example;
 use crate::liquid_tab_bar_example::liquid_tab_bar_example;
 use crate::loading_animation::loading_animation_example;
@@ -43,6 +42,7 @@ use crate::navigation_example::navigation_example;
 use crate::navigation_transitions_example::navigation_transitions_example;
 use crate::overflow_behavior_example::overflow_behavior_example;
 use crate::panic_recovery::panic_recovery_example;
+use crate::passkey_example::passkey_example;
 use crate::picker_example::picker_example;
 use crate::range_controls_example::RangeControlsExample;
 use crate::resizable_example::ResizableShowcase;
@@ -50,9 +50,9 @@ use crate::routing::state_router_widget;
 use crate::routing_context_example::routing_context_example;
 use crate::selectable_text::selectable_text_example;
 use crate::selection_controls_example::selection_controls_example;
+use crate::stack_positioned_example::stack_positioned_example;
 use crate::stateful::CounterWidget;
 use crate::stateful_2::MyList;
-use crate::stack_positioned_example::stack_positioned_example;
 use crate::storage_example::storage_example;
 use crate::style_tokens_example::style_tokens_example;
 use crate::svg_example::svg_example as svg_completion_example;
@@ -62,8 +62,8 @@ use crate::test_animation::TestFadingAnimation;
 use crate::text_area_example::TextAreaExample;
 use crate::text_field_example::TextFieldExample;
 use crate::text_properties_example::text_properties_example;
-use crate::tween_keyframe_example::tween_keyframe_example;
 use crate::theme;
+use crate::tween_keyframe_example::tween_keyframe_example;
 use crate::window_example::WindowShowcase;
 use aimer::input::button::Button;
 use aimer::macros::widget;
@@ -96,7 +96,6 @@ impl ExampleShowcase {
         Self {}
     }
 }
-
 
 #[cfg(test)]
 thread_local! {
@@ -147,7 +146,10 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
         let app_theme = ThemeData::copied(ctx);
 
         Provider::new()
-            .handle(self.selection.clone())
+            .handle(
+                self.selection
+                    .clone(),
+            )
             .child(
                 Container::new()
                     .box_decoration(
@@ -177,26 +179,6 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
 }
 
 fn sidebar(app_theme: ThemeData) -> AnyWidget {
-    let categories = EXAMPLE_CATEGORIES
-        .iter()
-        .enumerate()
-        .map(|(index, category)| {
-            let category = example_category(category, app_theme);
-            if cfg!(target_os = "macos") && index == 0 {
-                Container::new()
-                    .margin(LayoutSpacing::new().top(38))
-                    .child(category)
-                    .boxed()
-            } else {
-                category
-            }
-        })
-        .collect::<Vec<AnyWidget>>();
-
-    let list = Column::new()
-        .gaps(LayoutSpacing::new().bottom(3))
-        .children(categories);
-
     Container::new()
         .width(Dimension::Px(SIDEBAR_WIDTH))
         .height(Dimension::Percent(100.0))
@@ -211,19 +193,31 @@ fn sidebar(app_theme: ThemeData) -> AnyWidget {
             Scrollable::new()
                 .vertical_scroll_bar(None)
                 .axis(ScrollAxis::Vertical)
-                .child(list),
+                .child(
+                    Column::new()
+                        .gaps(LayoutSpacing::new().bottom(3))
+                        .children(
+                            EXAMPLE_CATEGORIES
+                                .iter()
+                                .enumerate()
+                                .map(|(index, category)| {
+                                    let category = example_category(category, app_theme);
+                                    if cfg!(target_os = "macos") && index == 0 {
+                                        Container::new()
+                                            .margin(LayoutSpacing::new().top(38))
+                                            .child(category)
+                                            .boxed()
+                                    } else {
+                                        category
+                                    }
+                                }),
+                        ),
+                ),
         )
         .boxed()
 }
 
 fn example_category(category: &ExampleCategory, app_theme: ThemeData) -> AnyWidget {
-    let examples = category
-        .examples
-        .iter()
-        .copied()
-        .map(|example| ExampleButton::new(example, app_theme).boxed())
-        .collect::<Vec<AnyWidget>>();
-
     CollapsibleList::new()
         .animation_millis(300)
         .header(
@@ -240,15 +234,21 @@ fn example_category(category: &ExampleCategory, app_theme: ThemeData) -> AnyWidg
             ListBody::new().child(
                 Column::new()
                     .gaps(LayoutSpacing::new().bottom(3))
-                    .children(examples),
+                    .children(
+                        category
+                            .examples
+                            .iter()
+                            .copied()
+                            .map(|example| ExampleButton::new(example, app_theme).notype()),
+                    ),
             ),
         )
-        .boxed()
+        .notype()
 }
 
 /// One sidebar row. It reads whether it is the selected example itself, so a
 /// selection change rebuilds only the two rows whose answer changes.
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct ExampleButton {
     example: ExampleId,
     app_theme: ThemeData,
@@ -266,7 +266,8 @@ impl StatelessWidget for ExampleButton {
         let app_theme = self.app_theme;
         let icon = example.icon();
         let label = example.label();
-        let selected = ctx.select::<Selection, bool>(move |selection| selection.selected == example);
+        let selected =
+            ctx.select::<Selection, bool>(move |selection| selection.selected == example);
         let selection = ProviderHandle::<Selection>::of(ctx);
         let background = if selected {
             app_theme.primary_color
@@ -308,6 +309,7 @@ impl StatelessWidget for ExampleButton {
             )
             .box_child(
                 Container::new()
+                    .width(100.pc())
                     .height(39)
                     .padding(
                         LayoutSpacing::new()
