@@ -1975,7 +1975,7 @@ pub fn focus_is_settling_between_events() -> bool {
     SETTLING_BETWEEN_EVENTS.with(Cell::get)
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static SETTLING_BETWEEN_EVENTS: Cell<bool> = const { Cell::new(false) };
 }
 

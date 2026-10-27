@@ -57,7 +57,7 @@ struct Registration {
 /// How many rebuilt roots are kept. Each costs a context copy on every full walk.
 const MAX_REBUILT_ROOTS: usize = 64;
 
-thread_local! {
+aimer_tls::thread_local! {
     static REGISTRY: RefCell<HashMap<ElementId, Registration, IdBuildHasher>> =
         RefCell::new(HashMap::default());
     static PASS_ACTIVE: Cell<bool> = const { Cell::new(false) };

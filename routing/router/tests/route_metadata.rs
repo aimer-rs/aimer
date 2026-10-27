@@ -22,8 +22,7 @@ enum Derived {
     Dashboard(Child),
 }
 
-#[aimer_widget::widget(Router)]
-#[derive(Clone)]
+#[derive(Clone, aimer_macro::Router)]
 enum Child {
     #[route("/")]
     Index,

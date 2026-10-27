@@ -22,17 +22,17 @@ pub fn modal_example() -> impl Widget {
             SizedBox::new()
                 .height(20)
                 .boxed(),
-            Container::new()
-                .width(180)
-                .height(48)
+            Button::new()
+                .on_press(show_modal)
+                .decoration(
+                    BoxDecoration::new()
+                        .background_color(app_theme.primary_color)
+                        .border_radius(10),
+                )
                 .box_child(
-                    Button::new()
-                        .on_press(show_modal)
-                        .decoration(
-                            BoxDecoration::new()
-                                .background_color(app_theme.primary_color)
-                                .border_radius(10),
-                        )
+                    Container::new()
+                        .width(180)
+                        .height(48)
                         .child(
                             Text::new("Open modal")
                                 .text_align(TextAlign::MidCenter)

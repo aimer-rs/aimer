@@ -24,7 +24,7 @@ use super::*;
 // measures the path above it and nothing else. Compiled out of every non-test
 // build.
 #[cfg(test)]
-thread_local! {
+aimer_tls::thread_local! {
     static EXTENT_COMPUTATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 

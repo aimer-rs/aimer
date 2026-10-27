@@ -32,7 +32,7 @@ struct Scopes {
     stack: Vec<Entry>,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static SCOPES: RefCell<Scopes> = const {
         RefCell::new(Scopes { next_id: 0, stack: Vec::new() })
     };

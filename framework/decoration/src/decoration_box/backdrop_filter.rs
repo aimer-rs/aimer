@@ -1,3 +1,5 @@
+//! [`BackdropFilter`], a decoration that blurs and tints content painted behind it.
+
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::{Canvas, MaterialDrawRequest, MaterialKind};
 

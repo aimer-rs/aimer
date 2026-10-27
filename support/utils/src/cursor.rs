@@ -21,7 +21,7 @@ pub use winit::window::{Cursor, CursorIcon, CustomCursor};
 /// on.
 type CursorHandler = Rc<dyn Fn(Cursor)>;
 
-thread_local! {
+aimer_tls::thread_local! {
     /// The handler that answers for this thread alone.
     ///
     /// The platform window is one per process, which is exactly right for an

@@ -1,5 +1,4 @@
 use aimer::animation::Animatable;
-use aimer::macros::widget;
 use aimer::style::{AnimatedTheme, TextStyle, Theme, ThemeData};
 use aimer::{
     AimerApp, BoxAlignment, BuildContext, Color, Column, Container, Dimension, SizedBox,
@@ -44,7 +43,7 @@ pub fn animatable_example() -> impl Widget {
     AnimatableExample
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct AnimatableExample;
 
 impl StatelessWidget for AnimatableExample {

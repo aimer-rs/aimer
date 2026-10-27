@@ -1,3 +1,5 @@
+//! [`AnyDecor`], an owned, type-erased [`Decoration`] with inline storage.
+
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;
 use aimer_color::prelude::Color;

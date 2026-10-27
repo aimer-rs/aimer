@@ -71,7 +71,7 @@ pub trait BackGesture {
     fn cancel(self: Box<Self>);
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static HANDLERS: RefCell<Vec<(u64, Rc<dyn BackHandler>)>> = const { RefCell::new(Vec::new()) };
     static NEXT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }

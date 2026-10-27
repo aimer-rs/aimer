@@ -20,8 +20,8 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::{Rc, Weak};
-use std::thread::LocalKey;
 
+use aimer_tls::LocalKey;
 use aimer_widget::base::{BuildConsumer, BuildContext};
 
 use crate::{DeviceOrientation, DisplayFeature};
@@ -91,7 +91,7 @@ impl Readers {
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static ORIENTATION: Cell<Option<DeviceOrientation>> = const { Cell::new(None) };
     static FEATURES: RefCell<Rc<[DisplayFeature]>> = RefCell::new(Rc::from(Vec::new()));
     static ORIENTATION_READERS: Readers = const { Readers::new() };

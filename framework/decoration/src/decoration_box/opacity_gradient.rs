@@ -1,3 +1,5 @@
+//! [`OpacityGradient`], an alpha ramp used as a mask.
+
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;
 use aimer_color::prelude::Color;

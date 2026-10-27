@@ -492,7 +492,7 @@ impl VisitorElement for RawTextWidget {
         "RawTextWidget"
     }
 }
-
+#[allow(unused)]
 fn horizontal_alignment_offset(alignment: TextAlign, width: f32, text_width: f32) -> f32 {
     let remaining_width = (width - text_width).max(0.0);
     match alignment {

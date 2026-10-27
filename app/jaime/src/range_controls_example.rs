@@ -5,7 +5,6 @@
 //! values back on the next rebuild, which is the controlled-component loop an
 //! application would use.
 
-use aimer::macros::widget;
 use aimer::style::{
     BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextStyle, Theme, ThemeData,
 };
@@ -30,7 +29,7 @@ pub fn start_range_controls_example() {
 
 /// Demonstrates single-value and two-thumb range controls, including their
 /// composable visuals, keyboard, pointer-conversion, and disabled states.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct RangeControlsExample {}
 
 impl RangeControlsExample {

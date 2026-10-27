@@ -171,7 +171,7 @@ pub(crate) struct LayoutScratch {
     context_candidates: Vec<u16>,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static LAYOUT_SCRATCH: RefCell<LayoutScratch> = RefCell::new(LayoutScratch::default());
 }
 

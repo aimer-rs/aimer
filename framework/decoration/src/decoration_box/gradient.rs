@@ -1,3 +1,5 @@
+//! [`Gradient`], a linear, radial or conic color ramp decoration.
+
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::{
     Canvas, GradientShape, MAX_GRADIENT_STOPS, MaterialDrawRequest, MaterialGradient, MaterialKind,

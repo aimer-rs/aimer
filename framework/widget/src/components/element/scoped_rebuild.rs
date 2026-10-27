@@ -36,7 +36,7 @@ struct ScopedLog {
     roots: Vec<ElementId>,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static LOG: RefCell<ScopedLog> = const { RefCell::new(ScopedLog { first: 0, roots: Vec::new() }) };
 }
 

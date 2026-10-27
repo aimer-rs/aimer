@@ -4,7 +4,6 @@ use crate::theme;
 use aimer::decoration::{
     BorderRadius, Decoration, DecorationBox, Magnification, MagnificationStyle as Style,
 };
-use aimer::macros::widget;
 use aimer::range::Slider;
 use aimer::selection::{Checkbox, CheckboxValue, ChoiceOption, Select};
 use aimer::style::{
@@ -27,7 +26,7 @@ pub fn magnification_example() -> impl Widget {
 }
 
 /// Demonstrates composable zoom, bulge, and edge refraction.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct MagnificationExample {}
 
 impl MagnificationExample {

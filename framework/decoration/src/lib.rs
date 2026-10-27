@@ -1,4 +1,26 @@
 //! Decorations and layout-transparent widgets for painting behind, over or through a child.
+//!
+//! # Decorations
+//!
+//! A [`Decoration`] records paint commands for a box and can describe the
+//! geometry it implies. [`BoxDecoration`] is the all-in-one style (fill,
+//! [`BoxBorder`], [`BoxOutline`], [`BorderRadius`] and [`BoxShadow`]); each of
+//! those pieces, a [`Color`](aimer_color::prelude::Color), and the effects
+//! [`Gradient`], [`OpacityGradient`], [`BackdropFilter`], [`LightEdge`] and
+//! [`Magnification`] also work as decorations on their own. Slices and arrays of
+//! decorations paint as an ordered stack, and [`AnyDecor`] erases the type.
+//!
+//! # Widgets
+//!
+//! | Widget | Paints the decoration |
+//! |---|---|
+//! | [`DecorationBox`] | behind the child |
+//! | [`ForegroundDecorationBox`] | over the child |
+//! | [`MultiDecorationBox`] | in stacks behind and over the child |
+//! | [`MaskedDecorationBox`] | only where the child has coverage |
+//! | [`OpacityMaskBox`] | as an alpha mask applied to the child |
+//!
+//! None of them changes layout, events or focus of the child.
 
 mod border;
 mod box_decoration;

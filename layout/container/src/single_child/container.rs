@@ -335,6 +335,33 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
             && self.decoration().is_empty()
     }
 
+    /// Narrows the box a container paints to what it measured, on the automatic
+    /// axes of a fitted container.
+    ///
+    /// `width` and `height` are the box as the constraint alone gives it, margin
+    /// already taken out. An automatic container normally paints all of that,
+    /// but a fitted one answers pointer events in, and tells its parent it
+    /// occupies, only what hugs its child. Painting the whole constraint as
+    /// well made a button visibly larger than the area that reacts to it
+    /// wherever the slot it was handed was roomier than its content. The
+    /// measured size is cached per constraint, so this adds no layout work.
+    #[inline]
+    fn fit_paint_box(
+        &self, ctx: &BuildContext, margin: (f32, f32, f32, f32), width: f32, height: f32,
+    ) -> (f32, f32) {
+        let hug_width = self.width == Dimension::Auto;
+        let hug_height = self.height == Dimension::Auto;
+        if !self.fits_content() || !(hug_width || hug_height) {
+            return (width, height);
+        }
+        let (m_left, m_top, m_right, m_bottom) = margin;
+        let computed = self.computed_size(ctx);
+        (
+            if hug_width { (computed.width - m_left - m_right).max(0.0) } else { width },
+            if hug_height { (computed.height - m_top - m_bottom).max(0.0) } else { height },
+        )
+    }
+
     /// Replaces an extent the child failed to report on a fitted container.
     #[inline]
     fn fit_fallback(&self, size: ResolvedSize, scale: f32) -> ResolvedSize {
@@ -393,6 +420,12 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
             }
             Dimension::Auto => parent_height - margin_top - margin_bottom,
         };
+        let (width, height) = self.fit_paint_box(
+            ctx,
+            (margin_left, margin_top, margin_right, margin_bottom),
+            width,
+            height,
+        );
         // An unbounded axis (a scroll view offers `f32::MAX`) stays huge here,
         // exactly as in the live `render`: children size themselves to their
         // content only while their constraint stays unbounded. Rectangles handed
@@ -740,6 +773,8 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
             Dimension::Auto => constraint.max_height - m_top - m_bottom,
         }
         .max(0.0);
+        let (box_width, box_height) =
+            self.fit_paint_box(ctx, (m_left, m_top, m_right, m_bottom), box_width, box_height);
         let computed = self.computed_size(ctx);
         let draw_width = (computed.width - m_left - m_right).max(0.0);
         let draw_height = (computed.height - m_top - m_bottom).max(0.0);

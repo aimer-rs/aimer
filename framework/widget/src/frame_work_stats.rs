@@ -43,7 +43,7 @@ pub struct FrameWorkStats {
 }
 
 #[cfg(feature = "frame-stats")]
-thread_local! {
+aimer_tls::thread_local! {
     static STATS: Cell<FrameWorkStats> = const { Cell::new(FrameWorkStats {
         layout_calls: 0,
         hit_test_visits: 0,

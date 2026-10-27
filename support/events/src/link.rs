@@ -58,7 +58,7 @@ pub trait LinkHandler {
     fn on_link(&self, url: &str) -> bool;
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static HANDLERS: RefCell<Vec<(u64, Rc<dyn LinkHandler>)>> = const { RefCell::new(Vec::new()) };
     static NEXT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// The latest link no handler has taken yet.

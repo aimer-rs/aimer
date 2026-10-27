@@ -1,7 +1,6 @@
 //! An adjustable glass highlight beside the same surface without a rim.
 
 use aimer::decoration::{BorderRadius, Decoration, DecorationBox, LightEdge};
-use aimer::macros::widget;
 use aimer::range::Slider;
 use aimer::style::{BoxDecoration, Color, FontWeight, LayoutSpacing, Spacing, TextStyle};
 use aimer::{
@@ -22,7 +21,7 @@ pub fn light_edge_example() -> impl Widget {
 }
 
 /// Demonstrates how a glass rim catches a configurable light source.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct LightEdgeExample {}
 
 impl LightEdgeExample {

@@ -87,7 +87,7 @@ impl Future for NextRequest {
 static FORWARD: Mutex<Option<Arc<Forward>>> = Mutex::new(None);
 static HOOKED: AtomicBool = AtomicBool::new(false);
 
-thread_local! {
+aimer_tls::thread_local! {
     /// Set while this thread is inside the hook, so a panic raised by a service
     /// reacting to a panic does not recurse.
     static IN_HOOK: Cell<bool> = const { Cell::new(false) };

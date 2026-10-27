@@ -391,7 +391,7 @@ impl StateStorage {
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static STATE_SLOT_ARENA: RefCell<StateSlotArena> = const {
         RefCell::new(StateSlotArena::new())
     };
@@ -532,7 +532,7 @@ mod tests {
     use super::{StateSlotArena, StateStorage, StateUpdaterGeneration,
         StateSlotResolutionError};
 
-    thread_local! {
+    aimer_tls::thread_local! {
         static STORAGE_DROPPED_AFTER_ARENA: RefCell<Option<StateStorage>> = const {
             RefCell::new(None)
         };

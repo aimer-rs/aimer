@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 
 use smallvec::SmallVec;
 
-thread_local! {
+aimer_tls::thread_local! {
     static NEXT_TRAP: Cell<u64> = const { Cell::new(0) };
     static TRAP_GENERATION: Cell<u64> = const { Cell::new(0) };
     static TRAPS: RefCell<SmallVec<[FocusTrapId; 4]>> = const { RefCell::new(SmallVec::new_const()) };

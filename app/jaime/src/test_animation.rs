@@ -8,10 +8,10 @@ use aimer::style::{
 };
 use aimer::{
     AnyWidget, AssetImage, BoxAlignment, BuildContext, Column, Container, Dimension, Row, SizedBox,
-    State, StateUpdater, StatefulWidget, Text, TextButton, Widget, widget,
+    State, StateUpdater, StatefulWidget, Text, TextButton, Widget,
 };
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct TestFadingAnimation;
 
 pub struct SameLookingSectionState {

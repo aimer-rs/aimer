@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use crate::GuestSourceLocation;
 
-thread_local! {
+aimer_tls::thread_local! {
     static PANIC_CONTEXTS: RefCell<Vec<GuestPanicContext>> = const { RefCell::new(Vec::new()) };
     static WATCHED_LOCATIONS: RefCell<Vec<Option<GuestSourceLocation>>> =
         const { RefCell::new(Vec::new()) };

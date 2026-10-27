@@ -71,7 +71,7 @@ pub struct SharedElementSnapshot {
 /// item that was opened, so a handful is plenty and the memory stays bounded.
 const REMEMBERED_LIMIT: usize = 32;
 
-thread_local! {
+aimer_tls::thread_local! {
     static REGISTRY: RefCell<HashMap<Key, Registration>> = RefCell::new(HashMap::new());
     /// Last known bounds and content of recently dropped tags, oldest first.
     static REMEMBERED: RefCell<Vec<(Key, SharedElementSnapshot)>> = const { RefCell::new(Vec::new()) };

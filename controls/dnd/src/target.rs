@@ -71,7 +71,7 @@ pub struct DragTargetState {
     pub will_accept: bool,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     /// The next target identity.
     static NEXT_ID: Cell<u64> = const { Cell::new(1) };
     /// The target the drag is currently over, and how to tell it that it is

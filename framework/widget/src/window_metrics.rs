@@ -94,7 +94,7 @@ struct Subscriber {
     should_notify: Box<dyn FnMut(&WindowMetrics) -> bool>,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     /// Every widget whose current build read the window.
     ///
     /// The consumer is held weakly, so a widget that has left the tree simply

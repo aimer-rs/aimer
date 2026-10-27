@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+aimer_tls.workspace = true
 aimer_container.workspace = true
 aimer_platform.workspace = true
 aimer_venus.workspace = true

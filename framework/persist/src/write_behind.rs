@@ -171,7 +171,7 @@ impl Future for WaitIdle {
 /// finish in milliseconds.
 const DEFAULT_LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(2);
 
-thread_local! {
+aimer_tls::thread_local! {
     static FLUSH_ON_PANIC: Cell<bool> = const { Cell::new(true) };
     static SAVERS: RefCell<Vec<Weak<Shared>>> = const { RefCell::new(Vec::new()) };
     static LIFECYCLE: RefCell<Option<LifecycleSubscription>> = const { RefCell::new(None) };

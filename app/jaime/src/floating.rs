@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use aimer::input::button::Button;
 use aimer::input::callback::VoidCallback;
-use aimer::macros::widget;
 use aimer::modal::*;
 use aimer::style::*;
 use aimer::{AimerApp, *};
@@ -28,7 +27,7 @@ pub fn start_floating_example() {
     AimerApp::start(crate::theme::provide(FloatingShowcase::new().boxed()))
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct FloatingShowcase {}
 
 impl FloatingShowcase {
@@ -205,18 +204,18 @@ fn trigger(
 ) -> AnyWidget {
     Anchor::new()
         .handle(handle)
-        .child(
-            Container::new()
-                .width(Dimension::Px(200.0))
-                .height(Dimension::Px(TRIGGER_HEIGHT))
+        .box_child(
+            Button::new()
+                .on_press(on_press)
+                .decoration(
+                    BoxDecoration::new()
+                        .background_color(app_theme.primary_color)
+                        .border_radius(10),
+                )
                 .child(
-                    Button::new()
-                        .on_press(on_press)
-                        .decoration(
-                            BoxDecoration::new()
-                                .background_color(app_theme.primary_color)
-                                .border_radius(10),
-                        )
+                    Container::new()
+                        .width(Dimension::Px(200.0))
+                        .height(Dimension::Px(TRIGGER_HEIGHT))
                         .child(
                             Text::new(label)
                                 .text_align(TextAlign::MidCenter)
@@ -228,7 +227,6 @@ fn trigger(
                         ),
                 ),
         )
-        .boxed()
 }
 
 /// Builds the dropdown content: one row per [`MENU_ITEMS`] entry.

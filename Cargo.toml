@@ -215,6 +215,7 @@ members = [
     "support/attribute",
     "support/utils",
     "support/events",
+    "support/tls",
     "support/macro",
     # system
     "system/native",
@@ -329,6 +330,7 @@ aimer_color = { path = "cores/color" }
 aimer_attribute = { path = "support/attribute" }
 aimer_utils = { path = "support/utils" }
 aimer_events = { path = "support/events" }
+aimer_tls = { path = "support/tls" }
 aimer_focus = { path = "framework/focus" }
 aimer_text = { path = "widgets/text" }
 aimer_router = { path = "routing/router" }

@@ -32,7 +32,7 @@ use crate::unicode_script::Script;
 // measuring a run resolves each distinct character once. Compiled out of every
 // non-test build.
 #[cfg(test)]
-thread_local! {
+aimer_tls::thread_local! {
     static KEY_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 

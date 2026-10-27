@@ -1,53 +1,88 @@
+//! Border and outline types shared by [`BoxDecoration`](crate::BoxDecoration).
+//!
+//! A [`BoxBorder`] draws inside the box and is reserved as child inset, while a
+//! [`BoxOutline`] draws outside and only enlarges the paint area. Both are made
+//! of four [`BorderSlice`]s, and [`RawBoxBorder`] is the flattened form the paint
+//! pipeline retains.
+
 use aimer_attribute::dimension::Dimension;
 use aimer_color::prelude::Color;
 use aimer_widget::Drawable;
 use aimer_widget::base::BuildContext;
 
+/// How a single border side is drawn.
+///
+/// Only [`BorderStyle::Solid`] is rendered today; `Dashed` and `Dotted` are
+/// accepted so callers can declare intent, but they paint like a solid stroke
+/// until the pipeline supports them. The default is [`BorderStyle::None`],
+/// which suppresses the side entirely regardless of its stroke width.
 #[allow(dead_code)]
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub enum BorderStyle {
+    /// A continuous line.
     Solid,
+    /// A line broken into dashes.
     Dashed,
+    /// A line of dots.
     Dotted,
+    /// No line is drawn and the side is ignored when computing visibility.
     #[default]
     None,
 }
 
+/// Which side of the box edge a border grows towards.
 #[allow(dead_code)]
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub enum BorderMode {
+    /// The stroke is drawn inside the box edge.
     #[default]
     Inside,
+    /// The stroke is drawn outside the box edge and extends the paint area.
     Outside,
 }
 
+/// The thickness of a border side, as a [`Dimension`].
+///
+/// `Px` is scaled by the device scale, `Percent` is relative to the box extent on
+/// the matching axis and `Auto` resolves to zero.
 pub type Stroke = Dimension;
 
+/// Style, thickness and color of one side of a border or outline.
+///
+/// A slice is visible only when its style is not [`BorderStyle::None`] and its
+/// stroke resolves to a positive width.
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub struct BorderSlice {
+    /// How the side is drawn.
     pub style: BorderStyle,
+    /// The side's thickness.
     pub stroke: Stroke,
+    /// The side's color.
     pub color: Color,
 }
 
 impl BorderSlice {
+    /// Creates an invisible slice (no style, zero stroke, transparent).
     #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the line style.
     #[inline]
     pub fn style(mut self, style: BorderStyle) -> Self {
         self.style = style;
         self
     }
 
+    /// Sets the thickness; accepts anything convertible to a [`Stroke`].
     #[inline]
     pub fn stroke(mut self, stroke: impl Into<Stroke>) -> Self {
         self.stroke = stroke.into();
         self
     }
 
+    /// Sets the color.
     #[inline]
     pub fn color(mut self, color: impl Into<Color>) -> Self {
         self.color = color.into();
@@ -55,6 +90,10 @@ impl BorderSlice {
     }
 }
 
+/// Resolves a [`Dimension`] to physical pixels.
+///
+/// `parent_val` is the box extent on the matching axis, already in physical
+/// pixels. Only `Px` values are multiplied by `scale`.
 #[inline]
 pub fn resolve_dim(dim: Dimension, parent_val: f32, scale: f32) -> f32 {
     match dim {
@@ -68,9 +107,13 @@ pub fn resolve_dim(dim: Dimension, parent_val: f32, scale: f32) -> f32 {
 /// Containers reserve its stroke widths as child insets without clipping.
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub struct BoxBorder {
+    /// The left side.
     pub left: BorderSlice,
+    /// The right side.
     pub right: BorderSlice,
+    /// The top side.
     pub top: BorderSlice,
+    /// The bottom side.
     pub bottom: BorderSlice,
 }
 
@@ -78,23 +121,34 @@ pub struct BoxBorder {
 /// Its paint outsets include the stroke widths; child geometry is unchanged.
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub struct BoxOutline {
+    /// The left side.
     pub left: BorderSlice,
+    /// The right side.
     pub right: BorderSlice,
+    /// The top side.
     pub top: BorderSlice,
+    /// The bottom side.
     pub bottom: BorderSlice,
 }
 
+/// Flattened border state retained by the paint pipeline.
+///
+/// Built from a [`BoxBorder`] or [`BoxOutline`] plus the box corner radii; it is
+/// what actually paints, so it carries the [`BorderMode`] and `radius`.
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub struct RawBoxBorder {
     pub left: BorderSlice,
     pub right: BorderSlice,
     pub top: BorderSlice,
     pub bottom: BorderSlice,
+    /// Whether the stroke is inside or outside the box.
     pub mode: BorderMode,
+    /// Corner radii as `[top_left, top_right, bottom_right, bottom_left]` in physical pixels.
     pub radius: [f32; 4],
 }
 
 impl RawBoxBorder {
+    /// Bundles the four sides, mode and corner radii.
     #[allow(dead_code)]
     pub(crate) fn new(
         left: BorderSlice,
@@ -116,35 +170,41 @@ impl RawBoxBorder {
 }
 
 impl BoxBorder {
+    /// Creates a border with no visible sides.
     #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the left side.
     #[inline]
     pub fn left(mut self, left: BorderSlice) -> Self {
         self.left = left;
         self
     }
 
+    /// Sets the right side.
     #[inline]
     pub fn right(mut self, right: BorderSlice) -> Self {
         self.right = right;
         self
     }
 
+    /// Sets the top side.
     #[inline]
     pub fn top(mut self, top: BorderSlice) -> Self {
         self.top = top;
         self
     }
 
+    /// Sets the bottom side.
     #[inline]
     pub fn bottom(mut self, bottom: BorderSlice) -> Self {
         self.bottom = bottom;
         self
     }
 
+    /// Applies the same slice to all four sides.
     #[inline]
     pub fn all(border: BorderSlice) -> Self {
         Self {
@@ -202,6 +262,7 @@ impl BoxBorder {
         }
     }
 
+    /// Applies `border` to the top and bottom sides only.
     #[inline]
     pub fn horizontal(border: BorderSlice) -> Self {
         Self {
@@ -211,6 +272,7 @@ impl BoxBorder {
         }
     }
 
+    /// Applies `border` to the left and right sides only.
     #[inline]
     pub fn vertical(border: BorderSlice) -> Self {
         Self {
@@ -222,35 +284,41 @@ impl BoxBorder {
 }
 
 impl BoxOutline {
+    /// Creates an outline with no visible sides.
     #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the left side.
     #[inline]
     pub fn left(mut self, left: BorderSlice) -> Self {
         self.left = left;
         self
     }
 
+    /// Sets the right side.
     #[inline]
     pub fn right(mut self, right: BorderSlice) -> Self {
         self.right = right;
         self
     }
 
+    /// Sets the top side.
     #[inline]
     pub fn top(mut self, top: BorderSlice) -> Self {
         self.top = top;
         self
     }
 
+    /// Sets the bottom side.
     #[inline]
     pub fn bottom(mut self, bottom: BorderSlice) -> Self {
         self.bottom = bottom;
         self
     }
 
+    /// Applies the same slice to all four sides.
     #[inline]
     pub fn all(border: BorderSlice) -> Self {
         Self {
@@ -290,6 +358,7 @@ impl BoxOutline {
         }
     }
 
+    /// Applies `border` to the top and bottom sides only.
     pub fn horizontal(border: BorderSlice) -> Self {
         Self {
             top: border,
@@ -298,6 +367,7 @@ impl BoxOutline {
         }
     }
 
+    /// Applies `border` to the left and right sides only.
     pub fn vertical(border: BorderSlice) -> Self {
         Self {
             left: border,

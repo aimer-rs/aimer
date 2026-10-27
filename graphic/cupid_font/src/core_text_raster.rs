@@ -109,7 +109,7 @@ type FontKey = (PathBuf, u32, u32, u16);
 /// Fonts built so far, including the files the platform refused (`None`).
 type FontCache = HashMap<FontKey, Option<CFRetained<CTFont>>>;
 
-thread_local! {
+aimer_tls::thread_local! {
     /// Fonts already built by this thread, keyed by file, face, size and
     /// weight.
     static FONT_CACHE: RefCell<FontCache> = RefCell::new(HashMap::new());

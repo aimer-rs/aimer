@@ -1,6 +1,6 @@
 use aimer::console::debug;
 use aimer::input::button::Button;
-use aimer::macros::widget;
+use aimer::macros::StatelessWidget;
 use aimer::router::NavigatorController;
 use aimer::style::*;
 use aimer::*;
@@ -8,7 +8,7 @@ use aimer::*;
 use crate::routing::AppRouting;
 
 #[derive(Clone)]
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 pub struct ProfilePage {
     name: String,
 }

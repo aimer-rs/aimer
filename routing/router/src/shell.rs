@@ -578,7 +578,7 @@ mod tests {
     #[derive(Clone, Copy)]
     struct AncestorShellProvider;
 
-    thread_local! {
+    aimer_tls::thread_local! {
         static SHELL_ROUTE_CONTEXT_MISSES: Cell<usize> = const { Cell::new(0) };
     }
 

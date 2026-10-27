@@ -1,3 +1,10 @@
+//! Portable (AWIR) encoding of [`BoxDecoration`].
+//!
+//! Implements the property traits that let a decoration cross the portable
+//! widget boundary as one bounded, versioned blob: decoding is always available,
+//! while encoding and validation need the `portable-guest` feature. The wire
+//! layout is version one and must stay byte-compatible.
+
 use crate::{
     BorderRadius, BorderSlice, BorderStyle, BoxBorder, BoxDecoration, BoxOutline, BoxShadow,
     ShadowSide,

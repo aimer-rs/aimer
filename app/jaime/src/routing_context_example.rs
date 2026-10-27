@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use aimer::animation::{AnimatedSwitcher, curves};
-use aimer::macros::widget;
+use aimer::macros::Router;
 use aimer::router::{Navigator, Outlet, Router, Shell};
 use aimer::style::{AnimatedTheme, Theme, ThemeData};
 use aimer::{
@@ -18,7 +18,7 @@ use aimer::{
 #[derive(Clone, Copy)]
 struct RoutingContextValue;
 
-#[widget(Router)]
+#[derive(Router)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContextRoute {
     #[route("/")]
@@ -29,7 +29,7 @@ enum ContextRoute {
     Dashboard(ContextChildRoute),
 }
 
-#[widget(Router)]
+#[derive(Router)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContextChildRoute {
     #[route("/")]
@@ -38,7 +38,7 @@ enum ContextChildRoute {
     Reports,
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct ContextRoutePageWidget {
     title: &'static str,
 }

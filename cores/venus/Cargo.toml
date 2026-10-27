@@ -21,6 +21,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
 # framework. A monotonic clock is the only thing it cannot implement itself:
 # `std::time::Instant` panics in the browser.
 [dependencies]
+aimer_tls.workspace = true
 futures-util.workspace = true
 web-time.workspace = true
 

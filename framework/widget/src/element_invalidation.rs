@@ -131,7 +131,7 @@ impl ElementInvalidationBatch {
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static PENDING: RefCell<HashMap<Option<ElementId>, ElementInvalidation>> =
         RefCell::new(HashMap::new());
 }

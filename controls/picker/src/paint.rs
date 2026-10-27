@@ -8,7 +8,7 @@ use aimer_widget::base::{BuildContext, Color};
 
 use super::{Calendar, ColorChannel, ColorPicker, TimeOfDay};
 
-trait PickerPaintCanvas {
+pub(crate) trait PickerPaintCanvas {
     fn scale(&self) -> f32;
     fn fill_color_rect(
         &self,

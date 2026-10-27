@@ -28,7 +28,7 @@ pub struct RebuildStats {
 }
 
 #[cfg(feature = "frame-stats")]
-thread_local! {
+aimer_tls::thread_local! {
     static STATS: Cell<RebuildStats> = const { Cell::new(RebuildStats {
         visits: 0,
         pruned: 0,

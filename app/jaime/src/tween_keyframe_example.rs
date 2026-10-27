@@ -5,7 +5,6 @@ use aimer::animation::{
     TweenAnimation,
 };
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::{
     BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextStyle, Theme, ThemeData,
 };
@@ -64,7 +63,7 @@ pub fn tween_keyframe_example() -> impl Widget {
     TweenKeyframeExample
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct TweenKeyframeExample;
 
 struct TweenKeyframeState {

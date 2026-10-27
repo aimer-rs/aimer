@@ -21,7 +21,7 @@ use crate::ModalAnimation;
 type EntryBuilder =
     Box<dyn FnOnce(&BuildContext, ModalId, Rc<RefCell<ModalTimeline>>) -> AnyElement>;
 
-thread_local! {
+aimer_tls::thread_local! {
     static NEXT_ID: Cell<u64> = const { Cell::new(1) };
     static COMMANDS: RefCell<VecDeque<ModalCommand>> = const { RefCell::new(VecDeque::new()) };
     // The entries and contents are shared with the overlay elements built for

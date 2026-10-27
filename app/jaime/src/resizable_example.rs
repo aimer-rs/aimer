@@ -47,7 +47,7 @@ pub fn start_resizable_example() {
     AimerApp::start(crate::theme::provide(ResizableShowcase::new().boxed()))
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct ResizableShowcase {}
 
 impl ResizableShowcase {

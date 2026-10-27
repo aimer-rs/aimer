@@ -9,9 +9,7 @@ use aimer::accessibility::{
     SemanticTree, ValueRange,
 };
 
-use aimer::console::log::debug;
 use aimer::{AnyElement, BuildContext, Column, Container, Text, Widget};
-use aimer_widget::Key;
 
 /// Builds a settings subtree with a merged label, a range value, and an
 /// actionable switch.

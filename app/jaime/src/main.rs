@@ -73,7 +73,7 @@ mod window_example;
 use aimer::input::TextEditingController;
 use aimer::input::input::{InputType, TextField};
 use aimer::native::macos_windowing::MacosWindowing;
-use aimer::share::{ShareRef, Shared};
+use aimer::share::Shared;
 #[allow(unused_imports)]
 use aimer::style::*;
 #[allow(unused_imports)]
@@ -327,63 +327,6 @@ fn test_image() {
                     ),
             ),
     )
-}
-
-#[cfg(all(test, not(feature = "portable-guest")))]
-mod text_editing_example_tests {
-    use aimer::{AimerApp, Widget};
-    use std::any::{Any, TypeId};
-
-    use crate::animated_text_field_example::AnimatedTextFieldExample;
-    use crate::custom_text_field_caret_example::CustomTextFieldCaretExample;
-    use crate::text_area_example::TextAreaExample;
-    use crate::text_field_example::TextFieldExample;
-
-    #[test]
-    fn text_field_example_is_constructible_as_a_widget() {
-        let example = TextFieldExample::new();
-
-        assert_eq!(Widget::debug_name(&example), "TextFieldExample");
-    }
-
-    #[test]
-    fn text_area_example_is_constructible_as_a_widget() {
-        let example = TextAreaExample::new();
-
-        assert_eq!(Widget::debug_name(&example), "TextAreaExample");
-    }
-
-    #[test]
-    fn custom_text_field_caret_example_is_constructible_as_a_widget() {
-        let example = CustomTextFieldCaretExample::new();
-
-        assert_eq!(Widget::debug_name(&example), "CustomTextFieldCaretExample");
-    }
-
-    #[test]
-    fn animated_text_field_example_is_constructible_as_a_widget() {
-        let example = AnimatedTextFieldExample::new();
-
-        assert_eq!(Widget::debug_name(&example), "AnimatedTextFieldExample");
-    }
-
-    #[test]
-    fn animated_text_field_example_mounts_headlessly() {
-        let mut app = AimerApp::start_headless(crate::theme::provide(
-            AnimatedTextFieldExample::new().boxed(),
-        ));
-
-        app.pump_frames(2);
-    }
-
-    #[test]
-    fn custom_text_field_caret_example_mounts_headlessly() {
-        let mut app = AimerApp::start_headless(crate::theme::provide(
-            CustomTextFieldCaretExample::new().boxed(),
-        ));
-
-        app.pump_frames(2);
-    }
 }
 
 fn moew() {

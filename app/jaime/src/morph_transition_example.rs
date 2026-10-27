@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use aimer::animation::{MorphStyle, MorphTransition, curves};
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::{
     BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextStyle, Theme, ThemeData,
 };
@@ -114,7 +113,7 @@ pub fn morph_transition_example() -> impl Widget {
     MorphTransitionExample
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct MorphTransitionExample;
 
 struct MorphTransitionState {

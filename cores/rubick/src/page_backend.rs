@@ -77,7 +77,7 @@ struct FreeRegion {
 }
 
 #[cfg(target_arch = "wasm32")]
-thread_local! {
+aimer_tls::thread_local! {
     /// Linear-memory ranges released by a dropped UiMemory heap. WebAssembly
     /// cannot shrink memory, so this list lets later app pools reuse those
     /// ranges without asking the host for the same memory again.

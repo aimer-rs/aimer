@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
+use aimer::macros::StatelessWidget;
 use aimer::router::{
     CrossFadeTransition, DynamicTransitions, NavigationAction, NavigationContext,
     NavigationTransition, Navigator, NavigatorController, Outlet, Router, Shell,
@@ -54,7 +54,7 @@ impl PreviewRoute {
     }
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct PreviewPage {
     route: PreviewRoute,
 }
@@ -117,15 +117,14 @@ fn dynamic_transition(duration: Duration) -> impl NavigationTransition<PreviewRo
     })
 }
 
-#[widget(Router)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq,Router)]
 enum ShellRoute {
     #[shell("/dashboard")]
     Dashboard(ShellChildRoute),
 }
 
-#[widget(Router)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq,Router)]
 enum ShellChildRoute {
     #[route("/")]
     Overview,
@@ -155,7 +154,7 @@ impl Router for ShellChildRoute {
     }
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct TransitionShellFrame;
 
 impl TransitionShellFrame {
@@ -186,8 +185,7 @@ impl StatelessWidget for TransitionShellFrame {
     }
 }
 
-#[widget(Router)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Router)]
 enum BranchRoute {
     #[route("/feed/{page}")]
     Feed { page: u32 },
@@ -195,7 +193,7 @@ enum BranchRoute {
     Profile { page: u32 },
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct BranchPage {
     route: BranchRoute,
 }
@@ -235,7 +233,7 @@ impl StatelessWidget for BranchPage {
     }
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct TransitionBranchFrame;
 
 impl TransitionBranchFrame {
@@ -301,7 +299,7 @@ pub fn navigation_transitions_example() -> impl Widget {
     NavigationTransitionsExample::new()
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 /// Transition comparisons with independently configurable preview timing.
 pub(crate) struct NavigationTransitionsExample {
     duration: Duration,

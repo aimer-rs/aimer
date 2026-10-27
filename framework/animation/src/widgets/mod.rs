@@ -27,7 +27,7 @@ pub use transition::{FadeTransition, RotationTransition, ScaleTransition, SlideT
 pub(crate) mod test_frame_requester {
     use std::cell::Cell;
 
-    thread_local! {
+    aimer_tls::thread_local! {
         static REQUESTS: Cell<usize> = const { Cell::new(0) };
     }
 

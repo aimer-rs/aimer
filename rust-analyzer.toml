@@ -1,0 +1,17 @@
+# Project-level rust-analyzer settings (workspace-scoped; client-only options
+# such as the file watcher belong in the editor settings).
+
+[cargo]
+# Use a dedicated target dir (target/rust-analyzer) so rust-analyzer's
+# `cargo check` never blocks on the build-directory lock held by manual
+# `cargo build` / `cargo nextest` runs, and the two do not invalidate each
+# other's caches.
+targetDir = true
+
+[check]
+# Plain `cargo check` is much faster than clippy on every save in this
+# 70+ crate workspace. Run clippy explicitly when needed.
+command = "check"
+# Only check the package that owns the saved file instead of the whole
+# workspace on every save.
+workspace = false

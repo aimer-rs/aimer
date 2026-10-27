@@ -49,7 +49,7 @@ struct Registry {
     callbacks: Vec<(u64, Callback)>,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static REGISTRY: RefCell<Registry> = const {
         RefCell::new(Registry { next_id: 0, callbacks: Vec::new() })
     };

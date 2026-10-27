@@ -23,7 +23,7 @@ use aimer_widget::Key;
 use hashbrown::HashMap;
 use std::cell::RefCell;
 
-thread_local! {
+aimer_tls::thread_local! {
     static SCROLL_OFFSETS: RefCell<HashMap<Key, Vec2d>> = RefCell::new(HashMap::new());
 }
 

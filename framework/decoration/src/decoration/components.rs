@@ -1,3 +1,9 @@
+//! [`Decoration`] implementations for the single-purpose building blocks.
+//!
+//! [`Color`], [`BoxBorder`], [`BoxOutline`], [`BorderRadius`] and [`BoxShadow`]
+//! can each be used as a decoration on their own, so they can be stacked in a list
+//! without wrapping them in a [`BoxDecoration`].
+
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;
 use aimer_color::prelude::Color;

@@ -24,8 +24,12 @@ impl<T: Element, D: Decoration> RawContainer<T, D> {
             Dimension::Auto => parent_height - m_top - m_bottom,
         };
 
-        let box_width = box_width.max(0.0);
-        let box_height = box_height.max(0.0);
+        let (box_width, box_height) = self.fit_paint_box(
+            ctx,
+            (m_left, m_top, m_right, m_bottom),
+            box_width.max(0.0),
+            box_height.max(0.0),
+        );
 
         // Use computed_size to get correct dimensions (handles unbounded/scrollable
         // case)

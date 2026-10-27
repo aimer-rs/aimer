@@ -10,7 +10,6 @@
 //! registers this page in the central showcase.
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::{
     BorderSlice, BorderStyle, BoxBorder, BoxDecoration, FontWeight, LayoutSpacing, Spacing,
     TextAlign, TextStyle, Theme, ThemeData,
@@ -37,7 +36,7 @@ pub fn start_selection_controls_example() {
 
 /// A live page exercising checkbox, switch, radio, select, and autocomplete
 /// interactions with real pointer/keyboard activation.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct SelectionControlsExample {}
 
 impl SelectionControlsExample {
@@ -185,7 +184,7 @@ impl State<SelectionControlsExample> for SelectionControlsExampleState {
     }
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct CheckboxSection {
     reset_generation: u64,
 }
@@ -323,7 +322,7 @@ impl State<CheckboxSection> for CheckboxSectionState {
     }
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct SwitchSection {
     reset_generation: u64,
 }
@@ -392,7 +391,7 @@ impl State<SwitchSection> for SwitchSectionState {
     }
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct RadioSection {
     reset_generation: u64,
 }
@@ -467,7 +466,7 @@ impl State<RadioSection> for RadioSectionState {
     }
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct SelectSection {
     reset_generation: u64,
 }
@@ -545,7 +544,7 @@ impl State<SelectSection> for SelectSectionState {
     }
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct AutocompleteSection {
     reset_generation: u64,
 }

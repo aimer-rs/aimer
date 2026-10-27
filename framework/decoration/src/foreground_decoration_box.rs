@@ -1,3 +1,5 @@
+//! [`ForegroundDecorationBox`], which paints a decoration over its child.
+
 use std::cell::Cell;
 
 use crate::decoration_box::{PaintGeometry, PaintKey, sanitized_outsets};

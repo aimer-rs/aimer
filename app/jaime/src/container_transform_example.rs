@@ -18,7 +18,6 @@ use std::time::Duration;
 
 use aimer::animation::{curves, SharedElement};
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::router::{ContainerTransform, ContainerTransition, Navigator, NavigatorController, Router};
 use aimer::style::*;
 use aimer::*;
@@ -98,8 +97,11 @@ fn feed_row(id: u32, on_press: impl Fn() + 'static, white: Color) -> AnyWidget {
         Button::new()
             .on_press(move || on_press())
             .decoration(BoxDecoration::new().background_color(album_color(id)).border_radius(12))
+            // A button is as big as its child, so the row asks for the whole
+            // width of its slot here.
             .child(
                 Container::new()
+                    .width(Dimension::Percent(100.0))
                     .height(Dimension::Px(ROW_HEIGHT))
                     .padding(LayoutSpacing::all(Spacing::Px(12)))
                     .child(label(format!("Row {id}"), 18, white)),
@@ -193,8 +195,7 @@ fn row_transition() -> ContainerTransition<RowRoute> {
 pub fn container_transform_example() -> impl Widget {
     ContainerTransformExample
 }
-
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct ContainerTransformExample;
 
 impl StatelessWidget for ContainerTransformExample {
@@ -238,7 +239,7 @@ impl StatelessWidget for ContainerTransformExample {
     }
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct StandalonePreview;
 
 struct StandaloneState {
@@ -311,7 +312,7 @@ impl Router for RowRoute {
     }
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct RoutedFeed;
 
 impl StatelessWidget for RoutedFeed {
@@ -332,7 +333,7 @@ impl StatelessWidget for RoutedFeed {
     }
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct RoutedRow {
     id: u32,
 }
@@ -345,7 +346,7 @@ impl StatelessWidget for RoutedRow {
     }
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct RoutedGrid;
 
 impl StatelessWidget for RoutedGrid {
@@ -361,7 +362,7 @@ impl StatelessWidget for RoutedGrid {
     }
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct RoutedAlbum {
     id: u32,
 }

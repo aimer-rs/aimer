@@ -1,3 +1,5 @@
+//! [`OpacityMaskBox`], which scales its child by the alpha of a decoration.
+
 use crate::decoration_box::{ChildMask, decoration_element_with};
 use crate::{BoxDecoration, Decoration};
 use aimer_widget::base::BuildContext;

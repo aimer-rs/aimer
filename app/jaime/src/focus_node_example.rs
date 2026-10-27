@@ -27,7 +27,6 @@
 //! target, not a second target, which is exactly what a rebuild needs.
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::*;
 use aimer::*;
 
@@ -98,7 +97,7 @@ fn box_decoration(focused: bool) -> BoxDecoration {
 }
 
 /// Two boxes that show which of them owns the keyboard.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct FocusNodeExample;
 
 impl FocusNodeExample {
@@ -376,7 +375,7 @@ mod tests {
 
     /// The example's own pattern in miniature: the nodes live in the state, and
     /// every focus change rebuilds the whole page.
-    #[widget(Stateful)]
+    #[derive(StatefulWidget)]
     struct RebuildingBoxes {
         first: FocusNode,
         second: FocusNode,

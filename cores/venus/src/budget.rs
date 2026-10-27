@@ -8,7 +8,7 @@ use std::time::Duration;
 use std::ops::{Add, Sub};
 
 #[cfg(aimer_portable_guest)]
-thread_local! {
+aimer_tls::thread_local! {
     static PORTABLE_FRAME_TIME_NANOS: Cell<u64> = const { Cell::new(1_000_000_000) };
 }
 
@@ -187,7 +187,7 @@ impl FrameBudget {
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     /// The budget of the phase currently running on this thread.
     ///
     /// A running task cannot be handed a `&FrameBudget` — its future was

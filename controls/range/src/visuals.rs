@@ -87,7 +87,7 @@ impl Drawable for RawSliderTrack {
         let size = self.computed_size(ctx);
         let (x, y) = ctx.canvas.get_transform_translation();
         self.bounds.save(ctx.scale, x, y, size.width, size.height);
-        let radius = size.height.min(size.width) / 2.0;
+        // let radius = size.height.min(size.width) / 2.0;
     }
 
     fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {

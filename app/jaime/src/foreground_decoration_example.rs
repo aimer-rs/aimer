@@ -12,7 +12,6 @@ use aimer::decoration::{
     Gradient, LightEdge, Magnification,
 };
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::range::Slider;
 use aimer::style::{
     BoxDecoration, Color, FontWeight, LayoutSpacing, Spacing, TextAlign, TextStyle,
@@ -39,7 +38,7 @@ pub fn foreground_decoration_example() -> impl Widget {
 }
 
 /// Demonstrates a decoration that paints over its child.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct ForegroundDecorationExample {}
 
 impl ForegroundDecorationExample {

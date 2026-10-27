@@ -1,3 +1,5 @@
+//! [`MultiDecorationBox`], which stacks decorations behind and over one child.
+
 use std::cell::Cell;
 
 use aimer_attribute::{ResolvedSize, Vec2d};

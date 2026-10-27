@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use aimer::console::debug;
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::*;
 use aimer::*;
 
@@ -53,7 +52,7 @@ pub fn start_custom_animated_theme_example() {
     AimerApp::start(CustomAnimatedThemeExample::new())
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct CustomAnimatedThemeExample {}
 
 impl CustomAnimatedThemeExample {
@@ -104,7 +103,7 @@ impl State<CustomAnimatedThemeExample> for CustomAnimatedThemeExampleState {
 }
 
 #[derive(Clone)]
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct CustomThemedPanel {
     is_dark: bool,
     updater: StateUpdater<CustomAnimatedThemeExampleState>,

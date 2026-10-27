@@ -1,7 +1,7 @@
 use aimer::input::TextEditingController;
 use aimer::input::button::Button;
 use aimer::input::input::{AsyncTextFieldCallback, InputType, TextField};
-use aimer::macros::widget;
+use aimer::macros::StatefulWidget;
 use aimer::style::*;
 use aimer::{AimerApp, *};
 use uuid::Uuid;
@@ -11,7 +11,7 @@ pub fn start_my_list() {
     AimerApp::start(crate::theme::provide(MyList::new().boxed()))
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct MyList {}
 
 impl MyList {

@@ -98,7 +98,7 @@ fn request_callback(
     }
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct HttpRequestButton;
 
 impl HttpRequestButton {

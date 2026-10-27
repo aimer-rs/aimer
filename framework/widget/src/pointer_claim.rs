@@ -52,7 +52,7 @@ use crate::components::event_element::PointerKey;
 /// number of fingers on the glass.
 const MAX_CLAIMED_POINTERS: usize = 10;
 
-thread_local! {
+aimer_tls::thread_local! {
     /// The pointers whose gesture is already spoken for.
     ///
     /// Per thread because pointers are delivered on the thread that owns the

@@ -40,7 +40,7 @@ use crate::cache::LruCache;
 const HIGHLIGHT_CACHE_CAPACITY: usize = 64;
 type HighlightEntries = LruCache<(Rc<str>, Option<Rc<str>>), Rc<[CaptureSpan]>>;
 
-thread_local! {
+aimer_tls::thread_local! {
     static HIGHLIGHT_CACHE: RefCell<HighlightCache> = RefCell::new(HighlightCache::new(HIGHLIGHT_CACHE_CAPACITY));
 }
 

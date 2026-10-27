@@ -13,7 +13,6 @@ use aimer::feedback::{
     ToastKind, ToastQueue, ToastQueueEvent, Tooltip, TooltipController, TooltipEvent,
 };
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::{
     AnimatedTheme, BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextAlign, TextStyle, Theme,
     ThemeData,
@@ -35,7 +34,7 @@ pub fn start_feedback_example() {
 
 /// A live page exercising status slots, progress indicators, and explicit
 /// tooltip/toast host lifecycles.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct FeedbackExample {}
 
 impl FeedbackExample {

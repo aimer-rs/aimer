@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::{
     BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextAlign, TextStyle, Theme, ThemeData,
 };
@@ -236,7 +235,7 @@ pub fn typed_custom_markdown_content() -> MarkdownViewer {
         .typed_inline::<TypedMention>()
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct CustomMarkdownExample {}
 
 impl CustomMarkdownExample {

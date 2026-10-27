@@ -7,7 +7,7 @@ pub mod profile;
 #[macro_use]
 pub mod setting;
 
-use aimer::macros::widget;
+use aimer::macros::Router;
 use aimer::router::{CrossFadeTransition, DynamicTransitions, NavigationContext,
     NavigationTransition, Navigator, Outlet, Router, Shell, StatefulShell,
     ViewLevelTransitions, ZoomTransition};
@@ -17,7 +17,7 @@ use crate::routing::home::HomeWidget;
 use crate::routing::profile::ProfilePage;
 use crate::routing::setting::SettingPage;
 
-#[widget(Router)]
+#[derive(Router)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppRouting {
     #[route("/")]
@@ -45,7 +45,7 @@ pub enum AppRouting {
 }
 
 /// Child routes rendered inside the dashboard shell's `Outlet`.
-#[widget(Router)]
+#[derive(Router)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DashRoute {
     #[route("/")]
@@ -66,7 +66,7 @@ impl Router for DashRoute {
 
 /// Per-branch routes for the tabbed stateful shell. Each variant is one tab
 /// that keeps its own independent navigation history.
-#[widget(Router)]
+#[derive(Router)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum TabRoute {
     #[route("/feed")]

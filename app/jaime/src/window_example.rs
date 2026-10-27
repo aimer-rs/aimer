@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
+use aimer::macros::StatefulWidget;
 use aimer::style::*;
 use aimer::*;
 
@@ -79,7 +79,7 @@ pub fn start_window_example() {
 /// player bar at the bottom of that window opens the music player in a third.
 /// Launching again while the main menu is open brings it to the front rather
 /// than opening a second one.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct WindowShowcase {}
 
 impl WindowShowcase {
@@ -188,7 +188,7 @@ impl Playback {
 /// and playback lives here, so the two windows are one piece of state seen
 /// twice: choosing a track or pressing play in the player changes what the bar
 /// shows, and the other way round.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 struct MusicMainMenu {}
 
 impl MusicMainMenu {
@@ -662,6 +662,9 @@ fn episode(
 fn player(app_theme: ThemeData, playback: Playback) -> AnyWidget {
     let (title, artist, _, _) = TRACKS[playback.track];
     Container::new()
+        // The bar is a button, which is only as wide as its child, so the bar
+        // asks for the whole width of the library it sits in.
+        .width(Dimension::Percent(100.0))
         .height(Dimension::Px(78.0))
         .padding(
             LayoutSpacing::new()
@@ -771,30 +774,32 @@ fn pill_button(
         app_theme.on_surface_color
     };
 
-    Container::new()
-        .height(Dimension::Px(36.0))
-        .padding(
-            LayoutSpacing::new()
-                .left(18)
-                .right(18),
+    // The button is as big as its child, so the pill's height and its room
+    // either side of the label belong to the child.
+    Button::new()
+        .on_press(on_press)
+        .decoration(
+            BoxDecoration::new()
+                .background_color(background)
+                .border_radius(18),
+        )
+        .hover_decoration(
+            BoxDecoration::new()
+                .background_color(background.lighten(0.08))
+                .border_radius(18),
+        )
+        .press_decoration(
+            BoxDecoration::new()
+                .background_color(background.darken(0.08))
+                .border_radius(18),
         )
         .child(
-            Button::new()
-                .on_press(on_press)
-                .decoration(
-                    BoxDecoration::new()
-                        .background_color(background)
-                        .border_radius(18),
-                )
-                .hover_decoration(
-                    BoxDecoration::new()
-                        .background_color(background.lighten(0.08))
-                        .border_radius(18),
-                )
-                .press_decoration(
-                    BoxDecoration::new()
-                        .background_color(background.darken(0.08))
-                        .border_radius(18),
+            Container::new()
+                .height(Dimension::Px(36.0))
+                .padding(
+                    LayoutSpacing::new()
+                        .left(18)
+                        .right(18),
                 )
                 .child(
                     Text::new(label)
@@ -815,8 +820,7 @@ fn pill_button(
 ///
 /// Every control changes the radio window's state, which is where the playback
 /// lives, so the radio window's player bar follows the player.
-#[derive(Clone)]
-#[widget(Stateless)]
+#[derive(Clone, StatelessWidget)]
 struct MusicPlayer {
     playback: Playback,
     updater: StateUpdater<MusicMenuState>,

@@ -1,3 +1,11 @@
+//! The [`Decoration`] trait and its blanket forms.
+//!
+//! A decoration records paint commands onto a canvas for a box and may describe
+//! the geometry it implies (paint outsets, child insets, child clipping). This
+//! module also forwards the trait through `Box<D>` and `Rc<D>`, implements it for
+//! [`BoxDecoration`], and re-exports the type-erased
+//! [`AnyDecor`].
+
 use std::rc::Rc;
 
 use crate::BoxDecoration;

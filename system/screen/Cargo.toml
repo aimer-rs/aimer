@@ -8,6 +8,7 @@ publish = false
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
 
 [dependencies]
+aimer_tls.workspace = true
 aimer_widget.workspace = true
 
 [target.'cfg(target_os = "ios")'.dependencies]

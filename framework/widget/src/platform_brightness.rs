@@ -78,7 +78,7 @@ fn identity() -> usize {
     &PLATFORM_BRIGHTNESS as *const u8 as usize
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     /// The appearance last reported by the platform.
     ///
     /// Held per thread because it is only ever written by the platform layer on

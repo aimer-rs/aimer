@@ -36,7 +36,7 @@ unsafe extern "C" {
 
 type RedrawRequester = Box<dyn Fn() + Send + Sync + 'static>;
 
-thread_local! {
+aimer_tls::thread_local! {
     /// A redraw requester that answers for this thread alone.
     ///
     /// The platform requester and the global window are one per process, which
@@ -257,7 +257,7 @@ struct WindowScope {
     config: WindowScopeConfig,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     /// Every window of this thread that can be made active, by key.
     ///
     /// A thread has a handful of windows, so a vector scanned in order is

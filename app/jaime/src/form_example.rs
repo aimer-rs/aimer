@@ -13,7 +13,6 @@
 use aimer::input::TextEditingController;
 use aimer::input::button::Button;
 use aimer::input::input::{InputType, TextField};
-use aimer::macros::widget;
 use aimer::style::{
     BorderRadius, BorderSlice, BorderStyle, BoxBorder, BoxDecoration, FontWeight, LayoutSpacing,
     Spacing, TextAlign, TextStyle, Theme, ThemeData,
@@ -39,7 +38,7 @@ pub fn start_form_example() {
 
 /// A live page exercising text input types, validation, submit/reset,
 /// dirty/touched state, and focus-on-error.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct FormExample {}
 
 impl FormExample {

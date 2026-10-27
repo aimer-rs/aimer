@@ -1,3 +1,11 @@
+//! [`DecorationBox`], which paints a decoration behind its child.
+//!
+//! The widget is layout-transparent: it forwards layout, events and focus to the
+//! child. The material effects that sample what is already painted
+//! ([`BackdropFilter`], [`LightEdge`], [`Magnification`]) and the ramp decorations
+//! ([`Gradient`], [`OpacityGradient`]) live in child modules and are re-exported
+//! from here.
+
 use std::cell::Cell;
 
 mod backdrop_filter;

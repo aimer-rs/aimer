@@ -1,3 +1,6 @@
+#![allow(unused)]
+
+
 use std::error::Error;
 use std::fmt;
 use std::fmt::Write as _;

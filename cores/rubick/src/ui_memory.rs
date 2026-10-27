@@ -85,7 +85,7 @@ pub struct UiAllocator {
     inner: Rc<UiMemoryInner>,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static ACTIVE_UI_MEMORY: Cell<*const UiMemoryInner> = const { Cell::new(std::ptr::null()) };
 }
 

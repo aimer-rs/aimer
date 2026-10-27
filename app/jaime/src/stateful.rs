@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
+use aimer::input::callback::VoidCallback;
 use aimer::style::*;
 use aimer::{AimerApp, *};
 
@@ -15,7 +15,7 @@ pub fn start_counter() {
 
 // creating a widget with state
 #[allow(non_snake_case)]
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct CounterWidget {
     pub initial_count: i32,
 }
@@ -92,81 +92,40 @@ impl State<CounterWidget> for CounterState {
                         SizedBox::new()
                             .height(50)
                             .boxed(),
-                        Container::new()
-                            .width(Dimension::Px(200.0))
-                            .height(Dimension::Px(50.0))
-                            .child(
-                                Button::new()
-                                    .disabled(self.on_loading)
-                                    .on_press(move || {
-                                        // updater.set_state(|state| state.on_loading = true);
-
-                                        // updater.set_state(|state| state.on_loading = false);
-
-                                        println!(
-                                            "Button pressed with state : {}",
-                                            updater
-                                                .read_state()
-                                                .count
-                                        );
-                                        updater.set_state(|state| {
-                                            state.count += 1;
-                                        });
-                                    })
-                                    .decoration(
-                                        BoxDecoration::new().background_color(theme.primary_color),
-                                    )
-                                    .child(
-                                        Text::new(if self.on_loading {
-                                            "Loading..."
-                                        } else {
-                                            "Click Me"
-                                        })
-                                        .text_align(TextAlign::MidCenter)
-                                        .text_style(TextStyle::new().color(theme.on_primary_color)),
-                                    )
-                                    .boxed(),
-                            )
-                            .boxed(),
+                        self.click_button("Increase", theme, move || {
+                            updater.set_state(|state| state.count += 1)
+                        }),
                         SizedBox::new()
                             .height(20)
                             .boxed(),
-                        Container::new()
-                            .width(Dimension::Px(200.0))
-                            .height(Dimension::Px(50.0))
-                            .child(
-                                Button::new()
-                                    .disabled(self.on_loading)
-                                    .on_press({
-                                        let updater = self.updater;
-                                        move || {
-                                            println!(
-                                                "Button pressed with state : {}",
-                                                updater
-                                                    .read_state()
-                                                    .count
-                                            );
-                                            updater.set_state(|state| {
-                                                state.count -= 1;
-                                            });
-                                        }
-                                    })
-                                    .decoration(
-                                        BoxDecoration::new().background_color(theme.primary_color),
-                                    )
-                                    .child(
-                                        Text::new(if self.on_loading {
-                                            "Loading..."
-                                        } else {
-                                            "Click Me"
-                                        })
-                                        .text_align(TextAlign::MidCenter)
-                                        .text_style(TextStyle::new().color(theme.on_primary_color)),
-                                    )
-                                    .boxed(),
-                            )
-                            .boxed(),
+                        self.click_button("Decrease", theme, move || {
+                            updater.set_state(|state| state.count -= 1)
+                        }),
                     ]),
+            )
+    }
+}
+
+impl CounterState {
+    fn click_button(
+        &self,
+        label: &'static str,
+        theme: ThemeData,
+        onclick: impl Into<VoidCallback>,
+    ) -> AnyWidget {
+        Button::new()
+            .disabled(self.on_loading)
+            .on_press(onclick)
+            .decoration(BoxDecoration::new().background_color(theme.primary_color))
+            .box_child(
+                Container::new()
+                    .width(Dimension::Px(200.0))
+                    .height(Dimension::Px(50.0))
+                    .child(
+                        Text::new(case!(self.on_loading, "Loading", label))
+                            .text_align(TextAlign::MidCenter)
+                            .text_style(TextStyle::new().color(theme.on_primary_color)),
+                    ),
             )
     }
 }

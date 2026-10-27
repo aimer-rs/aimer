@@ -108,7 +108,7 @@ static REBUILD_STATE_MARK_COUNT: AtomicU64 = AtomicU64::new(0);
 #[cfg(test)]
 static TEST_ELEMENT_TREE_GENERATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-thread_local! {
+aimer_tls::thread_local! {
     /// Active per-window v2 recording context. It is installed only while the
     /// UI thread traverses the retained element tree for one frame.
     static V2_RENDER_CONTEXT_STACK: RefCell<Vec<V2RenderContext>> = const { RefCell::new(Vec::new()) };

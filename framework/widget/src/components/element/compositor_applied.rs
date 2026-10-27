@@ -11,7 +11,7 @@ use aimer_cupid::utilities::IdBuildHasher;
 
 use super::*;
 
-thread_local! {
+aimer_tls::thread_local! {
     static APPLIED: RefCell<HashSet<ElementId, IdBuildHasher>> = RefCell::new(HashSet::default());
 }
 

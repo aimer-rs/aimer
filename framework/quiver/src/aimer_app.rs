@@ -97,7 +97,7 @@ impl FrameRequestKind {
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static CURRENT_FRAME_REQUEST_KIND: Cell<FrameRequestKind> = const {
         Cell::new(FrameRequestKind::Full)
     };
@@ -3532,7 +3532,7 @@ mod tests {
     fn a_finished_transition_leaves_only_the_incoming_child(morph: bool) {
         use aimer_animation::{AnimatedSwitcher, curves, MorphTransition};
 
-        thread_local! {
+        aimer_tls::thread_local! {
             static SWITCH: RefCell<Option<StateUpdater<SwitchState>>> = const { RefCell::new(None) };
         }
 

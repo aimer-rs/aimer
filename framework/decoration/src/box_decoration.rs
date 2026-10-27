@@ -1,3 +1,9 @@
+//! [`BoxDecoration`], the all-in-one box style, and the pieces it is built from.
+//!
+//! It combines a background fill, a [`BoxBorder`], a [`BoxOutline`], a
+//! [`BorderRadius`] and a list of [`BoxShadow`]s. Each piece lives in its own
+//! child module and is re-exported from the crate root.
+
 pub(crate) mod border_radius;
 pub(crate) mod box_shadow;
 pub(crate) mod shapes;
@@ -18,10 +24,16 @@ use crate::box_decoration::box_shadow::BoxShadow;
 /// geometry changes require rebuilding the owning widget.
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct BoxDecoration {
+    /// The border drawn inside the box edge.
     pub border: BoxBorder,
+    /// The outline drawn outside the box edge.
     pub outline: BoxOutline,
+    /// Corner radii shared by the background, border and shadows.
     pub border_radius: BorderRadius,
+    /// Shadows, painted in order (first is painted first, so later ones cover it).
     pub box_shadow: Vec<BoxShadow>,
+    /// Background fill. A `Cell` so [`BoxDecoration::update_color`] can change it
+    /// without rebuilding; `None` paints no fill.
     pub background_color: Cell<Option<Color>>,
 }
 
@@ -34,47 +46,57 @@ impl From<BoxShadow> for Vec<BoxShadow> {
 impl BoxDecoration {
 
 
+    /// Creates an empty decoration: no fill, border, outline, radius or shadows.
     #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the border.
     #[inline]
     pub fn border(mut self, border: BoxBorder) -> Self {
         self.border = border;
         self
     }
 
+    /// Sets the outline.
     #[inline]
     pub fn outline(mut self, outline: BoxOutline) -> Self {
         self.outline = outline;
         self
     }
 
+    /// Sets the corner radii; accepts a number, a four-value tuple or a [`BorderRadius`].
     #[inline]
     pub fn border_radius(mut self, border_radius: impl Into<BorderRadius>) -> Self {
         self.border_radius = border_radius.into();
         self
     }
 
+    /// Replaces all shadows with the given ones.
     #[inline]
     pub fn box_shadow(mut self, box_shadow: impl IntoIterator<Item = BoxShadow>) -> Self {
         self.box_shadow = box_shadow.into_iter().collect();
         self
     }
 
+    /// Appends one shadow after the existing ones.
     #[inline]
     pub fn add_shadow(mut self, shadow: BoxShadow) -> Self {
         self.box_shadow.push(shadow);
         self
     }
 
+    /// Sets the background color.
     #[inline]
     pub fn background_color(self, background_color: impl Into<Color>) -> Self {
         self.background_color.set(Some(background_color.into()));
         self
     }
 
+    /// Changes the background color through a shared reference.
+    ///
+    /// This is the only property that can change after the owning widget is built.
     #[inline]
     pub fn update_color(&self, new_color: impl Into<Color>) {
         self.background_color.set(Some(new_color.into()));
@@ -93,6 +115,10 @@ impl BoxDecoration {
         self.record_local_v2_with_background(canvas, position, box_width, box_height, scale, None);
     }
 
+    /// Records the background, shadows, border and outline into `canvas`.
+    ///
+    /// `background` overrides the decoration's own fill when it is `Some`; the
+    /// record is skipped when `scale` is not a positive finite number.
     pub(crate) fn record_local_v2_with_background(
         &self,
         canvas: &aimer_canvas::Canvas,

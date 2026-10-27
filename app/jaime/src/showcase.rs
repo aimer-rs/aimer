@@ -66,7 +66,7 @@ use crate::theme;
 use crate::tween_keyframe_example::tween_keyframe_example;
 use crate::window_example::WindowShowcase;
 use aimer::input::button::Button;
-use aimer::macros::widget;
+use aimer::macros::{StatefulWidget, StatelessWidget};
 use aimer::style::*;
 use aimer::*;
 
@@ -86,7 +86,7 @@ use catalog::{EXAMPLE_CATEGORIES, EXAMPLES, ExampleCategory, ExampleId};
 /// highlight flips and the content pane. The sidebar and the rest of the shell
 /// are not rebuilt, and choosing the example that is already selected rebuilds
 /// nothing.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct ExampleShowcase {}
 
 impl ExampleShowcase {
@@ -353,7 +353,7 @@ impl StatelessWidget for ExampleButton {
 
 /// The page header and the selected example. It reads the selection itself, so
 /// a change rebuilds this pane and nothing else of the shell.
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct ContentPane {
     app_theme: ThemeData,
 }

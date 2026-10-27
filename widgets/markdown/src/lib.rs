@@ -38,7 +38,7 @@ pub use syntax::{add_syntax_from_dir, add_syntax_from_file, add_syntax_from_str}
 
 const DOCUMENT_CACHE_CAPACITY: usize = 16;
 
-thread_local! {
+aimer_tls::thread_local! {
     static DOCUMENT_CACHE: RefCell<DocumentCache> = RefCell::new(DocumentCache::new(DOCUMENT_CACHE_CAPACITY));
 }
 

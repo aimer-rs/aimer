@@ -1,3 +1,5 @@
+//! Helpers shared by the decoration box tests.
+
 use crate::Decoration;
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;

@@ -688,7 +688,7 @@ impl RenderNodeSpec {
 // Counts `DrawCommandList::node` lookups so tests can bound the cost of
 // world-space queries. Compiled out of every non-test build.
 #[cfg(test)]
-thread_local! {
+aimer_tls::thread_local! {
     static NODE_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -696,21 +696,21 @@ thread_local! {
 // bound the work world-space queries repeat. Compiled out of every non-test
 // build.
 #[cfg(test)]
-thread_local! {
+aimer_tls::thread_local! {
     static FRAME_DERIVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 // Counts rectangles mapped through a transform that is not the identity, so
 // tests can show the common untransformed case never takes that path.
 #[cfg(test)]
-thread_local! {
+aimer_tls::thread_local! {
     static GENERAL_RECT_TRANSFORMS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 // Counts how often a plan derives the geometry of every node, so tests can
 // show it is reused while nothing that affects geometry has changed.
 #[cfg(test)]
-thread_local! {
+aimer_tls::thread_local! {
     static PLAN_GEOMETRY_RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 

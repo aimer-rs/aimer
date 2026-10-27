@@ -1,3 +1,5 @@
+//! [`LightEdge`], a glass highlight painted around the edge of a box.
+
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::{Canvas, MaterialDrawRequest, MaterialKind};
 use aimer_color::prelude::Color;

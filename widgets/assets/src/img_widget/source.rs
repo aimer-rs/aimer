@@ -101,7 +101,7 @@ struct ImageCaches {
     asset_access: HashMap<String, u64>,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static IMAGE_CACHES: RefCell<ImageCaches> = RefCell::new(ImageCaches::default());
 }
 

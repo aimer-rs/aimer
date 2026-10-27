@@ -4,7 +4,6 @@
 //! public router API and keeps navigation state in the route controller.
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::navigation::{
     Breadcrumb, BreadcrumbsWidget, NavigationMenuWidget, NavigationSurface, OverflowPolicy,
     RouteTab, RouteTabBarWidget, Step, StepStatus, StepperWidget, Tab, TabBarWidget, TabViewWidget,
@@ -56,7 +55,7 @@ impl aimer::router::Route for NavigationRoute {
     }
 }
 
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct NavigationPage {
     route: NavigationRoute,
 }

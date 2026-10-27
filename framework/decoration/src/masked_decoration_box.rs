@@ -1,3 +1,5 @@
+//! [`MaskedDecorationBox`], which shows a decoration only where its child has coverage.
+
 use crate::decoration_box::{ChildMask, decoration_element_with};
 use crate::{BoxDecoration, Decoration};
 use aimer_widget::base::BuildContext;

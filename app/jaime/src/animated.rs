@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use aimer::animation::{AnimInstant, Animated, AnimationController};
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::*;
 use aimer::*;
 use uuid::Uuid;
@@ -15,7 +14,7 @@ pub fn start_my_animated_list() {
     AimerApp::start(theme::provide(MyAnimatedList))
 }
 #[allow(non_snake_case)]
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct MyAnimatedList;
 
 pub struct ListItem {

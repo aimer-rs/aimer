@@ -14,7 +14,7 @@ use aimer_cupid::draw_cmd_v2::LocalVisibleRegion;
 
 use super::*;
 
-thread_local! {
+aimer_tls::thread_local! {
     /// Whether the frame being drawn was requested by scrolling alone.
     static SCROLL_ONLY_FRAME: Cell<bool> = const { Cell::new(false) };
     /// Kill switch for diagnostics and differential tests.

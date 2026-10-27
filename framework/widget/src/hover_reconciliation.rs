@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-thread_local! {
+aimer_tls::thread_local! {
     static DEFERRED_HOVER_RECONCILIATION_DEPTH: Cell<usize> = const { Cell::new(0) };
     static HOVER_RECONCILIATION_PENDING: Cell<bool> = const { Cell::new(false) };
     static POINTER_CAPTURE_ACTIVE: Cell<bool> = const { Cell::new(false) };

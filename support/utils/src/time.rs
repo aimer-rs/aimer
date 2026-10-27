@@ -11,7 +11,7 @@ use std::time::Duration;
 use std::cell::Cell;
 
 #[cfg(any(aimer_portable_guest, test))]
-thread_local! {
+aimer_tls::thread_local! {
     static PORTABLE_FRAME_TIME_NANOS: Cell<u64> = const { Cell::new(1_000_000_000) };
 }
 

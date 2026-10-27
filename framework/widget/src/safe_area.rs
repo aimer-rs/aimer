@@ -188,7 +188,7 @@ fn identity() -> usize {
     &SAFE_AREA as *const u8 as usize
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     /// The insets the platform last reported for the application as a whole.
     ///
     /// Held per thread because it is only ever written by the platform layer on

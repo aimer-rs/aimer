@@ -1,7 +1,6 @@
 //! Typed and runtime decoration stacks sharing one retained child.
 
 use aimer::decoration::{Decoration, LightEdge, MultiDecorationBox};
-use aimer::macros::widget;
 use aimer::selection::{Checkbox, CheckboxValue};
 use aimer::style::{BoxDecoration, Color, FontWeight, LayoutSpacing, Spacing, TextStyle};
 use aimer::{
@@ -22,7 +21,7 @@ pub fn multi_decoration_box_example() -> impl Widget {
 }
 
 /// Demonstrates decorations painting in insertion order before a retained child.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct MultiDecorationBoxExample {}
 
 impl MultiDecorationBoxExample {

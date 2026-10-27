@@ -7,7 +7,7 @@ use crate::Router;
 
 use super::*;
 
-thread_local! {
+aimer_tls::thread_local! {
     static NAVIGATOR_OBSERVED: Cell<bool> = const { Cell::new(false) };
     static CURRENT_ROUTE_OBSERVED: Cell<Option<TestRoute>> = const { Cell::new(None) };
     static HISTORY_LENGTH_OBSERVED: Cell<usize> = const { Cell::new(0) };

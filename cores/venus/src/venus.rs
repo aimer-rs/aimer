@@ -11,7 +11,7 @@ use crate::poll_context::PollContext;
 use crate::scheduler::LocalScheduler;
 use crate::task::{Phase, ScopeId, TaskId, TaskScope};
 
-thread_local! {
+aimer_tls::thread_local! {
     /// The runtime installed on this thread, if any.
     ///
     /// This is what deletes the spawner parameter the framework used to thread

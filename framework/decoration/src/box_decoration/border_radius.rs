@@ -1,3 +1,5 @@
+//! [`BorderRadius`], per-corner rounding for boxes.
+
 use aimer_attribute::Dimension;
 
 use crate::border::resolve_dim;
@@ -8,14 +10,19 @@ use crate::border::resolve_dim;
 /// do not apply child clipping. Zero radii still declare a rectangular clip.
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub struct BorderRadius {
+    /// Radius of the top-left corner.
     pub top_left: Dimension,
+    /// Radius of the top-right corner.
     pub top_right: Dimension,
+    /// Radius of the bottom-right corner.
     pub bottom_right: Dimension,
+    /// Radius of the bottom-left corner.
     pub bottom_left: Dimension,
 }
 
 impl BorderRadius {
 
+    /// Applies the same radius to all four corners.
     #[inline]
     pub fn all(radius: impl Into<Dimension>) -> Self {
         let radius = radius.into();
@@ -28,35 +35,45 @@ impl BorderRadius {
 
     }
 
+    /// Creates a radius with all corners square.
     #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the top-left radius.
     #[inline]
     pub fn top_left(mut self, top_left: impl Into<Dimension>) -> Self {
         self.top_left = top_left.into();
         self
     }
 
+    /// Sets the top-right radius.
     #[inline]
     pub fn top_right(mut self, top_right: impl Into<Dimension>) -> Self {
         self.top_right = top_right.into();
         self
     }
 
+    /// Sets the bottom-right radius.
     #[inline]
     pub fn bottom_right(mut self, bottom_right: impl Into<Dimension>) -> Self {
         self.bottom_right = bottom_right.into();
         self
     }
 
+    /// Sets the bottom-left radius.
     #[inline]
     pub fn bottom_left(mut self, bottom_left: impl Into<Dimension>) -> Self {
         self.bottom_left = bottom_left.into();
         self
     }
 
+    /// Resolves the radii to physical pixels as `[top_left, top_right, bottom_right,
+    /// bottom_left]`.
+    ///
+    /// `Px` values are multiplied by `scale`. `Percent` values are taken from
+    /// `box_width` for the top corners and from `box_height` for the bottom corners.
     #[inline]
     pub fn resolve(&self, box_width: f32, box_height: f32, scale: f32) -> [f32; 4] {
         [

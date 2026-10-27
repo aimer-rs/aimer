@@ -213,7 +213,7 @@ fn containers_are_transparent_unless_they_occlude_scroll_and_never_cache_draw_bo
 /// decorated tree must not reach the allocator at all.
 struct RecordingAllocator;
 
-thread_local! {
+aimer_tls::thread_local! {
     static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -579,6 +579,49 @@ async fn an_auto_container_fills_a_bounded_constraint_unless_it_fits_its_content
     let (fitted, content) = fit_probe(true, 200.0, 100.0);
     assert_eq!((fitted.width, fitted.height), (44.0, 34.0));
     assert_eq!((content.width, content.height), (30.0, 20.0));
+}
+
+/// What a decorated container fills when it is given `max_width` x `max_height`:
+/// the box its background is painted into, and the node-relative origin of it.
+fn painted_fill(fit: bool, max_width: f32, max_height: f32) -> (f32, f32, f32, f32) {
+    let (mut ctx, _inner) = recording_context();
+    ctx.box_constraint = BoxConstraint {
+        min_width: 0.0,
+        min_height: 0.0,
+        max_width,
+        max_height,
+    };
+    let mut container = Container::new()
+        .padding(LayoutSpacing::all(5))
+        .margin(LayoutSpacing::all(2))
+        .box_decoration(BoxDecoration::new().background_color(Color::BLUE));
+    if fit {
+        container = container.fit_content();
+    }
+    let element = container
+        .child(SizedBox::new().width(30).height(20))
+        .to_element(&ctx);
+    let fill = record_local_v2(&element, &ctx)
+        .iter()
+        .find_map(|command| match command {
+            aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .expect("a decorated container records one fill rectangle");
+    (fill.x, fill.y, fill.width, fill.height)
+}
+
+/// The box a fitted container paints is the box it measured and answers
+/// pointer events in. Painting the whole constraint instead left the visible
+/// button larger than the area that reacts to it whenever the slot it was
+/// given was roomier than its content.
+#[tokio::test]
+async fn a_fitted_container_paints_the_box_it_hugs() {
+    // Filling is unchanged: the margin is outside the box, the rest is filled.
+    assert_eq!(painted_fill(false, 200.0, 100.0), (2.0, 2.0, 196.0, 96.0));
+
+    // 30 x 20 child + 5 padding on every side, in a slot far larger than that.
+    assert_eq!(painted_fill(true, 200.0, 100.0), (2.0, 2.0, 40.0, 30.0));
 }
 
 #[tokio::test]

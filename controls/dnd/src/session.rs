@@ -131,7 +131,7 @@ struct ActiveDrag {
     pos: Vec2d,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     /// The single in-flight drag.
     ///
     /// `None` while nothing is being dragged, which is the overwhelmingly common

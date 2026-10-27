@@ -57,7 +57,7 @@ fn shape_run_cache_hash(text: &str) -> u64 {
     hash
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static UNICODE_LAYOUT_SCRATCH: RefCell<UnicodeLayoutScratch> =
         RefCell::new(UnicodeLayoutScratch::default());
 }

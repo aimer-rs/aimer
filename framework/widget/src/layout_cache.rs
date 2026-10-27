@@ -10,7 +10,7 @@ use crate::components::element::{element_tree_generation, layout_invalidation_ge
 pub mod probe {
     use std::cell::Cell;
 
-    thread_local! {
+    aimer_tls::thread_local! {
         pub static HITS: Cell<u64> = const { Cell::new(0) };
         pub static MISSES: Cell<u64> = const { Cell::new(0) };
         pub static SETS: Cell<u64> = const { Cell::new(0) };

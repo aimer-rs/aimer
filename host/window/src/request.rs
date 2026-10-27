@@ -52,7 +52,7 @@ pub enum Request {
     Command(WindowId, WindowCommand),
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static QUEUE: RefCell<VecDeque<Request>> = const { RefCell::new(VecDeque::new()) };
     static OPEN: RefCell<HashSet<WindowId>> = RefCell::new(HashSet::new());
     static NEXT_ID: Cell<u64> = const { Cell::new(1) };

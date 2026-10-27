@@ -103,7 +103,7 @@ impl BackDriver {
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static DRIVER: std::cell::RefCell<BackDriver> = std::cell::RefCell::new(BackDriver::default());
 }
 

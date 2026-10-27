@@ -12,6 +12,7 @@ frame-stats = []
 
 
 [dependencies]
+aimer_tls.workspace = true
 aimer_anteros = { path = "../../host/anteros", default-features = false }
 aimer_color.workspace = true
 aimer_attribute.workspace = true

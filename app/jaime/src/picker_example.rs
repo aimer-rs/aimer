@@ -3,7 +3,6 @@
 //! Each control is the real retained `StatefulWidget` adapter from
 //! `aimer_picker`; the page itself does not own or mirror picker state.
 
-use aimer::macros::widget;
 use aimer::picker::{
     Calendar, CalendarView, ColorPicker, ColorPickerView, Date, DateBounds, DatePicker,
     DatePickerView, DateRangePolicy, DateSelectionMode, DateTime, DateTimePicker,
@@ -33,7 +32,7 @@ pub fn start_picker_example() {
 /// Demonstrates calendar navigation, transactional date/date-time editing,
 /// scrollable 12/24-hour time wheels, explicit timezone and bounds policy,
 /// and keyboard-accessible color editing.
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 pub struct PickerExample {}
 
 impl PickerExample {

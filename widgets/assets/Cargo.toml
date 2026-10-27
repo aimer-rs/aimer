@@ -8,6 +8,7 @@ bundled-fonts = ["aimer_cupid/bundled-fonts"]
 portable-guest = ["aimer_widget/portable-guest"]
 
 [dependencies]
+aimer_tls.workspace = true
 aimer_utils.workspace = true
 aimer_canvas.workspace = true
 aimer_attribute.workspace = true

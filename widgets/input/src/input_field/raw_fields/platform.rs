@@ -188,7 +188,7 @@ mod android_keyboard {
 }
 
 #[cfg(all(not(target_os = "ios"), test))]
-thread_local! {
+aimer_tls::thread_local! {
     /// The keyboard language a test pretends the platform is reporting.
     ///
     /// No desktop or headless build has a software keyboard to ask, so the

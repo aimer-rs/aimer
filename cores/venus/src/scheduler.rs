@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use crate::budget::{self, FrameBudget};
 
-thread_local! {
+aimer_tls::thread_local! {
     /// How many task polls are in progress on this thread. A poll can start
     /// another (a task that drains the microtask queue), so this counts depth.
     static POLLING: Cell<u32> = const { Cell::new(0) };

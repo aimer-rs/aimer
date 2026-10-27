@@ -338,7 +338,7 @@ For a stateful example, expose a public root constructor and read the active
 theme from the build context so the example follows the app-wide provider:
 
 ```rust
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct FeatureExample {}
 
 impl FeatureExample {

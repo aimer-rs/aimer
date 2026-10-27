@@ -4,7 +4,6 @@ use aimer::decoration::{
     BackdropFilter, BorderRadius, Decoration, DecorationBox, ForegroundDecorationBox, Gradient,
     LightEdge, MaskedDecorationBox,
 };
-use aimer::macros::widget;
 use aimer::range::Slider;
 use aimer::style::{BoxDecoration, Color, FontWeight, LayoutSpacing, Spacing, TextStyle};
 use aimer::{
@@ -32,7 +31,7 @@ pub fn gradient_example() -> impl Widget {
 }
 
 /// Demonstrates GPU-evaluated gradients and where a decoration can paint.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct GradientExample {}
 
 impl GradientExample {

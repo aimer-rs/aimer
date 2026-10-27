@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::style::*;
 use aimer::*;
 
@@ -9,7 +8,7 @@ pub fn start_animated_theme_example() {
     AimerApp::start(AnimatedThemeExample::new())
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct AnimatedThemeExample {}
 
 impl AnimatedThemeExample {
@@ -52,8 +51,7 @@ impl State<AnimatedThemeExample> for AnimatedThemeExampleState {
     }
 }
 
-#[derive(Clone)]
-#[widget(Stateless)]
+#[derive(Clone, StatelessWidget)]
 struct ThemedPanel {
     is_dark: bool,
     updater: StateUpdater<AnimatedThemeExampleState>,
@@ -102,19 +100,21 @@ impl StatelessWidget for ThemedPanel {
                         SizedBox::new()
                             .height(32)
                             .boxed(),
-                        Container::new()
-                            .width(Dimension::Px(220.0))
-                            .height(Dimension::Px(56.0))
+                        // A button is as big as its child, so the size is the
+                        // child's.
+                        Button::new()
+                            .on_press(move || {
+                                updater.set_state(|state| state.is_dark = !state.is_dark);
+                            })
+                            .decoration(
+                                BoxDecoration::new()
+                                    .background_color(theme.primary_color)
+                                    .border_radius(12),
+                            )
                             .child(
-                                Button::new()
-                                    .on_press(move || {
-                                        updater.set_state(|state| state.is_dark = !state.is_dark);
-                                    })
-                                    .decoration(
-                                        BoxDecoration::new()
-                                            .background_color(theme.primary_color)
-                                            .border_radius(12),
-                                    )
+                                Container::new()
+                                    .width(Dimension::Px(220.0))
+                                    .height(Dimension::Px(56.0))
                                     .child(
                                         Text::new(if self.is_dark {
                                             "Switch to light theme"

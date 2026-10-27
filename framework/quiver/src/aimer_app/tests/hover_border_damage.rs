@@ -45,9 +45,11 @@ impl Widget for Cards {
                                                 .color(Color::Rgb(240, 100, 70)),
                                         )),
                                 )
+                                // A button is as big as its child; the card spans
+                                // the width of its slot because the child asks to.
                                 .child(
                                     SizedBox::new()
-                                        .width(Dimension::Auto)
+                                        .width(Dimension::Percent(100.0))
                                         .height(Dimension::Px(100.0)),
                                 ),
                         ),

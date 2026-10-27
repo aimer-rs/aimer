@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
+use aimer::macros::{StatefulWidget, StatelessWidget};
 use aimer::style::*;
 use aimer::*;
 
@@ -16,7 +16,7 @@ pub fn start_system_theme_example() {
     AimerApp::start(SystemThemeExample::new())
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct SystemThemeExample {}
 
 impl SystemThemeExample {
@@ -60,7 +60,7 @@ impl State<SystemThemeExample> for SystemThemeExampleState {
 }
 
 #[derive(Clone)]
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct SystemThemePanel {
     mode: ThemeMode,
     updater: StateUpdater<SystemThemeExampleState>,

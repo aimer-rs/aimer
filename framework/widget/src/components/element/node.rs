@@ -576,7 +576,7 @@ impl<E: Element + 'static> Rebuildable for ElementNode<E> {
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     /// Whether the recursive mark in progress reached an element that could be a
     /// producer of rebuilds the dirty-path index does not know of.
     static MARK_REACHED_OPAQUE_ELEMENT: Cell<bool> = const { Cell::new(false) };

@@ -5,7 +5,6 @@
 //! cannot capture the current backdrop.
 
 use aimer::input::button::Button;
-use aimer::macros::widget;
 use aimer::shape::{FillStyle, ShapeColor, ShapeFit, ShapePath, ShapePathBuilder};
 use aimer::style::{BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextAlign, TextStyle};
 use aimer::{
@@ -85,7 +84,7 @@ pub fn start_glass_liquid_example() {
 }
 
 /// A small page that exercises static, dynamic, and reduced-motion surfaces.
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct GlassLiquidExample {}
 
 impl GlassLiquidExample {

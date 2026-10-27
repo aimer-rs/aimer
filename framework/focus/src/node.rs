@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-thread_local! {
+aimer_tls::thread_local! {
     static NEXT_FOCUS_REQUEST: Cell<u64> = const { Cell::new(0) };
 }
 

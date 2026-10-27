@@ -191,7 +191,7 @@ impl Drop for Pool {
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static POOL: Pool = const { Pool::new() };
 }
 

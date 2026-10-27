@@ -70,9 +70,11 @@ fn panel() -> impl Widget {
                     .map(|_| {
                         Button::new()
                             .decoration(BoxDecoration::new().background_color(Color::Transparent))
+                            // A button is as big as its child; the rows span the
+                            // panel's 144 px of content because the child asks to.
                             .child(
                                 SizedBox::new()
-                                    .width(Dimension::Px(140.0))
+                                    .width(Dimension::Percent(100.0))
                                     .height(Dimension::Px(36.0)),
                             )
                             .boxed()

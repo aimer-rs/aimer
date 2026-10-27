@@ -1,3 +1,5 @@
+//! [`BoxShadow`] and [`ShadowSide`], drop and inner shadows for boxes.
+
 use aimer_color::prelude::Color;
 
 /// Specifies which side(s) of the box the shadow is visible on.
@@ -138,6 +140,7 @@ impl BoxShadow {
     /// closer to typical CSS usage than fully opaque black.
     pub const DEFAULT_COLOR: Color = Color::Rgba(0, 0, 0, 128);
 
+    /// Creates a shadow with no offset, blur or spread, in [`Self::DEFAULT_COLOR`].
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -151,42 +154,49 @@ impl BoxShadow {
         }
     }
 
+    /// Sets the horizontal offset; positive moves the shadow right.
     #[inline]
     pub fn offset_x(mut self, offset_x: f32) -> Self {
         self.offset_x = offset_x;
         self
     }
 
+    /// Sets the vertical offset; positive moves the shadow down.
     #[inline]
     pub fn offset_y(mut self, offset_y: f32) -> Self {
         self.offset_y = offset_y;
         self
     }
 
+    /// Sets the blur radius; negative values are treated as zero when painting.
     #[inline]
     pub fn blur(mut self, blur: f32) -> Self {
         self.blur = blur;
         self
     }
 
+    /// Sets the spread radius; negative values shrink the shadow.
     #[inline]
     pub fn spread(mut self, spread: f32) -> Self {
         self.spread = spread;
         self
     }
 
+    /// Sets the shadow color.
     #[inline]
     pub fn color(mut self, color: impl Into<Color>) -> Self {
         self.color = color.into();
         self
     }
 
+    /// Chooses an inner shadow (`true`) or an outer shadow (`false`).
     #[inline]
     pub fn inset(mut self, inset: bool) -> Self {
         self.inset = inset;
         self
     }
 
+    /// Restricts the shadow to part of the box edge.
     #[inline]
     pub fn side(mut self, side: ShadowSide) -> Self {
         self.side = side;

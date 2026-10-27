@@ -1,3 +1,5 @@
+//! [`Magnification`], a decoration that enlarges content painted behind it.
+
 use aimer_attribute::{ResolvedSize, Vec2d};
 pub use aimer_canvas::MagnificationStyle;
 use aimer_canvas::{Canvas, MaterialDrawRequest, MaterialKind};

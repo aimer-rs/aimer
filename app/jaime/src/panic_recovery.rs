@@ -1,4 +1,4 @@
-use aimer::macros::widget;
+use aimer::macros::StatelessWidget;
 use aimer::*;
 
 /// Builds the panic-recovery showcase without starting an application.
@@ -13,7 +13,7 @@ pub fn start_panic_recovery_example() {
 struct MissingProviderValue;
 
 #[derive(Clone)]
-#[widget(Stateless)]
+#[derive(StatelessWidget)]
 struct PanicRecoveryExample {}
 
 impl PanicRecoveryExample {

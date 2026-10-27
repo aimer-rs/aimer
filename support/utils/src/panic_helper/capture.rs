@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use super::source_snippet;
 
-thread_local! {
+aimer_tls::thread_local! {
     /// How many [`PanicWatch`] guards are alive on this thread. Nested builds
     /// nest their watches, so only the outermost guard disarms the capture.
     static WATCH_DEPTH: Cell<u32> = const { Cell::new(0) };

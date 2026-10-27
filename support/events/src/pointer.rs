@@ -18,7 +18,7 @@ use crate::element::TouchPhase;
 /// ```
 pub const FILE_DRAG_POINTER_ID: u64 = u64::MAX;
 
-thread_local! {
+aimer_tls::thread_local! {
     static LAST_SOURCE: std::cell::Cell<PointerSource> = const { std::cell::Cell::new(PointerSource::Mouse) };
     static ROUTING_SCROLL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static SCROLL_USED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -98,7 +98,7 @@ pub const DEFAULT_MIN_TOUCH_TARGET: f32 = if cfg!(any(target_os = "ios", target_
     48.0
 };
 
-thread_local! {
+aimer_tls::thread_local! {
     static MIN_TOUCH_TARGET: std::cell::Cell<f32> = const { std::cell::Cell::new(DEFAULT_MIN_TOUCH_TARGET) };
 }
 

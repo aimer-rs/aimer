@@ -1000,7 +1000,7 @@ fn consumed_state_panic_message(debug_name: &'static str, key: Option<&crate::Ke
     }
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static KEYED_STATE_REGISTRY: RefCell<HashMap<(crate::key::Key, &'static str), KeyedStateEntry>> =
         RefCell::new(HashMap::new());
     static KEYED_STATE_SCOPE_DEPTH: Cell<usize> = const { Cell::new(0) };

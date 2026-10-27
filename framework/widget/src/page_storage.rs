@@ -40,7 +40,7 @@ use std::collections::HashMap;
 use std::panic::Location;
 use crate::Key;
 
-thread_local! {
+aimer_tls::thread_local! {
     static STORE: RefCell<HashMap<Key, Box<dyn Any>>> = RefCell::new(HashMap::new());
 }
 

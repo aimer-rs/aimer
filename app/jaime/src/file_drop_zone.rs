@@ -24,7 +24,7 @@ pub fn start_file_drop_zone_example() {
     AimerApp::start(theme::provide(FileDropShowcase::new().boxed()))
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct FileDropShowcase {}
 
 impl Default for FileDropShowcase {

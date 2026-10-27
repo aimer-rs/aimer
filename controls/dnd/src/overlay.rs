@@ -114,7 +114,7 @@ struct OverlayState {
     on_completed: Option<Rc<dyn Fn(bool)>>,
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static OVERLAY: RefCell<Option<OverlayState>> = const { RefCell::new(None) };
     static HANDLE: RefCell<Option<OverlayLayerHandle>> = const { RefCell::new(None) };
 }

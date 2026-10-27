@@ -405,6 +405,9 @@ pub(crate) fn adjusted_width(
         .sum::<f32>()
 }
 
+
+
+#[allow(unused)]
 pub(crate) fn layout_resolved_spans(
     spans: &[ResolvedTextSpan],
     max_width: f32,

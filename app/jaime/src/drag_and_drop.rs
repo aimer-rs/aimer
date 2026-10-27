@@ -37,7 +37,7 @@ struct Card {
     column: usize,
 }
 
-#[widget(Stateful)]
+#[derive(StatefulWidget)]
 pub struct DragBoard {}
 
 impl Default for DragBoard {

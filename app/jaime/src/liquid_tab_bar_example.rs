@@ -12,7 +12,6 @@
 
 use aimer::animation::{Motion, motions};
 use aimer::indicator::{IndicatorStyle, TabBar, TabItem, indicator_styles};
-use aimer::macros::widget;
 use aimer::style::{Color, FontWeight, LayoutSpacing, Spacing, TextStyle};
 use aimer::svg::{Svg, SvgColor, SvgDocument, SvgStyle};
 use aimer::{
