@@ -18,7 +18,7 @@
 //! own thread-locals allow).
 
 use std::alloc::{GlobalAlloc, Layout, System, handle_alloc_error};
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, UnsafeCell};
 use std::fmt;
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -48,6 +48,87 @@ fn access_panic() -> ! {
     panic!("cannot access a Thread Local Storage value during or after destruction: AccessError")
 }
 
+/// A `Cell` whose accessors are `inline(always)`.
+///
+/// `Cell::get` and friends are plain `#[inline]`, which a debug build turns
+/// into real calls; the lookup path reads these fields on every access.
+struct Field<T: Copy>(UnsafeCell<T>);
+
+impl<T: Copy> Field<T> {
+    const fn new(value: T) -> Self {
+        Self(UnsafeCell::new(value))
+    }
+
+    #[inline(always)]
+    fn get(&self) -> T {
+        // SAFETY: the table is thread-confined and no reference into the cell
+        // is ever handed out, so this read cannot overlap a write.
+        unsafe { *self.0.get() }
+    }
+
+    #[inline(always)]
+    fn set(&self, value: T) {
+        // SAFETY: as in `get`.
+        unsafe { *self.0.get() = value };
+    }
+
+    #[inline(always)]
+    fn replace(&self, value: T) -> T {
+        let old = self.get();
+        self.set(value);
+        old
+    }
+}
+
+/// Reads an atomic with relaxed ordering.
+///
+/// A relaxed load is a plain aligned load on these targets, but
+/// `AtomicUsize::load` is several non-inlined calls in a debug build, which
+/// dominated the lookup. The asm block is that same single load.
+///
+/// Optimised builds use the plain atomic load instead: an asm block is opaque
+/// to LLVM, which can then neither merge the loads of several keys nor hoist
+/// them out of a loop, while it handles a relaxed atomic load fine.
+#[inline(always)]
+fn load_relaxed(atomic: &AtomicUsize) -> usize {
+    #[cfg(all(debug_assertions, target_arch = "aarch64"))]
+    {
+        let value: usize;
+        // SAFETY: `atomic` is a valid, aligned `usize`; a word-sized aligned
+        // load cannot tear, and the block reads memory only.
+        unsafe {
+            std::arch::asm!(
+                "ldr {value}, [{ptr}]",
+                value = out(reg) value,
+                ptr = in(reg) atomic as *const AtomicUsize,
+                options(nostack, preserves_flags, readonly),
+            );
+        }
+        value
+    }
+    #[cfg(all(debug_assertions, target_arch = "x86_64"))]
+    {
+        let value: usize;
+        // SAFETY: as above.
+        unsafe {
+            std::arch::asm!(
+                "mov {value}, qword ptr [{ptr}]",
+                value = out(reg) value,
+                ptr = in(reg) atomic as *const AtomicUsize,
+                options(nostack, preserves_flags, readonly),
+            );
+        }
+        value
+    }
+    #[cfg(not(all(debug_assertions, any(target_arch = "aarch64", target_arch = "x86_64"))))]
+    {
+        atomic.load(Ordering::Relaxed)
+    }
+}
+
+/// How many slots are mirrored inline in [`Table::fast`].
+const FAST: usize = 128;
+
 /// Frees a value stored in a [`Slot`].
 type DropFn = unsafe fn(*mut ());
 
@@ -60,6 +141,8 @@ struct Slot {
     /// Set just before the value's destructor runs; the key then reports
     /// `AccessError` for the rest of the thread's life.
     destroyed: bool,
+    /// The key's [`hot::HotCache`] if this thread cached the value there.
+    hot: *const hot::HotCache,
 }
 
 /// Moves `value` to a fresh `System` allocation and returns its address.
@@ -111,28 +194,37 @@ enum Refused {
 /// `Cell`s, which also keeps the lookup cheap in debug builds, where
 /// `Vec::get` is not inlined.
 struct Table {
-    base: Cell<*mut Slot>,
-    len: Cell<usize>,
+    /// Mirror of the live value pointers of the first [`FAST`] slots, kept
+    /// inline so a hit costs one indexed load instead of reading `len` and
+    /// `base` first. `slots` stays the source of truth for everything else.
+    fast: [Field<*mut ()>; FAST],
+    base: Field<*mut Slot>,
+    len: Field<usize>,
     /// Whether this thread's [`GUARD`] has been touched, i.e. whether its
     /// destructor is registered and will run the teardown.
-    registered: Cell<bool>,
+    registered: Field<bool>,
     /// Set once teardown has freed the buffer; nothing can be stored after.
-    finished: Cell<bool>,
+    finished: Field<bool>,
 }
 
 impl Table {
     const fn new() -> Self {
         Self {
-            base: Cell::new(ptr::null_mut()),
-            len: Cell::new(0),
-            registered: Cell::new(false),
-            finished: Cell::new(false),
+            fast: [const { Field::new(ptr::null_mut()) }; FAST],
+            base: Field::new(ptr::null_mut()),
+            len: Field::new(0),
+            registered: Field::new(false),
+            finished: Field::new(false),
         }
     }
 
     /// The live value stored at `index`, or null if there is none.
     #[inline(always)]
     fn get(&self, index: usize) -> *mut () {
+        if index < FAST {
+            // SAFETY: `index < FAST`.
+            return unsafe { self.fast.get_unchecked(index) }.get();
+        }
         if index < self.len.get() {
             // SAFETY: `base` holds `len` initialised slots and `index` is in
             // bounds. `ptr` is `Copy`, so no reference outlives this read.
@@ -149,6 +241,45 @@ impl Table {
             || (index < self.len.get() && unsafe { (*self.base.get().add(index)).destroyed })
     }
 
+    /// Makes sure this thread's teardown is registered with the OS, which is
+    /// what will eventually free everything stored here. Returns `false` if
+    /// the thread is already past that point.
+    #[inline]
+    fn register(&self) -> bool {
+        if self.registered.get() {
+            return true;
+        }
+        // Touching the guard registers its destructor.
+        if GUARD.try_with(|_| ()).is_err() {
+            return false;
+        }
+        self.registered.set(true);
+        hot::auto_claim(self);
+        true
+    }
+
+    /// Records that `cache` holds a pointer to the value at `index`, so
+    /// [`clear_hot`](Self::clear_hot) can find it.
+    fn note_hot(&self, index: usize, cache: *const hot::HotCache) {
+        if index < self.len.get() {
+            // SAFETY: `index < len`.
+            unsafe { (*self.base.get().add(index)).hot = cache };
+        }
+    }
+
+    /// Empties every per-key cache this thread filled.
+    fn clear_hot(&self) {
+        for index in 0..self.len.get() {
+            // SAFETY: `index < len`; the reference ends with this iteration.
+            let slot = unsafe { &mut *self.base.get().add(index) };
+            if !slot.hot.is_null() {
+                // SAFETY: a key is `'static`, so its cache outlives the table.
+                unsafe { &*slot.hot }.clear();
+                slot.hot = ptr::null();
+            }
+        }
+    }
+
     /// Stores `ptr` unless the index already holds a value or is destroyed.
     ///
     /// Initialisers may touch other keys, so a re-entrant initialisation of the
@@ -163,13 +294,8 @@ impl Table {
         if self.refuses(index) {
             return Err(Refused::Destroyed);
         }
-        if !self.registered.get() {
-            // Touching the guard registers its destructor with the OS; that is
-            // what will eventually free everything stored here.
-            if GUARD.try_with(|_| ()).is_err() {
-                return Err(Refused::Destroyed);
-            }
-            self.registered.set(true);
+        if !self.register() {
+            return Err(Refused::Destroyed);
         }
         if index >= self.len.get() {
             self.grow(index + 1);
@@ -181,6 +307,9 @@ impl Table {
         }
         slot.ptr = ptr;
         slot.drop = Some(drop);
+        if index < FAST {
+            self.fast[index].set(ptr);
+        }
         Ok(ptr)
     }
 
@@ -221,6 +350,9 @@ impl Table {
                 slot.ptr = ptr::null_mut();
                 slot.drop = None;
                 slot.destroyed = true;
+                if index < FAST {
+                    self.fast[index].set(ptr::null_mut());
+                }
                 return Some((ptr, drop));
             }
         }
@@ -255,7 +387,50 @@ struct Guard;
 
 impl Drop for Guard {
     fn drop(&mut self) {
-        TABLE.with(Table::teardown);
+        // A leaked `HotGuard` must not outlive the table it points at.
+        TABLE.with(|table| {
+            hot::release_thread(table);
+            table.teardown();
+        });
+    }
+}
+
+/// Runs `f` with this thread's table, skipping std's TLS lookup when the
+/// thread owns the [`hot`] fast path.
+#[inline(always)]
+fn with_table<R>(f: impl FnOnce(&Table) -> R) -> R {
+    // SAFETY: `table_ptr` points at this thread's table, which outlives `f`.
+    f(unsafe { &*table_ptr() })
+}
+
+/// This thread's table. It is a `const` thread-local without a destructor, so
+/// the address stays valid for the thread's whole life, teardown included.
+#[inline(always)]
+fn table_ptr() -> *const Table {
+    // The hot path pays off in a debug build, where it skips non-inlined std
+    // calls. An optimised build is better off without it: the owner check
+    // splits every lookup into two branches, so LLVM can no longer merge the
+    // table address of several keys read in a row into one TLS lookup, which
+    // is exactly what it does for plain `std::thread_local!` keys.
+    if cfg!(debug_assertions) {
+        let owned = hot::current();
+        if owned as usize != 0 {
+            // `current` only returns the calling thread's own table, which
+            // stays alive until the owner is released, see the `hot` module
+            // docs.
+            return owned;
+        }
+    }
+    // `try_with` rather than `with`, which adds an `expect` call that a debug
+    // build does not inline. A const thread-local without a destructor never
+    // reports an error.
+    //
+    // The closure is kept on purpose: it inlines `from_ref`, where passing the
+    // function itself adds a `call_once` shim call in a debug build.
+    #[allow(clippy::redundant_closure)]
+    match TABLE.try_with(|table| ptr::from_ref(table)) {
+        Ok(table) => table,
+        Err(_) => access_panic(),
     }
 }
 
@@ -274,6 +449,7 @@ std::thread_local! {
 pub struct LocalKey<T: 'static> {
     slot: AtomicUsize,
     init: fn() -> T,
+    hot: hot::HotCache,
 }
 
 impl<T: 'static> fmt::Debug for LocalKey<T> {
@@ -289,12 +465,13 @@ impl<T: 'static> LocalKey<T> {
         Self {
             slot: AtomicUsize::new(0),
             init,
+            hot: hot::HotCache::new(),
         }
     }
 
     #[inline(always)]
     fn index(&self) -> usize {
-        let current = self.slot.load(Ordering::Relaxed);
+        let current = load_relaxed(&self.slot);
         if current != 0 {
             return current;
         }
@@ -314,34 +491,59 @@ impl<T: 'static> LocalKey<T> {
         }
     }
 
-    /// Address of this thread's value, creating it on first access.
+    /// Address of this thread's value in `table`, creating it on first
+    /// access.
     ///
-    /// The address stays valid until the value's destructor starts.
+    /// The address stays valid until the value's destructor starts. Taking the
+    /// table as a parameter is what lets a [`Scope`] resolve it once for many
+    /// keys.
     #[inline(always)]
-    fn value(&'static self) -> Result<*const T, AccessError> {
+    fn value_in(&'static self, table: &Table) -> Result<*const T, AccessError> {
         let index = self.index();
-        let ptr = TABLE.with(|table| table.get(index));
-        if !ptr.is_null() {
+        let ptr = table.get(index);
+        if ptr as usize != 0 {
             return Ok(ptr.cast::<T>());
         }
-        self.initialise(index)
+        self.initialise(table, index)
+    }
+
+    /// Like [`value_in`](Self::value_in) but panics instead of returning an
+    /// error. The hit path is a bare pointer test with no `Result` to build or
+    /// unwrap, which matters in debug builds where those calls are not inlined.
+    #[inline(always)]
+    fn ptr_in(&'static self, table: &Table) -> *const T {
+        let index = self.index();
+        let ptr = table.get(index);
+        if ptr as usize != 0 {
+            return ptr.cast::<T>();
+        }
+        self.ptr_slow(table, index)
     }
 
     #[cold]
     #[inline(never)]
-    fn initialise(&'static self, index: usize) -> Result<*const T, AccessError> {
-        if TABLE.with(|table| table.refuses(index)) {
+    fn ptr_slow(&'static self, table: &Table, index: usize) -> *const T {
+        match self.initialise(table, index) {
+            Ok(ptr) => ptr,
+            Err(_) => access_panic(),
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn initialise(&'static self, table: &Table, index: usize) -> Result<*const T, AccessError> {
+        if table.refuses(index) {
             return Err(AccessError);
         }
         // The initialiser may itself use thread-locals, so it runs with the
         // table untouched.
-        self.store(index, (self.init)())
+        self.store(table, index, (self.init)())
     }
 
     /// Moves `value` into the table, unless a value got there first.
-    fn store(&'static self, index: usize, value: T) -> Result<*const T, AccessError> {
+    fn store(&'static self, table: &Table, index: usize, value: T) -> Result<*const T, AccessError> {
         let raw = alloc_value(value);
-        match TABLE.with(|table| table.insert(index, raw, drop_value::<T>)) {
+        match table.insert(index, raw, drop_value::<T>) {
             Ok(ptr) => Ok(ptr.cast::<T>()),
             Err(Refused::Present(winner)) => {
                 // SAFETY: `raw` came from `alloc_value` just above and was not
@@ -357,20 +559,25 @@ impl<T: 'static> LocalKey<T> {
         }
     }
 
-    /// Stores `fresh` if this thread has no value yet, without running the
-    /// initialiser; otherwise calls `apply` with `fresh` and the live value.
+    /// This thread's live value in `table`, or null if it has none. Never runs
+    /// the initialiser, which is what lets `set` skip it, as std does.
+    #[inline(always)]
+    fn lookup_in(&self, table: &Table) -> *const T {
+        table.get(self.index()).cast::<T>()
+    }
+
+    /// Stores `fresh` as this thread's value, for a key whose
+    /// [`lookup_in`](Self::lookup_in) found nothing.
     ///
-    /// This is what lets `set` skip the initialiser, as std does.
-    fn set_or_apply(&'static self, fresh: T, apply: impl FnOnce(T, &T)) {
+    /// # Panics
+    ///
+    /// Panics if the key is being or has been destroyed.
+    #[cold]
+    #[inline(never)]
+    fn store_fresh(&'static self, table: &Table, fresh: T) {
         let index = self.index();
-        let found = TABLE.with(|table| table.get(index));
-        if found.is_null() {
-            if self.store(index, fresh).is_err() {
-                access_panic();
-            }
-        } else {
-            // SAFETY: see `try_with`.
-            apply(fresh, unsafe { &*found.cast::<T>() });
+        if self.store(table, index, fresh).is_err() {
+            access_panic();
         }
     }
 
@@ -384,10 +591,56 @@ impl<T: 'static> LocalKey<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        match self.value() {
-            // SAFETY: see `try_with`.
-            Ok(ptr) => f(unsafe { &*ptr }),
-            Err(_) => access_panic(),
+        f(self.local_ref())
+    }
+
+    /// This thread's value, creating it on first use, without a closure layer:
+    /// in a debug build every closure is a real call, so the helpers below read
+    /// the value directly instead of going through [`with`](Self::with).
+    ///
+    /// The lifetime is unbounded, so callers must not let the reference escape
+    /// their own body: the value is freed by this thread's teardown, which
+    /// cannot start while one of them is running.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is being or has been destroyed.
+    #[inline(always)]
+    fn local_ref<'a>(&'static self) -> &'a T {
+        let cached = self.hot.get();
+        if cached != 0 {
+            // SAFETY: only the owner thread gets a non-zero cache, and the
+            // cache is cleared before the value can be destroyed.
+            return unsafe { &*(cached as *const T) };
+        }
+        // SAFETY: the value is heap-allocated and owned by this thread's
+        // table, see `try_with`.
+        unsafe { &*self.resolve() }
+    }
+
+    /// The owner thread's cached address of the value, or `0`.
+    #[inline(always)]
+    fn hot_cached(&self) -> usize {
+        self.hot.get()
+    }
+
+    /// Looks the value up through the table, and caches it for the owner.
+    #[inline(never)]
+    fn resolve(&'static self) -> *const T {
+        // SAFETY: the table outlives this call, see `table_ptr`.
+        let table = unsafe { &*table_ptr() };
+        let ptr = self.ptr_in(table);
+        self.cache(table, ptr);
+        ptr
+    }
+
+    /// Caches `ptr`, this thread's value of the key, if the thread owns the
+    /// fast path.
+    #[inline(always)]
+    fn cache(&'static self, table: &Table, ptr: *const T) {
+        if hot::owns_current_thread() {
+            table.note_hot(self.index(), &self.hot);
+            self.hot.set(ptr as usize);
         }
     }
 
@@ -398,11 +651,31 @@ impl<T: 'static> LocalKey<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        let ptr = self.value()?;
-        // SAFETY: the value is heap-allocated, owned by this thread's table,
-        // and freed only by that value's own teardown, which cannot start
-        // while this thread is inside `f`.
-        Ok(f(unsafe { &*ptr }))
+        let cached = self.hot.get();
+        if cached != 0 {
+            // SAFETY: see `local_ref`.
+            return Ok(f(unsafe { &*(cached as *const T) }));
+        }
+        // SAFETY: the table outlives this call, see `table_ptr`.
+        let table = unsafe { &*table_ptr() };
+        let index = self.index();
+        let ptr = table.get(index);
+        // SAFETY (both arms): the value is heap-allocated, owned by this
+        // thread's table, and freed only by that value's own teardown, which
+        // cannot start while this thread is inside `f`.
+        if ptr as usize != 0 {
+            self.cache(table, ptr.cast::<T>());
+            return Ok(f(unsafe { &*ptr.cast::<T>() }));
+        }
+        // A `match` rather than `?`: the `Try` calls are not inlined in debug
+        // builds.
+        match self.initialise(table, index) {
+            Ok(ptr) => {
+                self.cache(table, ptr);
+                Ok(f(unsafe { &*ptr }))
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -410,7 +683,21 @@ impl<T: 'static> LocalKey<Cell<T>> {
     /// Replaces the value, dropping the old one. Does not run the initialiser.
     #[inline(always)]
     pub fn set(&'static self, value: T) {
-        self.set_or_apply(Cell::new(value), |fresh, cell| cell.set(fresh.into_inner()));
+        let cached = self.hot.get();
+        if cached != 0 {
+            // SAFETY: see `local_ref`.
+            unsafe { &*(cached as *const Cell<T>) }.set(value);
+            return;
+        }
+        // SAFETY: the table outlives this call, see `table_ptr`.
+        let table = unsafe { &*table_ptr() };
+        let found = self.lookup_in(table);
+        if found as usize == 0 {
+            self.store_fresh(table, Cell::new(value));
+        } else {
+            // SAFETY: see `try_with`.
+            unsafe { &*found }.set(value);
+        }
     }
 
     /// Returns a copy of the value.
@@ -419,7 +706,7 @@ impl<T: 'static> LocalKey<Cell<T>> {
     where
         T: Copy,
     {
-        self.with(Cell::get)
+        self.local_ref().get()
     }
 
     /// Updates the value in place with `f`.
@@ -428,7 +715,7 @@ impl<T: 'static> LocalKey<Cell<T>> {
     where
         T: Copy,
     {
-        self.with(|cell| cell.update(f));
+        self.local_ref().update(f);
     }
 
     /// Takes the value, leaving `Default::default()` behind.
@@ -437,13 +724,13 @@ impl<T: 'static> LocalKey<Cell<T>> {
     where
         T: Default,
     {
-        self.with(Cell::take)
+        self.local_ref().take()
     }
 
     /// Replaces the value, returning the old one.
     #[inline(always)]
     pub fn replace(&'static self, value: T) -> T {
-        self.with(|cell| cell.replace(value))
+        self.local_ref().replace(value)
     }
 }
 
@@ -458,7 +745,7 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     where
         F: FnOnce(&T) -> R,
     {
-        self.with(|cell| f(&cell.borrow()))
+        f(&self.local_ref().borrow())
     }
 
     /// Borrows the value mutably for the duration of `f`.
@@ -471,7 +758,7 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        self.with(|cell| f(&mut cell.borrow_mut()))
+        f(&mut self.local_ref().borrow_mut())
     }
 
     /// Replaces the value, dropping the old one. Does not run the initialiser.
@@ -481,9 +768,21 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     /// Panics if the value is currently borrowed.
     #[inline(always)]
     pub fn set(&'static self, value: T) {
-        self.set_or_apply(RefCell::new(value), |fresh, cell| {
-            *cell.borrow_mut() = fresh.into_inner();
-        });
+        let cached = self.hot.get();
+        if cached != 0 {
+            // SAFETY: see `local_ref`.
+            *unsafe { &*(cached as *const RefCell<T>) }.borrow_mut() = value;
+            return;
+        }
+        // SAFETY: the table outlives this call, see `table_ptr`.
+        let table = unsafe { &*table_ptr() };
+        let found = self.lookup_in(table);
+        if found as usize == 0 {
+            self.store_fresh(table, RefCell::new(value));
+        } else {
+            // SAFETY: see `try_with`.
+            *unsafe { &*found }.borrow_mut() = value;
+        }
     }
 
     /// Takes the value, leaving `Default::default()` behind.
@@ -496,7 +795,7 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     where
         T: Default,
     {
-        self.with(RefCell::take)
+        self.local_ref().take()
     }
 
     /// Replaces the value, returning the old one.
@@ -506,9 +805,15 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     /// Panics if the value is currently borrowed.
     #[inline(always)]
     pub fn replace(&'static self, value: T) -> T {
-        self.with(|cell| cell.replace(value))
+        self.local_ref().replace(value)
     }
 }
+
+mod hot;
+mod scope;
+
+pub use hot::{HotGuard, hot, hot_supported};
+pub use scope::{Scope, scope};
 
 #[cfg(test)]
 mod tests;

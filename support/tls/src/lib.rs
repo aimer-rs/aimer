@@ -6,7 +6,7 @@
 #[doc(hidden)]
 pub mod shared;
 
-pub use shared::{AccessError, LocalKey};
+pub use shared::{AccessError, HotGuard, LocalKey, Scope, hot, hot_supported, scope};
 
 /// Declares thread-local statics that share one OS TLS key.
 ///

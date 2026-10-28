@@ -63,6 +63,21 @@ fn report(name: &str, std_ns: f64, tls_ns: f64) {
 }
 
 fn main() {
+    println!("-- ordinary path");
+    run();
+
+    // The hot guard lets this thread skip std's TLS lookup for aimer_tls only;
+    // the std side is unchanged.
+    let hot = aimer_tls::hot();
+    println!(
+        "-- hot thread (active: {}, supported: {})",
+        hot.is_active(),
+        aimer_tls::hot_supported()
+    );
+    run();
+}
+
+fn run() {
     let std_ns = measure(|| STD_CELL.set(black_box(STD_CELL.get()) + 1));
     let tls_ns = measure(|| TLS_CELL.set(black_box(TLS_CELL.get()) + 1));
     report("cell get+set (const)", std_ns, tls_ns);
@@ -112,4 +127,24 @@ fn main() {
         black_box(TLS_CELL.try_with(|c| c.get()).ok());
     });
     report("try_with", std_ns, tls_ns);
+
+    // The scope resolves the thread's table once for all four keys, which is
+    // what std cannot do: it pays one TLS lookup per key.
+    let std_ns = measure(|| {
+        black_box(STD_A.get() + STD_B.get() + STD_C.get() + STD_D.get());
+    });
+    let tls_ns = measure(|| {
+        black_box(aimer_tls::scope(|t| {
+            t.get(&TLS_A) + t.get(&TLS_B) + t.get(&TLS_C) + t.get(&TLS_D)
+        }));
+    });
+    report("four keys via scope", std_ns, tls_ns);
+
+    let std_ns = measure(|| {
+        STD_CELL.set(black_box(STD_CELL.get()) + STD_A.get());
+    });
+    let tls_ns = measure(|| {
+        aimer_tls::scope(|t| t.set(&TLS_CELL, black_box(t.get(&TLS_CELL)) + t.get(&TLS_A)));
+    });
+    report("two keys read+write scope", std_ns, tls_ns);
 }

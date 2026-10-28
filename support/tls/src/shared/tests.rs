@@ -316,3 +316,285 @@ fn destructor_panic_aborts_the_process() {
     // point is that the process died instead of exiting normally.
     assert!(status.signal().is_some(), "expected an abort, got {status:?}");
 }
+
+mod scope {
+    use super::*;
+    use crate::scope;
+
+    static SCOPE_INITS: AtomicUsize = AtomicUsize::new(0);
+
+    crate::thread_local! {
+        static A: Cell<u32> = const { Cell::new(1) };
+        static B: Cell<u32> = const { Cell::new(2) };
+        static C: Cell<u32> = const { Cell::new(3) };
+        static NAMES: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+        static LAZY_ONCE: Cell<u32> = {
+            SCOPE_INITS.fetch_add(1, Ordering::SeqCst);
+            Cell::new(40)
+        };
+        static UNSET: Cell<u32> = {
+            panic!("`set` must not run the initialiser");
+        };
+    }
+
+    #[test]
+    fn reads_and_writes_several_keys_through_one_lookup() {
+        let sum = scope(|t| {
+            t.set(&A, 10);
+            t.update(&B, |b| b + 5);
+            assert_eq!(t.replace(&C, 9), 3);
+            t.get(&A) + t.get(&B) + t.get(&C)
+        });
+        assert_eq!(sum, 10 + 7 + 9);
+        // The scope sees the same storage as the keys' own methods.
+        assert_eq!((A.get(), B.get(), C.get()), (10, 7, 9));
+        assert_eq!(scope(|t| t.take(&C)), 9);
+        assert_eq!(C.get(), 0);
+    }
+
+    #[test]
+    fn local_and_borrow_helpers_work_on_ref_cells() {
+        scope(|t| {
+            t.with_borrow_mut(&NAMES, |names| names.push(1));
+            t.with_borrow_mut(&NAMES, |names| names.push(2));
+            assert_eq!(t.with_borrow(&NAMES, |names| names.clone()), vec![1, 2]);
+            assert_eq!(t.local(&NAMES).borrow().len(), 2);
+            assert_eq!(t.try_local(&NAMES).unwrap().borrow().len(), 2);
+            assert_eq!(t.local(&NAMES).take(), vec![1, 2]);
+            t.with_borrow_mut(&NAMES, |names| names.push(7));
+            assert_eq!(t.local(&NAMES).replace(vec![8]), vec![7]);
+        });
+        assert_eq!(NAMES.with_borrow(Clone::clone), vec![8]);
+    }
+
+    #[test]
+    fn lazy_initialiser_runs_once_and_set_skips_it() {
+        assert_eq!(scope(|t| t.get(&LAZY_ONCE) + t.get(&LAZY_ONCE)), 80);
+        assert_eq!(SCOPE_INITS.load(Ordering::SeqCst), 1);
+
+        // `UNSET`'s initialiser panics, so `set` has to store without it.
+        scope(|t| t.set(&UNSET, 5));
+        assert_eq!(UNSET.get(), 5);
+    }
+
+    #[test]
+    fn scopes_and_plain_keys_nest() {
+        let sum = scope(|outer| {
+            let inner = scope(|t| t.get(&A));
+            outer.get(&B) + inner + C.get() + A.with(|a| a.get())
+        });
+        assert_eq!(sum, 2 + 1 + 3 + 1);
+    }
+
+    #[test]
+    fn initialiser_may_use_the_scope_it_is_started_from() {
+        crate::thread_local! {
+            static SEED: Cell<u32> = const { Cell::new(20) };
+            static DERIVED: Cell<u32> = scope(|t| Cell::new(t.get(&SEED) + 1));
+        }
+        assert_eq!(scope(|t| t.get(&DERIVED) + t.get(&SEED)), 41);
+    }
+
+    #[test]
+    fn references_follow_the_scope_and_stay_valid_while_the_table_grows() {
+        scope(|t| {
+            let first = t.local(&A);
+            // Touch many fresh keys so the table reallocates under `first`.
+            macro_rules! touch {
+                ($($name:ident),*) => {$(
+                    crate::thread_local! { static $name: Cell<u32> = const { Cell::new(0) }; }
+                    t.set(&$name, 1);
+                )*};
+            }
+            touch!(K0, K1, K2, K3, K4, K5, K6, K7, K8, K9, K10, K11, K12, K13, K14, K15, K16);
+            first.set(first.get() + 1);
+            assert_eq!(t.get(&A), first.get());
+        });
+    }
+
+    #[test]
+    fn a_scope_in_a_destructor_refuses_only_destroyed_keys() {
+        const LIVE_READABLE: usize = 1;
+        const SELF_REFUSED: usize = 2;
+        static SEEN: AtomicUsize = AtomicUsize::new(0);
+
+        struct Probe;
+        impl Drop for Probe {
+            fn drop(&mut self) {
+                scope(|t| {
+                    let mut seen = 0;
+                    if t.try_local(&LIVE_PEER).is_ok() {
+                        seen |= LIVE_READABLE;
+                    }
+                    if t.try_local(&DYING).is_err() {
+                        seen |= SELF_REFUSED;
+                    }
+                    SEEN.store(seen, Ordering::SeqCst);
+                });
+            }
+        }
+        crate::thread_local! {
+            static LIVE_PEER: Cell<u32> = const { Cell::new(0) };
+            static DYING: RefCell<Option<Probe>> = const { RefCell::new(None) };
+        }
+
+        std::thread::spawn(|| {
+            // `LIVE_PEER` is first, so it is destroyed after `DYING`.
+            LIVE_PEER.set(1);
+            DYING.set(Some(Probe));
+        })
+        .join()
+        .unwrap();
+        assert_eq!(SEEN.load(Ordering::SeqCst), LIVE_READABLE | SELF_REFUSED);
+    }
+
+    #[test]
+    fn scopes_are_per_thread() {
+        scope(|t| t.set(&A, 100));
+        std::thread::spawn(|| assert_eq!(scope(|t| t.get(&A)), 1))
+            .join()
+            .unwrap();
+        assert_eq!(scope(|t| t.get(&A)), 100);
+    }
+}
+
+mod hot {
+    use super::*;
+    use crate::{hot, hot_supported, scope};
+    use std::sync::Mutex;
+
+    /// The fast path has one process-wide owner, so tests that look at who
+    /// holds it must not overlap.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    crate::thread_local! {
+        static A: Cell<u32> = const { Cell::new(1) };
+        static LAZY: Cell<u32> = Cell::new(A.get() + 10);
+        static LIST: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn behaves_like_the_ordinary_path() {
+        let _serial = serial();
+        let guard = hot();
+        assert_eq!(guard.is_active(), hot_supported());
+
+        A.set(5);
+        assert_eq!(A.get(), 5);
+        assert_eq!(LAZY.get(), 15);
+        LIST.with_borrow_mut(|list| list.push(1));
+        assert_eq!(LIST.try_with(|l| l.borrow().len()), Ok(1));
+        assert_eq!(scope(|t| t.get(&A) + t.get(&LAZY)), 20);
+
+        // Values written while hot are the ones the ordinary path reads.
+        drop(guard);
+        assert_eq!(A.get(), 5);
+        assert_eq!(LIST.take(), vec![1]);
+    }
+
+    #[test]
+    fn only_one_thread_owns_the_fast_path_and_others_stay_correct() {
+        let _serial = serial();
+        let guard = hot();
+        A.set(7);
+        let others_guard_active = std::thread::spawn(|| {
+            let other = hot();
+            // A fresh thread has its own value, owner or not.
+            assert_eq!(A.get(), 1);
+            A.set(9);
+            assert_eq!(A.get(), 9);
+            other.is_active()
+        })
+        .join()
+        .unwrap();
+        assert_eq!(A.get(), 7);
+        if hot_supported() {
+            assert!(guard.is_active());
+            assert!(!others_guard_active);
+        }
+    }
+
+    #[test]
+    fn nested_guards_release_only_at_the_outer_one() {
+        let _serial = serial();
+        let outer = hot();
+        let inner = hot();
+        assert!(!inner.is_active());
+        drop(inner);
+        // The inner guard must not have taken the fast path away.
+        A.set(3);
+        assert_eq!(A.get(), 3);
+        if hot_supported() {
+            assert!(outer.is_active());
+        }
+        drop(outer);
+        assert_eq!(A.get(), 3);
+        // Released: another thread can claim it now.
+        let claimed = std::thread::spawn(|| hot().is_active()).join().unwrap();
+        assert_eq!(claimed, hot_supported());
+    }
+
+    #[test]
+    fn a_leaked_guard_is_released_when_its_thread_exits() {
+        if !hot_supported() {
+            return;
+        }
+        let _serial = serial();
+        std::thread::spawn(|| {
+            let guard = hot();
+            assert!(guard.is_active());
+            A.set(2);
+            std::mem::forget(guard);
+        })
+        .join()
+        .unwrap();
+        let guard = hot();
+        assert!(guard.is_active(), "the dead thread still owns the fast path");
+        assert_eq!(A.get(), A.with(Cell::get));
+    }
+
+    #[test]
+    fn destructors_run_while_hot() {
+        struct Probe(Arc<AtomicUsize>);
+        impl Drop for Probe {
+            fn drop(&mut self) {
+                // Touches another key during teardown, with the guard leaked.
+                A.set(A.get() + 1);
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        crate::thread_local! {
+            static PROBE: RefCell<Option<Probe>> = const { RefCell::new(None) };
+        }
+
+        let _serial = serial();
+        let drops = Arc::new(AtomicUsize::new(0));
+        let for_thread = drops.clone();
+        std::thread::spawn(move || {
+            std::mem::forget(hot());
+            PROBE.set(Some(Probe(for_thread)));
+        })
+        .join()
+        .unwrap();
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn each_thread_can_take_its_turn() {
+        let _serial = serial();
+        for round in 0..4u32 {
+            std::thread::spawn(move || {
+                let guard = hot();
+                assert_eq!(guard.is_active(), hot_supported());
+                A.set(round);
+                assert_eq!(A.get(), round);
+            })
+            .join()
+            .unwrap();
+        }
+    }
+}

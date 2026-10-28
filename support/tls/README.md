@@ -32,6 +32,26 @@ assert_eq!(NAMES.with_borrow(Vec::len), 1);
 Use it instead of `std::thread_local!` everywhere in the workspace; clippy's
 `disallowed-macros` rejects the std macro.
 
+## Reading several keys at once
+
+Each key access looks up the thread's table. Code that touches several keys in
+a row can resolve it once with `aimer_tls::scope`:
+
+```rust
+use std::cell::Cell;
+
+aimer_tls::thread_local! {
+    static WIDTH: Cell<u32> = const { Cell::new(4) };
+    static HEIGHT: Cell<u32> = const { Cell::new(3) };
+}
+
+let area = aimer_tls::scope(|t| t.get(&WIDTH) * t.get(&HEIGHT));
+assert_eq!(area, 12);
+```
+
+A scope sees the same storage as the keys' own methods, nests with them, and
+cannot leave its closure.
+
 ## What is supported
 
 `LocalKey` mirrors `std::thread::LocalKey`: `with`, `try_with`, and the `Cell`
@@ -61,3 +81,28 @@ directly without running the initializer, as in std.
 - **Table size.** Slot indices come from one process-wide counter and are never
   reused, so a thread's table has one entry per key up to the highest index it
   has touched.
+
+## Hot thread fast path
+
+One thread owns the fast path at a time. Its accesses skip std's TLS lookup and
+the table: each key caches the address of the owner's value, and a read is the
+thread register compared with the key's cached thread plus one load. The cache
+is cleared before the owner stops owning and before any value is destroyed.
+Everyone else behaves as before.
+
+The first thread that creates a thread-local value becomes the owner on its own
+and keeps it until it exits. A thread that wants the fast path for sure can
+register with `aimer_tls::hot()`; its guard is inactive if some thread already
+owns it, which the program survives, only slower.
+
+```
+use std::cell::Cell;
+
+aimer_tls::thread_local! {
+    static FRAMES: Cell<u32> = const { Cell::new(0) };
+}
+
+let _hot = aimer_tls::hot();
+FRAMES.set(FRAMES.get() + 1);
+assert_eq!(FRAMES.get(), 1);
+```
