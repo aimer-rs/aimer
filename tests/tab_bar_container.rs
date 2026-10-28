@@ -127,3 +127,30 @@ fn a_custom_decoration_and_unclipped_content_keep_the_items_where_they_were() {
     window.tap_item(6.0, 6.0, 1);
     assert_eq!(window.selections(), [1]);
 }
+
+#[test]
+fn a_vertical_bar_stacks_its_items_and_taps_follow_the_column() {
+    let mut window = show(TabBar::new().vertical());
+    // Items are 96 by 56, one under the other, inside the default padding.
+    for index in 1..3 {
+        window.tap(6.0 + ITEM_WIDTH / 2.0, 6.0 + ITEM_HEIGHT * (index as f64 + 0.5));
+    }
+    assert_eq!(window.selections(), [1, 2]);
+}
+
+#[test]
+fn a_vertical_bar_has_no_items_beside_the_column() {
+    let mut window = show(TabBar::new().vertical());
+    // Where the second item of a horizontal bar would be: past the column's width.
+    window.tap(6.0 + ITEM_WIDTH * 1.5, 6.0 + ITEM_HEIGHT * 2.5);
+    assert_eq!(window.selections(), Vec::<usize>::new());
+}
+
+#[test]
+fn a_vertical_bar_is_placed_and_sized_like_a_horizontal_one() {
+    let mut window = show(TabBar::new().vertical().item_size(56.0, 56.0).bar_alignment(Alignment::BotRight));
+    let width = 56.0 + 12.0;
+    let height = 56.0 * 3.0 + 12.0;
+    window.tap(WINDOW.0 - width + 6.0 + 28.0, WINDOW.1 - height + 6.0 + 56.0 * 2.5);
+    assert_eq!(window.selections(), [2]);
+}

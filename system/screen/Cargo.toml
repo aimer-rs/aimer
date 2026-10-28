@@ -12,6 +12,7 @@ aimer_tls.workspace = true
 aimer_widget.workspace = true
 
 [target.'cfg(target_os = "ios")'.dependencies]
+block2.workspace = true
 objc2.workspace = true
 objc2-ui-kit = { workspace = true, features = ["std", "UIDevice", "UIOrientation"] }
 

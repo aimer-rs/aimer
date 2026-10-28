@@ -38,5 +38,5 @@ pub use style::{
     indicator_styles,
 };
 pub use sliding_indicator::SlidingIndicator;
-pub use tab_bar::{TabBar, TabBarState, TabItem};
+pub use tab_bar::{Orientation, TabBar, TabBarState, TabItem};
 pub use track::{AnyIndicatorTrack, IndicatorTrack, Linear, tracks};

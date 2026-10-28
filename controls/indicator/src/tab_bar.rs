@@ -38,6 +38,30 @@ const LABEL_SIZE: u32 = 11;
 type IconBuilder = Rc<dyn Fn(Color) -> AnyWidget>;
 type SelectCallback = Rc<dyn Fn(usize)>;
 
+/// The direction a [`TabBar`]'s items run in.
+///
+/// A horizontal bar floats along the bottom of a portrait screen. Where the screen
+/// is short, such as the outer display of an iPhone Duo or a phone held sideways,
+/// a vertical bar stands along the trailing edge instead, so that the page keeps
+/// its height.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Orientation {
+    /// Items side by side, left to right. The default.
+    #[default]
+    Horizontal,
+    /// Items stacked, top to bottom. The indicator slides up and down, and a
+    /// drag follows the vertical movement of the pointer.
+    Vertical,
+}
+
+impl Orientation {
+    /// Whether the items are stacked.
+    #[inline]
+    pub const fn is_vertical(self) -> bool {
+        matches!(self, Self::Vertical)
+    }
+}
+
 /// One item of a [`TabBar`]: an icon over a label.
 ///
 /// ```
@@ -92,7 +116,8 @@ impl Default for TabItem {
     }
 }
 
-/// A row of items with an indicator that slides to the selected one.
+/// A row, or with [`Orientation::Vertical`] a column, of items with an indicator
+/// that slides to the selected one.
 ///
 /// The bar is *controlled*: it shows the item at [`selected`](Self::selected),
 /// and tapping another one only proposes it through
@@ -119,7 +144,21 @@ impl Default for TabItem {
 ///     .item(TabItem::new().label("Recents").icon(|_| SizedBox::new().width(24.0).height(24.0)))
 ///     .item(TabItem::new().label("Shared").icon(|_| SizedBox::new().width(24.0).height(24.0)));
 /// ```
+///
+/// A vertical bar, for the trailing edge of a short screen:
+///
+/// ```
+/// use aimer_container::SizedBox;
+/// use aimer_indicator::{TabBar, TabItem};
+///
+/// let rail = TabBar::new()
+///     .vertical()
+///     .item_size(56.0, 56.0)
+///     .item(TabItem::new().icon(|_| SizedBox::new().width(24.0).height(24.0)))
+///     .item(TabItem::new().icon(|_| SizedBox::new().width(24.0).height(24.0)));
+/// ```
 pub struct TabBar {
+    orientation: Orientation,
     items: Vec<TabItem>,
     selection: Option<usize>,
     bar_color: Color,
@@ -143,6 +182,7 @@ impl TabBar {
     #[inline]
     pub fn new() -> Self {
         Self {
+            orientation: Orientation::Horizontal,
             items: Vec::new(),
             selection: Some(0),
             bar_color: BAR_FILL,
@@ -158,6 +198,27 @@ impl TabBar {
             reduced_motion: false,
             controller: None,
         }
+    }
+
+    /// Sets the direction the items run in. The default is
+    /// [`Orientation::Horizontal`].
+    ///
+    /// A vertical bar stacks the items top to bottom, slides the indicator
+    /// along the column, and rounds its default pill to the narrow side. The
+    /// bar's size is the items' size times their count on the axis they run
+    /// along, so [`item_size`](Self::item_size) sets the width of the whole
+    /// column.
+    #[inline]
+    pub fn orientation(mut self, orientation: Orientation) -> Self {
+        self.orientation = orientation;
+        self
+    }
+
+    /// Stands the bar up: shorthand for
+    /// [`orientation(Orientation::Vertical)`](Self::orientation).
+    #[inline]
+    pub fn vertical(self) -> Self {
+        self.orientation(Orientation::Vertical)
     }
 
     /// Appends an item.
@@ -390,6 +451,7 @@ impl Default for TabBar {
 /// Retained state for a [`TabBar`]: the indicator's motion, which has to
 /// outlive the rebuild that a selection change causes.
 pub struct TabBarState {
+    orientation: Orientation,
     items: Vec<TabItem>,
     selection: Option<usize>,
     bar_color: Color,
@@ -404,9 +466,14 @@ pub struct TabBarState {
 }
 
 impl TabBarState {
-    /// Where the items are: one slot each, left to right.
+    /// Where the items are: one slot each, left to right, or top to bottom in a
+    /// vertical bar.
     fn track(&self) -> crate::track::Linear {
-        tracks::row(self.items.len(), self.item_size.width, self.item_size.height)
+        let (count, width, height) = (self.items.len(), self.item_size.width, self.item_size.height);
+        match self.orientation {
+            Orientation::Horizontal => tracks::row(count, width, height),
+            Orientation::Vertical => tracks::column(count, width, height),
+        }
     }
 
     /// The indicator, listening to the pointer if the bar has anywhere to send
@@ -424,9 +491,16 @@ impl TabBarState {
 
     /// The bar's outer size at `scale`, margin excluded.
     fn bar_extent(&self, scale: f32) -> ResolvedSize {
-        let content = ResolvedSize {
-            width: self.item_size.width * self.items.len() as f32,
-            height: self.item_size.height,
+        let count = self.items.len() as f32;
+        let content = match self.orientation {
+            Orientation::Horizontal => ResolvedSize {
+                width: self.item_size.width * count,
+                height: self.item_size.height,
+            },
+            Orientation::Vertical => ResolvedSize {
+                width: self.item_size.width,
+                height: self.item_size.height * count,
+            },
         };
         self.chrome.extent(content, scale)
     }
@@ -491,6 +565,7 @@ impl StatefulWidget for TabBar {
             controller.set_hidden(true);
         }
         TabBarState {
+            orientation: self.orientation,
             items: self.items,
             selection,
             bar_color: self.bar_color,
@@ -510,6 +585,7 @@ impl State<TabBar> for TabBarState {
     fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
+        self.orientation = new.orientation;
         self.items = new.items;
         self.on_select = new.on_select;
         self.item_size = new.item_size;
@@ -546,19 +622,24 @@ impl State<TabBar> for TabBarState {
             .map(|(index, item)| self.item(index, item))
             .collect();
         let size = self.bar_extent(ctx.scale);
+        let items = match self.orientation {
+            Orientation::Horizontal => Row::new().children(items).boxed(),
+            Orientation::Vertical => Column::new().children(items).boxed(),
+        };
         let content = self
             .indicator()
             .controller(self.controller.clone())
             .track(self.track())
             .style(self.style.clone())
-            .box_child(Row::new().children(items));
+            .box_child(items);
 
         let bar = match &self.chrome.decoration {
             Some(decoration) => self.chrome.frame(decoration.clone(), size, content),
             None => {
                 let mut decoration = BoxDecoration::new()
                     .background_color(self.bar_color)
-                    .border_radius(size.height * 0.5);
+                    // A pill is rounded to its narrow side, whichever way it runs.
+                    .border_radius(size.width.min(size.height) * 0.5);
                 if let Some(shadow) = self.bar_shadow {
                     decoration = decoration.add_shadow(shadow);
                 }
@@ -589,6 +670,7 @@ mod tests {
     use aimer_animation::AnimInstant;
 
     use super::*;
+    use crate::track::IndicatorTrack;
 
     const RED: Color = Color::Rgba(255, 0, 0, 255);
     const GREEN: Color = Color::Rgba(0, 255, 0, 255);
@@ -756,6 +838,29 @@ mod tests {
         assert_eq!(state.chrome.margin, LayoutSpacing::all(9));
         assert_eq!(state.chrome.alignment, Some(Alignment::BotRight));
         assert!(!state.chrome.clip_content);
+    }
+
+    #[test]
+    fn a_vertical_bar_stacks_its_items_and_slides_along_the_column() {
+        let bar = three().vertical();
+        assert_eq!(extent(three().vertical()), (96.0 + 12.0, 56.0 * 3.0 + 12.0));
+        let state = bar.create_state();
+        assert_eq!(state.orientation, Orientation::Vertical);
+        assert_eq!(state.track().origin(2.0), (0.0, 112.0));
+        assert_eq!(state.track(), tracks::column(3, 96.0, 56.0));
+        // The default is unchanged.
+        let state = three().create_state();
+        assert_eq!(state.orientation, Orientation::Horizontal);
+        assert_eq!(state.track().origin(2.0), (192.0, 0.0));
+    }
+
+    #[test]
+    fn the_orientation_is_adopted_when_the_caller_changes_it() {
+        let mut state = three().create_state();
+        state.adopt_config_from(three().orientation(Orientation::Vertical).create_state());
+        assert!(state.orientation.is_vertical());
+        state.adopt_config_from(three().create_state());
+        assert!(!state.orientation.is_vertical());
     }
 
     #[test]

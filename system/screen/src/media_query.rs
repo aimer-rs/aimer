@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use aimer_widget::base::{BuildContext, ResolvedSize};
 
-use crate::screen_state::{watch_device_orientation, watch_display_features};
-use crate::{DeviceOrientation, DisplayFeature, Orientation, Panes, split_panes};
+use crate::screen_state::{watch_device_orientation, watch_display_features, watch_hinge};
+use crate::{DeviceOrientation, DisplayFeature, HingeState, Orientation, Panes, split_panes};
 
 /// The window and the screen as the widget being built sees them.
 ///
@@ -15,8 +15,9 @@ use crate::{DeviceOrientation, DisplayFeature, Orientation, Panes, split_panes};
 /// a large tree.
 ///
 /// Each question has its own dependency. A widget that asked
-/// [`MediaQuery::device_orientation_of`] is not rebuilt by a resize, and one
-/// that asked [`MediaQuery::display_features_of`] is not rebuilt by a rotation.
+/// [`MediaQuery::device_orientation_of`] is not rebuilt by a resize, one that
+/// asked [`MediaQuery::display_features_of`] is not rebuilt by a rotation, and
+/// neither of them is rebuilt for every degree of [`MediaQuery::hinge_of`].
 ///
 /// # Examples
 ///
@@ -116,6 +117,27 @@ impl MediaQuery {
     /// ```
     pub fn display_features_of(ctx: &BuildContext) -> Rc<[DisplayFeature]> {
         watch_display_features(ctx)
+    }
+
+    /// How far open the hinge of a foldable device is, rebuilding the widget
+    /// currently building whenever it moves.
+    ///
+    /// `None` on a device without a hinge, and where the platform does not
+    /// report one. The angle updates continuously while someone moves the
+    /// hinge, so read this only in a widget whose *content* follows the angle
+    /// (an instrument, an effect). A layout that only needs to know where the
+    /// fold is should read [`MediaQuery::panes_of`] instead, and one that only
+    /// needs "is it open" should compare the [`status`](HingeState::status).
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// if let Some(hinge) = MediaQuery::hinge_of(ctx) {
+    ///     pitch_bend(hinge.degrees());
+    /// }
+    /// ```
+    pub fn hinge_of(ctx: &BuildContext) -> Option<HingeState> {
+        watch_hinge(ctx)
     }
 
     /// The two areas a hinge or half-open fold leaves usable, or `None` when

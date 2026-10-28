@@ -1,5 +1,5 @@
-//! The device's orientation and display features, and the widgets that follow
-//! them.
+//! The device's orientation, display features and hinge angle, and the widgets
+//! that follow them.
 //!
 //! The operating system owns both answers and announces changes: a phone is
 //! turned, a foldable is half opened. The platform layer feeds each announcement
@@ -8,8 +8,11 @@
 //! is left alone — the same contract `aimer_widget` gives readers of the window
 //! and of the platform appearance.
 //!
-//! The two are separate dependencies. A widget that asked which way the device
-//! is turned is not rebuilt because a hinge moved, and the other way round.
+//! The three are separate dependencies. A widget that asked which way the device
+//! is turned is not rebuilt because a hinge moved, and the other way round. The
+//! angle of the hinge is a third one again: it changes continuously while a
+//! device is being opened, and a widget that only lays out around the fold must
+//! not be rebuilt for every degree of it.
 //!
 //! Registration lasts for one build. The next build of the same widget clears it
 //! and registers only what that build reads, so a widget that stops asking stops
@@ -24,13 +27,13 @@ use std::rc::{Rc, Weak};
 use aimer_tls::LocalKey;
 use aimer_widget::base::{BuildConsumer, BuildContext};
 
-use crate::{DeviceOrientation, DisplayFeature};
+use crate::{DeviceOrientation, DisplayFeature, HingeState};
 
-/// Addresses of these are the dependency identities of the two values.
+/// Addresses of these are the dependency identities of the three values.
 ///
 /// [`BuildConsumer::register_dependency`] keys on an address, so taking one that
 /// no `Rc` can hand out keeps them from colliding with a provider's.
-static DEPENDENCY_KEYS: [u8; 2] = [0, 0];
+static DEPENDENCY_KEYS: [u8; 3] = [0, 0, 0];
 
 #[inline]
 fn orientation_key() -> usize {
@@ -40,6 +43,11 @@ fn orientation_key() -> usize {
 #[inline]
 fn features_key() -> usize {
     &DEPENDENCY_KEYS[1] as *const u8 as usize
+}
+
+#[inline]
+fn hinge_key() -> usize {
+    &DEPENDENCY_KEYS[2] as *const u8 as usize
 }
 
 /// The widgets whose current build read one of the values.
@@ -94,8 +102,10 @@ impl Readers {
 aimer_tls::thread_local! {
     static ORIENTATION: Cell<Option<DeviceOrientation>> = const { Cell::new(None) };
     static FEATURES: RefCell<Rc<[DisplayFeature]>> = RefCell::new(Rc::from(Vec::new()));
+    static HINGE: Cell<Option<HingeState>> = const { Cell::new(None) };
     static ORIENTATION_READERS: Readers = const { Readers::new() };
     static FEATURE_READERS: Readers = const { Readers::new() };
+    static HINGE_READERS: Readers = const { Readers::new() };
 }
 
 /// Registers `consumer` with `readers` for the rest of its current build.
@@ -129,6 +139,15 @@ pub fn display_features() -> Rc<[DisplayFeature]> {
     FEATURES.with(|features| features.borrow().clone())
 }
 
+/// The hinge of a foldable device, as last reported.
+///
+/// `None` on every device without one, which is nearly all of them, and before
+/// the platform has said. This does not subscribe the caller to anything; a
+/// widget reads it through [`MediaQuery::hinge_of`](crate::MediaQuery::hinge_of).
+pub fn hinge() -> Option<HingeState> {
+    HINGE.with(Cell::get)
+}
+
 /// Records the device's orientation and rebuilds the widgets that follow it.
 ///
 /// Returns how many widgets were marked, so the caller knows whether a frame is
@@ -160,6 +179,18 @@ pub fn set_display_features(features: Vec<DisplayFeature>) -> usize {
     FEATURE_READERS.with(Readers::notify)
 }
 
+/// Records the state of the hinge and rebuilds the widgets that follow it.
+///
+/// Returns how many widgets were marked. A reading equal to the current one
+/// marks nothing. See [`set_device_orientation`] for the threading rule.
+pub fn set_hinge(hinge: Option<HingeState>) -> usize {
+    if HINGE.with(Cell::get) == hinge {
+        return 0;
+    }
+    HINGE.with(|current| current.set(hinge));
+    HINGE_READERS.with(Readers::notify)
+}
+
 /// Reads the orientation for the widget currently building and subscribes it.
 pub(crate) fn watch_device_orientation(context: &BuildContext) -> Option<DeviceOrientation> {
     if let Some(consumer) = context.current_build_consumer() {
@@ -177,12 +208,29 @@ pub(crate) fn watch_display_features(context: &BuildContext) -> Rc<[DisplayFeatu
     display_features()
 }
 
+/// Reads the hinge for the widget currently building and subscribes it.
+pub(crate) fn watch_hinge(context: &BuildContext) -> Option<HingeState> {
+    if let Some(consumer) = context.current_build_consumer() {
+        subscribe_hinge(&consumer);
+    }
+    hinge()
+}
+
 fn subscribe_orientation(consumer: &Rc<BuildConsumer>) {
     subscribe(&ORIENTATION_READERS, orientation_key(), consumer);
 }
 
 fn subscribe_features(consumer: &Rc<BuildConsumer>) {
     subscribe(&FEATURE_READERS, features_key(), consumer);
+}
+
+fn subscribe_hinge(consumer: &Rc<BuildConsumer>) {
+    subscribe(&HINGE_READERS, hinge_key(), consumer);
+}
+
+#[cfg(test)]
+pub(crate) fn subscribe_hinge_for_test(consumer: &Rc<BuildConsumer>) {
+    subscribe_hinge(consumer);
 }
 
 #[cfg(test)]
@@ -195,14 +243,14 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
-    use crate::{Bounds, FoldState};
+    use crate::{Bounds, FoldState, HingeStatus};
 
     fn consumer() -> (Rc<BuildConsumer>, Rc<Cell<bool>>) {
         let dirty = Rc::new(Cell::new(false));
         (BuildConsumer::new(dirty.clone()), dirty)
     }
 
-    fn hinge(left: f32) -> DisplayFeature {
+    fn hinge_feature(left: f32) -> DisplayFeature {
         DisplayFeature {
             bounds: Bounds::new(left, 0.0, left + 84.0, 1800.0),
             occludes: true,
@@ -253,7 +301,7 @@ mod tests {
         let (consumer, dirty) = consumer();
         subscribe_orientation(&consumer);
 
-        set_display_features(vec![hinge(1350.0)]);
+        set_display_features(vec![hinge_feature(1350.0)]);
 
         assert!(!dirty.get(), "a hinge rebuilt an orientation reader");
     }
@@ -273,12 +321,12 @@ mod tests {
         let (consumer, dirty) = consumer();
         subscribe_features(&consumer);
 
-        assert_eq!(set_display_features(vec![hinge(1350.0)]), 1);
+        assert_eq!(set_display_features(vec![hinge_feature(1350.0)]), 1);
         assert!(dirty.get());
-        assert_eq!(display_features().as_ref(), [hinge(1350.0)]);
+        assert_eq!(display_features().as_ref(), [hinge_feature(1350.0)]);
 
         dirty.set(false);
-        assert_eq!(set_display_features(vec![hinge(1350.0)]), 0);
+        assert_eq!(set_display_features(vec![hinge_feature(1350.0)]), 0);
         assert!(!dirty.get(), "an identical list rebuilt a widget");
 
         assert_eq!(set_display_features(Vec::new()), 1, "unfolding is a change");
@@ -305,6 +353,52 @@ mod tests {
         drop(consumer);
 
         assert_eq!(FEATURE_READERS.with(Readers::len), 0);
-        assert_eq!(set_display_features(vec![hinge(10.0)]), 0);
+        assert_eq!(set_display_features(vec![hinge_feature(10.0)]), 0);
+    }
+
+    fn opened(angle: f32) -> HingeState {
+        HingeState::new(angle, HingeStatus::PartiallyOpen)
+    }
+
+    #[test]
+    fn no_hinge_is_reported_until_the_platform_says() {
+        assert_eq!(hinge(), None);
+    }
+
+    #[test]
+    fn a_moving_hinge_rebuilds_its_readers_and_a_repeated_reading_does_not() {
+        let (consumer, dirty) = consumer();
+        subscribe_hinge(&consumer);
+
+        assert_eq!(set_hinge(Some(opened(1.0))), 1);
+        assert!(dirty.get());
+        assert_eq!(hinge(), Some(opened(1.0)));
+
+        dirty.set(false);
+        assert_eq!(set_hinge(Some(opened(1.0))), 0);
+        assert!(!dirty.get(), "an identical reading rebuilt a widget");
+
+        assert_eq!(set_hinge(None), 1, "a hinge that went away is a change");
+        assert_eq!(hinge(), None);
+    }
+
+    #[test]
+    fn the_angle_does_not_rebuild_a_widget_that_only_read_the_features() {
+        let (consumer, dirty) = consumer();
+        subscribe_features(&consumer);
+
+        set_hinge(Some(opened(0.5)));
+
+        assert!(!dirty.get(), "a hinge angle rebuilt a feature reader");
+    }
+
+    #[test]
+    fn a_new_fold_does_not_rebuild_a_widget_that_only_read_the_angle() {
+        let (consumer, dirty) = consumer();
+        subscribe_hinge(&consumer);
+
+        set_display_features(vec![hinge_feature(1350.0)]);
+
+        assert!(!dirty.get(), "a fold rebuilt an angle reader");
     }
 }

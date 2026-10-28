@@ -2220,7 +2220,11 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         crate::system_safe_area::announce(window);
 
         // Which way the device is turned, for the same reason: it is asked once
-        // the window is up, and again whenever the window changes shape.
+        // the window is up, and again whenever the window changes shape. iOS
+        // reports the hinge from a callback of its own, which wakes the loop
+        // through the waker registered first.
+        #[cfg(target_os = "ios")]
+        aimer_screen::set_change_waker(crate::aimer_app::wake_for_screen_change);
         aimer_screen::refresh();
 
         // A browser changes the reservation without winit hearing about it, so

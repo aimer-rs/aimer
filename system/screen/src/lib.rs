@@ -1,7 +1,7 @@
 //! The screen the application is shown on: how the window and the device are
-//! turned, and where a foldable device bends.
+//! turned, and where and how far a foldable device bends.
 //!
-//! [`MediaQuery`] is how a widget asks. It answers four different questions, and
+//! [`MediaQuery`] is how a widget asks. It answers five different questions, and
 //! a widget is rebuilt only when the answer to the one it asked changes:
 //!
 //! | Question | Reads | Rebuilt when |
@@ -10,6 +10,7 @@
 //! | Is the window portrait or landscape? | [`MediaQuery::orientation_of`] | the window flips shape |
 //! | Which way is the *device* turned? | [`MediaQuery::device_orientation_of`] | the device is rotated |
 //! | Where are the folds and hinges? | [`MediaQuery::display_features_of`], [`MediaQuery::panes_of`] | a foldable is opened, closed or half opened |
+//! | How far open is the hinge? | [`MediaQuery::hinge_of`] | the hinge moves |
 //!
 //! The window's shape and the device's orientation are different things. A phone
 //! held sideways in split-screen shows a portrait window; a desktop window has a
@@ -17,16 +18,18 @@
 //!
 //! # Where each answer comes from
 //!
-//! | Platform | Device orientation | Folds and hinges |
-//! |----------|--------------------|------------------|
-//! | iOS | `UIDevice.orientation` (main thread) | none |
-//! | Android | `Display.getRotation()` over JNI | Jetpack WindowManager, through `ScreenBridge.kt` |
-//! | Web | `screen.orientation.type` | none |
-//! | macOS, Windows, Linux | none (`None`) | none |
+//! | Platform | Device orientation | Folds and hinges | Hinge angle |
+//! |----------|--------------------|------------------|-------------|
+//! | iOS 27.1+ | `UIDevice.orientation` (main thread) | `UIView.reservedRegions` division regions | `UIHingeInteraction` |
+//! | iOS before 27.1 | `UIDevice.orientation` (main thread) | none | none |
+//! | Android | `Display.getRotation()` over JNI | Jetpack WindowManager, through `ScreenBridge.kt` | none |
+//! | Web | `screen.orientation.type` | none | none |
+//! | macOS, Windows, Linux | none (`None`) | none | none |
 //!
 //! The platform host calls [`refresh`] when the window changes shape, which is
-//! how a rotation reaches an application, and [`apply_pending`] when Android
-//! reports a fold. Nothing is polled per frame.
+//! how a rotation reaches an application, and [`apply_pending`] when a platform
+//! reports a fold from a callback of its own (Android, and iOS for the hinge,
+//! which also needs [`set_change_waker`]). Nothing is polled per frame.
 //!
 //! # Folds and hinges
 //!
@@ -34,6 +37,13 @@
 //! Microsoft Surface Duo) or a fold (a bend in a continuous display). Where one
 //! divides the window, [`split_panes`] and [`MediaQuery::panes_of`] give the two
 //! usable areas to lay out independently.
+//!
+//! On iOS the fold comes from the *division* regions UIKit reserves in the key
+//! window, and the angle from a `UIHingeInteraction` installed on that window
+//! (both need iOS 27.1; on an older system the classes are absent and the app
+//! sees no features). The angle is a [`HingeState`] in radians, read through
+//! [`MediaQuery::hinge_of`]; it is separate from the features so that a layout
+//! is not rebuilt for every degree.
 //!
 //! On Android the features come from `android/ScreenBridge.kt` in this crate:
 //! copy it into the app's `com.aimer` package, add `androidx.window:window` and
@@ -62,10 +72,12 @@
 #[cfg(target_os = "android")]
 mod android_screen;
 mod display_feature;
+mod hinge;
 mod media_query;
 #[cfg(target_os = "ios")]
 mod ios_screen;
 mod orientation;
+mod reserved_region;
 mod screen_inbox;
 mod screen_state;
 #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
@@ -102,19 +114,30 @@ mod platform {
 /// Call it on the thread that owns the widget tree. On iOS that must be the main
 /// thread, which is the only one UIKit answers on.
 pub fn refresh() -> usize {
-    match platform::device_orientation() {
+    let orientation = match platform::device_orientation() {
         Some(orientation) => set_device_orientation(Some(orientation)),
         None => 0,
-    }
+    };
+    // Where a foldable bends is asked at the same moments: opening the device
+    // reaches the app as a resize.
+    #[cfg(target_os = "ios")]
+    let folds = platform::refresh_folds();
+    #[cfg(not(target_os = "ios"))]
+    let folds = 0;
+    orientation + folds
 }
 
 pub use display_feature::{
     Bounds, DisplayFeature, DisplayFeatureKind, FoldState, Panes, Posture, split_panes,
 };
+pub use hinge::{HingeState, HingeStatus};
 pub use media_query::MediaQuery;
 pub use orientation::{DeviceOrientation, Orientation};
-pub use screen_inbox::{apply_pending, post_device_orientation, post_display_features};
+pub use screen_inbox::{
+    apply_pending, post_device_orientation, post_display_features, post_hinge, set_change_waker,
+};
 pub use screen_state::{
-    device_orientation, display_features, set_device_orientation, set_display_features,
+    device_orientation, display_features, hinge, set_device_orientation, set_display_features,
+    set_hinge,
 };
 pub use wire::decode_display_features;

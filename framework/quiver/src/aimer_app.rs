@@ -559,6 +559,23 @@ pub extern "system" fn Java_com_aimer_ScreenBridge_nativeDisplayFeatures<'caller
     .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
 }
 
+/// Wakes the event loop for a screen change UIKit reported from a callback of
+/// its own (the hinge), so it applies what `aimer_screen` posted.
+///
+/// Registered with `aimer_screen::set_change_waker`. UIKit calls on the main
+/// thread, which is the event-loop thread, but outside the loop's own handling,
+/// so the change is queued like any other event and not applied in place.
+#[cfg(target_os = "ios")]
+pub(crate) fn wake_for_screen_change() {
+    let Some(proxy) = EVENT_PROXY.get() else {
+        // Applied by the first `ScreenChanged` or refresh after start-up.
+        return;
+    };
+    if let Err(e) = proxy.send_event(AimerNativePlatformEvent::ScreenChanged) {
+        aimer_utils::error!("wake_for_screen_change: failed to send event: {:?}", e);
+    }
+}
+
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_aimer_AimerActivity_nativeBack<'caller>(
