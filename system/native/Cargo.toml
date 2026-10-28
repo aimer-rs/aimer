@@ -9,6 +9,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
 [dependencies]
 aimer_anteros.workspace = true
 aimer_haptics.workspace = true
+aimer_tls.workspace = true
 winit.workspace = true
 
 

@@ -9,7 +9,7 @@ use aimer_widget::{
     Rebuildable, VisitorElement, Widget,
 };
 
-thread_local! {
+aimer_tls::thread_local! {
     static BUILDS: RefCell<Vec<Page>> = const { RefCell::new(Vec::new()) };
     static DROPS: RefCell<Vec<Page>> = const { RefCell::new(Vec::new()) };
     static FRAMES: Cell<usize> = const { Cell::new(0) };
@@ -1038,7 +1038,7 @@ fn a_finger_swipes_back_inside_a_shell_through_the_outlet_and_not_the_navigator_
     // assert_eq!(pages(navigator.as_ref(), false), ["HomePage"]);
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static BAR_LOG: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -1423,7 +1423,7 @@ fn a_finger_swipes_back_inside_a_tab_branch() {
     assert_eq!(pages(shell.as_ref(), false), ["HomePage"]);
 }
 
-thread_local! {
+aimer_tls::thread_local! {
     static DEPARTING_FOCUS: RefCell<Option<aimer_widget::focus::FocusNode>> = const { RefCell::new(None) };
     static FOCUS_LOST: Cell<usize> = const { Cell::new(0) };
 }
@@ -1670,7 +1670,7 @@ fn route_overrides_and_navigation_actions_use_the_correct_owner() {
     assert_eq!(actions.borrow().last(), Some(&NavigationAction::Replace));
 }
 
-thread_local! { static ROOT_VERSION: Cell<bool> = const { Cell::new(false) }; }
+aimer_tls::thread_local! { static ROOT_VERSION: Cell<bool> = const { Cell::new(false) }; }
 fn versioned_routes(_: Page) -> AnyWidget {
     routes(if ROOT_VERSION.get() {
         Page::Detail

@@ -16,7 +16,7 @@ use aimer_widget::{
 
 struct RecordingAllocator;
 
-thread_local! {
+aimer_tls::thread_local! {
     static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
 }
 

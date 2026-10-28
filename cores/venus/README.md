@@ -3,8 +3,8 @@
 Aimer's UI-thread async runtime.
 
 Venus is **not** a replacement for Tokio. It owns the one thing a
-general-purpose runtime cannot express — *when*, relative to a frame,
-asynchronous work runs — and it owns one small pool for work that has to leave
+general-purpose runtime cannot express, *when*, relative to a frame,
+asynchronous work runs, and it owns one small pool for work that has to leave
 the UI thread. Bring your own I/O runtime for sockets; Venus schedules the UI.
 
 ## Why it exists
@@ -24,7 +24,7 @@ optimises something else entirely:
 Three of those are load-bearing for a GUI:
 
 - **Tasks are not `Send`.** A handler may `await` while holding a `StateUpdater`,
-  a controller, or any other `Rc` from the element tree — which is what 95 % of
+  a controller, or any other `Rc` from the element tree, which is what 95 % of
   real handlers capture. A runtime that polls on a pool cannot allow that at any
   price.
 - **Tasks run in a phase.** "As soon as possible" is not a schedule a UI can be
@@ -51,7 +51,7 @@ input ──▶ frame tasks ──▶ microtasks ──▶ build / layout / pain
 | `Idle`      | while the frame has room   | image decode, glyph raster, prefetch       |
 
 Everything unsliceable goes to `Venus::spawn_blocking`, the single place `Send` is
-required — and where it is genuinely true.
+required, and where it is genuinely true.
 
 Two small pieces sit on top of it for code that talks to the platform:
 
@@ -161,22 +161,22 @@ a handler eleven elements deep reaches it through `Venus::current` or
 
 Two things a loop should know:
 
-- `has_ready_work()` — whether it may wait for OS events or has to come round
+- `has_ready_work()`, whether it may wait for OS events or has to come round
   again immediately.
-- `set_notifier(..)` — how a worker wakes a parked loop. Called *only* for wakes
+- `set_notifier(..)`, how a worker wakes a parked loop. Called *only* for wakes
   raised off the UI thread; a wake raised on the UI thread never pings it,
   because the loop is demonstrably awake.
 
 ## Hosting another runtime's futures
 
 A future from `reqwest`, `tokio::fs` or `tokio::time` does not need its runtime
-to *poll* it — it needs that runtime to be **findable** while it is polled,
+to *poll* it, it needs that runtime to be **findable** while it is polled,
 because it builds its resources on the first poll and looks the runtime up in a
 thread-local. Venus polls on the UI thread, where that lookup finds nothing, so
 such a future would panic before it reached the network.
 
 One hook fixes that for every spawn path at once. The host installs an adapter
-and Venus enters it around each poll — and only around the poll, never across an
+and Venus enters it around each poll, and only around the poll, never across an
 `await`:
 
 ```rust
@@ -218,14 +218,14 @@ handler with nothing else in the way.
 
 The completion side needed no work at all. The other runtime's reactor wakes
 Venus's waker from its own thread, and the task resumes in the phase it was
-spawned into — so an HTTP response lands *before this frame's build*, which is
+spawned into, so an HTTP response lands *before this frame's build*, which is
 more than the runtime that fetched it can promise. Its driver threads keep the
 handshake and the decoding off the UI thread entirely.
 
 ## Costs, honestly
 
 - A task pays one `Box::pin` at spawn and nothing per poll. Polling a ready task
-  is a `VecDeque::pop_front`, a slab index and one `Future::poll` — tens of
+  is a `VecDeque::pop_front`, a slab index and one `Future::poll`, tens of
   nanoseconds, so draining ten thousand microtasks fits comfortably inside a
   120 Hz frame.
 - A cooperative scheduler cannot preempt. An `async` handler that does 12 ms of
@@ -236,5 +236,5 @@ handshake and the decoding off the UI thread entirely.
   itself forever hangs the frame. Builds with the `venus-debug` feature warn
   when one poll exceeds 1 ms and assert once the drain passes 100 000 polls.
 - An installed poll context costs one `Rc` clone and one dynamic call per poll,
-  plus whatever the host's guard is — a thread-local swap, for Tokio. With no
+  plus whatever the host's guard is, a thread-local swap, for Tokio. With no
   context installed the poll path reads an empty `Option` and nothing else.

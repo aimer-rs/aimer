@@ -637,7 +637,7 @@ impl MacosWindowHandle<'_> {
 }
 
 #[cfg(target_os = "macos")]
-thread_local! {
+aimer_tls::thread_local! {
     static PENDING: std::cell::RefCell<Option<MacosWindowing>> = const {
         std::cell::RefCell::new(None)
     };

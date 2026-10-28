@@ -10,7 +10,7 @@ use std::cell::RefCell;
 
 use super::ClipboardError;
 
-thread_local! {
+aimer_tls::thread_local! {
     static CLIPBOARD: RefCell<Option<arboard::Clipboard>> = const { RefCell::new(None) };
 }
 

@@ -1,23 +1,36 @@
-//! The shared per-thread table behind [`crate::thread_local!`] on Android.
+//! The shared per-thread table behind [`crate::thread_local!`].
 //!
 //! Every [`LocalKey`] owns a process-wide slot index. Each thread owns one
-//! [`Table`], the only std `thread_local!` in this crate, so the only OS TLS
-//! key, mapping slot indices to lazily created, heap-allocated values.
+//! [`Table`] mapping slot indices to lazily created, heap-allocated values.
 //!
-//! Values are boxed so their address stays fixed while the table's `Vec` grows
-//! and while other slots are initialised from inside a `with` closure.
+//! The table itself has no destructor, so it can always be read, even while the
+//! thread exits. A separate [`Guard`], the only thread-local here with a
+//! destructor and therefore the only one that needs an OS destructor
+//! registration, runs the teardown: it drops the values one at a time and marks
+//! each as destroyed just before its own destructor runs. As with std, a
+//! destructor can therefore keep using every other key, and only a key that is
+//! already being or has been destroyed reports [`AccessError`].
+//!
+//! Values are heap-allocated so their address stays fixed while the table grows
+//! and while other slots are initialised from inside a `with` closure. Both the
+//! values and the table are allocated with [`System`], never the global
+//! allocator, so a `#[global_allocator]` may itself use `aimer_tls` (as std's
+//! own thread-locals allow).
 
+use std::alloc::{GlobalAlloc, Layout, System, handle_alloc_error};
 use std::cell::{Cell, RefCell};
 use std::fmt;
+use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Source of slot indices. Index `0` is never handed out, so a key's `0` means
 /// "not assigned yet".
 static NEXT_SLOT: AtomicUsize = AtomicUsize::new(1);
 
-/// Error returned by [`LocalKey::try_with`] when the thread's table is already
-/// gone because the thread is exiting.
+/// Error returned by [`LocalKey::try_with`] when the value is already destroyed
+/// or is being destroyed because the thread is exiting.
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct AccessError;
 
 impl fmt::Display for AccessError {
@@ -28,90 +41,245 @@ impl fmt::Display for AccessError {
 
 impl std::error::Error for AccessError {}
 
-/// A type-erased heap value together with the function that frees it.
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn access_panic() -> ! {
+    panic!("cannot access a Thread Local Storage value during or after destruction: AccessError")
+}
+
+/// Frees a value stored in a [`Slot`].
+type DropFn = unsafe fn(*mut ());
+
+/// A type-erased heap value together with the function that frees it. A null
+/// `ptr` marks a slot with no live value. All-zero bytes are a valid fresh
+/// `Slot`, which lets the table's buffer come from `alloc_zeroed`.
 struct Slot {
     ptr: *mut (),
-    drop: unsafe fn(*mut ()),
+    drop: Option<DropFn>,
+    /// Set just before the value's destructor runs; the key then reports
+    /// `AccessError` for the rest of the thread's life.
+    destroyed: bool,
+}
+
+/// Moves `value` to a fresh `System` allocation and returns its address.
+///
+/// A zero-sized value is stored as a dangling but non-null pointer.
+fn alloc_value<T>(value: T) -> *mut () {
+    let layout = Layout::new::<T>();
+    let ptr = if layout.size() == 0 {
+        NonNull::<T>::dangling().as_ptr()
+    } else {
+        // SAFETY: `layout` has a non-zero size.
+        let ptr = unsafe { System.alloc(layout) }.cast::<T>();
+        if ptr.is_null() {
+            handle_alloc_error(layout);
+        }
+        ptr
+    };
+    // SAFETY: `ptr` is valid, aligned and uninitialised for a `T`.
+    unsafe { ptr.write(value) };
+    ptr.cast()
 }
 
 /// # Safety
 ///
-/// `ptr` must come from `Box::<T>::into_raw` and must not be used afterwards.
-unsafe fn drop_boxed<T>(ptr: *mut ()) {
-    drop(unsafe { Box::from_raw(ptr.cast::<T>()) });
+/// `ptr` must come from [`alloc_value::<T>`] and must not be used afterwards.
+unsafe fn drop_value<T>(ptr: *mut ()) {
+    let ptr = ptr.cast::<T>();
+    unsafe { ptr::drop_in_place(ptr) };
+    let layout = Layout::new::<T>();
+    if layout.size() != 0 {
+        unsafe { System.dealloc(ptr.cast(), layout) };
+    }
+}
+
+/// Why [`Table::insert`] did not store a value.
+enum Refused {
+    /// The index already holds a live value, which wins.
+    Present(*mut ()),
+    /// The key is destroyed, or the whole table is gone.
+    Destroyed,
 }
 
 /// All shared thread-local values of one thread.
+///
+/// `base` points at a `System`-allocated buffer of `len` slots (`len` doubles
+/// as its capacity). The buffer is only replaced by [`Table::grow`] and freed by
+/// [`Table::teardown`]; neither runs foreign code while a slot reference is
+/// held, so nothing is aliased. Everything goes through raw pointers and
+/// `Cell`s, which also keeps the lookup cheap in debug builds, where
+/// `Vec::get` is not inlined.
 struct Table {
-    slots: RefCell<Vec<Option<Slot>>>,
+    base: Cell<*mut Slot>,
+    len: Cell<usize>,
+    /// Whether this thread's [`GUARD`] has been touched, i.e. whether its
+    /// destructor is registered and will run the teardown.
+    registered: Cell<bool>,
+    /// Set once teardown has freed the buffer; nothing can be stored after.
+    finished: Cell<bool>,
 }
 
 impl Table {
     const fn new() -> Self {
         Self {
-            slots: RefCell::new(Vec::new()),
+            base: Cell::new(ptr::null_mut()),
+            len: Cell::new(0),
+            registered: Cell::new(false),
+            finished: Cell::new(false),
         }
     }
 
-    fn get(&self, index: usize) -> Option<*mut ()> {
-        self.slots
-            .borrow()
-            .get(index)
-            .and_then(|slot| slot.as_ref())
-            .map(|slot| slot.ptr)
+    /// The live value stored at `index`, or null if there is none.
+    #[inline(always)]
+    fn get(&self, index: usize) -> *mut () {
+        if index < self.len.get() {
+            // SAFETY: `base` holds `len` initialised slots and `index` is in
+            // bounds. `ptr` is `Copy`, so no reference outlives this read.
+            unsafe { (*self.base.get().add(index)).ptr }
+        } else {
+            ptr::null_mut()
+        }
     }
 
-    /// Stores `slot` unless the index is already filled; returns the pointer
-    /// that ends up owning the index.
+    /// Whether `index` can no longer be given a value.
+    fn refuses(&self, index: usize) -> bool {
+        self.finished.get()
+            // SAFETY: `index < len`, see `get`.
+            || (index < self.len.get() && unsafe { (*self.base.get().add(index)).destroyed })
+    }
+
+    /// Stores `ptr` unless the index already holds a value or is destroyed.
     ///
     /// Initialisers may touch other keys, so a re-entrant initialisation of the
     /// same key can reach here with the slot already filled. The first value
-    /// wins and the loser is handed back to the caller to drop.
-    fn insert(&self, index: usize, slot: Slot) -> Result<*mut (), Slot> {
-        let mut slots = self.slots.borrow_mut();
-        if slots.len() <= index {
-            slots.resize_with(index + 1, || None);
+    /// wins and the loser's pointer is handed back for the caller to free.
+    fn insert(
+        &self,
+        index: usize,
+        ptr: *mut (),
+        drop: DropFn,
+    ) -> Result<*mut (), Refused> {
+        if self.refuses(index) {
+            return Err(Refused::Destroyed);
         }
-        if slots[index].is_some() {
-            return Err(slot);
+        if !self.registered.get() {
+            // Touching the guard registers its destructor with the OS; that is
+            // what will eventually free everything stored here.
+            if GUARD.try_with(|_| ()).is_err() {
+                return Err(Refused::Destroyed);
+            }
+            self.registered.set(true);
         }
-        let ptr = slot.ptr;
-        slots[index] = Some(slot);
+        if index >= self.len.get() {
+            self.grow(index + 1);
+        }
+        // SAFETY: `index < len` after `grow`.
+        let slot = unsafe { &mut *self.base.get().add(index) };
+        if !slot.ptr.is_null() {
+            return Err(Refused::Present(slot.ptr));
+        }
+        slot.ptr = ptr;
+        slot.drop = Some(drop);
         Ok(ptr)
+    }
+
+    /// Reallocates the buffer to hold at least `min_len` slots.
+    #[cold]
+    #[inline(never)]
+    fn grow(&self, min_len: usize) {
+        let old_len = self.len.get();
+        let new_len = min_len.max(old_len * 2).max(8);
+        let layout = Layout::array::<Slot>(new_len).expect("thread-local table too large");
+        // SAFETY: the layout has a non-zero size; zeroed bytes are fresh slots.
+        let fresh = unsafe { System.alloc_zeroed(layout) }.cast::<Slot>();
+        if fresh.is_null() {
+            handle_alloc_error(layout);
+        }
+        let old = self.base.get();
+        if old_len != 0 {
+            // SAFETY: `old` holds `old_len` slots from a previous `grow`, and
+            // `fresh` is a distinct allocation at least as large.
+            unsafe {
+                ptr::copy_nonoverlapping(old, fresh, old_len);
+                System.dealloc(old.cast(), Layout::array::<Slot>(old_len).unwrap());
+            }
+        }
+        self.base.set(fresh);
+        self.len.set(new_len);
+    }
+
+    /// Takes the next live value, newest slot first, and marks it destroyed.
+    fn take_next(&self) -> Option<(*mut (), DropFn)> {
+        for index in (0..self.len.get()).rev() {
+            // SAFETY: `index < len`; the reference ends with this iteration.
+            let slot = unsafe { &mut *self.base.get().add(index) };
+            if let Some(drop) = slot.drop
+                && !slot.ptr.is_null()
+            {
+                let ptr = slot.ptr;
+                slot.ptr = ptr::null_mut();
+                slot.drop = None;
+                slot.destroyed = true;
+                return Some((ptr, drop));
+            }
+        }
+        None
+    }
+
+    /// Drops every value, then frees the buffer.
+    ///
+    /// A destructor runs with the table in a consistent state, so it may read
+    /// other keys, even initialise new ones; those are picked up by the next
+    /// `take_next`.
+    fn teardown(&self) {
+        while let Some((ptr, drop)) = self.take_next() {
+            // SAFETY: `ptr` and `drop` were stored together by `insert`, and
+            // `take_next` removed them, so the value is freed exactly once. A
+            // panic unwinds into std's TLS destructor shim, which aborts the
+            // process just as it does for std's own keys.
+            unsafe { drop(ptr) };
+        }
+        self.finished.set(true);
+        let base = self.base.replace(ptr::null_mut());
+        let len = self.len.replace(0);
+        if len != 0 {
+            // SAFETY: `base` came from `grow` with this `len`.
+            unsafe { System.dealloc(base.cast(), Layout::array::<Slot>(len).unwrap()) };
+        }
     }
 }
 
-impl Drop for Table {
+/// Runs [`Table::teardown`] when the thread exits.
+struct Guard;
+
+impl Drop for Guard {
     fn drop(&mut self) {
-        // Drop one value at a time with no borrow held, newest first, so a
-        // destructor never observes a half-borrowed table.
-        loop {
-            let slot = self
-                .slots
-                .get_mut()
-                .iter_mut()
-                .rev()
-                .find_map(|slot| slot.take());
-            match slot {
-                Some(slot) => unsafe { (slot.drop)(slot.ptr) },
-                None => break,
-            }
-        }
+        TABLE.with(Table::teardown);
     }
 }
 
 std::thread_local! {
-    /// The single OS TLS key every shared thread-local lives behind.
+    /// Every shared thread-local's storage. It has no destructor, so it needs
+    /// no OS destructor registration and stays readable during teardown.
     static TABLE: Table = const { Table::new() };
+
+    /// Its destructor tears [`TABLE`] down; the only one in this crate.
+    static GUARD: Guard = const { Guard };
 }
 
 /// A thread-local value stored in the shared per-thread table.
 ///
-/// Created by [`crate::thread_local!`]; it mirrors the parts of
-/// [`std::thread::LocalKey`] the framework uses.
+/// Created by [`crate::thread_local!`]; it mirrors [`std::thread::LocalKey`].
 pub struct LocalKey<T: 'static> {
     slot: AtomicUsize,
     init: fn() -> T,
+}
+
+impl<T: 'static> fmt::Debug for LocalKey<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalKey").finish_non_exhaustive()
+    }
 }
 
 impl<T: 'static> LocalKey<T> {
@@ -124,11 +292,18 @@ impl<T: 'static> LocalKey<T> {
         }
     }
 
+    #[inline(always)]
     fn index(&self) -> usize {
         let current = self.slot.load(Ordering::Relaxed);
         if current != 0 {
             return current;
         }
+        self.assign_index()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn assign_index(&self) -> usize {
         let fresh = NEXT_SLOT.fetch_add(1, Ordering::Relaxed);
         match self
             .slot
@@ -141,32 +316,61 @@ impl<T: 'static> LocalKey<T> {
 
     /// Address of this thread's value, creating it on first access.
     ///
-    /// The address stays valid until the thread's table is destroyed.
+    /// The address stays valid until the value's destructor starts.
+    #[inline(always)]
     fn value(&'static self) -> Result<*const T, AccessError> {
         let index = self.index();
-        if let Some(ptr) = TABLE.try_with(|table| table.get(index)).map_err(|_| AccessError)? {
+        let ptr = TABLE.with(|table| table.get(index));
+        if !ptr.is_null() {
             return Ok(ptr.cast::<T>());
         }
+        self.initialise(index)
+    }
 
-        // The initialiser may itself use thread-locals, so it runs with no
-        // borrow of the table held.
-        let created = Slot {
-            ptr: Box::into_raw(Box::new((self.init)())).cast::<()>(),
-            drop: drop_boxed::<T>,
-        };
-        match TABLE.try_with(|table| table.insert(index, created)) {
-            Ok(Ok(ptr)) => Ok(ptr.cast::<T>()),
-            Ok(Err(loser)) => {
-                unsafe { (loser.drop)(loser.ptr) };
-                // The winner is the value already in the table.
-                TABLE
-                    .try_with(|table| table.get(index))
-                    .ok()
-                    .flatten()
-                    .map(|ptr| ptr.cast::<T>().cast_const())
-                    .ok_or(AccessError)
+    #[cold]
+    #[inline(never)]
+    fn initialise(&'static self, index: usize) -> Result<*const T, AccessError> {
+        if TABLE.with(|table| table.refuses(index)) {
+            return Err(AccessError);
+        }
+        // The initialiser may itself use thread-locals, so it runs with the
+        // table untouched.
+        self.store(index, (self.init)())
+    }
+
+    /// Moves `value` into the table, unless a value got there first.
+    fn store(&'static self, index: usize, value: T) -> Result<*const T, AccessError> {
+        let raw = alloc_value(value);
+        match TABLE.with(|table| table.insert(index, raw, drop_value::<T>)) {
+            Ok(ptr) => Ok(ptr.cast::<T>()),
+            Err(Refused::Present(winner)) => {
+                // SAFETY: `raw` came from `alloc_value` just above and was not
+                // stored.
+                unsafe { drop_value::<T>(raw) };
+                Ok(winner.cast::<T>())
             }
-            Err(_) => Err(AccessError),
+            Err(Refused::Destroyed) => {
+                // SAFETY: as above.
+                unsafe { drop_value::<T>(raw) };
+                Err(AccessError)
+            }
+        }
+    }
+
+    /// Stores `fresh` if this thread has no value yet, without running the
+    /// initialiser; otherwise calls `apply` with `fresh` and the live value.
+    ///
+    /// This is what lets `set` skip the initialiser, as std does.
+    fn set_or_apply(&'static self, fresh: T, apply: impl FnOnce(T, &T)) {
+        let index = self.index();
+        let found = TABLE.with(|table| table.get(index));
+        if found.is_null() {
+            if self.store(index, fresh).is_err() {
+                access_panic();
+            }
+        } else {
+            // SAFETY: see `try_with`.
+            apply(fresh, unsafe { &*found.cast::<T>() });
         }
     }
 
@@ -174,37 +378,43 @@ impl<T: 'static> LocalKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the thread's table has already been destroyed.
+    /// Panics if the value is being or has been destroyed.
+    #[inline(always)]
     pub fn with<F, R>(&'static self, f: F) -> R
     where
         F: FnOnce(&T) -> R,
     {
-        self.try_with(f).expect(
-            "cannot access a Thread Local Storage value during or after destruction: AccessError",
-        )
+        match self.value() {
+            // SAFETY: see `try_with`.
+            Ok(ptr) => f(unsafe { &*ptr }),
+            Err(_) => access_panic(),
+        }
     }
 
     /// Like [`with`](Self::with), but returns [`AccessError`] instead of
-    /// panicking when the thread is being torn down.
+    /// panicking when the value is being or has been destroyed.
+    #[inline(always)]
     pub fn try_with<F, R>(&'static self, f: F) -> Result<R, AccessError>
     where
         F: FnOnce(&T) -> R,
     {
         let ptr = self.value()?;
-        // SAFETY: the value is boxed, owned by this thread's table, and only
-        // freed when the table is dropped at thread exit, which cannot happen
+        // SAFETY: the value is heap-allocated, owned by this thread's table,
+        // and freed only by that value's own teardown, which cannot start
         // while this thread is inside `f`.
         Ok(f(unsafe { &*ptr }))
     }
 }
 
 impl<T: 'static> LocalKey<Cell<T>> {
-    /// Replaces the value, dropping the old one.
+    /// Replaces the value, dropping the old one. Does not run the initialiser.
+    #[inline(always)]
     pub fn set(&'static self, value: T) {
-        self.with(|cell| cell.set(value));
+        self.set_or_apply(Cell::new(value), |fresh, cell| cell.set(fresh.into_inner()));
     }
 
     /// Returns a copy of the value.
+    #[inline(always)]
     pub fn get(&'static self) -> T
     where
         T: Copy,
@@ -212,7 +422,17 @@ impl<T: 'static> LocalKey<Cell<T>> {
         self.with(Cell::get)
     }
 
+    /// Updates the value in place with `f`.
+    #[inline(always)]
+    pub fn update(&'static self, f: impl FnOnce(T) -> T)
+    where
+        T: Copy,
+    {
+        self.with(|cell| cell.update(f));
+    }
+
     /// Takes the value, leaving `Default::default()` behind.
+    #[inline(always)]
     pub fn take(&'static self) -> T
     where
         T: Default,
@@ -221,6 +441,7 @@ impl<T: 'static> LocalKey<Cell<T>> {
     }
 
     /// Replaces the value, returning the old one.
+    #[inline(always)]
     pub fn replace(&'static self, value: T) -> T {
         self.with(|cell| cell.replace(value))
     }
@@ -232,6 +453,7 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     /// # Panics
     ///
     /// Panics if the value is currently mutably borrowed.
+    #[inline(always)]
     pub fn with_borrow<F, R>(&'static self, f: F) -> R
     where
         F: FnOnce(&T) -> R,
@@ -244,6 +466,7 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     /// # Panics
     ///
     /// Panics if the value is currently borrowed.
+    #[inline(always)]
     pub fn with_borrow_mut<F, R>(&'static self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R,
@@ -251,13 +474,16 @@ impl<T: 'static> LocalKey<RefCell<T>> {
         self.with(|cell| f(&mut cell.borrow_mut()))
     }
 
-    /// Replaces the value, dropping the old one.
+    /// Replaces the value, dropping the old one. Does not run the initialiser.
     ///
     /// # Panics
     ///
     /// Panics if the value is currently borrowed.
+    #[inline(always)]
     pub fn set(&'static self, value: T) {
-        self.with(|cell| *cell.borrow_mut() = value);
+        self.set_or_apply(RefCell::new(value), |fresh, cell| {
+            *cell.borrow_mut() = fresh.into_inner();
+        });
     }
 
     /// Takes the value, leaving `Default::default()` behind.
@@ -265,6 +491,7 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     /// # Panics
     ///
     /// Panics if the value is currently borrowed.
+    #[inline(always)]
     pub fn take(&'static self) -> T
     where
         T: Default,
@@ -277,156 +504,11 @@ impl<T: 'static> LocalKey<RefCell<T>> {
     /// # Panics
     ///
     /// Panics if the value is currently borrowed.
+    #[inline(always)]
     pub fn replace(&'static self, value: T) -> T {
         self.with(|cell| cell.replace(value))
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use std::cell::{Cell, RefCell};
-    use std::rc::Rc;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    static INITS: AtomicUsize = AtomicUsize::new(0);
-
-    crate::shared_thread_local! {
-        static LAZY: Cell<u32> = {
-            INITS.fetch_add(1, Ordering::SeqCst);
-            Cell::new(7)
-        };
-        static CONST_CELL: Cell<u32> = const { Cell::new(1) };
-        pub(crate) static LIST: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
-    }
-
-    #[test]
-    fn value_is_created_lazily_once_per_thread() {
-        assert_eq!(INITS.load(Ordering::SeqCst), 0);
-        assert_eq!(LAZY.get(), 7);
-        LAZY.set(9);
-        assert_eq!(LAZY.get(), 9);
-        assert_eq!(INITS.load(Ordering::SeqCst), 1);
-
-        // A second thread gets its own, freshly initialised value.
-        std::thread::spawn(|| {
-            assert_eq!(LAZY.get(), 7);
-        })
-        .join()
-        .unwrap();
-        assert_eq!(INITS.load(Ordering::SeqCst), 2);
-        assert_eq!(LAZY.get(), 9);
-    }
-
-    #[test]
-    fn cell_and_ref_cell_helpers_match_std() {
-        assert_eq!(CONST_CELL.replace(5), 1);
-        assert_eq!(CONST_CELL.take(), 5);
-        assert_eq!(CONST_CELL.get(), 0);
-
-        LIST.with_borrow_mut(|list| list.push(1));
-        LIST.with_borrow_mut(|list| list.push(2));
-        assert_eq!(LIST.with_borrow(|list| list.clone()), vec![1, 2]);
-        assert_eq!(LIST.replace(vec![3]), vec![1, 2]);
-        assert_eq!(LIST.take(), vec![3]);
-        LIST.set(vec![4]);
-        assert_eq!(LIST.with_borrow(Vec::len), 1);
-    }
-
-    #[test]
-    fn initialiser_may_use_other_keys() {
-        crate::shared_thread_local! {
-            static A: Cell<u32> = const { Cell::new(10) };
-            static B: Cell<u32> = Cell::new(A.get() + 1);
-        }
-        assert_eq!(B.get(), 11);
-    }
-
-    #[test]
-    fn with_may_nest_other_keys_while_the_table_grows() {
-        crate::shared_thread_local! {
-            static OUTER: Cell<u32> = const { Cell::new(1) };
-            static INNER: Cell<u32> = const { Cell::new(2) };
-        }
-        let sum = OUTER.with(|outer| INNER.with(|inner| outer.get() + inner.get()));
-        assert_eq!(sum, 3);
-    }
-
-    #[test]
-    fn values_are_dropped_when_the_thread_exits() {
-        struct Probe(Arc<AtomicUsize>);
-        impl Drop for Probe {
-            fn drop(&mut self) {
-                self.0.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-        crate::shared_thread_local! {
-            static PROBE: RefCell<Option<Probe>> = const { RefCell::new(None) };
-        }
-
-        let drops = Arc::new(AtomicUsize::new(0));
-        let for_thread = drops.clone();
-        std::thread::spawn(move || {
-            PROBE.set(Some(Probe(for_thread)));
-        })
-        .join()
-        .unwrap();
-        assert_eq!(drops.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn rc_values_need_not_be_send() {
-        crate::shared_thread_local! {
-            static SHARED: Rc<Cell<u32>> = Rc::new(Cell::new(3));
-        }
-        SHARED.with(|rc| rc.set(4));
-        assert_eq!(SHARED.with(|rc| rc.get()), 4);
-    }
-
-    #[test]
-    fn access_during_thread_teardown_reports_an_error() {
-        // 0 = destructor not run, 1 = access refused, 2 = access allowed.
-        static OUTCOME: AtomicUsize = AtomicUsize::new(0);
-
-        struct Late;
-        impl Drop for Late {
-            fn drop(&mut self) {
-                // The table is being dropped: `try_with` must not panic.
-                let seen = CONST_CELL.try_with(|cell| cell.get());
-                OUTCOME.store(if seen.is_err() { 1 } else { 2 }, Ordering::SeqCst);
-            }
-        }
-        crate::shared_thread_local! {
-            static HOLDER: RefCell<Option<Late>> = const { RefCell::new(None) };
-        }
-        std::thread::spawn(|| {
-            HOLDER.set(Some(Late));
-        })
-        .join()
-        .unwrap();
-        assert_eq!(OUTCOME.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn more_statics_than_an_android_process_has_tls_keys() {
-        // With std's keyed implementation this many statics would abort on
-        // Android; here they all share the table's single key. Declared in
-        // batches because each static in one block costs a macro recursion.
-        macro_rules! batch {
-            ($touch:ident; $($name:ident),*) => {
-                crate::shared_thread_local! {
-                    $(static $name: Cell<usize> = const { Cell::new(0) };)*
-                }
-                fn $touch() -> usize {
-                    let mut total = 0;
-                    $($name.set($name.get() + 1); total += $name.get();)*
-                    total
-                }
-            };
-        }
-        batch!(touch_a; A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, A26, A27, A28, A29, A30, A31, A32, A33, A34, A35, A36, A37, A38, A39, A40, A41, A42, A43, A44, A45, A46, A47, A48, A49);
-        batch!(touch_b; B0, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, B13, B14, B15, B16, B17, B18, B19, B20, B21, B22, B23, B24, B25, B26, B27, B28, B29, B30, B31, B32, B33, B34, B35, B36, B37, B38, B39, B40, B41, B42, B43, B44, B45, B46, B47, B48, B49);
-        batch!(touch_c; C0, C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13, C14, C15, C16, C17, C18, C19, C20, C21, C22, C23, C24, C25, C26, C27, C28, C29, C30, C31, C32, C33, C34, C35, C36, C37, C38, C39, C40, C41, C42, C43, C44, C45, C46, C47, C48, C49);
-        assert_eq!(touch_a() + touch_b() + touch_c(), 150);
-    }
-}
+mod tests;

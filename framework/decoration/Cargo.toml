@@ -17,6 +17,7 @@ aimer_widget.workspace = true
 aimer_rubick.workspace = true
 
 [dev-dependencies]
+aimer_tls.workspace = true
 aimer_style.workspace = true
 aimer_container.workspace = true
 aimer_events.workspace = true

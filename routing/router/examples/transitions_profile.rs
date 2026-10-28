@@ -12,7 +12,7 @@ use aimer_widget::base::{BuildContext, ResolvedSize, WindowHandle};
 use aimer_widget::{AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement,
     PortableWidget, Rebuildable, VisitorElement, Widget};
 
-thread_local! {
+aimer_tls::thread_local! {
     static ALLOCATIONS: Cell<Option<usize>> = const { Cell::new(None) };
     static BUILDS: Cell<usize> = const { Cell::new(0) };
 }

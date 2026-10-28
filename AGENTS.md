@@ -35,11 +35,11 @@ scope.
 
 ## Rust source layout
 
-- Keep every project-owned `.rs` file below 1,000 ~ 1600 physical lines, including tests and documentation comments.
+- Keep every project-owned `.rs` file below 1,000 ~ 1400 physical SLOC, tests and documentation comments would able be excluded.
 - When a file approaches the limit, move cohesive responsibilities into sibling modules and keep the parent module as a small facade.
 - Name modules after the responsibility they own. Re-export only the items needed by callers; keep implementation details private.
 - Keep tests beside the behavior they exercise, using child test modules when that keeps source files within the line limit.
-- Prefer flat layout inside a crate, when need the inner module, it mean crate is too big.
+- Prefer flat layout inside a crate, when need the inner module, it mean crate is too big, it time to split it now :).
 
 ## Before Editing
 
@@ -83,16 +83,30 @@ Additional test rules:
 - If a pre-existing failure is unrelated, report it with evidence; do not silently work around it.
 - If a useful test is impractical, explain why before implementing and use the strongest feasible verification.
 
-## Rust and API Design
+## Benchmarking and Optimization
+
+- **NEVER** run benchmarks in parallel, as the benchmarks will compete for resources and the results will be invalid
+- **NEVER** game the benchmarks. Do not manipulate the benchmarks themselves to satisfy any required performance constraints
+- **NEVER** run benchmarks with `target-cpu=native` or `--release` or any other `RUSTFLAGS`
+- Ensure benchmark tests are independent. If the tests are dependent due to a feature (e.g. caching), ensure the feature is disabled
+- **ALWAYS** use `criterion` directly for running benchmarks if available
+
+First, **without making any futher changes**, run the CPU Rust benchmarks to establish a True Performance Baseline.
+
+Then, optimize the crate code to make it such that ALL CPU benchmarks run **atleast 1.2x faster** than the True Performance Baseline; ideally as fast as possible. NEVER hack the benchmarks to accomplish this runtime reduction, only iterate on the library code.
+
+You may use ANY techniques to do so (e.g. inventing new algorithm) other than adding extra third party crates. **REPEAT THIS PROCESS UNTIL BENCHMARK PERFORMANCE CONVERGES AND YOU ARE OUT OF OPTIMIZATION IDEAS.** You have permission to keep iterating. After each benchmark iteration, report the relative results to the True Performance Baseline to console.
+
+Prioritize making quick/high-impact wins iteratively and making changes accordingly. Do not overthink the necessary changes.
+
+## Rust and API Design and Widget Conventions
 
 - Do not expose third party crate to public API.
 - Use the latest stable Rust toolchain supported by the workspace.
 - Prefer clear ownership and borrowing over allocation. Apply zero-copy techniques when they simplify or measurably
-  improve a hot path; do not introduce unsafe code or complex lifetimes without demonstrated benefit.
+  improve a hot path.
 - Keep `unsafe` blocks minimal and document their safety invariants.
-- Never hardcode or log credentials, tokens, signing keys, or other secrets.
-- Prefer existing workspace dependencies and standard-library solutions. Add a third-party crate only when its
-  maintenance, correctness, or complexity benefit justifies it.
+- Prefer existing workspace dependencies and standard-library solutions. Introduce new third party crate need to be manual improve by user.
 - Prefer the crate version that published more than 1 ~ 2 weeks ago to prevent malicious crates from being introduced.
 - Prefer using the git url with a specific commit hash or tag for introduce external crate when possible.
 - Declare shared dependencies in root `[workspace.dependencies]`, then use `<dependency>.workspace = true` in member
@@ -100,14 +114,24 @@ Additional test rules:
 - New crate names use the `aimer_*` prefix. but it has no prefix at folder name
 - Route public umbrella-crate re-exports through `src/lib.rs`. Use `pub use aimer_xxxx as xxxx` when exposing a crate
   under a shorter public name.
-- Keep source files at or below 2,000 lines (inline-unittest excluded). Split by responsibility before exceeding that
-  limit.
 - Add comments for invariants and non-obvious decisions, not for code that is already self-explanatory.
 - Do not run `cargo fmt`. Preserve the surrounding formatting style in edited code.
 - Add documentation comments to new public APIs. Document purpose, important invariants, panics/errors, safety
   requirements, and a useful example when appropriate. Follow Rust standard-library style, but keep documentation
   proportional to the API.
+- Each crate has their own README.md and include it with `#![doc = include_str!("../README.md")]` at their `src/lib.rs`
 - no need to care about the `aimer_portable_guest` or hot-reload ralated feature because it just experiments.
+
+
+For structs that implement `Widget`:
+
+- Provide a zero-argument `new()` that returns the incomplete/default builder state.
+- If a child is required, make the child-setting method the final type-state transition that produces a valid widget.
+- Put the child type parameter last when practical and consistent with the existing API.
+- Mark small builder methods `#[inline]`.
+- A self-rebuilding widget should retain its child through `ChildBuilder` or the repository's equivalent retained-child
+  mechanism instead of rebuilding or cloning it unnecessarily.
+
 
 Example: 
 ```rust
@@ -202,62 +226,6 @@ impl FocusScope {
     }
 }
 ```
-
-## Widget Conventions
-
-For structs that implement `Widget`:
-
-- Provide a zero-argument `new()` that returns the incomplete/default builder state.
-- If a child is required, make the child-setting method the final type-state transition that produces a valid widget.
-- Put the child type parameter last when practical and consistent with the existing API.
-- Mark small builder methods `#[inline]`.
-- In `Widget::to_element(self, ctx)`, move owned fields into the retained element. Do not clone fields merely because
-  ownership is inconvenient: `self` is consumed.
-- A self-rebuilding widget should retain its child through `ChildBuilder` or the repository's equivalent retained-child
-  mechanism instead of rebuilding or cloning it unnecessarily.
-
-Example:
-
-```rust
-pub struct MyWidget<W = RequiredChild> {
-    size: f32,
-    child: W,
-}
-
-impl MyWidget {
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            size: 0.0,
-            child: RequiredChild,
-        }
-    }
-
-    #[inline]
-    pub fn size(mut self, size: f32) -> Self {
-        self.size = size;
-        self
-    }
-
-    #[inline]
-    pub fn child<W: Widget>(self, child: W) -> MyWidget<W> {
-        MyWidget {
-            size: self.size,
-            child,
-        }
-    }
-}
-
-impl<W: Widget + 'static> Widget for MyWidget<W> {
-    fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        RawMyWidget {
-            size: self.size,
-            child: self.child.to_element(ctx),
-        }.notype()
-    }
-}
-```
-
 ## Validation Commands
 
 Run commands from the workspace root unless a nested guide says otherwise. Prefer using `cargo-nextest` when available.

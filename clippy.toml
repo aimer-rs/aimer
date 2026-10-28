@@ -1,1 +1,5 @@
 avoid-breaking-exported-api = false
+
+disallowed-macros = [
+    { path = "std::thread_local", reason = "use aimer_tls::thread_local!, which shares one OS TLS key (std aborts on Android once keys run out)" },
+]

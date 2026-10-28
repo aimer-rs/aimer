@@ -2,4 +2,8 @@
 name = "aimer_tls"
 version = "0.1.0"
 edition = "2024"
-description = "A thread_local! replacement that spends one OS TLS key per thread on Android"
+description = "A thread_local! replacement that spends one OS TLS key per thread on every target"
+
+[[bench]]
+name = "tls"
+harness = false
