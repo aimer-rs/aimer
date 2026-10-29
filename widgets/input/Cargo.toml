@@ -17,6 +17,7 @@ portable-guest = [
 aimer_tls.workspace = true
 aimer_anteros = { workspace = true, optional = true }
 aimer_widget.workspace = true
+aimer_accessibility.workspace = true
 aimer_attribute.workspace =  true
 aimer_events.workspace = true
 aimer_canvas.workspace = true

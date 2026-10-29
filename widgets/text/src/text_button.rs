@@ -490,6 +490,30 @@ impl EventElement for RawTextButton {
         EventTreeRole::IndexedTarget
     }
 
+    fn semantics(
+        &self,
+        id: aimer_accessibility::NodeId,
+    ) -> Option<aimer_accessibility::SemanticNode> {
+        use aimer_accessibility::{Role, SemanticAction, SemanticNode};
+
+        let node = SemanticNode::new(id, Role::Button)
+            .with_name(self.widget.label.as_str())
+            .enabled(!self.widget.disabled);
+        Some(if self.widget.disabled {
+            node
+        } else {
+            node.with_action(SemanticAction::Activate)
+        })
+    }
+
+    fn perform_semantic_action(&self, action: &aimer_accessibility::SemanticAction) -> bool {
+        if self.widget.disabled || *action != aimer_accessibility::SemanticAction::Activate {
+            return false;
+        }
+        self.press();
+        true
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event {
             ElementEvent::PointerMove(info) if info.source == PointerSource::Mouse => {
@@ -669,6 +693,50 @@ mod tests {
             last_tap: Cell::new(None),
             bounds: TextHitBounds::default(),
         }
+    }
+
+    #[test]
+    fn text_button_publishes_a_named_activatable_button() {
+        use aimer_accessibility::{NodeId, Role, SemanticAction};
+
+        let button = raw_button(TextButton::new("Open"));
+
+        let node = button.semantics(NodeId::new(7)).expect("a button describes itself");
+
+        assert_eq!(node.id(), NodeId::new(7));
+        assert_eq!(node.role(), Role::Button);
+        assert_eq!(node.name(), Some("Open"));
+        assert_eq!(node.actions(), [SemanticAction::Activate]);
+        assert!(node.state().enabled());
+    }
+
+    #[test]
+    fn disabled_text_button_publishes_no_action_and_refuses_activation() {
+        use aimer_accessibility::{NodeId, SemanticAction};
+
+        let button = raw_button(TextButton::new("Open").disabled(true));
+
+        let node = button.semantics(NodeId::new(7)).unwrap();
+
+        assert!(node.actions().is_empty());
+        assert!(!node.state().enabled());
+        assert!(!button.perform_semantic_action(&SemanticAction::Activate));
+    }
+
+    #[test]
+    fn activating_the_text_button_runs_its_press_callback() {
+        use aimer_accessibility::SemanticAction;
+
+        let pressed = Rc::new(Cell::new(0));
+        let counter = pressed.clone();
+        let button = raw_button(
+            TextButton::new("Open")
+                .on_press(VoidCallback::from(move || counter.set(counter.get() + 1))),
+        );
+
+        assert!(button.perform_semantic_action(&SemanticAction::Activate));
+        assert!(!button.perform_semantic_action(&SemanticAction::Dismiss));
+        assert_eq!(pressed.get(), 1);
     }
 
     #[test]

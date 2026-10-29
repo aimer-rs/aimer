@@ -28,6 +28,7 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
                 app.request_full_redraw();
             }
         }
+        AimerNativePlatformEvent::Accessibility => app.sync_accessibility(),
         AimerNativePlatformEvent::OpenLinks => {
             crate::link_inbox::deliver_posted_links();
             // Opening a link changes navigator state, which asks for its own frame.

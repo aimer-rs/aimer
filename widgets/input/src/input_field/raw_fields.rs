@@ -63,6 +63,7 @@ include!("raw_fields/dimensions.rs");
 include!("raw_fields/platform.rs");
 
 mod menu;
+mod semantics;
 
 include!("raw_fields/event.rs");
 include!("raw_fields/layout.rs");

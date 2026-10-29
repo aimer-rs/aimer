@@ -8,6 +8,12 @@ pub mod ios_appearance;
 pub mod ios_safe_area;
 #[cfg(target_os = "ios")]
 pub mod ios_screen;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod apple_accessibility;
+#[cfg(target_os = "ios")]
+pub mod ios_accessibility;
+#[cfg(target_os = "macos")]
+pub mod macos_accessibility;
 #[cfg(target_os = "macos")]
 pub mod macos_drag;
 #[cfg(all(target_os = "macos", any(feature = "wgpu", feature = "native")))]

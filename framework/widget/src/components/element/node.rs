@@ -663,6 +663,14 @@ impl<E: Element + 'static> EventElement for ElementNode<E> {
         self.element.traps_focus()
     }
 
+    fn semantics(&self, id: aimer_accessibility::NodeId) -> Option<aimer_accessibility::SemanticNode> {
+        self.element.semantics(id)
+    }
+
+    fn perform_semantic_action(&self, action: &aimer_accessibility::SemanticAction) -> bool {
+        self.element.perform_semantic_action(action)
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         let result = self.element.on_event(event);
         if result.needs_redraw() {
@@ -1057,6 +1065,14 @@ impl EventElement for AnyElement {
         self.as_ref().traps_focus()
     }
 
+    fn semantics(&self, id: aimer_accessibility::NodeId) -> Option<aimer_accessibility::SemanticNode> {
+        self.as_ref().semantics(id)
+    }
+
+    fn perform_semantic_action(&self, action: &aimer_accessibility::SemanticAction) -> bool {
+        self.as_ref().perform_semantic_action(action)
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         self.as_ref().on_event(event)
     }
@@ -1399,6 +1415,14 @@ impl EventElement for Box<dyn Element> {
 
     fn traps_focus(&self) -> bool {
         self.as_ref().traps_focus()
+    }
+
+    fn semantics(&self, id: aimer_accessibility::NodeId) -> Option<aimer_accessibility::SemanticNode> {
+        self.as_ref().semantics(id)
+    }
+
+    fn perform_semantic_action(&self, action: &aimer_accessibility::SemanticAction) -> bool {
+        self.as_ref().perform_semantic_action(action)
     }
 
     fn on_event(&self, event: &ElementEvent) -> EventResult {

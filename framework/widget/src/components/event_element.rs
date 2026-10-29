@@ -330,6 +330,30 @@ pub trait EventElement: VisitorElement {
         false
     }
 
+    /// Describes this element to assistive technology, or `None` when it has
+    /// nothing of its own to say.
+    ///
+    /// `id` is this element's identity as the accessibility tree must publish
+    /// it; build the node with it so actions can be routed back. An element that
+    /// returns `None` is transparent: its descendants are published under the
+    /// nearest ancestor that does describe itself. Return children-free nodes
+    /// here, since the collector attaches the descendants.
+    ///
+    /// Only called while an assistive technology is attached.
+    #[inline]
+    fn semantics(&self, _id: aimer_accessibility::NodeId) -> Option<aimer_accessibility::SemanticNode> {
+        None
+    }
+
+    /// Performs an action requested by assistive technology on this element.
+    ///
+    /// Returns whether the element handled it. Only actions the element listed
+    /// in [`Self::semantics`] are ever requested.
+    #[inline]
+    fn perform_semantic_action(&self, _action: &aimer_accessibility::SemanticAction) -> bool {
+        false
+    }
+
     /// Called when a pointer event hits this element.
     /// Return the independent effects produced while handling it.
     fn on_event(&self, _event: &ElementEvent) -> EventResult {

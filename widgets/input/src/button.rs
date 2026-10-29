@@ -9,13 +9,14 @@ use std::marker::PhantomData;
 use std::panic::Location;
 use std::rc::Rc;
 
+use aimer_accessibility::Role;
 use aimer_container::Container;
 use aimer_decoration::Decoration;
 use aimer_style::BoxDecoration;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
     AnyElement, AnyWidget, ChildBuilder, Key, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, Widget,
+    Semantics, StatefulWidget, Widget,
 };
 
 #[cfg(feature = "portable-guest")]
@@ -538,6 +539,22 @@ impl<W: Widget + 'static> State<Button<W>> for ButtonState<W> {
     }
 
     fn build(&self, _: &BuildContext) -> impl Widget {
+        // A button is composed of a gesture detector, a container and whatever
+        // the caller put inside, so none of those elements knows it is a button.
+        // This is where that is said, once, for every way the button can be
+        // dressed below.
+        let mut semantics = Semantics::new()
+            .role(Role::Button)
+            .enabled(!self.is_disabled);
+        if self.on_press.is_set() {
+            semantics = semantics.on_activate(self.on_press.clone());
+        }
+        semantics.box_child(self.build_content())
+    }
+}
+
+impl<W: Widget + 'static> ButtonState<W> {
+    fn build_content(&self) -> AnyWidget {
         if let Some(builder) = &self.visual_builder {
             let (child, feedback) = visual::Feedback::visual(self, builder.clone());
             if self.is_disabled {

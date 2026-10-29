@@ -73,6 +73,9 @@ pub enum AimerNativePlatformEvent {
     WindowFrameReady(winit::window::WindowId),
     /// Windows were queued to be opened or closed; the host drains the queue.
     WindowRequests,
+    /// Assistive technology asked for the semantic tree or requested an action
+    /// (see [`crate::accessibility`]).
+    Accessibility,
 }
 
 pub static EVENT_PROXY: OnceLock<EventLoopProxy<AimerNativePlatformEvent>> = OnceLock::new();

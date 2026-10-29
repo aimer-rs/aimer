@@ -4,7 +4,7 @@ use std::rc::Rc;
 use aimer_attribute::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_cupid::text_pipeline::text_layout::TextHorizontalAlign;
-use aimer_macro::{EventElement, Rebuildable};
+use aimer_macro::Rebuildable;
 use aimer_style::*;
 use aimer_utils::debug;
 use aimer_widget::base::BuildContext;
@@ -53,7 +53,7 @@ struct RawTextAuxCache {
 /// [`crate::Text`] is the usual constructor. Direct construction requires
 /// callers to provide a fresh [`LayoutCache`] and typeface slot in addition to
 /// the text, style, and alignment.
-#[derive(Rebuildable, EventElement)]
+#[derive(Rebuildable)]
 pub struct RawTextWidget {
     pub text: TextSource,
     pub text_style: TextStyle,
@@ -487,6 +487,19 @@ impl Drawable for RawTextWidget {
     }
 }
 
+impl EventElement for RawTextWidget {
+    fn semantics(
+        &self,
+        id: aimer_accessibility::NodeId,
+    ) -> Option<aimer_accessibility::SemanticNode> {
+        let text = self.text.as_str();
+        (!text.is_empty()).then(|| {
+            aimer_accessibility::SemanticNode::new(id, aimer_accessibility::Role::Text)
+                .with_name(text)
+        })
+    }
+}
+
 impl VisitorElement for RawTextWidget {
     fn debug_name(&self) -> &'static str {
         "RawTextWidget"
@@ -600,6 +613,46 @@ mod tests {
     use crate::text_source::TextSource;
 
     use super::{RawTextWidget, horizontal_alignment_offset, vertical_alignment_baseline};
+
+    #[test]
+    fn plain_text_is_published_as_a_named_text_node() {
+        use aimer_accessibility::{NodeId, Role};
+        use aimer_widget::EventElement;
+
+        let widget = RawTextWidget {
+            text: TextSource::Static("Hello"),
+            text_style: TextStyle::default(),
+            text_align: TextAlign::TopLeft,
+            line_height: LineHeight::Px(24.0),
+            text_indent: 0.0,
+            cache: LayoutCache::new(),
+            _typeface: Cell::new(None),
+        };
+
+        let node = widget.semantics(NodeId::new(3)).expect("text describes itself");
+
+        assert_eq!(node.role(), Role::Text);
+        assert_eq!(node.name(), Some("Hello"));
+        assert!(node.actions().is_empty());
+    }
+
+    #[test]
+    fn empty_text_is_not_published() {
+        use aimer_accessibility::NodeId;
+        use aimer_widget::EventElement;
+
+        let widget = RawTextWidget {
+            text: TextSource::Static(""),
+            text_style: TextStyle::default(),
+            text_align: TextAlign::TopLeft,
+            line_height: LineHeight::Px(24.0),
+            text_indent: 0.0,
+            cache: LayoutCache::new(),
+            _typeface: Cell::new(None),
+        };
+
+        assert!(widget.semantics(NodeId::new(3)).is_none());
+    }
 
     #[test]
     fn advanced_text_reuses_its_paragraph_storage() {

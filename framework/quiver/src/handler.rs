@@ -8,6 +8,7 @@ mod base_context_tests;
 pub mod census;
 pub mod event_handler;
 /// The file drag the window is currently under.
+mod accessibility;
 pub(crate) mod file_drag;
 mod native_input;
 mod platform_gesture;
@@ -371,6 +372,10 @@ pub(crate) struct WindowRenderTree {
     /// The same count by element type, so a gate can require each migrated
     /// widget to have been exercised rather than passing vacuously.
     interaction_adopted_by_type: std::collections::BTreeMap<&'static str, usize>,
+    /// The element-tree generation and render-tree geometry revision the
+    /// accessibility tree was last published at, so an unchanged frame is not
+    /// collected again.
+    accessibility_stamp: Option<(u64, u64)>,
     /// The last census that was reported, so only changes are logged.
     #[cfg(feature = "frame-stats")]
     last_census: Option<census::PaintSourceCensus>,
@@ -1398,6 +1403,7 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         aimer_widget::set_scroll_only_frame(false);
         aimer_widget::set_animation_only_frame(false);
         self.settle_pending_focus();
+        self.sync_accessibility();
         let budget = self.venus.idle_budget();
         self.venus.run_idle(&budget);
         self.venus.end_frame();
@@ -2185,6 +2191,7 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             .expect("the windowed loop always owns a native window");
         let window = &window;
         self.macos_windowing.window_created(window);
+        aimer_platform::accessibility::attach(window);
 
         // The runtime was built before this window existed, so it has been
         // budgeting frames against an assumed 60 Hz. Told the real rate here —

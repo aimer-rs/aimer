@@ -678,3 +678,4 @@ mod retained;
 mod custom;
 mod no_decor;
 mod gestures;
+mod semantics;

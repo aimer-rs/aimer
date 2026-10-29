@@ -12,6 +12,9 @@ pub use event::AimerNativePlatformEvent;
 pub use event::ANDROID_APP;
 pub use event::EVENT_PROXY;
 
+/// Handing the application's semantic tree to the platform's assistive
+/// technology, and taking its action requests back.
+pub mod accessibility;
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub mod browser_poll_context;

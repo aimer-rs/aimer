@@ -286,6 +286,16 @@ impl EventElement for RawTextFieldHost {
         self.field.on_event(event)
     }
 
+    // The host carries the element identity, so it is the host that publishes
+    // the embedded field.
+    fn semantics(&self, id: aimer_accessibility::NodeId) -> Option<aimer_accessibility::SemanticNode> {
+        Some(self.field.semantic_node(id))
+    }
+
+    fn perform_semantic_action(&self, action: &aimer_accessibility::SemanticAction) -> bool {
+        self.field.perform_semantic_action(action)
+    }
+
     fn on_event_with_context(
         &self,
         event: &ElementEvent,

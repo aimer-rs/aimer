@@ -10,6 +10,7 @@ wgpu = []
 
 [dependencies]
 aimer_tls.workspace = true
+aimer_accessibility.workspace = true
 aimer_attribute.workspace = true
 aimer_events.workspace = true
 aimer_utils.workspace = true

@@ -22,6 +22,8 @@ pub mod reconcile;
 mod reconciliation_plan;
 pub mod repaint_boundary;
 pub mod safe_area;
+pub mod semantics;
+mod semantic_annotation;
 #[doc(hidden)]
 pub mod testing;
 mod widget;
@@ -124,6 +126,7 @@ pub use crate::element_invalidation::{
     ElementInvalidationRevisions,
 };
 pub use crate::focus_scope::FocusScope;
+pub use crate::semantic_annotation::Semantics;
 pub use crate::focusable::{Focusable, FocusableState, RawFocusable};
 pub use crate::frame_work_stats::FrameWorkStats;
 pub use crate::frame_work_stats::{
