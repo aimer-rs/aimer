@@ -16,6 +16,7 @@ mod morph_transition;
 mod multi_decoration_box;
 mod navigation_transitions;
 mod scrolling;
+mod svg_asset_first_frame;
 mod selection;
 mod set_state_profile;
 

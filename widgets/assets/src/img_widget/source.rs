@@ -851,7 +851,7 @@ impl ImageSource {
 
     /// Read the raw bytes of a bundled asset from the platform's asset store.
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_asset_bytes(key: &str) -> Result<Vec<u8>, String> {
+    pub(crate) fn load_asset_bytes(key: &str) -> Result<Vec<u8>, String> {
         #[cfg(target_os = "android")]
         {
             use std::ffi::CString;
@@ -1033,7 +1033,7 @@ impl ImageSource {
 
     /// Fetch raw bytes from a URL using the browser's `fetch` API.
     #[cfg(target_arch = "wasm32")]
-    async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
+    pub(crate) async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
         use wasm_bindgen::JsCast;
 
         let web_window = web_sys::window().ok_or("No window found")?;

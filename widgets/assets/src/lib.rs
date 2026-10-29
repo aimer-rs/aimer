@@ -1,6 +1,7 @@
 pub mod img_widget;
 
 mod asset_manager;
+mod bundled;
 mod icon;
 
 pub use asset_manager::{
@@ -9,6 +10,7 @@ pub use asset_manager::{
     AssetMetadata, AssetOperation, AssetPolicy, AssetProgress, AssetRef, AssetRequest,
     AssetResolver, AssetSource, CacheStats, DecodeProfile, LoadHandle, LoadState,
 };
+pub use bundled::{AssetKind, BundledAsset, BundledFont, BundledFontError};
 pub use icon::{
     Icon, IconContext, IconDirection, IconError, IconSource, IconTheme, IconTint, ResolvedIcon,
 };

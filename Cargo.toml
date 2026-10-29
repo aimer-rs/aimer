@@ -242,6 +242,11 @@ members = [
     "graphic/render",
     # framework
     "framework/quiver",
+    "framework/element",
+    "framework/portable",
+    "framework/widget_core",
+    "framework/async_builder",
+    "framework/focusable",
     "framework/widget",
     "framework/animation",
     "framework/focus",
@@ -326,6 +331,11 @@ aimer_grid = { path = "layout/grid" }
 aimer_scroll = { path = "layout/scroll" }
 aimer_space = { path = "layout/space" }
 aimer_widget = { path = "framework/widget" }
+aimer_portable = { path = "framework/portable" }
+aimer_widget_core = { path = "framework/widget_core" }
+aimer_async_builder = { path = "framework/async_builder" }
+aimer_focusable = { path = "framework/focusable" }
+aimer_element = { path = "framework/element" }
 aimer_color = { path = "cores/color" }
 aimer_attribute = { path = "support/attribute" }
 aimer_utils = { path = "support/utils" }

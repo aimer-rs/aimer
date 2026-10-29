@@ -565,7 +565,7 @@ impl Widget for SvgAsset {
                 venus.spawn(async move {
                     let _ = updates.send(SvgLoadState::Loading);
                     let _ = updates.send(load_source(&source).await);
-                    window.request_redraw();
+                    announce_load_finished(&window);
                 });
             }
             None => {
@@ -583,7 +583,7 @@ impl Widget for SvgAsset {
             wasm_bindgen_futures::spawn_local(async move {
                 let _ = updates.send(SvgLoadState::Loading);
                 let _ = updates.send(load_source(&source).await);
-                window.request_redraw();
+                announce_load_finished(&window);
             });
         }
 
@@ -613,6 +613,19 @@ impl Widget for SvgAsset {
     fn debug_name(&self) -> &'static str {
         "SvgAsset"
     }
+}
+
+/// Tells the frame loop that an asset finished loading in the background.
+///
+/// The loaded document only becomes part of the tree when the asset's element is
+/// next visited, and nothing else will visit it: the frame a finished task wakes
+/// is a scoped one that walks only what changed, so an asset whose ancestors
+/// were laid out while it loaded stays empty until something else, such as a
+/// resize, invalidates layout. Advancing the tree generation is what makes that
+/// frame walk the whole tree and reach the asset.
+fn announce_load_finished(window: &aimer_widget::base::WindowHandle) {
+    aimer_widget::notify_element_tree_changed();
+    window.request_redraw();
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]

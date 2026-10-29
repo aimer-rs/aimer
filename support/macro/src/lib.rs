@@ -1,3 +1,4 @@
+mod assets;
 mod auto_trait_impl;
 mod capability;
 mod codegen;
@@ -74,6 +75,62 @@ pub fn capability(args: TokenStream, input: TokenStream) -> TokenStream {
     capability::expand(args.into(), input.into())
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
+}
+
+/// Fills a unit struct with typed consts for the assets and fonts declared in
+/// the crate's `Aimer.toml`.
+///
+/// Each entry of `[assets]` becomes an `::aimer::BundledAsset` and each entry of
+/// `[fonts]` an `::aimer::BundledFont`, named after its key in `UPPER_SNAKE_CASE`
+/// (`my-image` becomes `MY_IMAGE`). The manifest is read from
+/// `CARGO_MANIFEST_DIR` at compile time, so a path that no longer exists, or
+/// two keys that map to the same const, are compile errors rather than runtime
+/// failures. Editing `Aimer.toml` re-runs the macro.
+///
+/// The struct keeps its own attributes and visibility, and the consts share
+/// that visibility. It must be a unit struct without generics. To have the
+/// macro declare the struct as well, use [`declare_assets!`].
+///
+/// ```rust.ignore
+/// // Aimer.toml
+/// // [assets]
+/// // my_image = "assets/my_image.png"
+/// // [fonts]
+/// // inter = "assets/fonts/Inter-Regular.ttf"
+///
+/// #[aimer::assets]
+/// pub struct Assets;
+///
+/// let image = AssetImage::new(Assets::MY_IMAGE);
+/// let inter = Assets::INTER.register()?;
+/// ```
+#[proc_macro_attribute]
+pub fn assets(attr: TokenStream, item: TokenStream) -> TokenStream {
+    assets::expand_attribute_in(&manifest_dir(), attr.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Declares a struct of typed asset and font consts from the crate's
+/// `Aimer.toml`. The function-like form of [`macro@assets`].
+///
+/// The input is an optional visibility, an optional `struct` keyword and an
+/// optional name; the name defaults to `Assets` and the visibility to private.
+///
+/// ```rust.ignore
+/// aimer::declare_assets!(pub Assets);
+/// ```
+#[proc_macro]
+pub fn declare_assets(input: TokenStream) -> TokenStream {
+    assets::expand_in(&manifest_dir(), input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+fn manifest_dir() -> std::path::PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default()
 }
 
 /// Attribute macro that marks the Aimer application entry point.

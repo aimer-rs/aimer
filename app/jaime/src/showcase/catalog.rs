@@ -76,6 +76,7 @@ pub(super) enum ExampleId {
     Align,
     BorderOutline,
     AssetImage,
+    BundledAssets,
 }
 
 pub(super) const EXAMPLES: &[ExampleId] = &[
@@ -149,6 +150,7 @@ pub(super) const EXAMPLES: &[ExampleId] = &[
     ExampleId::Align,
     ExampleId::BorderOutline,
     ExampleId::AssetImage,
+    ExampleId::BundledAssets,
 ];
 
 pub(super) struct ExampleCategory {
@@ -246,6 +248,7 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
             ExampleId::CustomFont,
             ExampleId::ColorSync,
             ExampleId::AssetImage,
+            ExampleId::BundledAssets,
         ],
     },
     ExampleCategory {
@@ -338,6 +341,7 @@ impl ExampleId {
             Self::Align => "Align",
             Self::BorderOutline => "Border and outline",
             Self::AssetImage => "Asset image",
+            Self::BundledAssets => "Bundled assets",
         }
     }
 
@@ -395,7 +399,7 @@ impl ExampleId {
             Self::Overflow => "↔",
             Self::JustifyContent => "☷",
             Self::Svg | Self::AssetImage => "◇",
-            Self::CustomFont => "Aa",
+            Self::CustomFont | Self::BundledAssets => "Aa",
             Self::PanicRecovery => "!",
 
             Self::ColorSync => "●",
@@ -480,6 +484,7 @@ impl ExampleId {
             Self::Align => "align",
             Self::BorderOutline => "border-outline",
             Self::AssetImage => "asset-image",
+            Self::BundledAssets => "bundled-assets",
         }
     }
 
@@ -625,6 +630,9 @@ impl ExampleId {
             Self::Align => "Compare all nine positions for a child within its parent.",
             Self::BorderOutline => "Compare a border and an outline around a field.",
             Self::AssetImage => "Load and decorate a bundled raster asset.",
+            Self::BundledAssets => {
+                "Typed handles for Aimer.toml assets and fonts, with lazy font loading."
+            }
         }
     }
 }

@@ -5,50 +5,33 @@ edition = "2024"
 resolver = "3"
 
 [features]
-portable-guest = []
+portable-guest = [
+    "aimer_element/portable-guest",
+    "aimer_portable/portable-guest",
+    "aimer_widget_core/portable-guest",
+    "aimer_async_builder/portable-guest",
+    "aimer_focusable/portable-guest",
+]
 # Keep the allocation-free draw traversal counter available to release
 # acceptance probes without paying for it in ordinary release applications.
-frame-stats = []
-
+frame-stats = ["aimer_element/frame-stats", "aimer_widget_core/frame-stats"]
 
 [dependencies]
-aimer_tls.workspace = true
-aimer_accessibility.workspace = true
-aimer_anteros = { path = "../../host/anteros", default-features = false }
-aimer_color.workspace = true
-aimer_attribute.workspace = true
-aimer_macro.workspace = true
-aimer_rubick.workspace = true
-aimer_utils.workspace = true
-aimer_venus.workspace = true
-aimer_events.workspace = true
-aimer_focus.workspace = true
-aimer_canvas.workspace = true
-aimer_cupid.workspace = true
-#####################
-winit.workspace = true
-smallvec.workspace = true
-hashbrown.workspace = true
+aimer_element.workspace = true
+aimer_portable.workspace = true
+aimer_widget_core.workspace = true
+aimer_async_builder.workspace = true
+aimer_focusable.workspace = true
 
 [dev-dependencies]
-aimer_cupid.workspace = true
+aimer_venus.workspace = true
+aimer_attribute.workspace = true
+aimer_utils.workspace = true
+aimer_tls.workspace = true
+aimer_canvas.workspace = true
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-objc.workspace = true
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = {workspace = true, features = ["rt-multi-thread", "macros"]}
-colored.workspace = true
-
-[target.'cfg(target_os = "ios")'.dependencies]
-objc2.workspace = true
-objc2-ui-kit = { workspace = true, features = ["UIView"] }
-
-[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "freebsd", target_os = "openbsd", target_os = "illumos"))'.dependencies]
-linkme.workspace = true
-
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys.workspace = true
-wasm-bindgen.workspace = true
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }

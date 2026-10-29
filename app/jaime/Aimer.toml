@@ -5,15 +5,22 @@ group = "com.example.jaime"
 
 
 [assets]
-files = [
-    "assets/JAIME.md",
-    "assets/image.png",
-    "assets/my_image.png",
-    "assets/polished_tooling.png",
-    "assets/web_screenshot.png",
-    "assets/ios_screenshot.png",
-    "assets/macos_screenshot.png",
-    "assets/android_screenshot.png",
-    "assets/github-svgrepo-com.png",
-    "assets/cat-svgrepo-com.svg"
-]
+
+jaime_md = "assets/JAIME.md"
+image = "assets/image.png"
+my_image = "assets/my_image.png"
+polished_tooling = "assets/polished_tooling.png"
+web_screenshot = "assets/web_screenshot.png"
+ios_screenshot = "assets/ios_screenshot.png"
+macos_screenshot = "assets/macos_screenshot.png"
+android_screenshot = "assets/android_screenshot.png"
+github_svgrepo_com = "assets/github-svgrepo-com.png"
+cat_svgrepo_com = "assets/cat-svgrepo-com.svg"
+
+
+[font]
+# no_font = "moewmoew"
+
+[fonts]
+
+jetbrains_mono = "assets/JetBrainsMono-Regular.ttf"

@@ -1,0 +1,16 @@
+[package]
+name = "aimer_portable"
+version = "0.1.0"
+edition = "2024"
+resolver = "3"
+
+[features]
+portable-guest = []
+
+[dependencies]
+aimer_anteros = { path = "../../host/anteros", default-features = false }
+aimer_attribute.workspace = true
+aimer_color.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "freebsd", target_os = "openbsd", target_os = "illumos"))'.dependencies]
+linkme.workspace = true

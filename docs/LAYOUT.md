@@ -11,7 +11,8 @@ aimer/
 ├─ graphic/     cupid  canvas render
 │               cupid_svg  cupid_font  cupid_gpu             # split out of cupid
 │               cupid_wgpu  cupid_metal  cupid_vulkan  cupid_opengl  cupid_dx12  cupid_webgl  cupid_webgpu
-├─ framework/   widget  animation  decoration  provider  style  focus  persist quiver
+├─ framework/   widget (facade)  element  portable  widget_core  async_builder  focusable
+│               animation  decoration  provider  style  focus  persist quiver
 ├─ layout/      container  flex  grid  scroll  space
 ├─ overlay/     modal  ctxmenu
 ├─ widgets/     svg  lucide  assets  text  input  markdown

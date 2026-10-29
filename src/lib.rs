@@ -22,6 +22,8 @@ pub use aimer_ctxmenu::{
     ContextMenuStyle,
 };
 
+pub use aimer_grid as grid;
+
 #[cfg(feature = "cupid")]
 pub use aimer_cupid as cupid;
 pub use aimer_data_view as data_view;
@@ -48,7 +50,7 @@ pub use aimer_i18n as i18n;
 pub use aimer_indicator as indicator;
 pub use aimer_input as input;
 pub use aimer_macro::{
-    PortableValue, Router, StatefulWidget, StatelessWidget, Theme, capability, key, main,
+    PortableValue, Router, StatefulWidget, StatelessWidget, Theme, assets, capability, declare_assets, key, main,
 };
 #[cfg(feature = "markdown")]
 pub use aimer_markdown::{
@@ -161,8 +163,8 @@ mod public_api_tests {
 // Macro re-export
 pub mod macros {
     pub use aimer_macro::{
-        PortableValue, Router, StatefulWidget, StatelessWidget, Theme, capability, key, main,
-        widget,
+        PortableValue, Router, StatefulWidget, StatelessWidget, Theme, assets, capability, declare_assets,
+        key, main, widget,
     };
 }
 

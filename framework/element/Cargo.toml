@@ -1,0 +1,40 @@
+[package]
+name = "aimer_element"
+version = "0.1.0"
+edition = "2024"
+resolver = "3"
+
+[features]
+portable-guest = []
+# Keep the allocation-free draw traversal counter available to release
+# acceptance probes without paying for it in ordinary release applications.
+frame-stats = []
+
+[dependencies]
+aimer_tls.workspace = true
+aimer_accessibility.workspace = true
+aimer_color.workspace = true
+aimer_attribute.workspace = true
+aimer_rubick.workspace = true
+aimer_utils.workspace = true
+aimer_events.workspace = true
+aimer_focus.workspace = true
+aimer_canvas.workspace = true
+aimer_cupid.workspace = true
+#####################
+winit.workspace = true
+smallvec.workspace = true
+hashbrown.workspace = true
+
+[dev-dependencies]
+aimer_macro.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = {workspace = true, features = ["rt-multi-thread", "macros"]}
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2.workspace = true
+objc2-ui-kit = { workspace = true, features = ["UIView"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }

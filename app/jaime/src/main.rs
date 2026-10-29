@@ -1,5 +1,9 @@
 #![allow(dead_code, clippy::main_recursion)]
 
+// Typed handles for every entry under [assets] and [fonts] in Aimer.toml.
+#[aimer::assets]
+pub(crate) struct Assets;
+
 mod accessibility_example;
 mod align_example;
 mod animatable_example;
@@ -8,6 +12,7 @@ mod animated_layout_example;
 pub mod animated_text_field_example;
 mod animated_theme;
 mod assets_media_example;
+mod bundled_assets_example;
 mod async_builder;
 mod backdrop_filter_example;
 mod collapsible_list_example;
@@ -321,7 +326,7 @@ fn test_image() {
                     )
                     .padding(LayoutSpacing::all(Spacing::Px(10)))
                     .child(
-                        AssetImage::new("assets/my_image.png")
+                        AssetImage::new(Assets::MY_IMAGE)
                             .fit(BoxFit::FitWidth)
                             .scale(1.1_f32),
                     ),

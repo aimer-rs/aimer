@@ -1,0 +1,23 @@
+[package]
+name = "aimer_async_builder"
+version = "0.1.0"
+edition = "2024"
+resolver = "3"
+
+[features]
+portable-guest = ["aimer_widget_core/portable-guest"]
+
+[dependencies]
+aimer_widget_core.workspace = true
+aimer_anteros = { path = "../../host/anteros", default-features = false }
+aimer_attribute.workspace = true
+aimer_macro.workspace = true
+aimer_venus.workspace = true
+aimer_events.workspace = true
+aimer_canvas.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = {workspace = true, features = ["rt-multi-thread", "macros"]}
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }

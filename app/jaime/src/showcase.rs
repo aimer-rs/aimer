@@ -8,6 +8,7 @@ use crate::animated_theme::AnimatedThemeExample;
 use crate::assets_media_example::assets_media_example;
 use crate::async_builder::async_builder_example;
 use crate::backdrop_filter_example::backdrop_filter_example;
+use crate::bundled_assets_example::bundled_assets_example;
 use crate::collapsible_list_example::collapsible_list_example;
 use crate::color_sync::ColorSync;
 use crate::container_transform_example::container_transform_example;
@@ -486,6 +487,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::Align => align_example(app_theme).boxed(),
         ExampleId::BorderOutline => border_outline_example(app_theme),
         ExampleId::AssetImage => asset_image_example(app_theme),
+        ExampleId::BundledAssets => bundled_assets_example().boxed(),
     }
 }
 
