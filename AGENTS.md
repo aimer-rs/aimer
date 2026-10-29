@@ -90,6 +90,8 @@ Additional test rules:
 - **NEVER** run benchmarks with `target-cpu=native` or `--release` or any other `RUSTFLAGS`
 - Ensure benchmark tests are independent. If the tests are dependent due to a feature (e.g. caching), ensure the feature is disabled
 - **ALWAYS** use `criterion` directly for running benchmarks if available
+- **ALWAYS** build the benchmark first and then run it instead of rebuild them everytimes.
+
 
 First, **without making any futher changes**, run the CPU Rust benchmarks to establish a True Performance Baseline.
 

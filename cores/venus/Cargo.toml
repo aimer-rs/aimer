@@ -22,7 +22,6 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
 # `std::time::Instant` panics in the browser.
 [dependencies]
 aimer_tls.workspace = true
-futures-util.workspace = true
 web-time.workspace = true
 
 # The integration spec times a microtask drain, and a test binary cannot reach

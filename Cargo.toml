@@ -387,7 +387,6 @@ web-time = "1.1.0"
 hashbrown = "0.17.1"
 crossbeam = "0.8.4"
 tokio = "1.52.3"
-futures-util = "0.3.31"
 once_cell = "1.21.4"
 smallvec = { version = "1.13.2", features = ["const_new"] }
 url = "2.5.8"

@@ -16,6 +16,9 @@ mod scheduler;
 mod task;
 mod timeout;
 mod venus;
+// Only the offload pool hands wakers across threads.
+#[cfg(not(target_arch = "wasm32"))]
+mod waker_slot;
 mod yielding;
 
 pub use crate::budget::{

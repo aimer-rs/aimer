@@ -1,7 +1,7 @@
 use std::fmt;
+use std::future::poll_fn;
 use std::pin::Pin;
-
-use futures_util::future::{Either, select};
+use std::task::Poll;
 
 /// Why a time-limited operation did not produce a result.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,12 +27,21 @@ pub(crate) async fn run<F: Future>(
     future: F,
     timer: Option<Pin<Box<dyn Future<Output = ()>>>>,
 ) -> Result<F::Output, TimeoutError> {
-    let timer = timer.ok_or(TimeoutError::TimerUnavailable)?;
-    let future = std::pin::pin!(future);
-    match select(future, timer).await {
-        Either::Left((value, _timer)) => Ok(value),
-        Either::Right(((), _future)) => Err(TimeoutError::Elapsed),
-    }
+    let mut timer = timer.ok_or(TimeoutError::TimerUnavailable)?;
+    let mut future = std::pin::pin!(future);
+    // The future is polled first, so one that is already ready wins over a
+    // timer that has already expired. Both are dropped when this function
+    // returns, before the caller observes the result.
+    poll_fn(|cx| {
+        if let Poll::Ready(value) = future.as_mut().poll(cx) {
+            return Poll::Ready(Ok(value));
+        }
+        match timer.as_mut().poll(cx) {
+            Poll::Ready(()) => Poll::Ready(Err(TimeoutError::Elapsed)),
+            Poll::Pending => Poll::Pending,
+        }
+    })
+    .await
 }
 
 #[cfg(test)]

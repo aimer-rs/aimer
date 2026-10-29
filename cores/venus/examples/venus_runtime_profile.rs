@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use aimer_venus::{LocalScheduler, PollContext, Venus, yield_now};
 
@@ -25,6 +25,10 @@ const EMPTY_FRAMES_PER_ROUND: usize = 20_000;
 const READY_TASKS: usize = 10_000;
 const WAKE_COUNT: usize = 10_000;
 const SCOPE_COUNT: usize = 20_000;
+const ROUND_TRIPS: usize = 2_000;
+const OFFLOAD_BURST: usize = 2_000;
+// A lost wake would park the driver forever; the timeout turns it into a failure.
+const PARK_LIMIT: Duration = Duration::from_secs(30);
 
 struct ParkOnce {
     slot: Rc<RefCell<Option<Waker>>>,
@@ -208,6 +212,67 @@ fn scope_drop_batch() -> f64 {
     start.elapsed().as_secs_f64() * 1e9 / SCOPE_COUNT as f64
 }
 
+/// A runtime whose wake notifier unparks the calling (UI) thread.
+fn offload_runtime() -> Rc<Venus> {
+    let venus = Venus::new();
+    let ui = thread::current();
+    venus.set_notifier(move || ui.unpark());
+    venus
+}
+
+/// Runs microtasks until every task finishes, parking while workers are busy.
+fn drive_until_idle(venus: &Venus) {
+    while venus.task_count() > 0 {
+        venus.run_microtasks();
+        if venus.task_count() > 0 && !venus.has_ready_work() {
+            let parked = Instant::now();
+            thread::park_timeout(PARK_LIMIT);
+            assert!(parked.elapsed() < PARK_LIMIT, "an offload wake was lost");
+        }
+    }
+}
+
+/// One offload at a time: spawn, hop to a worker, wake, resume.
+fn offload_round_trip_batch(venus: &Rc<Venus>) -> f64 {
+    let total = Rc::new(Cell::new(0usize));
+    let sum = total.clone();
+    let runtime = venus.clone();
+    venus.spawn(async move {
+        for value in 0..ROUND_TRIPS {
+            sum.set(sum.get() + runtime.spawn_blocking(move || value).await);
+        }
+    });
+
+    let start = Instant::now();
+    drive_until_idle(venus);
+    let elapsed = start.elapsed();
+
+    assert_eq!(total.get(), ROUND_TRIPS * (ROUND_TRIPS - 1) / 2);
+    elapsed.as_secs_f64() * 1e9 / ROUND_TRIPS as f64
+}
+
+/// Many tasks each awaiting an offload, so workers and wakes overlap.
+fn offload_burst_batch(venus: &Rc<Venus>) -> f64 {
+    let total = Rc::new(Cell::new(0usize));
+    for value in 0..OFFLOAD_BURST {
+        let sum = total.clone();
+        let runtime = venus.clone();
+        venus.spawn(async move {
+            // Await first: `sum.get()` read before the await would be stale once
+            // other overlapping tasks have added their values.
+            let value = runtime.spawn_blocking(move || value).await;
+            sum.set(sum.get() + value);
+        });
+    }
+
+    let start = Instant::now();
+    drive_until_idle(venus);
+    let elapsed = start.elapsed();
+
+    assert_eq!(total.get(), OFFLOAD_BURST * (OFFLOAD_BURST - 1) / 2);
+    elapsed.as_secs_f64() * 1e9 / OFFLOAD_BURST as f64
+}
+
 fn main() {
     let profile = if cfg!(debug_assertions) {
         "debug"
@@ -236,4 +301,12 @@ fn main() {
 
     let mut samples = collect_samples(scope_drop_batch);
     report("empty scope drop", &mut samples, "ns");
+
+    // The runtime, and so its worker pool, is built once outside the timings.
+    let venus = offload_runtime();
+    let mut samples = collect_samples(|| offload_round_trip_batch(&venus));
+    report("offload round trip (sequential)", &mut samples, "ns");
+
+    let mut samples = collect_samples(|| offload_burst_batch(&venus));
+    report("offload burst (overlapping)", &mut samples, "ns");
 }

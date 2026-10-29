@@ -232,7 +232,9 @@ impl LocalScheduler {
     /// An event loop reads this to decide whether it may wait for OS events or
     /// has to come round again immediately.
     pub fn has_ready_work(&self) -> bool {
-        if self.wakes.has_pending() {
+        // This is the check an event loop makes before it sleeps, so it also
+        // re-arms the cross-thread notifier; see `has_pending_before_sleep`.
+        if self.wakes.has_pending_before_sleep() {
             return true;
         }
         let inner = self.inner.borrow();

@@ -1,6 +1,5 @@
 use std::cell::{Cell, UnsafeCell};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Wake, Waker};
 use std::thread::{self, ThreadId};
@@ -54,7 +53,7 @@ unsafe impl Sync for UiWakes {}
 ///   browser promise can complete on the UI thread while the web event loop is
 ///   parked in `ControlFlow::Wait`.
 /// - **Cross-thread wakes** — a worker finishing an offload — enter the
-///   standard channel and nudge the parked event loop through the notifier.
+///   shared buffer and nudge the parked event loop through the notifier.
 ///
 /// The queue is read by the scheduler at the start of every phase, and the two
 /// flags mean the overwhelmingly common "nothing was woken" answer costs one
@@ -63,12 +62,14 @@ pub(crate) struct WakeQueue {
     /// Wakes raised on the UI thread itself; unsynchronized by design.
     local: UiWakes,
     /// Wakes raised on any other thread.
-    shared: Sender<TaskId>,
-    /// Only the owner thread drains this receiver; the mutex makes the queue
-    /// safe to share through the wakers held by other threads.
-    shared_receiver: Mutex<Receiver<TaskId>>,
-    /// Whether the shared channel holds anything, so draining an empty queue
-    /// never takes its receiver lock.
+    ///
+    /// A plain vector rather than a channel: a worker appends in a couple of
+    /// instructions, and the owner takes the whole batch by swapping buffers,
+    /// so a burst of completions costs one short lock per wake and no
+    /// allocation once the buffers have grown.
+    shared: Mutex<Vec<TaskId>>,
+    /// Whether `shared` holds anything, so draining an empty queue never takes
+    /// its lock.
     has_shared: AtomicBool,
     /// Whether a wake has already notified the event loop and has not yet been
     /// observed by the owner thread.
@@ -90,14 +91,12 @@ impl WakeQueue {
     /// cannot also be asleep; browser callbacks are the exception because the
     /// web loop can be parked while JavaScript resumes a future.
     pub(crate) fn new() -> Arc<Self> {
-        let (shared, shared_receiver) = mpsc::channel();
         Arc::new(Self {
             local: UiWakes {
                 pending: UnsafeCell::new(Vec::new()),
                 has_pending: Cell::new(false),
             },
-            shared,
-            shared_receiver: Mutex::new(shared_receiver),
+            shared: Mutex::new(Vec::new()),
             has_shared: AtomicBool::new(false),
             notifier_pending: AtomicBool::new(false),
             notifier: OnceLock::new(),
@@ -124,13 +123,22 @@ impl WakeQueue {
             unsafe { (*self.local.pending.get()).push(id) };
             self.local.has_pending.set(true);
         } else {
-            let _ = self.shared.send(id);
-            self.has_shared.store(true, Ordering::Release);
+            // The critical section cannot panic, so a poisoned lock holds a
+            // valid vector and is used as is.
+            self.shared
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(id);
+            // SeqCst, not Release: this store is followed by the `notifier_pending`
+            // swap below, and the owner does the mirror image (clear the flag,
+            // then load `has_shared`). Release/Acquire permits both sides to miss
+            // each other's write, which would park the loop with a wake queued.
+            self.has_shared.store(true, Ordering::SeqCst);
         }
 
         if should_notify_notifier(cfg!(target_arch = "wasm32"), same_thread) {
             if let Some(notifier) = self.notifier.get()
-                && !self.notifier_pending.swap(true, Ordering::AcqRel)
+                && !self.notifier_pending.swap(true, Ordering::SeqCst)
             {
                 notifier();
             }
@@ -154,20 +162,30 @@ impl WakeQueue {
         }
 
         while self.has_shared.swap(false, Ordering::AcqRel) {
-            let receiver = self
-                .shared_receiver
+            let mut shared = self
+                .shared
                 .lock()
-                .expect("the wake receiver must not be poisoned");
-            while let Ok(id) = receiver.try_recv() {
-                out.push(id);
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if out.is_empty() {
+                // Hand over the batch and keep `out`'s spare capacity for the
+                // next wake.
+                std::mem::swap(out, &mut *shared);
+            } else {
+                out.append(&mut shared);
             }
         }
 
         // A worker that races with the final queue scan may see this flag set
         // and skip its notifier. The owner is still awake here and will check
-        // `has_ready_work` before sleeping; clearing the flag now lets a later
+        // `has_pending` before sleeping; clearing the flag now lets a later
         // wake notify the loop again if the queue is empty at that check.
-        self.notifier_pending.store(false, Ordering::Release);
+        //
+        // SeqCst pairs with the `has_shared` store and `notifier_pending` swap in
+        // `wake`, and with the `has_shared` load in `has_pending`. In the single
+        // total order either the worker's swap precedes this store, so the
+        // worker's `has_shared` write is visible to the load that follows, or
+        // this store precedes the swap, so the worker sees `false` and notifies.
+        self.notifier_pending.store(false, Ordering::SeqCst);
     }
 
     /// Whether anything has been woken since the last drain.
@@ -177,7 +195,32 @@ impl WakeQueue {
     /// thread — which the scheduler, being `!Send`, guarantees.
     pub(crate) fn has_pending(&self) -> bool {
         debug_assert_eq!(thread::current().id(), self.owner);
-        self.local.has_pending.get() || self.has_shared.load(Ordering::Acquire)
+        // SeqCst: the sleep decision must be ordered after `drain_into` clearing
+        // `notifier_pending`; see the pairing comment there.
+        self.local.has_pending.get() || self.has_shared.load(Ordering::SeqCst)
+    }
+
+    /// The check an event loop makes immediately before it sleeps.
+    ///
+    /// Like [`has_pending`](Self::has_pending), but it also re-arms the
+    /// notifier. A worker whose wake the owner has already drained can set
+    /// `notifier_pending` after [`drain_into`](Self::drain_into) cleared it, and
+    /// the flag then outlives the wake that set it: later workers see it set,
+    /// skip the notifier, and the loop sleeps through their wakes. Clearing the
+    /// flag here, then looking at the queue again, closes that window: a worker
+    /// that still sees the flag set has published its wake before the clear, so
+    /// the load below finds it, and any later worker sees the flag clear and
+    /// notifies.
+    pub(crate) fn has_pending_before_sleep(&self) -> bool {
+        if self.has_pending() {
+            return true;
+        }
+        // Only pay for the store when there is a stale flag to clear.
+        if self.notifier_pending.load(Ordering::SeqCst) {
+            self.notifier_pending.store(false, Ordering::SeqCst);
+            return self.has_shared.load(Ordering::SeqCst);
+        }
+        false
     }
 }
 
@@ -332,5 +375,78 @@ mod tests {
             .expect("the worker to finish");
 
         assert_eq!(pings.load(Ordering::SeqCst), 2);
+    }
+
+    // The flag a worker leaves behind after the owner has already drained its
+    // wake must not silence the next worker while the owner sleeps.
+    #[test]
+    fn a_stale_notifier_flag_is_cleared_before_the_owner_sleeps() {
+        use std::sync::atomic::AtomicUsize;
+
+        let queue = WakeQueue::new();
+        let pings = Arc::new(AtomicUsize::new(0));
+        let counted = pings.clone();
+        queue.set_notifier(Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        // The interleaving: a worker published a wake, the owner drained it and
+        // cleared the flag, then the worker's swap set the flag again.
+        let mut drained = Vec::new();
+        queue.drain_into(&mut drained);
+        queue.notifier_pending.store(true, Ordering::SeqCst);
+        assert!(!queue.has_pending());
+
+        assert!(!queue.has_pending_before_sleep());
+
+        let from_worker = Arc::clone(&queue);
+        thread::spawn(move || from_worker.wake(id(0)))
+            .join()
+            .expect("the worker to finish");
+        assert_eq!(pings.load(Ordering::SeqCst), 1, "the sleeping owner must be nudged");
+    }
+
+    // The owner's sleep protocol: drain, check `has_pending_before_sleep`, park. A worker
+    // that skipped its notifier while the owner saw an empty queue would leave
+    // the owner parked with a wake queued, which the bounded park turns into a
+    // failure. This is a stress test on real threads, not a proof.
+    #[test]
+    fn a_worker_wake_is_never_lost_between_the_drain_and_the_park() {
+        use std::sync::atomic::AtomicUsize;
+        use std::time::{Duration, Instant};
+
+        const ROUNDS: usize = 20_000;
+        const PARK_LIMIT: Duration = Duration::from_secs(30);
+
+        let queue = WakeQueue::new();
+        let owner = thread::current();
+        queue.set_notifier(Box::new(move || owner.unpark()));
+        let received = Arc::new(AtomicUsize::new(0));
+
+        let from_worker = Arc::clone(&queue);
+        let acknowledged = Arc::clone(&received);
+        let worker = thread::spawn(move || {
+            for round in 0..ROUNDS {
+                from_worker.wake(id(0));
+                // One wake per round, so each one races a fresh drain.
+                while acknowledged.load(Ordering::SeqCst) <= round {
+                    std::hint::spin_loop();
+                }
+            }
+        });
+
+        let mut drained = Vec::new();
+        while received.load(Ordering::SeqCst) < ROUNDS {
+            queue.drain_into(&mut drained);
+            if !drained.is_empty() {
+                received.fetch_add(drained.len(), Ordering::SeqCst);
+                drained.clear();
+            } else if !queue.has_pending_before_sleep() {
+                let parked = Instant::now();
+                thread::park_timeout(PARK_LIMIT);
+                assert!(parked.elapsed() < PARK_LIMIT, "a worker wake was lost");
+            }
+        }
+        worker.join().expect("the worker to finish");
     }
 }
