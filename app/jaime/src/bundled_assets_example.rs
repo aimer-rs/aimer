@@ -3,7 +3,7 @@
 
 use aimer::style::{BoxFit, LayoutSpacing, Spacing, TextStyle, ThemeData};
 use aimer::{
-    AimerApp, AnyWidget, AssetImage, BundledAsset, Column, Container, Dimension,
+    AimerApp, AnyWidget, AssetImage, BundleAsset, Column, Container, Dimension,
     FontFamily, FontWeight, Row, SizedBox, SvgAsset, Text, Widget,
 };
 
@@ -12,36 +12,34 @@ use crate::{Assets, theme};
 /// One line of the "what the macro generated" table.
 struct AssetRow {
     constant: &'static str,
-    handle: BundledAsset,
+    /// The `Bundle*` type the macro chose for the entry.
+    bundle: &'static str,
+    path: &'static str,
 }
 
-/// Rows describing the `[assets]` handles used by the page. A font is listed
-/// separately because it is a `BundledFont`, not a `BundledAsset`.
-fn asset_rows() -> [AssetRow; 3] {
+/// Describes `asset` for the table. Generic over [`BundleAsset`], which is what
+/// lets one helper take every kind of bundled file.
+fn row(constant: &'static str, bundle: &'static str, asset: impl BundleAsset) -> AssetRow {
+    AssetRow {
+        constant,
+        bundle,
+        path: asset.path(),
+    }
+}
+
+/// Rows describing the handles used by the page, one per kind of file.
+fn asset_rows() -> [AssetRow; 4] {
     [
-        AssetRow {
-            constant: "Assets::MY_IMAGE",
-            handle: Assets::MY_IMAGE,
-        },
-        AssetRow {
-            constant: "Assets::CAT_SVGREPO_COM",
-            handle: Assets::CAT_SVGREPO_COM,
-        },
-        AssetRow {
-            constant: "Assets::JAIME_MD",
-            handle: Assets::JAIME_MD,
-        },
+        row("Assets::MY_IMAGE", "BundleImage", Assets::MY_IMAGE),
+        row("Assets::CAT_SVGREPO_COM", "BundleSvg", Assets::CAT_SVGREPO_COM),
+        row("Assets::JAIME_MD", "BundleDocuments", Assets::JAIME_MD),
+        row("Assets::JETBRAINS_MONO", "BundleFont", Assets::JETBRAINS_MONO),
     ]
 }
 
-/// The text describing a handle: its const, manifest path, and detected kind.
+/// The text describing a handle: its const, manifest path, and generated type.
 fn describe(row: &AssetRow) -> String {
-    format!(
-        "{}  →  {}  ({:?})",
-        row.constant,
-        row.handle.path(),
-        row.handle.kind()
-    )
+    format!("{}  →  {}  ({})", row.constant, row.path, row.bundle)
 }
 
 fn heading(text: &'static str, app_theme: &ThemeData) -> AnyWidget {
@@ -73,7 +71,7 @@ pub fn bundled_assets_example() -> impl Widget {
             Text::new(describe(&row))
                 .text_style(
                     TextStyle::new()
-                        .font_family(Assets::JETBRAINS_MONO.into())
+                        .font_family(Assets::JETBRAINS_MONO)
                         .font_size(13)
                         .color(app_theme.primary_color),
                 )
@@ -101,14 +99,14 @@ pub fn bundled_assets_example() -> impl Widget {
         SizedBox::new().height(24).boxed(),
         heading("Font, loaded on first read", &app_theme),
         SizedBox::new().height(6).boxed(),
-        Text::new("Converting Assets::JETBRAINS_MONO into a FontFamily reads and registers it once; if that fails the text falls back to sans-serif.")
+        Text::new("Passing Assets::JETBRAINS_MONO to TextStyle::font_family reads and registers it once; if that fails the text falls back to sans-serif.")
             .text_style(TextStyle::new().font_size(14).color(muted))
             .boxed(),
         SizedBox::new().height(10).boxed(),
         Text::new("The quick brown fox jumps over the lazy dog.\n0123456789  {}[]() =>")
             .text_style(
                 TextStyle::new()
-                    .font_family(FontFamily::from(Assets::JETBRAINS_MONO))
+                    .font_family(Assets::JETBRAINS_MONO)
                     .font_size(22)
                     .color(app_theme.on_background_color),
             )
@@ -127,31 +125,36 @@ pub fn start_bundled_assets_example() {
 
 #[cfg(test)]
 mod tests {
-    use aimer::AssetKind;
+    use aimer::{BundleDocuments, BundleFont, BundleImage, BundleSvg};
 
     use super::*;
 
+    /// Each entry of `Aimer.toml` became the `Bundle*` type of its extension. The
+    /// annotations are the test: they do not compile for any other type.
     #[test]
-    fn the_macro_generated_a_handle_for_every_manifest_entry_the_page_uses() {
-        assert_eq!(Assets::MY_IMAGE.path(), "assets/my_image.png");
-        assert_eq!(Assets::MY_IMAGE.kind(), AssetKind::Image);
-        assert_eq!(Assets::CAT_SVGREPO_COM.kind(), AssetKind::Svg);
-        assert_eq!(Assets::JAIME_MD.kind(), AssetKind::Other);
-        assert_eq!(
-            Assets::JETBRAINS_MONO.path(),
-            "assets/JetBrainsMono-Regular.ttf"
-        );
+    fn the_macro_generated_the_bundle_type_of_each_file() {
+        let image: BundleImage = Assets::MY_IMAGE;
+        let svg: BundleSvg = Assets::CAT_SVGREPO_COM;
+        let document: BundleDocuments = Assets::JAIME_MD;
+        let font: BundleFont = Assets::JETBRAINS_MONO;
+
+        assert_eq!(image.path(), "assets/my_image.png");
+        assert_eq!(svg.path(), "assets/cat-svgrepo-com.svg");
+        assert_eq!(document.path(), "assets/JAIME.md");
+        assert_eq!(font.path(), "assets/JetBrainsMono-Regular.ttf");
     }
 
     #[test]
-    fn rows_describe_const_path_and_kind() {
+    fn rows_describe_const_path_and_generated_type() {
         let lines: Vec<String> = asset_rows().iter().map(describe).collect();
 
         assert_eq!(
             lines[0],
-            "Assets::MY_IMAGE  →  assets/my_image.png  (Image)"
+            "Assets::MY_IMAGE  →  assets/my_image.png  (BundleImage)"
         );
-        assert!(lines[1].ends_with("(Svg)"), "{}", lines[1]);
+        assert!(lines[1].ends_with("(BundleSvg)"), "{}", lines[1]);
+        assert!(lines[2].ends_with("(BundleDocuments)"), "{}", lines[2]);
+        assert!(lines[3].ends_with("(BundleFont)"), "{}", lines[3]);
     }
 
     #[test]

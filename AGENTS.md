@@ -25,7 +25,7 @@ When requirements compete, use this order:
 
 1. Correctness and safety.
 2. The user's explicit request and acceptance criteria.
-3. Performance on measured or clearly hot GUI paths, Strongly focus on Debug mode optimization, for Release mode it is
+3. Performance on measured or clearly hot GUI paths, Strongly focus on Debug mode optimization, do not mention any Release mode it is
    just optimized by compiler, not logic optimization.
 4. Consistency with the surrounding module.
 5. Minimal complexity and avoid third party dependencies when possible.

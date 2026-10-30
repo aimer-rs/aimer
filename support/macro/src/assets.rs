@@ -1,5 +1,6 @@
 //! Expansion of `aimer::assets!`: turns the `[assets]` and `[fonts]` tables of
-//! an application's `Aimer.toml` into a struct of typed associated consts.
+//! an application's `Aimer.toml` into a struct of typed associated consts, each
+//! one of the `Bundle*` types chosen from the file's extension.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -28,12 +29,68 @@ impl Parse for AssetsInput {
     }
 }
 
+/// The `Bundle*` type of `aimer_assets` an entry becomes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Bundle {
+    Svg,
+    Image,
+    Font,
+    Documents,
+    Other,
+}
+
+impl Bundle {
+    /// Classifies `path` by its extension, ignoring ASCII case. Everything under
+    /// `[fonts]` is a font whatever it is called; the extension decides for
+    /// `[assets]`.
+    fn of(path: &str, in_fonts_table: bool) -> Self {
+        if in_fonts_table {
+            return Self::Font;
+        }
+        let extension = path
+            .rsplit(['/', '\\'])
+            .next()
+            .and_then(|file| file.rsplit_once('.'))
+            .map(|(_, extension)| extension.to_ascii_lowercase());
+        match extension.as_deref() {
+            Some("svg") => Self::Svg,
+            Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico") => Self::Image,
+            Some("ttf" | "otf" | "ttc" | "woff" | "woff2") => Self::Font,
+            Some(
+                "md" | "markdown" | "txt" | "json" | "toml" | "yaml" | "yml" | "csv" | "xml"
+                | "html" | "htm" | "pdf",
+            ) => Self::Documents,
+            _ => Self::Other,
+        }
+    }
+
+    fn type_name(self) -> &'static str {
+        match self {
+            Self::Svg => "BundleSvg",
+            Self::Image => "BundleImage",
+            Self::Font => "BundleFont",
+            Self::Documents => "BundleDocuments",
+            Self::Other => "BundleOther",
+        }
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            Self::Svg => "SVG",
+            Self::Image => "image",
+            Self::Font => "font",
+            Self::Documents => "document",
+            Self::Other => "file",
+        }
+    }
+}
+
 /// One `name = "path"` entry, already validated.
 struct Entry {
     const_name: Ident,
     name: String,
     path: String,
-    font: bool,
+    bundle: Bundle,
 }
 
 /// Expands `declare_assets!` input against the `Aimer.toml` found in
@@ -111,14 +168,14 @@ fn impl_consts(manifest_dir: &Path, vis: &Visibility, name: &Ident) -> syn::Resu
             const_name,
             name,
             path,
-            font,
+            bundle,
         } = entry;
-        let (ty, kind) = if *font {
-            (quote!(::aimer::BundledFont), "font")
-        } else {
-            (quote!(::aimer::BundledAsset), "asset")
-        };
-        let doc = format!("The {kind} `{name}` registered as `{path}` in `Aimer.toml`.");
+        let ty = format_ident!("{}", bundle.type_name());
+        let ty = quote!(::aimer::#ty);
+        let doc = format!(
+            "The {} `{name}` registered as `{path}` in `Aimer.toml`.",
+            bundle.describe()
+        );
         quote! {
             #[doc = #doc]
             #vis const #const_name: #ty = #ty::new(#name, #path);
@@ -171,7 +228,7 @@ fn collect(
             const_name: const_ident(name)?,
             name: name.clone(),
             path: path.to_owned(),
-            font,
+            bundle: Bundle::of(path, font),
         });
     }
     Ok(())
@@ -301,17 +358,65 @@ inter = "assets/fonts/Inter.ttf"
         assert_eq!(consts(&file), ["LOGO_MARK", "MY_IMAGE", "INTER"]);
     }
 
+    /// The Rust type a manifest entry became, read from the generated source.
+    fn type_of(source: &str, const_name: &str) -> String {
+        let source: String = source.split_whitespace().collect();
+        let marker = format!("const{const_name}:");
+        let start = source.find(&marker).unwrap_or_else(|| panic!("no const {const_name}"))
+            + marker.len();
+        let end = start + source[start..].find('=').unwrap();
+        source[start..end].to_owned()
+    }
+
     #[test]
-    fn assets_are_bundled_assets_and_fonts_are_bundled_fonts() {
-        let project = Project::new("types", MANIFEST, FILES);
+    fn each_entry_gets_the_bundle_type_of_its_file() {
+        let manifest = r#"
+[assets]
+photo = "a.PNG"
+logo = "b.svg"
+readme = "c.md"
+config = "d.json"
+blob = "e.bin"
+no_extension = "f"
+embedded_font = "g.ttf"
+
+[fonts]
+inter = "h.ttf"
+"#;
+        let files = ["a.PNG", "b.svg", "c.md", "d.json", "e.bin", "f", "g.ttf", "h.ttf"];
+        let project = Project::new("types", manifest, &files);
+        let source = project.expand(quote!(pub Assets)).unwrap().to_string();
+
+        assert_eq!(type_of(&source, "PHOTO"), "::aimer::BundleImage");
+        assert_eq!(type_of(&source, "LOGO"), "::aimer::BundleSvg");
+        assert_eq!(type_of(&source, "README"), "::aimer::BundleDocuments");
+        assert_eq!(type_of(&source, "CONFIG"), "::aimer::BundleDocuments");
+        assert_eq!(type_of(&source, "BLOB"), "::aimer::BundleOther");
+        assert_eq!(type_of(&source, "NO_EXTENSION"), "::aimer::BundleOther");
+        assert_eq!(type_of(&source, "EMBEDDED_FONT"), "::aimer::BundleFont");
+        assert_eq!(type_of(&source, "INTER"), "::aimer::BundleFont");
+    }
+
+    #[test]
+    fn everything_under_fonts_is_a_font_whatever_its_extension() {
+        let manifest = "[fonts]\nodd = \"a.data\"\n";
+        let project = Project::new("fontext", manifest, &["a.data"]);
+        let source = project.expand(quote!()).unwrap().to_string();
+
+        assert_eq!(type_of(&source, "ODD"), "::aimer::BundleFont");
+    }
+
+    #[test]
+    fn the_constructor_receives_the_name_and_the_path() {
+        let project = Project::new("ctor", MANIFEST, FILES);
         let source = project.expand(quote!(pub Assets)).unwrap().to_string();
         let source: String = source.split_whitespace().collect();
 
         assert!(source.contains(
-            r#"MY_IMAGE:::aimer::BundledAsset=::aimer::BundledAsset::new("my_image","assets/my_image.png")"#
+            r#"MY_IMAGE:::aimer::BundleImage=::aimer::BundleImage::new("my_image","assets/my_image.png")"#
         ));
         assert!(source.contains(
-            r#"INTER:::aimer::BundledFont=::aimer::BundledFont::new("inter","assets/fonts/Inter.ttf")"#
+            r#"INTER:::aimer::BundleFont=::aimer::BundleFont::new("inter","assets/fonts/Inter.ttf")"#
         ));
     }
 

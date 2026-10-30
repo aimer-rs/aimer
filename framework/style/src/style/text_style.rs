@@ -368,8 +368,13 @@ impl TextStyle {
         self
     }
 
-    pub const fn font_family(mut self, font_family: FontFamily) -> Self {
-        self.font_family = font_family;
+    /// Sets the font family.
+    ///
+    /// Takes anything that converts into a [`FontFamily`], so a font declared
+    /// in `Aimer.toml` can be passed as it is and is loaded on first use.
+    #[inline]
+    pub fn font_family(mut self, font_family: impl Into<FontFamily>) -> Self {
+        self.font_family = font_family.into();
         self
     }
 

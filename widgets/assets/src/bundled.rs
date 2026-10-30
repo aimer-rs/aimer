@@ -7,133 +7,123 @@ use std::sync::{Arc, Mutex};
 use crate::font::{FontError, FontFamily, FontRegistration, FontRegistry, FontStyle, FontWeight};
 use crate::img_widget::source::ImageSource;
 
-/// What a bundled file is, judged from its extension.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AssetKind {
-    /// A raster image: png, jpg, jpeg, gif, webp, bmp or ico.
-    Image,
-    /// A vector image: svg.
-    Svg,
-    /// A font file: ttf, otf, ttc, woff or woff2.
-    Font,
-    /// Anything else.
-    Other,
-}
-
-/// A file registered under `[assets]` in `Aimer.toml`.
+/// A file registered under `[assets]` or `[fonts]` in `Aimer.toml`.
 ///
-/// The `path` is the manifest path, relative to the project root, and is the
-/// per-platform lookup key used by [`AssetImage`](crate::AssetImage). Values are
-/// created by the `aimer::assets!` macro, which checks at compile time that the
-/// file exists.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct BundledAsset {
-    name: &'static str,
-    path: &'static str,
-}
-
-impl BundledAsset {
-    /// Creates a handle for the asset `name` stored at `path`.
-    #[inline]
-    pub const fn new(name: &'static str, path: &'static str) -> Self {
-        Self { name, path }
-    }
-
-    /// The key the asset has in `Aimer.toml`.
-    #[inline]
-    pub const fn name(&self) -> &'static str {
-        self.name
-    }
+/// The `aimer::assets` macro generates one value of a `Bundle*` type per entry,
+/// chosen from the file's extension: [`BundleSvg`], [`BundleImage`],
+/// [`BundleFont`], [`BundleDocuments`] or [`BundleOther`]. Each widget accepts
+/// the kind it can show, so an SVG handed to an image widget does not compile.
+/// This trait is what they share, for code that works with any bundled file.
+pub trait BundleAsset: Copy + fmt::Debug + 'static {
+    /// The key the file has in `Aimer.toml`.
+    fn name(&self) -> &'static str;
 
     /// The project-relative path, used verbatim as the asset lookup key.
-    #[inline]
-    pub const fn path(&self) -> &'static str {
-        self.path
-    }
+    fn path(&self) -> &'static str;
+}
 
-    /// The kind of file this is, from its extension and ignoring ASCII case.
-    pub const fn kind(&self) -> AssetKind {
-        let bytes = self.path.as_bytes();
-        let mut dot = bytes.len();
-        while dot > 0 {
-            dot -= 1;
-            if bytes[dot] == b'.' {
-                return kind_of_extension(bytes, dot + 1);
+/// Declares a bundle type that is only a name and a path.
+macro_rules! bundle_type {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub struct $name {
+            name: &'static str,
+            path: &'static str,
+        }
+
+        impl $name {
+            /// Creates a handle for the file `name` stored at `path`.
+            #[inline]
+            pub const fn new(name: &'static str, path: &'static str) -> Self {
+                Self { name, path }
             }
-            if bytes[dot] == b'/' || bytes[dot] == b'\\' {
-                break;
+
+            /// The key the file has in `Aimer.toml`.
+            #[inline]
+            pub const fn name(&self) -> &'static str {
+                self.name
+            }
+
+            /// The project-relative path, used verbatim as the asset lookup key.
+            #[inline]
+            pub const fn path(&self) -> &'static str {
+                self.path
             }
         }
-        AssetKind::Other
-    }
-}
 
-const fn kind_of_extension(path: &[u8], start: usize) -> AssetKind {
-    const IMAGE: &[&[u8]] = &[b"png", b"jpg", b"jpeg", b"gif", b"webp", b"bmp", b"ico"];
-    const FONT: &[&[u8]] = &[b"ttf", b"otf", b"ttc", b"woff", b"woff2"];
-
-    if extension_is(path, start, &[b"svg"]) {
-        AssetKind::Svg
-    } else if extension_is(path, start, IMAGE) {
-        AssetKind::Image
-    } else if extension_is(path, start, FONT) {
-        AssetKind::Font
-    } else {
-        AssetKind::Other
-    }
-}
-
-const fn extension_is(path: &[u8], start: usize, candidates: &[&[u8]]) -> bool {
-    let mut candidate = 0;
-    while candidate < candidates.len() {
-        let expected = candidates[candidate];
-        if path.len() - start == expected.len() {
-            let mut index = 0;
-            while index < expected.len() && path[start + index].to_ascii_lowercase() == expected[index]
-            {
-                index += 1;
+        impl BundleAsset for $name {
+            #[inline]
+            fn name(&self) -> &'static str {
+                self.name
             }
-            if index == expected.len() {
-                return true;
+
+            #[inline]
+            fn path(&self) -> &'static str {
+                self.path
             }
         }
-        candidate += 1;
-    }
-    false
+    };
 }
 
-impl From<BundledAsset> for String {
+bundle_type! {
+    /// An SVG registered under `[assets]`: `svg`.
+    ///
+    /// Accepted by `SvgAsset::new`.
+    BundleSvg
+}
+
+bundle_type! {
+    /// A raster image registered under `[assets]`: `png`, `jpg`, `jpeg`, `gif`,
+    /// `webp`, `bmp` or `ico`.
+    ///
+    /// Accepted by `AssetImage::new`, and convertible into an [`ImageSource`].
+    BundleImage
+}
+
+bundle_type! {
+    /// A text or data document registered under `[assets]`: `md`, `markdown`,
+    /// `txt`, `json`, `toml`, `yaml`, `yml`, `csv`, `xml`, `html`, `htm` or `pdf`.
+    BundleDocuments
+}
+
+bundle_type! {
+    /// Any other file registered under `[assets]`.
+    BundleOther
+}
+
+impl From<BundleImage> for String {
     #[inline]
-    fn from(asset: BundledAsset) -> Self {
-        asset.path.to_owned()
+    fn from(image: BundleImage) -> Self {
+        image.path.to_owned()
+    }
+}
+
+impl From<BundleImage> for ImageSource {
+    #[inline]
+    fn from(image: BundleImage) -> Self {
+        ImageSource::Asset(image.path.to_owned())
     }
 }
 
 /// The form `SvgAsset::new` takes its key in.
-impl From<BundledAsset> for Arc<str> {
+impl From<BundleSvg> for Arc<str> {
     #[inline]
-    fn from(asset: BundledAsset) -> Self {
-        Arc::from(asset.path)
-    }
-}
-
-impl From<BundledAsset> for ImageSource {
-    #[inline]
-    fn from(asset: BundledAsset) -> Self {
-        ImageSource::Asset(asset.path.to_owned())
+    fn from(svg: BundleSvg) -> Self {
+        Arc::from(svg.path)
     }
 }
 
 /// Why a bundled font could not be loaded.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BundledFontError {
+pub enum BundleFontError {
     /// The file could not be read from the platform's asset store.
     Read(String),
     /// The bytes were read but the font registry rejected them.
     Font(FontError),
 }
 
-impl Display for BundledFontError {
+impl Display for BundleFontError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Read(message) => formatter.write_str(message),
@@ -142,15 +132,15 @@ impl Display for BundledFontError {
     }
 }
 
-impl std::error::Error for BundledFontError {}
+impl std::error::Error for BundleFontError {}
 
-impl From<FontError> for BundledFontError {
+impl From<FontError> for BundleFontError {
     fn from(error: FontError) -> Self {
         Self::Font(error)
     }
 }
 
-/// Paths already registered by [`BundledFont`], so registering twice is free.
+/// Paths already registered by [`BundleFont`], so registering twice is free.
 static REGISTERED: Mutex<Vec<(&'static str, FontWeight, FontStyle, FontFamily)>> =
     Mutex::new(Vec::new());
 
@@ -159,7 +149,8 @@ static REGISTERED: Mutex<Vec<(&'static str, FontWeight, FontStyle, FontFamily)>>
 #[cfg(not(target_arch = "wasm32"))]
 static FAILED: Mutex<Vec<(&'static str, FontWeight, FontStyle)>> = Mutex::new(Vec::new());
 
-/// A font file registered under `[fonts]` in `Aimer.toml`.
+/// A font registered under `[fonts]` in `Aimer.toml`, or under `[assets]` with a
+/// font extension: `ttf`, `otf`, `ttc`, `woff` or `woff2`.
 ///
 /// The font is read from the bundled assets, not embedded in the binary. On
 /// native targets it loads lazily: converting it into a [`FontFamily`] (for
@@ -168,12 +159,14 @@ static FAILED: Mutex<Vec<(&'static str, FontWeight, FontStyle)>> = Mutex::new(Ve
 /// conversion reports the error on stderr once and yields
 /// [`FontFamily::SANS_SERIF`]; call [`register`](Self::register) instead when
 /// you need the error. The web cannot read synchronously, so there the font has
-/// to be loaded with [`load`](Self::load) before it is used. By default the family is named after the manifest key and
-/// the face is registered as regular weight and normal style; chain
+/// to be loaded with [`load`](Self::load) before it is used; until then the
+/// conversion yields the default sans-serif. By default the family is named
+/// after the manifest key and the face is registered as regular weight and
+/// normal style; chain
 /// [`family`](Self::family), [`weight`](Self::weight) and [`style`](Self::style)
 /// to register several files as variants of one family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct BundledFont {
+pub struct BundleFont {
     name: &'static str,
     path: &'static str,
     family: &'static str,
@@ -181,7 +174,7 @@ pub struct BundledFont {
     style: FontStyle,
 }
 
-impl BundledFont {
+impl BundleFont {
     /// Creates a handle for the font `name` stored at `path`.
     #[inline]
     pub const fn new(name: &'static str, path: &'static str) -> Self {
@@ -246,11 +239,11 @@ impl BundledFont {
     /// family. Not available on the web, where assets can only be fetched
     /// asynchronously; use [`load`](Self::load) there.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn register(&self) -> Result<FontFamily, BundledFontError> {
+    pub fn register(&self) -> Result<FontFamily, BundleFontError> {
         if let Some(family) = self.registered() {
             return Ok(family);
         }
-        let bytes = ImageSource::load_asset_bytes(self.path).map_err(BundledFontError::Read)?;
+        let bytes = ImageSource::load_asset_bytes(self.path).map_err(BundleFontError::Read)?;
         self.register_bytes(&bytes)
     }
 
@@ -258,12 +251,12 @@ impl BundledFont {
     ///
     /// On native targets the read still happens synchronously inside the first
     /// poll.
-    pub async fn load(&self) -> Result<FontFamily, BundledFontError> {
+    pub async fn load(&self) -> Result<FontFamily, BundleFontError> {
         if let Some(family) = self.registered() {
             return Ok(family);
         }
         #[cfg(not(target_arch = "wasm32"))]
-        let bytes = ImageSource::load_asset_bytes(self.path).map_err(BundledFontError::Read)?;
+        let bytes = ImageSource::load_asset_bytes(self.path).map_err(BundleFontError::Read)?;
         #[cfg(target_arch = "wasm32")]
         let bytes = {
             let url = if self.path.starts_with('/') {
@@ -273,12 +266,12 @@ impl BundledFont {
             };
             ImageSource::fetch_bytes(&url)
                 .await
-                .map_err(BundledFontError::Read)?
+                .map_err(BundleFontError::Read)?
         };
         self.register_bytes(&bytes)
     }
 
-    fn register_bytes(&self, bytes: &[u8]) -> Result<FontFamily, BundledFontError> {
+    fn register_bytes(&self, bytes: &[u8]) -> Result<FontFamily, BundleFontError> {
         let family = match FontRegistry::register(FontRegistration {
             family: self.family,
             bytes,
@@ -305,10 +298,22 @@ impl BundledFont {
     }
 }
 
-/// Loads the font on first use; see [`BundledFont`] for the failure behavior.
+impl BundleAsset for BundleFont {
+    #[inline]
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    #[inline]
+    fn path(&self) -> &'static str {
+        self.path
+    }
+}
+
+/// Loads the font on first use; see [`BundleFont`] for the failure behavior.
 #[cfg(not(target_arch = "wasm32"))]
-impl From<BundledFont> for FontFamily {
-    fn from(font: BundledFont) -> Self {
+impl From<BundleFont> for FontFamily {
+    fn from(font: BundleFont) -> Self {
         if let Some(family) = font.registered() {
             return family;
         }
@@ -335,6 +340,16 @@ impl From<BundledFont> for FontFamily {
     }
 }
 
+/// The web cannot read a file while a widget is being built, so a font that has
+/// not been [loaded](BundleFont::load) yet is the default sans-serif. The
+/// conversion exists so that code shared with native targets compiles.
+#[cfg(target_arch = "wasm32")]
+impl From<BundleFont> for FontFamily {
+    fn from(font: BundleFont) -> Self {
+        font.registered().unwrap_or(FontFamily::SANS_SERIF)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -354,47 +369,47 @@ mod tests {
     }
 
     #[test]
-    fn exposes_name_and_path() {
-        const ASSET: BundledAsset = BundledAsset::new("logo", "assets/logo.png");
-        assert_eq!(ASSET.name(), "logo");
-        assert_eq!(ASSET.path(), "assets/logo.png");
-    }
+    fn every_bundle_type_exposes_its_name_and_path() {
+        const IMAGE: BundleImage = BundleImage::new("logo", "assets/logo.png");
+        assert_eq!(IMAGE.name(), "logo");
+        assert_eq!(IMAGE.path(), "assets/logo.png");
 
-    #[test]
-    fn kind_comes_from_the_extension_ignoring_case() {
-        const fn kind(path: &'static str) -> AssetKind {
-            BundledAsset::new("x", path).kind()
+        // The trait gives the same answers to code that is generic over the kind.
+        fn describe(asset: impl BundleAsset) -> (&'static str, &'static str) {
+            (asset.name(), asset.path())
         }
-        const PNG: AssetKind = kind("assets/a.png");
-        assert_eq!(PNG, AssetKind::Image);
-        assert_eq!(kind("assets/PHOTO.JpEg"), AssetKind::Image);
-        assert_eq!(kind("assets/cat.svg"), AssetKind::Svg);
-        assert_eq!(kind("assets/fonts/Inter.ttf"), AssetKind::Font);
-        assert_eq!(kind("assets/fonts/Inter.WOFF2"), AssetKind::Font);
-        assert_eq!(kind("assets/data.json"), AssetKind::Other);
-        assert_eq!(kind("assets/noextension"), AssetKind::Other);
-        assert_eq!(kind("assets.png/readme"), AssetKind::Other);
-        assert_eq!(kind("assets/trailingdot."), AssetKind::Other);
-        assert_eq!(kind(""), AssetKind::Other);
+        assert_eq!(describe(IMAGE), ("logo", "assets/logo.png"));
+        assert_eq!(describe(BundleSvg::new("icon", "a.svg")), ("icon", "a.svg"));
+        assert_eq!(describe(BundleDocuments::new("doc", "a.md")), ("doc", "a.md"));
+        assert_eq!(describe(BundleOther::new("blob", "a.bin")), ("blob", "a.bin"));
+        assert_eq!(describe(BundleFont::new("mono", "a.ttf")), ("mono", "a.ttf"));
     }
 
     #[test]
-    fn an_asset_converts_into_a_key_and_an_image_source() {
-        const ASSET: BundledAsset = BundledAsset::new("logo", "assets/logo.png");
+    fn an_image_converts_into_a_key_and_an_image_source() {
+        const IMAGE: BundleImage = BundleImage::new("logo", "assets/logo.png");
 
-        assert_eq!(String::from(ASSET), "assets/logo.png");
+        assert_eq!(String::from(IMAGE), "assets/logo.png");
         assert_eq!(
-            ImageSource::from(ASSET),
+            ImageSource::from(IMAGE),
             ImageSource::Asset("assets/logo.png".to_owned())
         );
-        assert_eq!(AssetImage::new(ASSET).key, "assets/logo.png");
-        assert_eq!(&*Arc::<str>::from(ASSET), "assets/logo.png");
+        assert_eq!(AssetImage::new(IMAGE).key, "assets/logo.png");
+    }
+
+    #[test]
+    fn an_svg_converts_into_the_key_svg_asset_takes() {
+        const SVG: BundleSvg = BundleSvg::new("icon", "assets/icon.svg");
+
+        assert_eq!(&*Arc::<str>::from(SVG), "assets/icon.svg");
+        // Accepted by the widget, which is the point of the conversion.
+        let _ = crate::SvgAsset::new(SVG);
     }
 
     #[test]
     fn registers_a_font_from_its_bundled_path() {
         let path = temp_file("register.ttf", FONT_BYTES);
-        let font = BundledFont::new("bundled_register_test", path);
+        let font = BundleFont::new("bundled_register_test", path);
 
         assert_eq!(font.registered(), None);
         let family = font.register().expect("the font should register");
@@ -406,16 +421,16 @@ mod tests {
     #[test]
     fn registering_twice_returns_the_same_family() {
         let path = temp_file("twice.ttf", FONT_BYTES);
-        let font = BundledFont::new("bundled_twice_test", path);
+        let font = BundleFont::new("bundled_twice_test", path);
 
         assert_eq!(font.register().unwrap(), font.register().unwrap());
     }
 
     #[test]
     fn variants_of_one_family_share_it() {
-        let regular = BundledFont::new("bundled_variant_regular", temp_file("v_regular.ttf", FONT_BYTES))
+        let regular = BundleFont::new("bundled_variant_regular", temp_file("v_regular.ttf", FONT_BYTES))
             .family("bundled_variant_test");
-        let bold = BundledFont::new("bundled_variant_bold", temp_file("v_bold.ttf", FONT_BYTES))
+        let bold = BundleFont::new("bundled_variant_bold", temp_file("v_bold.ttf", FONT_BYTES))
             .family("bundled_variant_test")
             .weight(FontWeight::Bold);
 
@@ -428,20 +443,20 @@ mod tests {
 
     #[test]
     fn a_missing_file_is_a_read_error() {
-        let font = BundledFont::new("bundled_missing_test", "definitely/not/here.ttf");
+        let font = BundleFont::new("bundled_missing_test", "definitely/not/here.ttf");
 
-        assert!(matches!(font.register(), Err(BundledFontError::Read(_))));
+        assert!(matches!(font.register(), Err(BundleFontError::Read(_))));
         assert_eq!(font.registered(), None);
     }
 
     #[test]
     fn bytes_that_are_not_a_font_are_a_font_error() {
         let path = temp_file("invalid.ttf", b"not a font");
-        let font = BundledFont::new("bundled_invalid_test", path);
+        let font = BundleFont::new("bundled_invalid_test", path);
 
         assert_eq!(
             font.register(),
-            Err(BundledFontError::Font(FontError::InvalidFont))
+            Err(BundleFontError::Font(FontError::InvalidFont))
         );
         assert_eq!(font.registered(), None);
     }
@@ -449,18 +464,18 @@ mod tests {
     #[test]
     fn a_reserved_family_name_is_rejected() {
         let path = temp_file("reserved.ttf", FONT_BYTES);
-        let font = BundledFont::new("monospace", path);
+        let font = BundleFont::new("monospace", path);
 
         assert_eq!(
             font.register(),
-            Err(BundledFontError::Font(FontError::ReservedFamily))
+            Err(BundleFontError::Font(FontError::ReservedFamily))
         );
     }
 
     #[test]
     fn load_registers_like_register() {
         let path = temp_file("load.ttf", FONT_BYTES);
-        let font = BundledFont::new("bundled_load_test", path);
+        let font = BundleFont::new("bundled_load_test", path);
 
         // The native read completes inside the first poll, so a no-op waker is
         // enough to drive the future.
@@ -471,7 +486,7 @@ mod tests {
     #[test]
     fn converting_into_a_family_loads_the_font_on_first_read() {
         let path = temp_file("lazy.ttf", FONT_BYTES);
-        let font = BundledFont::new("bundled_lazy_test", path);
+        let font = BundleFont::new("bundled_lazy_test", path);
         assert_eq!(font.registered(), None);
 
         let family = FontFamily::from(font);
@@ -484,7 +499,7 @@ mod tests {
     #[test]
     fn a_font_that_fails_to_load_falls_back_to_sans_serif_and_is_not_retried() {
         let path = temp_file("lazy_bad.ttf", b"not a font");
-        let font = BundledFont::new("bundled_lazy_bad_test", path);
+        let font = BundleFont::new("bundled_lazy_bad_test", path);
 
         assert_eq!(FontFamily::from(font), FontFamily::SANS_SERIF);
 
@@ -493,6 +508,25 @@ mod tests {
         std::fs::write(path, FONT_BYTES).unwrap();
         assert_eq!(FontFamily::from(font), FontFamily::SANS_SERIF);
         assert_eq!(font.registered(), None);
+    }
+
+    #[test]
+    fn a_text_style_accepts_a_bundle_font_and_loads_it() {
+        use aimer_style::TextStyle;
+
+        let path = temp_file("style.ttf", FONT_BYTES);
+        let font = BundleFont::new("bundled_style_test", path);
+        assert_eq!(font.registered(), None);
+
+        let style = TextStyle::new().font_family(font);
+
+        assert_ne!(style.font_family, FontFamily::SANS_SERIF);
+        assert_eq!(font.registered(), Some(style.font_family));
+        // A plain family still works.
+        assert_eq!(
+            TextStyle::new().font_family(FontFamily::MONOSPACE).font_family,
+            FontFamily::MONOSPACE
+        );
     }
 
     fn poll_ready<T>(future: impl std::future::Future<Output = T>) -> T {

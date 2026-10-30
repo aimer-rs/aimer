@@ -65,8 +65,10 @@ impl SpanStyle {
         self
     }
 
-    pub const fn font_family(mut self, font_family: FontFamily) -> Self {
-        self.font_family = Some(font_family);
+    /// Sets the font family; see `TextStyle::font_family`.
+    #[inline]
+    pub fn font_family(mut self, font_family: impl Into<FontFamily>) -> Self {
+        self.font_family = Some(font_family.into());
         self
     }
 
