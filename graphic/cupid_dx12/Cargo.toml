@@ -10,3 +10,6 @@ aimer_cupid_gpu.workspace = true
 [target.'cfg(target_os = "windows")'.dependencies]
 aimer_utils.workspace = true
 windows.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+windows.workspace = true

@@ -2170,6 +2170,28 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             window_attributes.with_no_redirection_bitmap(true)
         };
 
+        // The bundle places the application's `app.ico` beside the executable.
+        // Nothing else gives the window an icon, so without this the title bar
+        // and the taskbar show the generic one.
+        #[cfg(target_os = "windows")]
+        let window_attributes = {
+            use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
+            use winit::window::Icon;
+
+            let icon_path = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|dir| dir.join("app.ico")));
+            let icon = icon_path.and_then(|path| {
+                Icon::from_path(path, None).ok()
+            });
+            match icon {
+                Some(icon) => window_attributes
+                    .with_taskbar_icon(Some(icon.clone()))
+                    .with_window_icon(Some(icon)),
+                None => window_attributes,
+            }
+        };
+
         if self.window.is_none() {
             // Owned by whoever still holds it: the window is destroyed when the
             // last handle goes, which is what lets a closed window be freed.

@@ -478,6 +478,16 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
                 // for completions costs a queue poll.
                 for window in &mut self.windows {
                     let _active = enter_window_scope(window.key);
+                    // A window held back until its first frame is hidden, and a
+                    // hidden window never receives WM_PAINT, so the redraw that
+                    // completion delivery requests would never produce that
+                    // frame. Render it directly; `render` delivers the
+                    // completions itself.
+                    #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
+                    if window.app.show_window_after_first_frame {
+                        window.app.render(event_loop);
+                        continue;
+                    }
                     window.app.deliver_render_completions(event_loop);
                 }
                 self.reap(event_loop);

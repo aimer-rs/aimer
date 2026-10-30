@@ -10,7 +10,9 @@ pub(crate) use aimer_cupid_gpu as backend;
 
 mod commands;
 mod pipeline;
+mod precompiled;
 mod resource;
+mod shader_hash;
 
 #[doc(hidden)]
 pub use commands::{Dx12CommandEncoder, Dx12RenderPass};
