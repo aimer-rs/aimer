@@ -334,8 +334,9 @@ mod runtime_spec {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_wake_from_a_worker_notifies_the_event_loop() {
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, mpsc};
+        use std::time::{Duration, Instant};
 
         let venus = Venus::new();
         let pings = Arc::new(AtomicUsize::new(0));
@@ -345,17 +346,37 @@ mod runtime_spec {
             counted.fetch_add(1, Ordering::SeqCst);
         });
 
+        // The worker is held at a gate until the task is parked on it. Without
+        // the gate a fast worker can finish before the first poll, which then
+        // resolves immediately and has no waker to notify anyone with.
+        let (open_gate, gate) = mpsc::channel::<()>();
         let venus_for_task = venus.clone();
         venus.spawn(async move {
-            venus_for_task.offload(|| ()).await;
+            venus_for_task
+                .offload(move || {
+                    let _ = gate.recv();
+                })
+                .await;
         });
 
-        while venus.task_count() > 0 {
+        venus.run_microtasks();
+        assert_eq!(venus.task_count(), 1, "the task must be waiting on the worker");
+        assert_eq!(pings.load(Ordering::SeqCst), 0);
+
+        open_gate.send(()).unwrap();
+
+        // The task can resolve a moment before the worker's notifier call
+        // returns, so wait for the ping rather than reading it once.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while (venus.task_count() > 0 || pings.load(Ordering::SeqCst) == 0)
+            && Instant::now() < deadline
+        {
             venus.run_microtasks();
+            std::thread::yield_now();
         }
 
-        eprintln!("{}", pings.load(Ordering::SeqCst));
-        assert!(pings.load(Ordering::SeqCst) >= 1);
+        assert_eq!(venus.task_count(), 0);
+        assert_eq!(pings.load(Ordering::SeqCst), 1);
     }
 }
 
