@@ -20,6 +20,7 @@ use crate::backend::{
     RenderPipelineDescriptor, VertexFormat, VertexStepMode,
 };
 
+use crate::precompiled::precompiled_bytecode;
 use super::resource::{Dx12Buffer, Dx12Sampler, Dx12TextureView};
 use super::{Dx12Backend, Dx12TextureFormat};
 
@@ -275,12 +276,12 @@ impl Dx12Backend {
                 .CreateRootSignature::<ID3D12RootSignature>(0, bytes)
         }
         .expect("create D3D12 root signature");
-        info!(
-            "DX12 root-signature layout timing: {} bind groups, {} parameters, serialization and creation {:.2} ms",
-            layouts.len(),
-            parameters.len(),
-            layout_started.elapsed().as_secs_f64() * 1000.0
-        );
+        // info!(
+        //     "DX12 root-signature layout timing: {} bind groups, {} parameters, serialization and creation {:.2} ms",
+        //     layouts.len(),
+        //     parameters.len(),
+        //     layout_started.elapsed().as_secs_f64() * 1000.0
+        // );
         Dx12PipelineLayout {
             root_signature,
             groups,
@@ -403,15 +404,15 @@ impl Dx12Backend {
             .saturating_sub(vertex_elapsed)
             .saturating_sub(pixel_elapsed)
             .saturating_sub(pso_elapsed);
-        info!(
-            "DX12 pipeline timing: {} vertex HLSL {:.2} ms, pixel HLSL {:.2} ms, PSO creation {:.2} ms, other setup {:.2} ms, total {:.2} ms",
-            desc.label.as_deref().unwrap_or("pipeline"),
-            vertex_elapsed.as_secs_f64() * 1000.0,
-            pixel_elapsed.as_secs_f64() * 1000.0,
-            pso_elapsed.as_secs_f64() * 1000.0,
-            other_elapsed.as_secs_f64() * 1000.0,
-            total_elapsed.as_secs_f64() * 1000.0
-        );
+        // info!(
+        //     "DX12 pipeline timing: {} vertex HLSL {:.2} ms, pixel HLSL {:.2} ms, PSO creation {:.2} ms, other setup {:.2} ms, total {:.2} ms",
+        //     desc.label.as_deref().unwrap_or("pipeline"),
+        //     vertex_elapsed.as_secs_f64() * 1000.0,
+        //     pixel_elapsed.as_secs_f64() * 1000.0,
+        //     pso_elapsed.as_secs_f64() * 1000.0,
+        //     other_elapsed.as_secs_f64() * 1000.0,
+        //     total_elapsed.as_secs_f64() * 1000.0
+        // );
         Ok(Dx12RenderPipeline {
             state,
             layout,
@@ -443,6 +444,20 @@ pub(super) fn compile_hlsl(
         .cloned()
     {
         return Ok(bytecode);
+    }
+
+    // Built-in shaders were compiled by the build script; only custom HLSL
+    // reaches FXC here.
+    let target_name = std::str::from_utf8(target)
+        .map_err(|error| error.to_string())?
+        .trim_end_matches(' ');
+    if let Some(bytecode) = precompiled_bytecode(&module.source, entry_point, target_name) {
+        let bytecode = Arc::<[u8]>::from(bytecode);
+        let mut cache = module
+            .compiled
+            .lock()
+            .map_err(|_| "DX12 shader bytecode cache is poisoned".to_string())?;
+        return Ok(cache.entry(key).or_insert(bytecode).clone());
     }
 
     let mut code = None;
@@ -716,13 +731,39 @@ mod tests {
         ("morph", include_str!("../shaders/dx12/morph.hlsl")),
     ];
 
+    // Startup must not pay for FXC: every built-in entry point ships as bytecode
+    // compiled by the build script.
+    #[test]
+    fn every_builtin_shader_has_precompiled_bytecode() {
+        let mut missing = Vec::new();
+        for &(label, source) in SHADERS {
+            for (entry_point, target) in [("vs_main", "vs_5_1"), ("fs_main", "ps_5_1")] {
+                match precompiled_bytecode(source, entry_point, target) {
+                    Some(bytecode) if bytecode.starts_with(b"DXBC") => {}
+                    _ => missing.push(format!("{label}::{entry_point}")),
+                }
+            }
+        }
+        assert!(missing.is_empty(), "{}", missing.join("
+"));
+    }
+
+    // Only the exact built-in source maps to embedded bytecode; anything else
+    // falls through to the runtime compiler.
+    #[test]
+    fn precompiled_bytecode_is_not_returned_for_other_source() {
+        assert!(precompiled_bytecode("float4 vs_main() : SV_Position { return 0; }", "vs_main", "vs_5_1").is_none());
+    }
+
     // FXC runs on the CPU, so this catches HLSL errors without a D3D12 device.
     #[test]
     fn every_builtin_shader_compiles_with_fxc() {
         let mut failures = Vec::new();
         for &(label, source) in SHADERS {
             let module = Dx12ShaderModule {
-                source: Arc::from(source),
+                // The trailing comment changes the source hash, which keeps the
+                // build-time bytecode from standing in for the runtime compiler.
+                source: Arc::from(format!("{source}\n// runtime compile\n")),
                 label: label.to_string(),
                 compiled: Arc::new(Mutex::new(HashMap::new())),
             };

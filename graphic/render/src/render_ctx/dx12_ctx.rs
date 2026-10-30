@@ -129,10 +129,10 @@ pub mod render_ctx {
             let backend_started = Instant::now();
             let backend =
                 Dx12Backend::new().expect("create the system Direct3D 12 device and queue");
-            info!(
-                "DX12 startup stage: device, command queue, and descriptor heaps {:.2} ms",
-                backend_started.elapsed().as_secs_f64() * 1000.0
-            );
+            // info!(
+            //     "DX12 startup stage: device, command queue, and descriptor heaps {:.2} ms",
+            //     backend_started.elapsed().as_secs_f64() * 1000.0
+            // );
             // winit refuses `window_handle()` off the event-loop thread, but the
             // raster worker initializes this presenter on its own thread.
             // SAFETY: the HWND only reaches `CreateSwapChainForHwnd`, which DXGI
@@ -155,18 +155,18 @@ pub mod render_ctx {
                 SURFACE_FORMAT,
             )
             .expect("create the DXGI window swap chain");
-            info!(
-                "DX12 startup stage: swap chain and back buffers {:.2} ms",
-                surface_started.elapsed().as_secs_f64() * 1000.0
-            );
+            // info!(
+            //     "DX12 startup stage: swap chain and back buffers {:.2} ms",
+            //     surface_started.elapsed().as_secs_f64() * 1000.0
+            // );
             let renderer_started = Instant::now();
             let mut renderer =
                 RendererImpl::with_antialiasing(&backend, SURFACE_FORMAT, self.antialiasing);
             renderer.enable_first_render_timing();
-            info!(
-                "DX12 startup stage: built-in renderer pipelines (HLSL compile and PSO creation) {:.2} ms",
-                renderer_started.elapsed().as_secs_f64() * 1000.0
-            );
+            // info!(
+            //     "DX12 startup stage: built-in renderer pipelines (HLSL compile and PSO creation) {:.2} ms",
+            //     renderer_started.elapsed().as_secs_f64() * 1000.0
+            // );
             self.backend = Some(backend);
             self.surface = Some(surface);
             self.renderer = Some(renderer);
@@ -216,29 +216,29 @@ pub mod render_ctx {
             let startup_frame = self.startup_started.is_some();
             let build_started = startup_frame.then(Instant::now);
             let packet = self.build_frame_packet(draw_fn);
-            if let Some(build_started) = build_started {
-                info!(
-                    "DX12 first-frame stage: widget build, layout, and draw-list recording {:.2} ms",
-                    build_started.elapsed().as_secs_f64() * 1000.0
-                );
-            }
+            // if let Some(build_started) = build_started {
+            //     info!(
+            //         "DX12 first-frame stage: widget build, layout, and draw-list recording {:.2} ms",
+            //         build_started.elapsed().as_secs_f64() * 1000.0
+            //     );
+            // }
 
             let Some(packet) = packet else {
-                if startup_frame {
-                    info!("DX12 first-frame attempt: no frame packet was produced");
-                }
+                // if startup_frame {
+                //     info!("DX12 first-frame attempt: no frame packet was produced");
+                // }
                 return PresentOutcome::Dropped;
             };
 
             let present_started = startup_frame.then(Instant::now);
             let outcome = self.present_packet(packet);
-            if let Some(present_started) = present_started {
-                info!(
-                    "DX12 first-frame stage: render and present path {:.2} ms (presented={})",
-                    present_started.elapsed().as_secs_f64() * 1000.0,
-                    outcome.is_presented()
-                );
-            }
+            // if let Some(present_started) = present_started {
+            //     info!(
+            //         "DX12 first-frame stage: render and present path {:.2} ms (presented={})",
+            //         present_started.elapsed().as_secs_f64() * 1000.0,
+            //         outcome.is_presented()
+            //     );
+            // }
             outcome
         }
 
@@ -299,14 +299,14 @@ pub mod render_ctx {
                 canvas.recycle_draw_list(packet.into_frame().into_draw_list());
             }
             let outcome = PresentOutcome::from_presented(presented);
-            if self.startup_started.is_some() && outcome.is_presented() {
-                if let Some(started) = self.startup_started.take() {
-                    info!(
-                        "DX12 startup total: context initialization to first presented frame completion {:.2} ms",
-                        started.elapsed().as_secs_f64() * 1000.0
-                    );
-                }
-            }
+            // if self.startup_started.is_some() && outcome.is_presented() {
+            //     if let Some(started) = self.startup_started.take() {
+            //         info!(
+            //             "DX12 startup total: context initialization to first presented frame completion {:.2} ms",
+            //             started.elapsed().as_secs_f64() * 1000.0
+            //         );
+            //     }
+            // }
             outcome
         }
 
@@ -353,12 +353,12 @@ pub mod render_ctx {
             let acquire = PhaseTimer::start();
             let acquired = surface.try_acquire(backend);
             acquire.finish_acquire();
-            if let Some(acquire_started) = acquire_started {
-                info!(
-                    "DX12 first-frame stage: swap-chain back-buffer acquisition {:.2} ms",
-                    acquire_started.elapsed().as_secs_f64() * 1000.0
-                );
-            }
+            // if let Some(acquire_started) = acquire_started {
+            //     info!(
+            //         "DX12 first-frame stage: swap-chain back-buffer acquisition {:.2} ms",
+            //         acquire_started.elapsed().as_secs_f64() * 1000.0
+            //     );
+            // }
             let drawable = match acquired {
                 Ok(Some(drawable)) => drawable,
                 Ok(None) => return false,
@@ -382,22 +382,22 @@ pub mod render_ctx {
                     SURFACE_FORMAT.is_srgb(),
                 );
             }
-            if let Some(encode_started) = encode_started {
-                info!(
-                    "DX12 first-frame stage: renderer preparation, command encoding, and queue submission {:.2} ms (CPU elapsed)",
-                    encode_started.elapsed().as_secs_f64() * 1000.0
-                );
-            }
+            // if let Some(encode_started) = encode_started {
+            //     info!(
+            //         "DX12 first-frame stage: renderer preparation, command encoding, and queue submission {:.2} ms (CPU elapsed)",
+            //         encode_started.elapsed().as_secs_f64() * 1000.0
+            //     );
+            // }
             encode.finish(FramePhase::Encode);
             let present = PhaseTimer::start();
             let present_started = startup_timing.then(Instant::now);
             let success = drawable.present().is_ok();
-            if let Some(present_started) = present_started {
-                info!(
-                    "DX12 first-frame stage: DXGI present call {:.2} ms (success={success})",
-                    present_started.elapsed().as_secs_f64() * 1000.0
-                );
-            }
+            // if let Some(present_started) = present_started {
+            //    info!(
+            //        "DX12 first-frame stage: DXGI present call {:.2} ms (success={success})",
+            //        present_started.elapsed().as_secs_f64() * 1000.0
+            //    );
+            //}
             present.finish(FramePhase::Present);
             success
         }
