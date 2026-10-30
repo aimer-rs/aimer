@@ -450,6 +450,24 @@ impl FontRecord {
         self.path.as_ref().map(|path| path.as_path())
     }
 
+    /// Runs `read` on this face's parsed tables, sharing them with every other
+    /// caller of the same face instead of re-reading the font for each call.
+    ///
+    /// A face whose metrics tables are unusable cannot enter the shared cache;
+    /// it is read from its bytes for this call alone, as it always was.
+    pub(crate) fn with_face<R>(
+        &self,
+        read: impl FnOnce(&crate::aimer_font::SfntFace<'_>) -> R,
+    ) -> Option<R> {
+        let data = self.data()?;
+        if let Ok(shared) = crate::aimer_font::shared_face(data.clone(), self.collection_index) {
+            return Some(read(shared.sfnt()));
+        }
+        let face =
+            crate::aimer_font::SfntFace::from_bytes(data.as_ref(), self.collection_index).ok()?;
+        Some(read(&face))
+    }
+
     /// Returns whether this face has an outline table understood by the
     /// Aimer-owned reader.
     pub(crate) fn has_standard_outline(&self) -> bool {
@@ -463,16 +481,12 @@ impl FontRecord {
 
     /// Returns a face's design weight from its `OS/2` table.
     pub(crate) fn design_weight(&self) -> Option<u16> {
-        let data = self.data()?;
-        crate::aimer_font::SfntFace::from_bytes(data.as_ref(), self.collection_index)
-            .ok()?
-            .design_weight()
+        self.with_face(|face| face.design_weight())?
     }
 
     /// Returns a glyph's scaled horizontal advance from the active reader.
     pub(crate) fn advance_width_for_glyph(&self, glyph_id: u16, font_size: f32) -> Option<f32> {
-        let data = self.data()?;
-        advance_width_from_face(data.as_ref(), self.collection_index, glyph_id, font_size)
+        self.with_face(|face| advance_width_in_face(face, glyph_id, font_size))?
     }
 
     /// Returns scaled ascent, descent, and line gap from the Aimer reader.
@@ -488,11 +502,7 @@ impl FontRecord {
     }
 
     pub(crate) fn glyph_index(&self, codepoint: char) -> Option<u16> {
-        let data = self.data()?;
-        crate::aimer_font::SfntFace::from_font_data(data, self.collection_index)
-            .ok()?
-            .glyph_index(codepoint as u32)
-            .ok()?
+        self.with_face(|face| face.glyph_index(codepoint as u32).ok().flatten())?
     }
 }
 
@@ -507,6 +517,17 @@ pub fn advance_width_from_face(
     }
     let face =
         crate::aimer_font::SfntFace::from_bytes(bytes, collection_index).ok()?;
+    advance_width_in_face(&face, glyph_id, font_size)
+}
+
+fn advance_width_in_face(
+    face: &crate::aimer_font::SfntFace<'_>,
+    glyph_id: u16,
+    font_size: f32,
+) -> Option<f32> {
+    if !font_size.is_finite() || font_size <= 0.0 {
+        return None;
+    }
     let metrics = face.metrics().ok()?;
     let advance = face.glyph_advance_with_metrics(glyph_id, metrics).ok()??;
     let scale = font_size / f32::from(metrics.units_per_em);
@@ -1517,6 +1538,46 @@ mod tests {
                 .line_metrics(16.0)
                 .is_some_and(|(ascent, descent, _)| ascent > 0.0 && descent < 0.0)
         );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn jetbrains_record() -> FontRecord {
+        FontRecord {
+            id: 1,
+            bytes: None,
+            collection_index: 0,
+            path: Some(Arc::new(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fonts/JetBrainsMono-Regular.ttf"),
+            )),
+            is_color: false,
+        }
+    }
+
+    /// Fallback resolution asks every known face about every new codepoint, so a
+    /// lookup that rebuilt the face re-parsed its whole character map each time.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn glyph_lookups_on_one_record_parse_its_cmap_once() {
+        let record = jetbrains_record();
+        let before = crate::aimer_font::cmap_parses();
+        for codepoint in ('a'..='z').chain('A'..='Z') {
+            assert!(record.glyph_index(codepoint).is_some());
+        }
+        let parses = crate::aimer_font::cmap_parses() - before;
+        assert!(parses <= 1, "52 lookups parsed the cmap {parses} times");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn advance_lookups_on_one_record_parse_its_metrics_once() {
+        let record = jetbrains_record();
+        let glyph = record.glyph_index('a').expect("the face maps `a`");
+        let before = crate::aimer_font::hmtx_parses();
+        for _ in 0..50 {
+            assert!(record.advance_width_for_glyph(glyph, 16.0).is_some());
+        }
+        let parses = crate::aimer_font::hmtx_parses() - before;
+        assert!(parses <= 1, "50 advances parsed hmtx {parses} times");
     }
 
     #[cfg(not(target_arch = "wasm32"))]

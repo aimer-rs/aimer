@@ -1224,6 +1224,50 @@ impl FlexLayoutCache {
         }
     }
 
+    /// Drops the predictions held for another constraint on the main axis that
+    /// the table made under `kept` has outgrown, and reports whether any was.
+    ///
+    /// A container is measured by its parent under an unbounded main axis, which
+    /// is predicted from one probe, and then laid out in a box as long as that
+    /// prediction, under which every child is measured and the answer is exact.
+    /// The two tables are keyed by their constraints, so the prediction would go
+    /// on answering the parent with what it guessed. Only a prediction at the
+    /// same cross-axis extent is dropped — another width can legitimately
+    /// differ — and a replacement inherits what `kept` knows, since `kept` is
+    /// the table made last.
+    pub(crate) fn retire_outdated_predictions(
+        &self,
+        kept: BoxConstraint,
+        scale_bits: u32,
+        is_row: bool,
+        total: ResolvedSize,
+    ) -> bool {
+        let cross = |constraint: &BoxConstraint| {
+            if is_row {
+                constraint.max_height
+            } else {
+                constraint.max_width
+            }
+        };
+        let mut retired = false;
+        // Exclusive reference, dropped before `get` can run again.
+        let held = unsafe { &mut *self.tables.get() };
+        for slot in held.iter_mut() {
+            let outdated = slot.as_ref().is_some_and(|held| {
+                held.scale_bits == scale_bits
+                    && held.constraint != kept
+                    && cross(&held.constraint) == cross(&kept)
+                    && held.layout.is_estimated()
+                    && held.layout.total() != total
+            });
+            if outdated {
+                *slot = None;
+                retired = true;
+            }
+        }
+        retired
+    }
+
     /// Returns the cached paint order for `range`, rebuilding it only when the
     /// range or element-tree generation changes.
     ///

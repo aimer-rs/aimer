@@ -199,6 +199,13 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
             None => return EventResult::ignored(),
         };
 
+        // A mouse that has left is no longer holding the bar.
+        if matches!(event, ElementEvent::PointerExited(PointerSource::Mouse, _))
+            && self.ctrl.clear_scroll_bar_hover()
+        {
+            self.ctrl.request_animation_frame();
+        }
+
         let active_drag = self.ctrl.drag_mode.get() != DragMode::None;
         let child_captured = event_pointer_key(event)
             .is_some_and(|pointer| self.event_dispatcher.borrow().is_captured(pointer))
@@ -207,6 +214,9 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
 
         let inside = self.bounds.is_inside(cursor.x, cursor.y);
         if !child_route_allowed(inside, active_drag, child_captured) {
+            if self.ctrl.clear_scroll_bar_hover() {
+                self.ctrl.request_animation_frame();
+            }
             // The pointer is still over this element as far as the enclosing
             // tree is concerned, but no longer over the content: a panel's grab
             // band over the scrollable's edge is the usual case. Nothing
@@ -458,15 +468,29 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
                 // info!("[scroll] PointerDown id={} pos=({:.1},{:.1})", id, p.x, p.y);
 
                 let mut mode = DragMode::Pending;
-                if self.ctrl.hit_test_v_thumb(*p) {
-                    mode = DragMode::VerticalScrollbar;
-                }
-                if mode == DragMode::Pending && self.ctrl.hit_test_h_thumb(*p) {
-                    mode = DragMode::HorizontalScrollbar;
+                if let Some(thumb) = self
+                    .ctrl
+                    .thumb_at(*p, pointer.source != PointerSource::Mouse)
+                {
+                    mode = thumb;
+                    // Remember where the thumb was taken, so that it stays under
+                    // the pointer however the drag goes.
+                    let device = self.ctrl.to_device(*p);
+                    let along = if thumb == DragMode::VerticalScrollbar {
+                        (device.y, self.ctrl.scroll_offset.get().y)
+                    } else {
+                        (device.x, self.ctrl.scroll_offset.get().x)
+                    };
+                    self.ctrl.scroll_bar_anchor.set(along);
+                    // A finger on the thumb is not a swipe, whatever is waiting
+                    // to read it as one.
+                    aimer_widget::claim_pointer(PointerKey::new(pointer.source, pointer.id));
                 }
 
-                // Scrollbar track click-to-page: if click is on track but not thumb.
-                if mode == DragMode::Pending {
+                // Scrollbar track click-to-page: if click is on track but not
+                // thumb. A finger on the track is a swipe of the content: only a
+                // mouse pages.
+                if mode == DragMode::Pending && pointer.source == PointerSource::Mouse {
                     let (vp_w, vp_h) = self.ctrl.cached_viewport.get();
                     let v_tw = self.ctrl.cached_v_track_width.get();
                     let h_tw = self.ctrl.cached_h_track_width.get();
@@ -474,11 +498,12 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
                     // velocity = distance / (frame_ref / (1 − friction)) to scroll exactly
                     // `distance` px.
                     let vel_scale = (1.0 - friction) / FRAME_REF_120;
+                    let device = self.ctrl.to_device(*p);
                     if self.ctrl.hit_test_v_track(*p, vp_w, vp_h, v_tw)
                         && let Some((_x, y, _w, _h)) = self.ctrl.v_thumb_rect.get()
                     {
                         let page = vp_h * KEYBOARD_PAGE_FRACTION;
-                        let vy = if p.y < y {
+                        let vy = if device.y < y {
                             page * vel_scale
                         } else {
                             -page * vel_scale
@@ -496,7 +521,7 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
                         && let Some((x, _y, _w, _h)) = self.ctrl.h_thumb_rect.get()
                     {
                         let page = vp_w * KEYBOARD_PAGE_FRACTION;
-                        let vx = if p.x < x {
+                        let vx = if device.x < x {
                             page * vel_scale
                         } else {
                             -page * vel_scale
@@ -641,20 +666,26 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
                                 offset.x += step.x;
                                 offset.y += step.y;
                             }
+                            // The thumb is measured from where it was taken, so
+                            // it stays under the pointer instead of lagging it.
                             DragMode::VerticalScrollbar => {
-                                let target_y = offset.y - dy * self.ctrl.v_scroll_multiplier.get();
-                                offset.y = offset.y * SCROLLBAR_DRAG_SMOOTH_OLD
-                                    + target_y * SCROLLBAR_DRAG_SMOOTH_NEW;
+                                let (from, anchored) = self.ctrl.scroll_bar_anchor.get();
+                                offset.y = anchored
+                                    - (self.ctrl.to_device(*p).y - from)
+                                        * self.ctrl.v_scroll_multiplier.get();
                             }
                             DragMode::HorizontalScrollbar => {
-                                let target_x = offset.x - dx * self.ctrl.h_scroll_multiplier.get();
-                                offset.x = offset.x * SCROLLBAR_DRAG_SMOOTH_OLD
-                                    + target_x * SCROLLBAR_DRAG_SMOOTH_NEW;
+                                let (from, anchored) = self.ctrl.scroll_bar_anchor.get();
+                                offset.x = anchored
+                                    - (self.ctrl.to_device(*p).x - from)
+                                        * self.ctrl.h_scroll_multiplier.get();
                             }
                             _ => {}
                         }
 
-                        if !self.ctrl.bouncy() {
+                        // The bar ends where the content does: only a drag of the
+                        // content itself stretches past an edge.
+                        if !self.ctrl.bouncy() || mode != DragMode::Content {
                             offset = self.ctrl.clamp_offset(offset);
                         }
                         self.ctrl.set_scroll_offset(offset);
@@ -702,8 +733,18 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
                 // move that carries the cursor across a thumb edge schedules
                 // the one frame the highlight needs, and every other move
                 // schedules nothing.
-                if self.ctrl.sync_thumb_hover(*p) {
-                    self.ctrl.request_animation_frame();
+                // Only a mouse hovers: a finger that has lifted leaves no cursor
+                // behind to hold the bar.
+                if pointer.source == PointerSource::Mouse {
+                    let on_bar_changed = self.ctrl.sync_thumb_hover(*p);
+                    // A mouse moving over the content shows the bar. A bar that
+                    // is already fully showing is counting down on frames of its
+                    // own and picks the move up from them, so only a bar that is
+                    // not there yet needs a frame asked for.
+                    self.ctrl.scroll_bar_pointer_moved.set(true);
+                    if on_bar_changed || self.ctrl.scroll_bar_opacity.get() < 1.0 {
+                        self.ctrl.request_animation_frame();
+                    }
                 }
                 false
             }

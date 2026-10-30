@@ -276,3 +276,57 @@ fn a_pruning_walk_that_finds_a_tail_still_asks_for_a_full_pass() {
         "a pass that prunes by the index cannot have reached the sources it skipped"
     );
 }
+
+#[test]
+fn a_cleared_set_forgets_the_root_it_last_answered_for() {
+    let root = ElementId::next();
+    let mut roots = IndexedRoots::default();
+    roots.insert(root);
+    assert!(roots.contains(&root));
+    assert!(roots.contains(&root), "the remembered answer is still right");
+    roots.clear();
+    assert!(!roots.contains(&root), "clearing must also drop the remembered answer");
+    roots.insert(root);
+    assert!(roots.contains(&root), "a root inserted again is covered again");
+}
+
+#[test]
+fn the_remembered_root_does_not_answer_for_another() {
+    let (first, second, absent) = (ElementId::next(), ElementId::next(), ElementId::next());
+    let mut roots = IndexedRoots::default();
+    roots.insert(first);
+    roots.insert(second);
+    assert!(roots.contains(&first));
+    assert!(roots.contains(&second));
+    assert!(roots.contains(&first));
+    assert!(!roots.contains(&absent));
+}
+
+/// Cost of the per-element question "do the dirty paths cover this traversal?",
+/// asked once for every element a rebuild pass visits. Prints ns per call.
+#[test]
+#[ignore = "profile harness: prints numbers, run with --ignored --nocapture"]
+fn profile_dirty_paths_cover_current_traversal() {
+    let root = ElementId::next();
+    DIRTY_PATHS_READY.with(|ready| ready.set(true));
+    DIRTY_INDEXED_ROOTS.with(|roots| {
+        let mut roots = roots.borrow_mut();
+        roots.clear();
+        for _ in 0..8 {
+            roots.insert(ElementId::next());
+        }
+        roots.insert(root);
+    });
+    REBUILD_TRAVERSAL_ROOT.with(|current| current.set(Some(root)));
+    const CALLS: u32 = 2_000_000;
+    let start = std::time::Instant::now();
+    let mut covered = 0u32;
+    for _ in 0..CALLS {
+        covered += u32::from(std::hint::black_box(dirty_paths_cover_current_traversal()));
+    }
+    let elapsed = start.elapsed();
+    assert_eq!(covered, CALLS);
+    println!("{:.1} ns per call", elapsed.as_secs_f64() * 1e9 / f64::from(CALLS));
+    REBUILD_TRAVERSAL_ROOT.with(|current| current.set(None));
+    invalidate_dirty_paths();
+}

@@ -14,6 +14,7 @@ use std::any::Any;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU8;
+use std::time::Instant;
 
 use aimer_events::window::{
     WindowKey, WindowScopeConfig, WindowScopeRegistration, enter_window_scope,
@@ -25,8 +26,8 @@ use aimer_widget::{AnyWidget, Widget};
 use aimer_widget::base::WindowHandle;
 use tokio::runtime::Handle;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
-use winit::event_loop::ActiveEventLoop;
+use winit::event::{StartCause, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::WindowId;
 
 use crate::aimer_app::{
@@ -74,6 +75,7 @@ impl Shared {
             #[cfg(debug_assertions)]
             debug_overlay: Default::default(),
             window_attr: attr,
+            frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
             render_tree: WindowRenderTree::default(),
             #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
             show_window_after_first_frame,
@@ -401,6 +403,18 @@ fn window_requester(id: WindowId, slot: Arc<AtomicU8>) -> impl Fn() + 'static {
 }
 
 impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: StartCause) {
+        // Any wake may be the one a held-back frame was waiting for, not only
+        // the timer's own.
+        if self.windows.iter().any(|window| window.app.pacing_deadline().is_some()) {
+            let now = Instant::now();
+            for window in &mut self.windows {
+                let _active = enter_window_scope(window.key);
+                window.app.wake_paced_frame(now);
+            }
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Before the first frame builds the widget tree: the link that launched
         // the app has to be waiting when the navigator is created.
@@ -514,7 +528,15 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // A frame held back by the pacer is the only reason this loop sleeps on a
+        // timer instead of waiting for an event.
+        let deadline = self
+            .windows
+            .iter()
+            .filter_map(|window| window.app.pacing_deadline())
+            .min();
+        event_loop.set_control_flow(deadline.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
         for window in &mut self.windows {
             #[cfg(target_os = "macos")]
             {

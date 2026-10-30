@@ -41,6 +41,7 @@ aimer_text.workspace = true
 aimer_macro.workspace = true
 aimer_provider.workspace = true
 aimer_svg.workspace = true
+aimer_custom_paint.workspace = true
 aimer_lucide = { workspace = true, optional = true }
 aimer_vault = { workspace = true, optional = true }
 aimer_passkey = { workspace = true, optional = true }
@@ -269,6 +270,7 @@ members = [
     "widgets/text",
     "widgets/markdown",
     "widgets/svg",
+    "widgets/custom_paint",
     "widgets/lucide",
     # controls
     "controls/dnd",
@@ -350,6 +352,7 @@ aimer_std = { path = "cores/std" }
 aimer_macro = { path = "support/macro" }
 aimer_provider = { path = "framework/provider" }
 aimer_svg = { path = "widgets/svg" }
+aimer_custom_paint = { path = "widgets/custom_paint" }
 aimer_lucide = { path = "widgets/lucide" }
 aimer_markdown = { path = "widgets/markdown" }
 aimer_modal = { path = "overlay/modal" }

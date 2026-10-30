@@ -17,7 +17,9 @@ use aimer_widget::{
 };
 
 use crate::ScrollAxis;
-use crate::scrollable::constants::{SCROLLBAR_HIDE_DURATION_MS, SCROLLBAR_SHOW_DURATION_MS};
+use crate::scrollable::constants::{
+    SCROLLBAR_HIDE_DURATION_MS, SCROLLBAR_IDLE_HOLD_MS, SCROLLBAR_SHOW_DURATION_MS,
+};
 use crate::scrollable::controller::{DragMode, ScrollState};
 
 /// Controls whether a scroll bar overlays the content or occupies layout
@@ -194,13 +196,28 @@ struct ScrollBarRuntime {
     last_activity: Cell<Option<aimer_utils::AnimInstant>>,
     last_offset: Cell<Option<Vec2d>>,
     showing: Cell<bool>,
+    /// Whether something held the bar the last time it was asked: a pointer on
+    /// it, or a drag. The idle delay starts when this lets go.
+    held: Cell<bool>,
     transition_start: Cell<Option<aimer_utils::AnimInstant>>,
     transition_from: Cell<f32>,
     v2_paint_snapshot: Cell<Option<ScrollBarPaint>>,
 }
 
 impl ScrollBarRuntime {
-    fn update(&self, offset: Vec2d, active: bool, now: aimer_utils::AnimInstant) -> f32 {
+    /// Advances the bar to `now` and returns its opacity.
+    ///
+    /// `active` is a scroll in progress. `held` is something that keeps the bar
+    /// for as long as it lasts, a pointer resting on it or a drag: the bar
+    /// stays fully shown, and the idle delay before it fades only starts when
+    /// it lets go.
+    fn update(
+        &self,
+        offset: Vec2d,
+        active: bool,
+        held: bool,
+        now: aimer_utils::AnimInstant,
+    ) -> f32 {
         let moved = self
             .last_offset
             .replace(Some(offset))
@@ -208,8 +225,9 @@ impl ScrollBarRuntime {
                 (previous.x - offset.x).abs() > 0.01 || (previous.y - offset.y).abs() > 0.01
             });
 
-        let activity = active || moved;
-        if activity {
+        let was_held = self.held.replace(held);
+        let activity = active || moved || held;
+        if activity || was_held {
             self.last_activity.set(Some(now));
         }
 
@@ -221,7 +239,7 @@ impl ScrollBarRuntime {
             }
         } else if self.showing.get()
             && self.last_activity.get().is_some_and(|last| {
-                now.duration_since(last) > Duration::from_millis(SCROLLBAR_SHOW_DURATION_MS)
+                now.duration_since(last) > Duration::from_millis(SCROLLBAR_IDLE_HOLD_MS)
             })
         {
             self.begin_transition(now, false, alpha);
@@ -230,6 +248,12 @@ impl ScrollBarRuntime {
 
         self.alpha.set(alpha);
         alpha
+    }
+
+    /// Whether the bar is waiting out its idle delay, which only a frame can
+    /// end: nothing else will happen to wake it.
+    fn counting_down(&self) -> bool {
+        self.showing.get() && !self.held.get()
     }
 
     fn begin_transition(&self, now: aimer_utils::AnimInstant, showing: bool, from: f32) {
@@ -265,6 +289,7 @@ impl ScrollBarRuntime {
         self.alpha.set(0.0);
         self.last_activity.set(None);
         self.showing.set(false);
+        self.held.set(false);
         self.transition_start.set(None);
         self.transition_from.set(0.0);
     }
@@ -687,6 +712,7 @@ fn prepare_scrollbar_paint(
         Ok(Some(paint)) => paint,
         Ok(None) => {
             runtime.hide();
+            ctrl.scroll_bar_opacity.set(0.0);
             if matches!(ctrl.axis, ScrollAxis::Vertical) {
                 ctrl.v_thumb_rect.set(None);
             } else {
@@ -696,18 +722,9 @@ fn prepare_scrollbar_paint(
         }
         Err(()) => return None,
     };
-    let alpha = runtime.update(
-        ctrl.scroll_offset.get(),
-        ctrl.is_scrolling.get(),
-        aimer_utils::AnimInstant::now(),
-    );
-    if runtime.transition_start.get().is_some() {
-        ctrl.request_animation_frame();
-    }
-    if alpha <= 0.0 {
-        return None;
-    }
-
+    // The geometry is published whether or not the bar is showing: a pointer
+    // reaching for a hidden bar has to find it where it is, and that is what
+    // shows it.
     if paint.is_vertical {
         ctrl.cached_v_track_width.set(paint.track_width);
         ctrl.v_scroll_multiplier.set(paint.multiplier);
@@ -717,6 +734,27 @@ fn prepare_scrollbar_paint(
         ctrl.h_scroll_multiplier.set(paint.multiplier);
         ctrl.h_thumb_rect.set(Some(paint.hit_rect));
     }
+
+    let dragging = matches!(
+        ctrl.drag_mode.get(),
+        DragMode::VerticalScrollbar | DragMode::HorizontalScrollbar
+    );
+    let alpha = runtime.update(
+        ctrl.scroll_offset.get(),
+        ctrl.is_scrolling.get() || ctrl.scroll_bar_pointer_moved.replace(false),
+        dragging || ctrl.scroll_bar_hovered.get(),
+        aimer_utils::AnimInstant::now(),
+    );
+    ctrl.scroll_bar_opacity.set(alpha);
+    // A transition, and the idle delay before the fade, end only on a frame
+    // that nothing else is going to ask for.
+    if runtime.transition_start.get().is_some() || runtime.counting_down() {
+        ctrl.request_animation_frame();
+    }
+    if alpha <= 0.0 {
+        return None;
+    }
+
     Some(ScrollBarPaint { alpha, ..paint })
 }
 
@@ -784,11 +822,12 @@ mod tests {
         let runtime = ScrollBarRuntime::default();
         let start = aimer_utils::AnimInstant::now();
 
-        assert_eq!(runtime.update(Vec2d::ZERO, true, start), 0.0);
+        assert_eq!(runtime.update(Vec2d::ZERO, true, false, start), 0.0);
 
         let halfway = runtime.update(
             Vec2d::ZERO,
             true,
+            false,
             start + Duration::from_millis(SCROLLBAR_SHOW_DURATION_MS / 2),
         );
         assert!(halfway > 0.0 && halfway < 1.0);
@@ -796,6 +835,7 @@ mod tests {
             runtime.update(
                 Vec2d::ZERO,
                 true,
+                false,
                 start + Duration::from_millis(SCROLLBAR_SHOW_DURATION_MS),
             ),
             1.0
@@ -803,19 +843,24 @@ mod tests {
     }
 
     #[test]
-    fn an_idle_scrollbar_fades_out_after_the_show_delay() {
+    fn an_idle_scrollbar_fades_out_after_the_idle_delay() {
         let runtime = ScrollBarRuntime::default();
         let start = aimer_utils::AnimInstant::now();
         let fully_visible = start + Duration::from_millis(SCROLLBAR_SHOW_DURATION_MS);
 
-        assert_eq!(runtime.update(Vec2d::ZERO, true, start), 0.0);
-        assert_eq!(runtime.update(Vec2d::ZERO, true, fully_visible), 1.0);
+        assert_eq!(runtime.update(Vec2d::ZERO, true, false, start), 0.0);
+        assert_eq!(runtime.update(Vec2d::ZERO, true, false, fully_visible), 1.0);
 
-        let fade_start = fully_visible + Duration::from_millis(SCROLLBAR_SHOW_DURATION_MS + 1);
-        assert_eq!(runtime.update(Vec2d::ZERO, false, fade_start), 1.0);
+        // Short of the delay it is still there, however long a fade would take.
+        let almost = fully_visible + Duration::from_millis(SCROLLBAR_IDLE_HOLD_MS - 1);
+        assert_eq!(runtime.update(Vec2d::ZERO, false, false, almost), 1.0);
+
+        let fade_start = fully_visible + Duration::from_millis(SCROLLBAR_IDLE_HOLD_MS + 1);
+        assert_eq!(runtime.update(Vec2d::ZERO, false, false, fade_start), 1.0);
         assert_eq!(
             runtime.update(
                 Vec2d::ZERO,
+                false,
                 false,
                 fade_start + Duration::from_millis(SCROLLBAR_HIDE_DURATION_MS / 2),
             ),
@@ -825,10 +870,33 @@ mod tests {
             runtime.update(
                 Vec2d::ZERO,
                 false,
+                false,
                 fade_start + Duration::from_millis(SCROLLBAR_HIDE_DURATION_MS),
             ),
             0.0
         );
+    }
+
+    /// A pointer resting on the bar keeps it for as long as it rests there, and
+    /// the idle delay counts from when it lets go, not from when it arrived.
+    #[test]
+    fn a_held_scrollbar_waits_out_the_idle_delay_from_the_release() {
+        let runtime = ScrollBarRuntime::default();
+        let start = aimer_utils::AnimInstant::now();
+        let shown = start + Duration::from_millis(SCROLLBAR_SHOW_DURATION_MS);
+        runtime.update(Vec2d::ZERO, false, true, start);
+        assert_eq!(runtime.update(Vec2d::ZERO, false, true, shown), 1.0);
+
+        // Held for far longer than the delay, with no frame in between.
+        let released = shown + Duration::from_millis(10 * SCROLLBAR_IDLE_HOLD_MS);
+        assert_eq!(runtime.update(Vec2d::ZERO, false, false, released), 1.0);
+        assert!(runtime.counting_down());
+
+        let almost = released + Duration::from_millis(SCROLLBAR_IDLE_HOLD_MS - 1);
+        assert_eq!(runtime.update(Vec2d::ZERO, false, false, almost), 1.0);
+        let gone = released + Duration::from_millis(SCROLLBAR_IDLE_HOLD_MS + SCROLLBAR_HIDE_DURATION_MS + 2);
+        runtime.update(Vec2d::ZERO, false, false, released + Duration::from_millis(SCROLLBAR_IDLE_HOLD_MS + 1));
+        assert_eq!(runtime.update(Vec2d::ZERO, false, false, gone), 0.0);
     }
 
     #[test]

@@ -1070,6 +1070,7 @@ impl Drawable for RawFlex {
         // axis; the cross axis is aligned per child.
         let mut distribution = self.main_distribution(ctx, layout.total(), layout.len());
         let mut range = self.painted_range(ctx, &layout, distribution);
+        let reported = layout.total();
 
         // Bring the slice about to be painted into existence before anything
         // borrows a child. A windowed source drops what left the range here, so
@@ -1100,6 +1101,27 @@ impl Drawable for RawFlex {
                 // to disagree with.
                 break;
             }
+        }
+
+        // Painting corrected the size this container reported. The containers
+        // above it measured it before it was painted and keep what they were
+        // told for as long as the layout generation stands, so a scroll view
+        // that asks again through them would read the prediction back and never
+        // learn that its content got shorter. Retire their measurements; this
+        // container's own table is stored again under the new generation: it is
+        // the one that was just corrected against what is painted, and a table
+        // made anew would guess again from another probe and forget the rows
+        // that agreed with this one.
+        let retired = self.layout.retire_outdated_predictions(
+            ctx.box_constraint,
+            scale_bits_of(ctx),
+            is_row,
+            layout.total(),
+        );
+        if retired || layout.total() != reported {
+            aimer_widget::notify_layout_changed();
+            self.layout
+                .set(ctx.box_constraint, scale_bits_of(ctx), Rc::clone(&layout));
         }
 
         // Painting resolved the whole table, so let a later `computed_size`

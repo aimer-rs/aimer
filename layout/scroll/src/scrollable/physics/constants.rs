@@ -158,10 +158,6 @@ pub const DRAG_BLEND_BASE: f32 = 0.4;
 /// Time window (seconds) over which drag velocity blend ramps to full weight.
 pub const DRAG_BLEND_WINDOW: f32 = 0.1;
 
-/// Smoothing factor for direct scrollbar-thumb dragging (kept old / new).
-pub const SCROLLBAR_DRAG_SMOOTH_OLD: f32 = 0.4;
-pub const SCROLLBAR_DRAG_SMOOTH_NEW: f32 = 0.6;
-
 /// Idle time (ms) after the last event past which residual velocity is cleared.
 /// Must be generous enough for mobile platforms where touch delivery latency
 /// (iOS gesture arbitration, ProMotion batching) can easily exceed 100ms
@@ -186,6 +182,18 @@ pub const KEYBOARD_PAGE_FRACTION: f32 = 0.85;
 /// Duration (ms) for scrollbar fade-in / fade-out transitions.
 pub const SCROLLBAR_SHOW_DURATION_MS: u64 = 200;
 pub const SCROLLBAR_HIDE_DURATION_MS: u64 = 400;
+/// How long (ms) the scrollbar stays fully shown after the last scroll or the
+/// last time a pointer was on it, before it starts to fade out by itself.
+pub const SCROLLBAR_IDLE_HOLD_MS: u64 = 1000;
+/// How far (logical px) beyond the thumb, across the bar, a finger may land and
+/// still hold it. A thumb a few pixels wide is not something a fingertip hits.
+pub const SCROLLBAR_TOUCH_SLOP_CROSS: f32 = 20.0;
+/// How far (logical px) beyond either end of the thumb a finger may land and
+/// still hold it.
+pub const SCROLLBAR_TOUCH_SLOP_ALONG: f32 = 8.0;
+/// How opaque the bar has to be before a finger can take hold of it: a thumb
+/// that is not on screen is not something the user can be holding.
+pub const SCROLLBAR_TOUCH_MIN_OPACITY: f32 = 0.3;
 
 /// Spring-back stiffness (N/m equivalent). Controls how strongly the
 /// overscrolled content is pulled toward the valid edge. Higher values

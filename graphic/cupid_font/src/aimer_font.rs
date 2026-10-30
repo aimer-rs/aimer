@@ -164,8 +164,28 @@ struct HmtxTable {
     advances: Vec<u16>,
 }
 
+// Table parses this thread has done, so tests can tell a cached face from one
+// rebuilt on every lookup.
+#[cfg(test)]
+thread_local! {
+    static CMAP_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static HMTX_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn cmap_parses() -> usize {
+    CMAP_PARSES.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn hmtx_parses() -> usize {
+    HMTX_PARSES.with(std::cell::Cell::get)
+}
+
 impl HmtxTable {
     fn parse(table: &[u8], metrics: FontMetrics) -> Result<Self, SfntError> {
+        #[cfg(test)]
+        HMTX_PARSES.with(|count| count.set(count.get() + 1));
         let tag = Tag::from_bytes(*b"hmtx");
         let required_size = checked_add(
             checked_mul(usize::from(metrics.number_of_h_metrics), 4)?,
@@ -394,6 +414,7 @@ pub(crate) struct SfntFace<'a> {
     color_cache: OnceLock<Result<Option<color::ColorTables>, SfntError>>,
     bitmap_cache: OnceLock<Result<Option<bitmap::BitmapTables>, SfntError>>,
     svg_cache: OnceLock<Result<Option<svg::SvgTables>, SfntError>>,
+    cff_cache: OnceLock<Result<cff::CffFont, SfntError>>,
 }
 
 impl<'a> SfntFace<'a> {
@@ -512,6 +533,7 @@ impl<'a> SfntFace<'a> {
             color_cache: OnceLock::new(),
             bitmap_cache: OnceLock::new(),
             svg_cache: OnceLock::new(),
+            cff_cache: OnceLock::new(),
         }
     }
 
@@ -1255,6 +1277,12 @@ impl VariationInstanceRegistry {
 pub(crate) type SharedParsedAimerFont = Arc<ParsedAimerFont>;
 
 impl ParsedAimerFont {
+    /// The validated SFNT face, with its lazily parsed tables retained.
+    #[inline]
+    pub(crate) fn sfnt(&self) -> &SfntFace<'static> {
+        &self.face
+    }
+
     fn layout(&self) -> Result<&layout::LayoutState, SfntError> {
         self.layout
             .get_or_init(|| layout::LayoutState::parse(&self.face))
@@ -1349,6 +1377,20 @@ fn parsed_aimer_font(data: FontData, face_index: u32) -> Result<Arc<ParsedAimerF
         cache.insert(key, parsed.clone());
     }
     Ok(parsed)
+}
+
+/// The process-wide parsed face behind `data`.
+///
+/// Shaping and rasterization already share it; per-lookup callers such as
+/// fallback coverage probing and advance measurement take it too, so the
+/// character map and metrics tables are parsed once per face rather than once
+/// per call. A face this cache cannot build — its metrics tables are unusable —
+/// is an error here, and callers fall back to reading the bytes directly.
+pub(crate) fn shared_face(
+    data: FontData,
+    face_index: u32,
+) -> Result<SharedParsedAimerFont, SfntError> {
+    parsed_aimer_font(data, face_index)
 }
 
 /// Parses and compiles the shared state needed before a shaping batch enters
@@ -1738,6 +1780,8 @@ struct VariationMapping {
 
 impl ParsedCmap {
     fn parse(bytes: &[u8]) -> Result<Self, SfntError> {
+        #[cfg(test)]
+        CMAP_PARSES.with(|count| count.set(count.get() + 1));
         let cmap = Cmap::new(bytes)?;
         let mut format12 = None;
         let mut format4 = None;
@@ -1920,34 +1964,41 @@ fn parse_format4_cmap(subtable: &[u8]) -> Result<Vec<CmapSegment>, SfntError> {
     let id_deltas = checked_add(start_codes, checked_mul(segments, 2)?)?;
     let id_range_offsets = checked_add(id_deltas, checked_mul(segments, 2)?)?;
     let array_end = checked_add(id_range_offsets, checked_mul(segments, 2)?)?;
-    reader.range(0, array_end)?;
+    // The four parallel arrays all end before `array_end`, which is checked
+    // here once; walking them below is then plain indexing rather than a
+    // bounds-checked read per value, which is what made this loop dominate a
+    // cold start in debug builds.
+    let table = reader.range(0, array_end)?;
+    let array = |start: usize| &table[start..start + segments * 2];
+    let (end_codes_array, start_codes_array) = (array(end_codes), array(start_codes));
+    let (deltas_array, range_offsets_array) = (array(id_deltas), array(id_range_offsets));
+    let be16 = |array: &[u8], index: usize| u16::from_be_bytes([array[index * 2], array[index * 2 + 1]]);
 
     let mut parsed = Vec::with_capacity(segments);
     let mut previous_end = None;
     for index in 0..segments {
-        let end = reader.u16(checked_add(end_codes, checked_mul(index, 2)?)?)?;
-        let start = reader.u16(checked_add(start_codes, checked_mul(index, 2)?)?)?;
+        let end = be16(end_codes_array, index);
+        let start = be16(start_codes_array, index);
         if start > end || previous_end.is_some_and(|value| start <= value) {
             return Err(SfntError::MalformedCmap(4));
         }
         previous_end = Some(end);
 
-        let delta = reader.i16(checked_add(id_deltas, checked_mul(index, 2)?)?)?;
-        let range_offset_position = checked_add(id_range_offsets, checked_mul(index, 2)?)?;
-        let range_offset = reader.u16(range_offset_position)?;
+        let delta = be16(deltas_array, index) as i16;
+        let range_offset = be16(range_offsets_array, index);
         let glyphs = if range_offset == 0 {
             None
         } else {
             let count = usize::from(end - start) + 1;
-            let mut glyphs = Vec::with_capacity(count);
-            for glyph_index in 0..count {
-                let glyph_offset = checked_add(
-                    checked_add(range_offset_position, usize::from(range_offset))?,
-                    checked_mul(glyph_index, 2)?,
-                )?;
-                glyphs.push(reader.u16(glyph_offset)?);
-            }
-            Some(glyphs)
+            let range_offset_position = id_range_offsets + index * 2;
+            let glyph_start = checked_add(range_offset_position, usize::from(range_offset))?;
+            let glyph_bytes = reader.range(glyph_start, checked_mul(count, 2)?)?;
+            Some(
+                glyph_bytes
+                    .chunks_exact(2)
+                    .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                    .collect(),
+            )
         };
         parsed.push(CmapSegment {
             start,
@@ -1971,19 +2022,20 @@ fn parse_format12_cmap(subtable: &[u8]) -> Result<Vec<CmapGroup>, SfntError> {
         return Err(SfntError::MalformedCmap(12));
     }
     let groups_usize = usize::try_from(groups).map_err(|_| SfntError::ArithmeticOverflow)?;
-    let groups_end = checked_add(16, checked_mul(groups_usize, 12)?)?;
-    reader.range(0, groups_end)?;
+    // One bounds check for the whole group table; each 12-byte group is then
+    // read from its own chunk.
+    let group_table = reader.range(16, checked_mul(groups_usize, 12)?)?;
 
     let mut parsed = Vec::with_capacity(groups_usize);
     let mut previous_end = None;
-    for index in 0..groups_usize {
-        let offset = checked_add(16, checked_mul(index, 12)?)?;
-        let start = reader.u32(offset)?;
-        let end = reader.u32(checked_add(offset, 4)?)?;
+    for group in group_table.chunks_exact(12) {
+        let be32 = |at: usize| u32::from_be_bytes([group[at], group[at + 1], group[at + 2], group[at + 3]]);
+        let start = be32(0);
+        let end = be32(4);
         if start > end || end > 0x0010_ffff || previous_end.is_some_and(|value| start <= value) {
             return Err(SfntError::MalformedCmap(12));
         }
-        let start_glyph = reader.u32(checked_add(offset, 8)?)?;
+        let start_glyph = be32(8);
         let last_glyph = start_glyph
             .checked_add(end - start)
             .ok_or(SfntError::CmapGlyphOutOfRange(u32::MAX))?;
@@ -3968,6 +4020,35 @@ pub(crate) mod tests {
                 CffPathCommand::Close,
             ]
         ));
+    }
+
+    #[test]
+    fn repeated_cff_outlines_parse_the_table_once() {
+        let charstring = [
+            cff_integer(0),
+            cff_integer(0),
+            21,
+            cff_integer(100),
+            cff_integer(0),
+            5,
+            14,
+        ];
+        let cff = cff2_table(&charstring);
+        let (head, hhea, maxp) = cff_metrics_tables();
+        let bytes = sfnt_with_tables(&[
+            (*b"head", head.as_slice()),
+            (*b"hhea", hhea.as_slice()),
+            (*b"maxp", maxp.as_slice()),
+            (*b"CFF2", cff.as_slice()),
+        ]);
+        let face = SfntFace::from_bytes(&bytes, 0).expect("CFF2 directory should parse");
+
+        let before = super::cff::cff_parses();
+        for _ in 0..20 {
+            assert!(face.cff_outline(0).expect("outline").is_some());
+        }
+        let parses = super::cff::cff_parses() - before;
+        assert!(parses <= 1, "20 outlines parsed the CFF table {parses} times");
     }
 
     #[test]

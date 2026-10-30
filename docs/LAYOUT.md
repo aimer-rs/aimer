@@ -15,7 +15,7 @@ aimer/
 │               animation  decoration  provider  style  focus  persist quiver
 ├─ layout/      container  flex  grid  scroll  space
 ├─ overlay/     modal  ctxmenu
-├─ widgets/     svg  lucide  assets  text  input  markdown
+├─ widgets/     svg  lucide  assets  text  input  markdown  custom_paint
 ├─ controls/    collapsible  indicator  range  selection  picker  feedback  dnd
 ├─ routing/     router  navigation
 ├─ host/        platform  window frame_stats  hot_reload anteros

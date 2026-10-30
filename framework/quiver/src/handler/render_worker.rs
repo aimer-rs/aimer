@@ -1,10 +1,46 @@
 //! Delivers GPU outcomes without moving application callbacks off the UI thread.
+use std::time::Instant;
+
 use super::AimerApplicationHandler;
 use crate::aimer_app::FrameRequestKind;
 use aimer_widget::Widget;
+use aimer_widget::base::WindowHandle;
 use winit::event_loop::ActiveEventLoop;
 
 impl<W: Widget + 'static> AimerApplicationHandler<W> {
+    /// Returns `false` when this frame would start sooner after the previous one
+    /// than the display can show it. The deadline is picked up by the host's
+    /// `about_to_wait`, so only a hosted window is paced: an application that
+    /// owns its loop has nothing that would wake it again.
+    pub(crate) fn pace_render_frame(&mut self, bypass: bool) -> bool {
+        if !self.hosted {
+            return true;
+        }
+        let now = Instant::now();
+        let window = &self.window;
+        let period = self.frame_pacer.period(now, || {
+            window
+                .as_ref()
+                .and_then(WindowHandle::native_window)
+                .and_then(|window| window.current_monitor().or_else(|| window.primary_monitor()))
+                .and_then(|monitor| monitor.refresh_rate_millihertz())
+        });
+        self.frame_pacer.admit(now, period, bypass)
+    }
+
+    /// When a frame held back by [`Self::pace_render_frame`] may be tried again.
+    #[inline]
+    pub(crate) fn pacing_deadline(&self) -> Option<Instant> {
+        self.frame_pacer.deadline()
+    }
+
+    /// Resumes a held-back frame once its deadline has been reached.
+    pub(crate) fn wake_paced_frame(&mut self, now: Instant) {
+        if self.frame_pacer.take_due(now) {
+            self.request_deferred_render_frame();
+        }
+    }
+
     pub(crate) fn admit_render_frame(&mut self) -> bool {
         if let Some(size) = self.pending_resize.take() {
             self.render_ctx.resize(size);

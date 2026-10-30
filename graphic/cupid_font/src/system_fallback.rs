@@ -241,16 +241,14 @@ pub(crate) fn fallback_for_codepoint(
     // otherwise shadow the bold one a fresh resolution finds, and the emphasis
     // would be lost to whichever run happened to be drawn first.
     let known: Vec<FontRecord> = STORE.read().ok()?.records.clone();
-    let decodes_script = |record: &&FontRecord| {
-        cached_record_decodes_codepoint(record, codepoint)
-            && cached_record_decodes_all(record, requirement)
-    };
-    let reusable = known
-        .iter()
-        .filter(decodes_script)
-        .min_by_key(|record| weight_distance(record, weight))
-        .filter(|record| weight_distance(record, weight) <= WEIGHT_MATCH_TOLERANCE)
-        .cloned();
+    let reusable = pick_reusable_face(
+        &known,
+        |record| weight_distance(record, weight),
+        |record| {
+            cached_record_decodes_codepoint(record, codepoint)
+                && cached_record_decodes_all(record, requirement)
+        },
+    );
     if let Some(record) = reusable {
         return settle(cache_key, Some(record.id));
     }
@@ -273,6 +271,34 @@ pub(crate) fn fallback_for_codepoint(
         })
     };
     settle(cache_key, font_id)
+}
+
+/// Chooses the known face a new codepoint should reuse: the one whose design
+/// weight is closest to the run's, among those that decode the codepoint's
+/// script, and only if it is within [`WEIGHT_MATCH_TOLERANCE`]. Equally close
+/// faces resolve to the one discovered first.
+///
+/// `decodes` is the expensive question — answering it for a face the first time
+/// parses that face's tables — so faces are asked in order of weight distance
+/// and the search stops at the first that decodes. Asking every known face
+/// before choosing among them meant each newly seen codepoint forced every face
+/// the process had ever discovered to be read.
+fn pick_reusable_face(
+    known: &[FontRecord],
+    distance: impl Fn(&FontRecord) -> u16,
+    decodes: impl Fn(&FontRecord) -> bool,
+) -> Option<FontRecord> {
+    let mut candidates: Vec<(u16, &FontRecord)> = known
+        .iter()
+        .map(|record| (distance(record), record))
+        .filter(|(distance, _)| *distance <= WEIGHT_MATCH_TOLERANCE)
+        .collect();
+    // Stable, so faces at the same distance keep their discovery order.
+    candidates.sort_by_key(|(distance, _)| *distance);
+    candidates
+        .into_iter()
+        .find(|(_, record)| decodes(record))
+        .map(|(_, record)| record.clone())
 }
 
 /// Returns the cached system face together with the glyph it uses for the
@@ -694,33 +720,28 @@ fn record_draws_codepoint(record: &FontRecord, codepoint: char) -> bool {
 /// renders with different antialiasing and its private faces do not match the
 /// stroke weight of the faces drawn by Cupid in the same line.
 fn record_decodes_codepoint(record: &FontRecord, codepoint: char) -> bool {
-    let Some(data) = record.data() else {
-        return false;
-    };
-    let Ok(face) = crate::aimer_font::SfntFace::from_bytes(
-        data.as_ref(),
-        record.collection_index,
-    ) else {
-        return false;
-    };
-    let Ok(Some(glyph_id)) = face.glyph_index(codepoint as u32) else {
-        return false;
-    };
-    if glyph_id == 0 {
-        return false;
-    }
-    if record.is_color {
-        return true;
-    }
-    face.outline(glyph_id)
-        .ok()
-        .flatten()
-        .is_some_and(|outline| !outline.contours.is_empty())
-        || face
-            .cff_outline(glyph_id)
-            .ok()
-            .flatten()
-            .is_some_and(|outline| !outline.commands.is_empty())
+    record
+        .with_face(|face| {
+            let Ok(Some(glyph_id)) = face.glyph_index(codepoint as u32) else {
+                return false;
+            };
+            if glyph_id == 0 {
+                return false;
+            }
+            if record.is_color {
+                return true;
+            }
+            face.outline(glyph_id)
+                .ok()
+                .flatten()
+                .is_some_and(|outline| !outline.contours.is_empty())
+                || face
+                    .cff_outline(glyph_id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|outline| !outline.commands.is_empty())
+        })
+        .unwrap_or(false)
 }
 
 /// Reports whether the platform can draw a glyph this crate cannot decode.
@@ -981,6 +1002,77 @@ fn resolve_face_for_codepoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn record(id: FontId) -> FontRecord {
+        FontRecord {
+            id,
+            bytes: None,
+            collection_index: 0,
+            path: None,
+            is_color: false,
+        }
+    }
+
+    fn ids(records: &[FontRecord]) -> Vec<FontId> {
+        records.iter().map(|record| record.id).collect()
+    }
+
+    #[test]
+    fn reuse_prefers_the_closest_weight_among_faces_that_decode() {
+        let known = [record(1), record(2), record(3)];
+        let distance = |record: &FontRecord| [300, 40, 0][ids(&known).iter().position(|id| *id == record.id).unwrap()];
+        // Face 3 is closest but does not decode; face 2 is the next closest.
+        let picked = pick_reusable_face(&known, distance, |record| record.id != 3);
+        assert_eq!(picked.map(|record| record.id), Some(2));
+    }
+
+    #[test]
+    fn reuse_breaks_a_tie_toward_the_face_discovered_first() {
+        let known = [record(7), record(8)];
+        let picked = pick_reusable_face(&known, |_| 20, |_| true);
+        assert_eq!(picked.map(|record| record.id), Some(7));
+    }
+
+    #[test]
+    fn reuse_refuses_a_face_designed_too_far_from_the_requested_weight() {
+        let known = [record(1)];
+        let too_far = WEIGHT_MATCH_TOLERANCE + 1;
+        assert!(pick_reusable_face(&known, |_| too_far, |_| true).is_none());
+        assert!(pick_reusable_face(&known, |_| WEIGHT_MATCH_TOLERANCE, |_| true).is_some());
+    }
+
+    #[test]
+    fn reuse_stops_asking_once_the_closest_face_decodes() {
+        let known = [record(1), record(2), record(3), record(4)];
+        let asked = std::cell::RefCell::new(Vec::new());
+        let picked = pick_reusable_face(
+            &known,
+            |record| u16::try_from(record.id).unwrap() * 10,
+            |record| {
+                asked.borrow_mut().push(record.id);
+                record.id >= 2
+            },
+        );
+        assert_eq!(picked.map(|record| record.id), Some(2));
+        // Face 1 is closest and fails; face 2 decodes. Faces 3 and 4 are never read.
+        assert_eq!(*asked.borrow(), vec![1, 2]);
+    }
+
+    #[test]
+    fn reuse_never_asks_about_faces_beyond_the_weight_tolerance() {
+        let known = [record(1), record(2)];
+        let asked = std::cell::RefCell::new(Vec::new());
+        let picked = pick_reusable_face(
+            &known,
+            |record| if record.id == 1 { 0 } else { WEIGHT_MATCH_TOLERANCE + 50 },
+            |record| {
+                asked.borrow_mut().push(record.id);
+                false
+            },
+        );
+        assert!(picked.is_none());
+        assert_eq!(*asked.borrow(), vec![1]);
+    }
 
     #[cfg(all(
         any(target_os = "ios", target_os = "macos"),

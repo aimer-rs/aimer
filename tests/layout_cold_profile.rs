@@ -52,6 +52,10 @@ fn context<'a>(canvas: FrameCanvas<'a>, runtime: &tokio::runtime::Runtime) -> Bu
 
 /// Container(padding) > Container(padding) > Text: three nodes.
 fn row(index: usize) -> AnyWidget {
+    row_widget(index).boxed()
+}
+
+fn row_widget(index: usize) -> impl Widget {
     Container::new()
         .height(40)
         .padding(LayoutSpacing::new().left(12).right(12))
@@ -61,7 +65,6 @@ fn row(index: usize) -> AnyWidget {
                 .padding(LayoutSpacing::new().left(4))
                 .child(Text::new(format!("row {index}"))),
         )
-        .boxed()
 }
 
 fn leaf() -> AnyWidget {
@@ -82,6 +85,50 @@ fn wide_scroll(n: usize) -> AnyWidget {
         .axis(ScrollAxis::Vertical)
         .child(wide_column(n))
         .boxed()
+}
+
+/// The same rows behind a `Scrollable`, but as an on-demand list: the container
+/// predicts its extent from one probed row instead of measuring all of them.
+fn wide_list(n: usize) -> AnyWidget {
+    Scrollable::new()
+        .axis(ScrollAxis::Vertical)
+        .child(
+            Column::new()
+                .horizontal_alignment(BoxAlignment::Start)
+                .list(0..n)
+                .builder(|i| row_widget(*i)),
+        )
+        .boxed()
+}
+
+/// An on-demand list whose rows declare their extent: no row is measured.
+fn wide_list_declared(n: usize) -> AnyWidget {
+    Scrollable::new()
+        .axis(ScrollAxis::Vertical)
+        .child(
+            Column::new()
+                .horizontal_alignment(BoxAlignment::Start)
+                .list(0..n)
+                .item_extent(40)
+                .builder(|i| row_widget(*i)),
+        )
+        .boxed()
+}
+
+#[cfg(feature = "markdown")]
+/// A markdown document of `blocks` heading + paragraph + list triples, rendered
+/// through `MarkdownViewer`, whose top-level block column is built from a `Vec`.
+fn markdown_doc(blocks: usize) -> AnyWidget {
+    let source: String = (0..blocks)
+        .map(|i| {
+            format!(
+                "## Heading {i}\n\nParagraph {i}: the quick brown fox jumps over the lazy dog, \
+                 and keeps running until the paragraph wraps onto a second line.\n\n\
+                 - first item {i}\n- second item {i}\n\n"
+            )
+        })
+        .collect();
+    aimer::MarkdownViewer::new().markdown(source).boxed()
 }
 
 /// `depth` nested padded containers around one text.
@@ -266,7 +313,23 @@ fn cold_layout_profile() {
             for n in [1_000, 5_000] {
                 rows.push(run(&runtime, format!("scrollable of {n} rows"), n * 3, &|| wide_scroll(n)));
             }
+            for n in [1_000, 5_000, 50_000] {
+                rows.push(run(&runtime, format!("list est. {n} rows"), n * 3, &|| wide_list(n)));
+            }
+            for n in [1_000, 5_000, 50_000] {
+                rows.push(run(&runtime, format!("list declared {n} rows"), n * 3, &|| wide_list_declared(n)));
+            }
             print(&rows);
+
+            #[cfg(feature = "markdown")]
+            {
+                println!("\n== markdown (3 blocks per unit) ==");
+                let mut rows = vec![];
+                for n in [10, 50, 200, 500] {
+                    rows.push(run(&runtime, format!("markdown x{n}"), n * 3, &|| markdown_doc(n)));
+                }
+                print(&rows);
+            }
 
             println!("\n== deep: single chain ==");
             let mut rows = vec![];
@@ -305,4 +368,34 @@ fn cold_layout_profile() {
 
 fn f_pow(base: usize, exp: usize) -> usize {
     (0..exp).fold(1, |acc, _| acc * base)
+}
+
+/// A loop of cold first updates, for running under a sampler:
+/// `COLD_ROWS=5000 COLD_ITERS=400 layout_cold_profile --ignored --nocapture cold_first_update_loop`.
+#[test]
+#[ignore = "profile target: run it under a sampler"]
+fn cold_first_update_loop() {
+    let rows: usize = std::env::var("COLD_ROWS").ok().and_then(|v| v.parse().ok()).unwrap_or(5_000);
+    let iters: usize = std::env::var("COLD_ITERS").ok().and_then(|v| v.parse().ok()).unwrap_or(400);
+    std::thread::Builder::new()
+        .stack_size(512 * 1024 * 1024)
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("test runtime");
+            let inner = InnerCanvas::new();
+            let canvas = FrameCanvas::new(&inner);
+            let context = context(canvas, &runtime);
+            let start = Instant::now();
+            for _ in 0..iters {
+                let element = wide_column(rows).to_element(&context);
+                element.layout(&context);
+                element.update(&context);
+                inner.take_draw_list();
+            }
+            println!("{iters} cold updates of {rows} rows: {:?} each", start.elapsed() / iters as u32);
+        })
+        .expect("spawn")
+        .join()
+        .expect("profile thread");
 }

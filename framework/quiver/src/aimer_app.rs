@@ -901,6 +901,7 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
                 #[cfg(debug_assertions)]
                 debug_overlay: Default::default(),
                 window_attr: WindowAttr::new(),
+                frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
                 render_tree: WindowRenderTree::default(),
                 #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
                 show_window_after_first_frame: false,
@@ -1802,6 +1803,7 @@ fn start_event_loop(
                 #[cfg(debug_assertions)]
                 debug_overlay: Default::default(),
                 window_attr,
+                frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
                 render_tree: WindowRenderTree::default(),
                 #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
                 show_window_after_first_frame,

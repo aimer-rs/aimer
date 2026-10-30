@@ -116,6 +116,22 @@ pub struct ScrollState {
     /// schedule the frame that repaints the highlight (see
     /// [`sync_thumb_hover`](Self::sync_thumb_hover)).
     pub(crate) thumb_hovered: Cell<bool>,
+    /// How opaque the scroll bar was painted last, from `0.0` (hidden) to `1.0`.
+    ///
+    /// Published by the bar as it paints. Touch reads it so a finger cannot grab
+    /// a thumb that is not on screen.
+    pub(crate) scroll_bar_opacity: Cell<f32>,
+    /// Whether a mouse is over the scroll bar, thumb or track, which keeps the
+    /// bar showing for as long as it stays there.
+    pub(crate) scroll_bar_hovered: Cell<bool>,
+    /// Set when a mouse moves over the scrollable anywhere, and taken by the bar
+    /// the next time it is painted: moving over the content shows the bar, and
+    /// the idle delay before it fades starts from the last such move.
+    pub(crate) scroll_bar_pointer_moved: Cell<bool>,
+    /// Where a thumb drag took hold: the pointer's position along the bar and
+    /// the scroll offset at that moment. The drag is measured from these, not
+    /// accumulated, so the thumb stays under the pointer for the whole drag.
+    pub(crate) scroll_bar_anchor: Cell<(f32, f32)>,
     pub(crate) v_scroll_multiplier: Cell<f32>,
     pub(crate) h_scroll_multiplier: Cell<f32>,
     pub(crate) last_scale: Cell<f32>,
@@ -745,6 +761,16 @@ impl ScrollController {
             .unwrap_or_else(|| self.inner.pending.get().unwrap_or_default())
     }
 
+    /// How opaque the scroll bar is right now, from `0.0` when it is hidden to
+    /// `1.0` when it is fully shown.
+    ///
+    /// The bar shows itself while the content scrolls and while a pointer is on
+    /// it, and fades out by itself once neither is the case. Zero while
+    /// detached, before the first paint, or when the content fits.
+    pub fn scroll_bar_opacity(&self) -> f32 {
+        self.with_state(|s| s.scroll_bar_opacity.get()).unwrap_or(0.0)
+    }
+
     /// The maximum scrollable extent per axis in logical pixels. Zero while
     /// detached or before the first layout.
     pub fn max_extent(&self) -> Vec2d {
@@ -1150,8 +1176,21 @@ impl ScrollState {
         }
     }
 
-    /// Check if a point is inside the vertical thumb rect.
+    /// A pointer position, which arrives in logical pixels, in the device pixels
+    /// the bar's geometry is laid out in.
+    #[inline]
+    pub(crate) fn to_device(&self, p: Vec2d) -> Vec2d {
+        let scale = self.last_scale.get();
+        let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+        Vec2d {
+            x: p.x * scale,
+            y: p.y * scale,
+        }
+    }
+
+    /// Check if a point, in logical pixels, is inside the vertical thumb rect.
     pub(crate) fn hit_test_v_thumb(&self, p: Vec2d) -> bool {
+        let p = self.to_device(p);
         if let Some((x, y, w, h)) = self.v_thumb_rect.get() {
             p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h
         } else {
@@ -1161,6 +1200,7 @@ impl ScrollState {
 
     /// Check if a point is inside the horizontal thumb rect.
     pub(crate) fn hit_test_h_thumb(&self, p: Vec2d) -> bool {
+        let p = self.to_device(p);
         if let Some((x, y, w, h)) = self.h_thumb_rect.get() {
             p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h
         } else {
@@ -1168,19 +1208,80 @@ impl ScrollState {
         }
     }
 
-    /// Reconciles the remembered thumb-hover state with the cursor at `p`
+    /// Which thumb a pointer at `p` takes hold of, if any.
+    ///
+    /// A mouse has to be on the thumb itself. A finger gets a generous margin
+    /// around it, and only while the bar is on screen: it cannot take hold of a
+    /// thumb it cannot see, and a touch there is an ordinary scroll of the
+    /// content instead.
+    pub(crate) fn thumb_at(&self, p: Vec2d, touch: bool) -> Option<DragMode> {
+        if !touch {
+            return if self.hit_test_v_thumb(p) {
+                Some(DragMode::VerticalScrollbar)
+            } else if self.hit_test_h_thumb(p) {
+                Some(DragMode::HorizontalScrollbar)
+            } else {
+                None
+            };
+        }
+        if self.scroll_bar_opacity.get() < SCROLLBAR_TOUCH_MIN_OPACITY {
+            return None;
+        }
+        let p = self.to_device(p);
+        let scale = self.last_scale.get().max(1.0);
+        let (cross, along) = (
+            SCROLLBAR_TOUCH_SLOP_CROSS * scale,
+            SCROLLBAR_TOUCH_SLOP_ALONG * scale,
+        );
+        let within = |rect: Option<(f32, f32, f32, f32)>, cross_x: bool| {
+            rect.is_some_and(|(x, y, w, h)| {
+                let (slop_x, slop_y) = if cross_x { (cross, along) } else { (along, cross) };
+                p.x >= x - slop_x && p.x <= x + w + slop_x && p.y >= y - slop_y && p.y <= y + h + slop_y
+            })
+        };
+        if within(self.v_thumb_rect.get(), true) {
+            Some(DragMode::VerticalScrollbar)
+        } else if within(self.h_thumb_rect.get(), false) {
+            Some(DragMode::HorizontalScrollbar)
+        } else {
+            None
+        }
+    }
+
+    /// Whether `p` is on the scroll bar, thumb or track.
+    pub(crate) fn on_scroll_bar(&self, p: Vec2d) -> bool {
+        let (viewport_w, viewport_h) = self.cached_viewport.get();
+        self.hit_test_v_thumb(p)
+            || self.hit_test_h_thumb(p)
+            || self.hit_test_v_track(p, viewport_w, viewport_h, self.cached_v_track_width.get())
+            || self.hit_test_h_track(p, viewport_w, viewport_h, self.cached_h_track_width.get())
+    }
+
+    /// Reconciles the remembered hover state of a mouse at `p` with the bar,
     /// and reports whether it changed.
     ///
-    /// The thumb's highlight is resolved at draw time from
-    /// [`cursor_pos`](Self::cursor_pos), so it only updates on frames that
-    /// actually render. Pointer moves no longer buy a frame each — that is
-    /// what used to repaint the window at input rate — so the move that
-    /// carries the cursor across a thumb edge is detected here, and the
-    /// caller schedules the single frame that repaints the highlight.
+    /// Two things are remembered: whether the cursor is over a thumb, for its
+    /// highlight, and whether it is over the bar at all, which shows the bar and
+    /// keeps it showing. Both are resolved at draw time from what is stored
+    /// here, and pointer moves no longer buy a frame each, so the move that
+    /// carries the cursor across an edge is detected here and the caller
+    /// schedules the single frame that follows from it.
     #[inline]
     pub(crate) fn sync_thumb_hover(&self, p: Vec2d) -> bool {
         let hovered = self.hit_test_v_thumb(p) || self.hit_test_h_thumb(p);
-        self.thumb_hovered.replace(hovered) != hovered
+        let on_bar = hovered || self.on_scroll_bar(p);
+        let thumb_changed = self.thumb_hovered.replace(hovered) != hovered;
+        let bar_changed = self.scroll_bar_hovered.replace(on_bar) != on_bar;
+        thumb_changed || bar_changed
+    }
+
+    /// Forgets that a mouse was over the bar, for when the cursor has left.
+    /// Reports whether it had been.
+    #[inline]
+    pub(crate) fn clear_scroll_bar_hover(&self) -> bool {
+        let was = self.scroll_bar_hovered.replace(false);
+        self.thumb_hovered.set(false);
+        was
     }
 
     /// Record `velocity` as the speed the finger held for the `dt` seconds
@@ -1410,6 +1511,7 @@ impl ScrollState {
         viewport_h: f32,
         track_width: f32,
     ) -> bool {
+        let p = self.to_device(p);
         if let Some((_tx, y, _tw, h)) = self.v_thumb_rect.get() {
             let track_left = self
                 .scroll_bar_placement
@@ -1432,6 +1534,7 @@ impl ScrollState {
         viewport_h: f32,
         track_width: f32,
     ) -> bool {
+        let p = self.to_device(p);
         if let Some((x, _ty, w, _th)) = self.h_thumb_rect.get() {
             let track_top = self
                 .scroll_bar_placement
@@ -1723,6 +1826,10 @@ impl ScrollState {
             v_thumb_rect: Cell::new(None),
             h_thumb_rect: Cell::new(None),
             thumb_hovered: Cell::new(false),
+            scroll_bar_opacity: Cell::new(0.0),
+            scroll_bar_hovered: Cell::new(false),
+            scroll_bar_pointer_moved: Cell::new(false),
+            scroll_bar_anchor: Cell::new((0.0, 0.0)),
             v_scroll_multiplier: Cell::new(0.0),
             h_scroll_multiplier: Cell::new(0.0),
             last_scale: Cell::new(1.0),

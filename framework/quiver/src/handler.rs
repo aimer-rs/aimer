@@ -13,6 +13,7 @@ pub(crate) mod file_drag;
 mod native_input;
 mod platform_gesture;
 #[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod frame_pacer;
 mod render_worker;
 mod scoped_sync;
 pub(crate) use aimer_platform::system_back;
@@ -1029,6 +1030,9 @@ pub struct AimerApplicationHandler<W: Widget + 'static> {
     pub(crate) scroll_smoother: DualScroller,
     /// Reason merged into the redraw currently waiting for this application.
     pub(crate) frame_request_reason: Rc<Cell<Option<FrameRequestKind>>>,
+    /// Minimum frame interval against the display refresh; off unless
+    /// `AIMER_FRAME_PACING_PERCENT` is set. See [`frame_pacer`].
+    pub(crate) frame_pacer: frame_pacer::FramePacer,
     /// Gesture boundaries inferred for the phase-less browser wheel stream.
     #[cfg(target_arch = "wasm32")]
     pub(crate) web_scroll_phase: crate::handler::web_scroll_phase::WebScrollPhase,
@@ -2458,6 +2462,10 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.deliver_render_completions(event_loop);
+            // A resize is about latency, not rate.
+            if !self.pace_render_frame(had_pending_resize) {
+                return;
+            }
             // Admission precedes animation/layout and damage consumption.
             if !self.admit_render_frame() {
                 return;

@@ -77,6 +77,7 @@ pub(super) enum ExampleId {
     BorderOutline,
     AssetImage,
     BundledAssets,
+    CustomPaint,
 }
 
 pub(super) const EXAMPLES: &[ExampleId] = &[
@@ -151,6 +152,7 @@ pub(super) const EXAMPLES: &[ExampleId] = &[
     ExampleId::BorderOutline,
     ExampleId::AssetImage,
     ExampleId::BundledAssets,
+    ExampleId::CustomPaint,
 ];
 
 pub(super) struct ExampleCategory {
@@ -162,17 +164,33 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
     ExampleCategory {
         label: "Controls",
         examples: &[
-            ExampleId::Accessibility,
             ExampleId::ChoiceControls,
             ExampleId::RangeControls,
-            ExampleId::Forms,
             ExampleId::Pickers,
-            ExampleId::Feedback,
-            ExampleId::TextArea,
+            ExampleId::Forms,
+            ExampleId::CollapsibleList,
+        ],
+    },
+    ExampleCategory {
+        label: "Text & input",
+        examples: &[
+            ExampleId::Text,
+            ExampleId::TextProperties,
             ExampleId::TextField,
+            ExampleId::TextArea,
             ExampleId::CustomTextFieldCaret,
             ExampleId::AnimatedTextField,
             ExampleId::SelectableText,
+            ExampleId::FocusNode,
+        ],
+    },
+    ExampleCategory {
+        label: "Content",
+        examples: &[
+            ExampleId::Markdown,
+            ExampleId::CustomMarkdown,
+            ExampleId::I18n,
+            ExampleId::DataView,
         ],
     },
     ExampleCategory {
@@ -183,56 +201,54 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
             ExampleId::ContainerTransform,
             ExampleId::LiquidTabBar,
             ExampleId::RoutingContext,
-            ExampleId::Floating,
-            ExampleId::Modal,
             ExampleId::Routing,
         ],
     },
     ExampleCategory {
-        label: "State & data",
+        label: "Overlays & feedback",
         examples: &[
-            ExampleId::Animatable,
-            ExampleId::TweenKeyframes,
-            ExampleId::MorphTransition,
-            ExampleId::DataView,
-            ExampleId::Storage,
-            ExampleId::Counter,
-            ExampleId::StatefulList,
-            ExampleId::CollapsibleList,
-            ExampleId::AsyncBuilder,
-        ],
-    },
-    ExampleCategory {
-        label: "Content",
-        examples: &[
-            ExampleId::I18n,
-            ExampleId::TextProperties,
-            ExampleId::Markdown,
-            ExampleId::CustomMarkdown,
-            ExampleId::Text,
+            ExampleId::Feedback,
+            ExampleId::Floating,
+            ExampleId::Modal,
         ],
     },
     ExampleCategory {
         label: "Layout",
         examples: &[
-            ExampleId::AnimatedLayout,
             ExampleId::Window,
             ExampleId::Resizable,
-            ExampleId::FocusNode,
             ExampleId::Overflow,
             ExampleId::JustifyContent,
             ExampleId::Positioned,
             ExampleId::Align,
-            ExampleId::BorderOutline,
         ],
     },
     ExampleCategory {
-        label: "Media & styling",
+        label: "Animation",
+        examples: &[
+            ExampleId::Animatable,
+            ExampleId::TweenKeyframes,
+            ExampleId::MorphTransition,
+            ExampleId::AnimatedLayout,
+            ExampleId::AnimatedList,
+            ExampleId::Animation,
+            ExampleId::Loading,
+        ],
+    },
+    ExampleCategory {
+        label: "Theming",
         examples: &[
             ExampleId::StyleTokens,
-            ExampleId::SvgCompletion,
-            ExampleId::LucideIcons,
-            ExampleId::AssetsMedia,
+            ExampleId::SystemTheme,
+            ExampleId::AnimatedTheme,
+            ExampleId::CustomAnimatedTheme,
+            ExampleId::ColorSync,
+            ExampleId::CustomFont,
+        ],
+    },
+    ExampleCategory {
+        label: "Decoration & effects",
+        examples: &[
             ExampleId::GlassLiquid,
             ExampleId::BackdropFilter,
             ExampleId::Magnification,
@@ -240,28 +256,50 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
             ExampleId::Gradient,
             ExampleId::ForegroundDecoration,
             ExampleId::MultiDecorationBox,
+            ExampleId::BorderOutline,
+        ],
+    },
+    ExampleCategory {
+        label: "Drawing & vector",
+        examples: &[
+            ExampleId::CustomPaint,
             ExampleId::CustomShape,
-            ExampleId::SystemTheme,
-            ExampleId::AnimatedTheme,
-            ExampleId::CustomAnimatedTheme,
+            ExampleId::SvgCompletion,
             ExampleId::Svg,
-            ExampleId::CustomFont,
-            ExampleId::ColorSync,
+            ExampleId::LucideIcons,
+        ],
+    },
+    ExampleCategory {
+        label: "Assets & media",
+        examples: &[
+            ExampleId::AssetsMedia,
             ExampleId::AssetImage,
             ExampleId::BundledAssets,
         ],
     },
     ExampleCategory {
-        label: "Interaction & runtime",
+        label: "State & async",
+        examples: &[
+            ExampleId::Counter,
+            ExampleId::StatefulList,
+            ExampleId::AsyncBuilder,
+            ExampleId::Storage,
+            ExampleId::HttpRequest,
+        ],
+    },
+    ExampleCategory {
+        label: "Drag & drop",
         examples: &[
             ExampleId::DndCompletion,
             ExampleId::FileDrop,
             ExampleId::DragAndDrop,
-            ExampleId::HttpRequest,
+        ],
+    },
+    ExampleCategory {
+        label: "Platform & system",
+        examples: &[
+            ExampleId::Accessibility,
             ExampleId::Passkeys,
-            ExampleId::Loading,
-            ExampleId::AnimatedList,
-            ExampleId::Animation,
             ExampleId::PanicRecovery,
         ],
     },
@@ -342,6 +380,7 @@ impl ExampleId {
             Self::BorderOutline => "Border and outline",
             Self::AssetImage => "Asset image",
             Self::BundledAssets => "Bundled assets",
+            Self::CustomPaint => "Custom paint",
         }
     }
 
@@ -407,6 +446,7 @@ impl ExampleId {
             Self::Positioned => "⊞",
             Self::Align => "⊡",
             Self::BorderOutline => "□",
+            Self::CustomPaint => "✎",
         }
     }
 
@@ -485,6 +525,7 @@ impl ExampleId {
             Self::BorderOutline => "border-outline",
             Self::AssetImage => "asset-image",
             Self::BundledAssets => "bundled-assets",
+            Self::CustomPaint => "custom-paint",
         }
     }
 
@@ -632,6 +673,9 @@ impl ExampleId {
             Self::AssetImage => "Load and decorate a bundled raster asset.",
             Self::BundledAssets => {
                 "Typed handles for Aimer.toml assets and fonts, with lazy font loading."
+            }
+            Self::CustomPaint => {
+                "Draw rectangles and text into a laid-out box with a CanvasPainter."
             }
         }
     }

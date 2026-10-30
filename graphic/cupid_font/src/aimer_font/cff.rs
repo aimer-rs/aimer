@@ -57,16 +57,38 @@ impl<'a> SfntFace<'a> {
             return Ok(None);
         }
 
-        CffFont::parse(table, tag, tag == CFF2_TAG, metrics)?.outline(glyph_id)
+        // One parse per face: the layout of the table is the same for every glyph,
+        // and rebuilding it per request made each outline cost the whole font.
+        self.cff_cache
+            .get_or_init(|| CffFont::parse(table, tag, tag == CFF2_TAG, metrics))
+            .as_ref()
+            .map_err(|error| *error)?
+            .outline(table, glyph_id)
     }
 }
 
-struct CffFont<'a> {
+// Full table parses this thread has done, so tests can tell a face that keeps
+// its parsed CFF state from one that rebuilds it for every glyph.
+#[cfg(test)]
+thread_local! {
+    static CFF_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn cff_parses() -> usize {
+    CFF_PARSES.with(std::cell::Cell::get)
+}
+
+/// The parsed structure of a CFF or CFF2 table: where each charstring and
+/// subroutine lives, not the bytes themselves. Every lookup is handed the
+/// table's bytes, so one parse can be kept for the life of the face instead of
+/// being repeated for each glyph.
+pub(super) struct CffFont {
     tag: Tag,
-    charstrings: CffIndex<'a>,
-    global_subrs: CffIndex<'a>,
-    top_local_subrs: Option<CffIndex<'a>>,
-    font_dicts: Vec<FontDict<'a>>,
+    charstrings: CffIndex,
+    global_subrs: CffIndex,
+    top_local_subrs: Option<CffIndex>,
+    font_dicts: Vec<FontDict>,
     fd_select: Option<FdSelect>,
 }
 
@@ -78,22 +100,21 @@ struct TopDict {
     fd_select_offset: Option<usize>,
 }
 
-struct FontDict<'a> {
-    local_subrs: Option<CffIndex<'a>>,
+struct FontDict {
+    local_subrs: Option<CffIndex>,
 }
 
 struct FdSelect {
     glyph_fds: Vec<u16>,
 }
 
-struct CffIndex<'a> {
-    bytes: &'a [u8],
+struct CffIndex {
     ranges: Vec<(usize, usize)>,
     end: usize,
 }
 
-impl<'a> CffIndex<'a> {
-    fn parse(bytes: &'a [u8], offset: usize, cff2: bool, tag: Tag) -> Result<Self, SfntError> {
+impl CffIndex {
+    fn parse(bytes: &[u8], offset: usize, cff2: bool, tag: Tag) -> Result<Self, SfntError> {
         let reader = Reader::new(bytes);
         let count_width = if cff2 { 4 } else { 2 };
         let count = if cff2 {
@@ -108,7 +129,6 @@ impl<'a> CffIndex<'a> {
         let count_end = checked_add(offset, count_width)?;
         if count == 0 {
             return Ok(Self {
-                bytes,
                 ranges: Vec::new(),
                 end: count_end,
             });
@@ -121,13 +141,21 @@ impl<'a> CffIndex<'a> {
         let offsets_start = checked_add(count_end, 1)?;
         let offsets_count = checked_add(count_usize, 1)?;
         let offsets_size = checked_mul(offsets_count, usize::from(off_size))?;
-        reader.range(offsets_start, offsets_size)?;
+        // The offset array is bounds-checked once; every entry is then read
+        // from it directly instead of through a checked read per value.
+        let offsets = reader.range(offsets_start, offsets_size)?;
+        let width = usize::from(off_size);
+        let offset_at = |index: usize| {
+            offsets[index * width..(index + 1) * width]
+                .iter()
+                .fold(0usize, |value, byte| (value << 8) | usize::from(*byte))
+        };
         let data_start = checked_add(offsets_start, offsets_size)?;
-        let first = index_offset(&reader, offsets_start, 0, off_size)?;
+        let first = offset_at(0);
         if first != 1 {
             return Err(malformed(tag));
         }
-        let last = index_offset(&reader, offsets_start, count_usize, off_size)?;
+        let last = offset_at(count_usize);
         if last == 0 {
             return Err(malformed(tag));
         }
@@ -138,18 +166,17 @@ impl<'a> CffIndex<'a> {
         let mut ranges = Vec::with_capacity(count_usize);
         let mut previous = first;
         for index in 0..count_usize {
-            let next = index_offset(&reader, offsets_start, index + 1, off_size)?;
+            let next = offset_at(index + 1);
             if next < previous || next > last || previous == 0 {
                 return Err(malformed(tag));
             }
-            let start = checked_add(data_start, previous - 1)?;
-            let end = checked_add(data_start, next - 1)?;
-            ranges.push((start, end));
+            // `next <= last`, and `data_start + last - 1` was checked above, so
+            // neither sum can overflow.
+            ranges.push((data_start + (previous - 1), data_start + (next - 1)));
             previous = next;
         }
 
         Ok(Self {
-            bytes,
             ranges,
             end: data_end,
         })
@@ -159,36 +186,21 @@ impl<'a> CffIndex<'a> {
         self.ranges.len()
     }
 
-    fn item(&self, index: usize) -> Option<&'a [u8]> {
+    fn item<'b>(&self, bytes: &'b [u8], index: usize) -> Option<&'b [u8]> {
         let (start, end) = *self.ranges.get(index)?;
-        self.bytes.get(start..end)
+        bytes.get(start..end)
     }
 }
 
-fn index_offset(
-    reader: &Reader<'_>,
-    offset: usize,
-    index: usize,
-    off_size: u8,
-) -> Result<usize, SfntError> {
-    let position = checked_add(offset, checked_mul(index, usize::from(off_size))?)?;
-    let value = match off_size {
-        1 => u32::from(reader.u8(position)?),
-        2 => u32::from(reader.u16(position)?),
-        3 => reader.u24(position)?,
-        4 => reader.u32(position)?,
-        _ => return Err(SfntError::ArithmeticOverflow),
-    };
-    usize::try_from(value).map_err(|_| SfntError::ArithmeticOverflow)
-}
-
-impl<'a> CffFont<'a> {
-    fn parse(
-        bytes: &'a [u8],
+impl CffFont {
+    pub(super) fn parse(
+        bytes: &[u8],
         tag: Tag,
         cff2: bool,
         metrics: FontMetrics,
     ) -> Result<Self, SfntError> {
+        #[cfg(test)]
+        CFF_PARSES.with(|count| count.set(count.get() + 1));
         let reader = Reader::new(bytes);
         let (top_dict_bytes, global_subrs) = if cff2 {
             if reader.u8(0)? != 2 {
@@ -213,7 +225,7 @@ impl<'a> CffFont<'a> {
             }
             let names = CffIndex::parse(bytes, header_size, false, tag)?;
             let top = CffIndex::parse(bytes, names.end, false, tag)?;
-            let top_dict = top.item(0).ok_or_else(|| malformed(tag))?;
+            let top_dict = top.item(bytes, 0).ok_or_else(|| malformed(tag))?;
             let strings = CffIndex::parse(bytes, top.end, false, tag)?;
             let global_subrs = CffIndex::parse(bytes, strings.end, false, tag)?;
             (top_dict, global_subrs)
@@ -231,7 +243,7 @@ impl<'a> CffFont<'a> {
         if let Some(fd_array_offset) = top_dict.fd_array_offset {
             let fd_array = CffIndex::parse(bytes, fd_array_offset, cff2, tag)?;
             for index in 0..fd_array.len() {
-                let dict = fd_array.item(index).ok_or_else(|| malformed(tag))?;
+                let dict = fd_array.item(bytes, index).ok_or_else(|| malformed(tag))?;
                 let private = parse_font_dict(dict, tag)?;
                 font_dicts.push(FontDict {
                     local_subrs: parse_private_subrs(bytes, private, cff2, tag)?,
@@ -267,20 +279,24 @@ impl<'a> CffFont<'a> {
         })
     }
 
-    fn outline(&self, glyph_id: u16) -> Result<Option<CffGlyphOutline>, SfntError> {
-        let Some(program) = self.charstrings.item(usize::from(glyph_id)) else {
+    pub(super) fn outline(
+        &self,
+        bytes: &[u8],
+        glyph_id: u16,
+    ) -> Result<Option<CffGlyphOutline>, SfntError> {
+        let Some(program) = self.charstrings.item(bytes, usize::from(glyph_id)) else {
             return Ok(None);
         };
         let mut state = CharStringState::default();
         let mut active = Vec::with_capacity(4);
-        let stop = self.execute(program, false, glyph_id, &mut state, &mut active, 0)?;
+        let stop = self.execute(bytes, program, false, glyph_id, &mut state, &mut active, 0)?;
         if !matches!(stop, Stop::EndChar) || !state.stack.is_empty() {
             return Err(malformed(self.tag));
         }
         Ok(Some(state.builder.finish()))
     }
 
-    fn local_subrs(&self, glyph_id: u16) -> Option<&CffIndex<'a>> {
+    fn local_subrs(&self, glyph_id: u16) -> Option<&CffIndex> {
         if let Some(fd_select) = &self.fd_select {
             let fd = usize::from(*fd_select.glyph_fds.get(usize::from(glyph_id))?);
             return self.font_dicts.get(fd)?.local_subrs.as_ref();
@@ -293,6 +309,7 @@ impl<'a> CffFont<'a> {
 
     fn execute(
         &self,
+        bytes: &[u8],
         program: &[u8],
         is_subroutine: bool,
         glyph_id: u16,
@@ -328,7 +345,7 @@ impl<'a> CffFont<'a> {
                 6 => horizontal_line_to(state, self.tag)?,
                 7 => vertical_line_to(state, self.tag)?,
                 8 => curve_to(state, self.tag)?,
-                10 => match self.call_subroutine(false, glyph_id, state, active, depth)? {
+                10 => match self.call_subroutine(bytes, false, glyph_id, state, active, depth)? {
                     Stop::Return => {}
                     Stop::EndChar => return Ok(Stop::EndChar),
                 },
@@ -387,7 +404,7 @@ impl<'a> CffFont<'a> {
                 26 => vv_curve_to(state, self.tag)?,
                 27 => hh_curve_to(state, self.tag)?,
                 28 => unreachable!("shortint is decoded as a number"),
-                29 => match self.call_subroutine(true, glyph_id, state, active, depth)? {
+                29 => match self.call_subroutine(bytes, true, glyph_id, state, active, depth)? {
                     Stop::Return => {}
                     Stop::EndChar => return Ok(Stop::EndChar),
                 },
@@ -437,6 +454,7 @@ impl<'a> CffFont<'a> {
     // In Type 2 charstrings, `endchar` in a subroutine ends the full glyph program.
     fn call_subroutine(
         &self,
+        bytes: &[u8],
         global: bool,
         glyph_id: u16,
         state: &mut CharStringState,
@@ -458,16 +476,16 @@ impl<'a> CffFont<'a> {
             return Err(SfntError::CffSubroutineRecursionLimit);
         }
         let Some(program) = (if global {
-            self.global_subrs.item(index)
+            self.global_subrs.item(bytes, index)
         } else {
             self.local_subrs(glyph_id)
-                .and_then(|subrs| subrs.item(index))
+                .and_then(|subrs| subrs.item(bytes, index))
         }) else {
             return Err(malformed(self.tag));
         };
 
         active.push(reference);
-        let result = self.execute(program, true, glyph_id, state, active, depth + 1);
+        let result = self.execute(bytes, program, true, glyph_id, state, active, depth + 1);
         active.pop();
         result
     }
@@ -1354,12 +1372,12 @@ fn parse_font_dict(bytes: &[u8], tag: Tag) -> Result<Option<(usize, usize)>, Sfn
     Ok(private)
 }
 
-fn parse_private_subrs<'a>(
-    bytes: &'a [u8],
+fn parse_private_subrs(
+    bytes: &[u8],
     private: Option<(usize, usize)>,
     cff2: bool,
     tag: Tag,
-) -> Result<Option<CffIndex<'a>>, SfntError> {
+) -> Result<Option<CffIndex>, SfntError> {
     let Some((size, offset)) = private else {
         return Ok(None);
     };

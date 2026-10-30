@@ -103,6 +103,7 @@ pub use aimer_lucide as icons;
 #[cfg(feature = "icons")]
 pub use aimer_lucide::Icons;
 pub use aimer_screen as screen;
+pub use aimer_custom_paint::{CanvasPainter, CustomPaint};
 pub use aimer_scroll::*;
 pub use aimer_space::*;
 #[cfg(feature = "svg")]

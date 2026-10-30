@@ -1,0 +1,17 @@
+[package]
+name = "aimer_custom_paint"
+version = "0.1.0"
+edition = "2024"
+description = "A widget that hands a box of the layout to application painting code"
+
+[features]
+portable-guest = ["aimer_widget/portable-guest"]
+
+[dependencies]
+aimer_attribute.workspace = true
+aimer_canvas.workspace = true
+aimer_widget.workspace = true
+
+[dev-dependencies]
+aimer_cupid.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }

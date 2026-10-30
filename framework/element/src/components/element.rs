@@ -162,7 +162,7 @@ aimer_tls::thread_local! {
     /// The path index is usable only after one complete walk of the retained
     /// tree without a structural replacement or an untracked invalidation.
     static DIRTY_PATHS_READY: Cell<bool> = const { Cell::new(false) };
-    static DIRTY_INDEXED_ROOTS: RefCell<HashSet<ElementId>> = RefCell::new(HashSet::new());
+    static DIRTY_INDEXED_ROOTS: RefCell<IndexedRoots> = RefCell::new(IndexedRoots::default());
     static DIRTY_PATHS_INVALIDATED_DURING_TRAVERSAL: Cell<bool> = const { Cell::new(false) };
     static REBUILD_TRAVERSAL_DEPTH: Cell<usize> = const { Cell::new(0) };
     /// The root of the outermost rebuild traversal in progress, if any.
@@ -1192,6 +1192,43 @@ fn path_after_new_id(registered: &[ElementId], current: &[ElementId]) -> Option<
         Some(current.to_vec())
     } else {
         None
+    }
+}
+
+/// Roots whose rebuild traversal completed without an untracked invalidation.
+///
+/// Whether the traversal in progress is covered is asked once for every element
+/// a pass visits, and a pass walks one root. The most recent positive answer is
+/// therefore remembered ahead of the hash lookup, so visiting the nth element of
+/// a large subtree costs a comparison rather than a hash. Only a root's presence
+/// is cached, and the set only ever gains members until it is cleared, so
+/// clearing it is the one thing that has to forget the answer.
+#[derive(Default)]
+pub(crate) struct IndexedRoots {
+    roots: HashSet<ElementId>,
+    last_covered: Cell<Option<ElementId>>,
+}
+
+impl IndexedRoots {
+    #[inline]
+    pub(crate) fn contains(&self, root: &ElementId) -> bool {
+        if self.last_covered.get() == Some(*root) {
+            return true;
+        }
+        let covered = self.roots.contains(root);
+        if covered {
+            self.last_covered.set(Some(*root));
+        }
+        covered
+    }
+
+    pub(crate) fn insert(&mut self, root: ElementId) -> bool {
+        self.roots.insert(root)
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.roots.clear();
+        self.last_covered.set(None);
     }
 }
 

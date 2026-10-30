@@ -14,6 +14,7 @@ use crate::color_sync::ColorSync;
 use crate::container_transform_example::container_transform_example;
 use crate::custom_animated_theme::custom_animated_theme_example;
 use crate::custom_font::custom_font_example;
+use crate::custom_paint_example::custom_paint_example;
 use crate::custom_shape_example::custom_shape_example;
 use crate::custom_text_field_caret_example::CustomTextFieldCaretExample;
 use crate::data_view_example::data_view_example;
@@ -488,6 +489,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::BorderOutline => border_outline_example(app_theme),
         ExampleId::AssetImage => asset_image_example(app_theme),
         ExampleId::BundledAssets => bundled_assets_example().boxed(),
+        ExampleId::CustomPaint => custom_paint_example().boxed(),
     }
 }
 

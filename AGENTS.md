@@ -41,17 +41,6 @@ scope.
 - Keep tests beside the behavior they exercise, using child test modules when that keeps source files within the line limit.
 - Prefer flat layout inside a crate, when need the inner module, it mean crate is too big, it time to split it now :).
 
-## Before Editing
-
-- Read the relevant implementation, tests, and any nested `AGENTS.md` before changing code.
-- Use available Aimer MCP or fallback to Codegraph MCP when Aimer MCP is unavailable, but do not assume an IDE integration exists. CLI
-  inspection is valid.
-- Use the aimer mcp or cli tool to search the documents from the docs.rs if the aimer is existed.
-- Do not invent missing facts. First, inspect the repository, compiler output, tests, or documentation. Ask the user only
-  when the ambiguity cannot be resolved locally and different answers would materially change the implementation.
-- Preserve unrelated user changes. Do not revert or overwrite them.
-- Match existing module patterns unless this file or the user explicitly requires otherwise.
-
 ## Sco
 
 - For requests to explain, review, diagnose, or plan: inspect and report; do not modify code unless asked.
