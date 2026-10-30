@@ -12,8 +12,8 @@ mod accessibility;
 pub(crate) mod file_drag;
 mod native_input;
 mod platform_gesture;
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod frame_pacer;
+#[cfg(not(target_arch = "wasm32"))]
 mod render_worker;
 mod scoped_sync;
 pub(crate) use aimer_platform::system_back;
