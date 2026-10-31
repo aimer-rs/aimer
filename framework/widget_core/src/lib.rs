@@ -9,7 +9,7 @@ pub mod repaint_boundary;
 pub mod portable;
 pub mod reconcile;
 mod semantic_annotation;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod widget;
 
 /// An Empty Widget that using as placeholder

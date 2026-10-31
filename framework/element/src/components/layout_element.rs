@@ -3,6 +3,26 @@ use aimer_attribute::{Dimension, ResolvedSize, Size, Vec2d};
 use crate::base::BuildContext;
 use crate::components::element::VisitorElement;
 
+/// The sizing and placement half of an element.
+///
+/// Layout in Aimer is constraint-driven: a parent gives each child a
+/// [`BuildContext`] whose `box_constraint` and `parent_size` describe the room
+/// available, and the child answers with a [`ResolvedSize`]. This trait is how
+/// an element answers.
+///
+/// Every method has a default, so a purely decorative element can implement it
+/// with an empty `impl`. The defaults resolve the element's declared
+/// [`size`](LayoutElement::size) against the constraint and fall back to the
+/// parent's size when none is declared. An element with real layout work (a
+/// flex container, a scroll view) overrides
+/// [`computed_size`](LayoutElement::computed_size) or
+/// [`layout`](LayoutElement::layout).
+///
+/// Measuring can be expensive, so containers cache what they measure. An
+/// element whose size can change must say so by being invalidated
+/// ([`invalidate_layout`](LayoutElement::invalidate_layout)); one whose size
+/// provably cannot opts in to retention with
+/// [`is_layout_stable`](LayoutElement::is_layout_stable).
 pub trait LayoutElement: VisitorElement {
     /// Returning the position of the element inside their parent
     fn pos(&self) -> Option<Vec2d> {
@@ -14,6 +34,12 @@ pub trait LayoutElement: VisitorElement {
         None
     }
 
+    /// Lays the element out under `ctx` and returns the size it occupies.
+    ///
+    /// This is the entry point a parent calls on each child. The default
+    /// returns [`computed_size`](LayoutElement::computed_size); override this
+    /// instead when laying out has effects beyond measuring, such as placing
+    /// the element's own children.
     fn layout(&self, ctx: &BuildContext) -> ResolvedSize {
         self.computed_size(ctx)
     }
@@ -112,6 +138,12 @@ pub trait LayoutElement: VisitorElement {
         });
     }
 
+    /// Returns the element's top-left and bottom-right corners, from its
+    /// declared [`pos`](LayoutElement::pos) and [`size`](LayoutElement::size).
+    ///
+    /// `None` when either is missing. Only a fixed (`Px`) dimension contributes
+    /// to the extent: an `Auto` or relative dimension counts as zero here, since
+    /// resolving it needs a constraint this method does not have.
     fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> {
         if self.size().is_none() || self.pos().is_none() {
             return None;

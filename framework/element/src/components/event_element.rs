@@ -293,7 +293,41 @@ impl From<bool> for EventResult {
     }
 }
 
-// Event capabilities
+/// The input half of an element: routing, focus, accessibility and handling.
+///
+/// Input reaches an element in three ways, and the trait has a view of the
+/// tree for each:
+///
+/// - **Positional** (a pointer at some point): the dispatcher descends through
+///   [`hit_test_children`](EventElement::hit_test_children) and its
+///   position-aware variants, topmost first, so an element that paints only
+///   part of its children can keep the walk proportional to what is on screen.
+/// - **Directed** (keyboard input to the focused element, or a pointer that has
+///   been captured): delivered by identity, through
+///   [`event_children`](EventElement::event_children) and
+///   [`focus_children`](EventElement::focus_children).
+/// - **Broadcast** (lifecycle notifications): every element, through
+///   [`event_children`](EventElement::event_children).
+///
+/// All three default to [`VisitorElement::visit_children`], so an element whose
+/// children are the same for painting and events implements none of them.
+/// [`structural_children`](EventElement::structural_children) is the union of
+/// the event and visual views, which is what focus traversal and reconciliation
+/// need.
+///
+/// An element reacts to an event in [`on_event`](EventElement::on_event) and
+/// reports the outcome as an [`EventResult`]: whether it consumed the event,
+/// whether a redraw is needed, and whether it wants to capture or release the
+/// pointer. The same trait carries what makes an element focusable
+/// ([`focus_node`](EventElement::focus_node),
+/// [`autofocus`](EventElement::autofocus),
+/// [`traps_focus`](EventElement::traps_focus)) and what it tells assistive
+/// technology ([`semantics`](EventElement::semantics)).
+///
+/// Every method has a default, so a non-interactive element implements it with
+/// an empty `impl`. The default [`EventTreeRole`] is conservative; an element
+/// that handles no events should declare itself
+/// [`Transparent`](EventTreeRole::Transparent) so the event index can skip it.
 pub trait EventElement: VisitorElement {
     /// Returns this element's event-routing role.
     ///

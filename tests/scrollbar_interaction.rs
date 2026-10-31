@@ -22,6 +22,9 @@ const WIDTH: f64 = 400.0;
 const HEIGHT: f64 = 600.0;
 /// The thumb sits in the last 12 pixels of the viewport.
 const THUMB_X: f64 = 394.0;
+/// Long enough for a resting finger to take the thumb (150 ms) with margin for
+/// the frames that notice it.
+const THUMB_HOLD_REST_MS: u64 = 300;
 /// How far content moves for each pixel the thumb does.
 const CONTENT_PER_THUMB_PIXEL: f32 = 5.0;
 
@@ -124,6 +127,24 @@ impl<W: Widget + 'static> Page<W> {
                 from + (to - from) * f64::from(step) / 10.0,
             );
         }
+    }
+
+    /// Keeps everything still for `ms` of real time, delivering frames only.
+    ///
+    /// A finger on the thumb takes it after resting there; the hold is judged on
+    /// the clock, not on the number of events, so a test has to let time pass.
+    fn rest(&mut self, ms: u64) {
+        let started = aimer_time::Instant::now();
+        while started.elapsed() < Duration::from_millis(ms) {
+            std::thread::sleep(Duration::from_millis(16));
+            self.app.pump_frames(2);
+        }
+    }
+
+    /// Puts a finger on the thumb and keeps it there until the thumb is taken.
+    fn hold_thumb_with_finger(&mut self, x: f64, y: f64) {
+        self.touch(TouchPhase::Started, x, y);
+        self.rest(THUMB_HOLD_REST_MS);
     }
 
     /// One wheel tick, which is what makes a bar appear on a desktop.
@@ -247,7 +268,7 @@ fn a_finger_holding_the_thumb_drags_it() {
     // Well left of the 7-pixel thumb, where a fingertip lands.
     let finger_x = 380.0;
 
-    page.touch(TouchPhase::Started, finger_x, thumb_middle);
+    page.hold_thumb_with_finger(finger_x, thumb_middle);
     page.drag_finger(finger_x, thumb_middle, thumb_middle + 100.0);
     page.touch(TouchPhase::Ended, finger_x, thumb_middle + 100.0);
 
@@ -353,7 +374,7 @@ fn a_finger_holding_a_thumb_over_buttons_drags_it_and_presses_none_of_them() {
     let start = page.offset();
     let thumb_middle = f64::from(start / CONTENT_PER_THUMB_PIXEL) + 60.0;
 
-    page.touch(TouchPhase::Started, 380.0, thumb_middle);
+    page.hold_thumb_with_finger(380.0, thumb_middle);
     page.drag_finger(380.0, thumb_middle, thumb_middle + 100.0);
     page.touch(TouchPhase::Ended, 380.0, thumb_middle + 100.0);
 
@@ -395,7 +416,7 @@ fn a_finger_holds_the_thumb_on_a_high_density_display() {
     let start = page.offset();
     let thumb_middle = f64::from(start / CONTENT_PER_THUMB_PIXEL) + 60.0;
 
-    page.touch(TouchPhase::Started, 380.0, thumb_middle);
+    page.hold_thumb_with_finger(380.0, thumb_middle);
     page.drag_finger(380.0, thumb_middle, thumb_middle + 100.0);
     page.touch(TouchPhase::Ended, 380.0, thumb_middle + 100.0);
 
@@ -406,42 +427,73 @@ fn a_finger_holds_the_thumb_on_a_high_density_display() {
     );
 }
 
-fn assert_bar_shows_when_the_mouse_moves_over_the_content<W: Widget + 'static>(mut page: Page<W>) {
+/// Only the bar itself shows the bar: a mouse wandering over the content, with
+/// or without buttons under it, leaves a hidden bar hidden.
+fn assert_bar_stays_hidden_when_the_mouse_moves_over_the_content<W: Widget + 'static>(
+    mut page: Page<W>,
+) {
     assert_eq!(page.controller.scroll_bar_opacity(), 0.0);
 
     // Nowhere near the bar: over the middle of the content.
     page.move_cursor(150.0, 200.0);
     page.move_cursor(160.0, 210.0);
-    page.wait_until_shown();
+    page.rest(300);
 
-    assert_eq!(page.controller.scroll_bar_opacity(), 1.0);
+    assert_eq!(page.controller.scroll_bar_opacity(), 0.0);
 }
 
 #[test]
-fn the_bar_shows_when_the_mouse_moves_over_the_content() {
-    assert_bar_shows_when_the_mouse_moves_over_the_content(page());
+fn the_bar_stays_hidden_when_the_mouse_moves_over_the_content() {
+    assert_bar_stays_hidden_when_the_mouse_moves_over_the_content(page());
 }
 
 #[test]
-fn the_bar_shows_when_the_mouse_moves_over_buttons() {
-    assert_bar_shows_when_the_mouse_moves_over_the_content(pressable_page(Rc::new(Cell::new(0))));
+fn the_bar_stays_hidden_when_the_mouse_moves_over_buttons() {
+    assert_bar_stays_hidden_when_the_mouse_moves_over_the_content(pressable_page(Rc::new(
+        Cell::new(0),
+    )));
 }
 
 #[test]
-fn a_mouse_resting_over_the_content_lets_the_bar_fade() {
+fn a_mouse_moving_over_the_content_does_not_hold_the_bar() {
     let mut page = page();
-    page.move_cursor(150.0, 200.0);
-    page.move_cursor(160.0, 210.0);
+    page.wheel(-10.0);
     page.wait_until_shown();
 
-    // The mouse stays where it is: nothing is holding the bar.
+    // The mouse keeps moving over the content: nothing is holding the bar.
+    page.move_cursor(150.0, 200.0);
     for _ in 0..400 {
         std::thread::sleep(Duration::from_millis(16));
+        page.move_cursor(160.0, 210.0);
         if page.app.pump_frames(1) == 0 {
             break;
         }
     }
     assert_eq!(page.controller.scroll_bar_opacity(), 0.0);
+}
+
+/// The thumb is taken by a finger that rests on it, not by one that is already
+/// swiping: a quick swipe that starts over the thumb scrolls the content.
+#[test]
+fn a_finger_swiping_across_the_thumb_scrolls_the_content_instead_of_taking_it() {
+    let mut page = page();
+    page.wheel(-10.0);
+    page.wait_until_shown();
+    let start = page.offset();
+    let thumb_middle = f64::from(start / CONTENT_PER_THUMB_PIXEL) + 60.0;
+
+    page.touch(TouchPhase::Started, 380.0, thumb_middle);
+    page.drag_finger(380.0, thumb_middle, thumb_middle + 100.0);
+    page.touch(TouchPhase::Ended, 380.0, thumb_middle + 100.0);
+
+    // Dragging the thumb down by 100 would have carried the content forward by
+    // 500. A swipe moves the content with the finger instead: down the screen,
+    // which is back towards the top.
+    assert!(
+        page.offset() < start,
+        "the swipe scrolled the content with the finger, not by the thumb: {start} -> {}",
+        page.offset()
+    );
 }
 
 #[test]

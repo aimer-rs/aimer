@@ -81,6 +81,29 @@ pub enum CompositorAnimationDecision {
     Compositor(CompositorAnimationFrame),
 }
 
+/// The per-frame half of an element: advancing it and producing its pixels.
+///
+/// Drawing is split in two so that most frames do almost no work:
+///
+/// - [`update`](Drawable::update) is the **frame walk**. It lays children out,
+///   advances animations, publishes interaction geometry and passes the walk to
+///   the children that take part in the frame.
+/// - The **retained paint** hooks (`paint_local_v2` and the `*_v2_*` family)
+///   record what the element looks like once into a render node. The
+///   renderer replays that record on later frames and re-records it only when
+///   the element reports that its paint changed, so an idle element costs
+///   nothing per frame.
+///
+/// Only [`update`](Drawable::update) is commonly overridden by hand. An element
+/// opts into retained paint by overriding `can_paint_local_v2` and
+/// `paint_local_v2` together; the rest of the retained hooks describe geometry
+/// around that record (clips, bounds, outsets, interaction rectangles) and are
+/// hidden from the documentation because they are framework plumbing and still
+/// migrating from the legacy canvas path. Every method has a default, so a
+/// layout-only element implements this trait with an empty `impl`.
+///
+/// Methods here run on the UI thread during the frame, so they are on the
+/// hottest path in the framework: they must not block or allocate per call.
 pub trait Drawable {
     /// Walks this element for one frame.
     ///

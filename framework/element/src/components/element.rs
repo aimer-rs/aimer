@@ -18,6 +18,9 @@ use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
 use crate::base::*;
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+use crate::components::drawable::CompositorTransform;
+use crate::components::drawable::{CompositorAnimationDecision, CompositorAnimationFrame};
 use crate::components::event_element::{
     CaptureRequest, EventElement, EventResult, EventTreeRole, FollowUp, PointerKey,
 };
@@ -28,70 +31,65 @@ use crate::element_invalidation::{
     ElementChangeKind, ElementInvalidationBatch, ElementInvalidationBounds,
     ElementInvalidationRevisions,
 };
-use crate::components::drawable::{
-    CompositorAnimationDecision, CompositorAnimationFrame,
-};
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
-use crate::components::drawable::CompositorTransform;
 use crate::pointer_claim;
 use crate::{Drawable, Key};
 
-mod event;
-mod live_children;
-mod scoped_rebuild;
-mod state_carry;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
 mod animation_only;
 #[cfg(any(target_arch = "wasm32", feature = "portable-guest"))]
 #[path = "element/animation_only_stub.rs"]
 mod animation_only;
 mod compositor_applied;
+mod event;
+#[cfg(test)]
+mod frame_instant_tests;
+#[cfg(test)]
+mod keep_reachable_tests;
+mod live_children;
 mod node;
 #[cfg(test)]
 mod paint_invalidation_tests;
 #[cfg(test)]
-mod keep_reachable_tests;
-#[cfg(test)]
-mod frame_instant_tests;
-#[cfg(test)]
 mod render_context_tests;
+mod retained_window;
+mod scoped_rebuild;
+mod state_carry;
 #[cfg(test)]
 mod window_paint_state_tests;
-mod retained_window;
 
 pub use animation_only::{
     animation_only_targets, is_animation_only_frame, request_isolated_animation_frame,
-    request_isolated_subtree_animation_frame, run_animation_only_pass, set_frame_rebuilt_roots, set_animation_only_frame, traversal_counts,
-    with_v2_animation_only_context,
+    request_isolated_subtree_animation_frame, run_animation_only_pass, set_animation_only_frame,
+    set_frame_rebuilt_roots, traversal_counts, with_v2_animation_only_context,
 };
 use animation_only::{
-    begin_full_traversal, capture_rebuilt_root, enter_subtree_walk, finish_full_traversal, is_animation_only_pass,
-    pass_skips_subtree, register_animating_element,
+    begin_full_traversal, capture_rebuilt_root, enter_subtree_walk, finish_full_traversal,
+    is_animation_only_pass, pass_skips_subtree, register_animating_element,
 };
 use compositor_applied::{
     compositor_animation_may_be_applied, forget_unmapped_compositor_animations,
     note_compositor_animation_applied, note_compositor_animation_cleared,
 };
 pub use live_children::{live_children_generation, notify_live_children_changed};
+use node::ElementNode;
+pub(crate) use scoped_rebuild::rename_scoped_rebuilds_since;
 pub use scoped_rebuild::{
     ScopedCursor, has_scoped_rebuilds_since, scoped_rebuild_cursor, scoped_rebuilds_since,
     unscoped_element_tree_generation,
 };
 use scoped_rebuild::{note_scoped_rebuild, note_unscoped_tree_change};
-pub(crate) use scoped_rebuild::rename_scoped_rebuilds_since;
-use node::ElementNode;
 pub use state_carry::{StateCarrier, carry_child_state, carry_stateful};
 
 mod any_element;
 pub use any_element::AnyElement;
-pub use retained_window::{
-    may_escape_ancestor_clips,
-    VisibleWindow, may_skip_settled_offscreen, retained_element_settled, retained_visible_window,
-    retained_visible_window_of_current, set_scroll_only_frame, set_settled_offscreen_skip,
-};
 pub use event::{
     ElementPath, EventDispatchContext, EventDispatcher, broadcast_event, dispatch_event,
     dispatch_focused_event, focus_is_settling_between_events,
+};
+pub use retained_window::{
+    VisibleWindow, may_escape_ancestor_clips, may_skip_settled_offscreen, retained_element_settled,
+    retained_visible_window, retained_visible_window_of_current, set_scroll_only_frame,
+    set_settled_offscreen_skip,
 };
 
 static NEXT_ELEMENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -280,11 +278,13 @@ pub fn with_v2_render_tree_context<R>(
     forget_unmapped_compositor_animations(&element_nodes);
     begin_full_traversal();
     V2_RENDER_CONTEXT_STACK.with(|stack| {
-        stack.borrow_mut().push(V2RenderContext(Rc::new(V2RenderScope {
-            tree,
-            element_nodes,
-            prepared_root: Cell::new(prepared_root),
-        })));
+        stack
+            .borrow_mut()
+            .push(V2RenderContext(Rc::new(V2RenderScope {
+                tree,
+                element_nodes,
+                prepared_root: Cell::new(prepared_root),
+            })));
     });
     let _guard = V2RenderContextGuard;
     let result = callback();
@@ -376,13 +376,17 @@ impl WindowPaintState {
             .with(|damage| std::mem::swap(&mut *damage.borrow_mut(), &mut self.frame_damage));
         FRAME_PAINT_DAMAGE_OWNERS
             .with(|owners| std::mem::swap(&mut *owners.borrow_mut(), &mut self.damage_owners));
-        PENDING_PAINT_DAMAGE_FULL.with(|pending| self.pending_full = pending.replace(self.pending_full));
+        PENDING_PAINT_DAMAGE_FULL
+            .with(|pending| self.pending_full = pending.replace(self.pending_full));
         FRAME_PAINT_TARGET.with(|target| {
             let theirs = target.replace(self.target);
             self.target = theirs;
         });
         EVENT_PAINT_INVALIDATIONS.with(|invalidations| {
-            std::mem::swap(&mut *invalidations.borrow_mut(), &mut self.event_invalidations)
+            std::mem::swap(
+                &mut *invalidations.borrow_mut(),
+                &mut self.event_invalidations,
+            )
         });
         crate::element_invalidation::swap_pending(&mut self.queue);
     }
@@ -490,12 +494,7 @@ pub fn mark_paint_damage(rectangle: DamageRect) {
 #[doc(hidden)]
 pub fn mark_paint_damage_full() {
     if let Some(owner) = DRAW_INVALIDATION_OWNER.with(Cell::get) {
-        queue_element_invalidation_for(
-            Some(owner),
-            None,
-            ElementChangeKind::Unknown,
-            None,
-        );
+        queue_element_invalidation_for(Some(owner), None, ElementChangeKind::Unknown, None);
     } else if FRAME_PAINT_DAMAGE.with(|damage| damage.borrow().is_none()) {
         // External readiness and platform changes can request a full repaint
         // without an element owner. Preserve that fact for the next frame's
@@ -523,10 +522,7 @@ fn record_local_paint_invalidation_path(path: &[ElementId]) {
     }
 }
 
-fn queue_element_invalidation(
-    path: Option<Rc<[ElementId]>>,
-    change: ElementChangeKind,
-) {
+fn queue_element_invalidation(path: Option<Rc<[ElementId]>>, change: ElementChangeKind) {
     let element_id = path.as_deref().and_then(|path| path.last().copied());
     queue_element_invalidation_for(element_id, path, change, None);
 }
@@ -785,9 +781,11 @@ pub fn placement_marks_suspended() -> bool {
 /// A number that names the chain of elements the rebuild pass is inside of.
 fn rebuild_path_signature() -> u64 {
     REBUILD_PATH.with(|path| {
-        path.borrow().iter().fold(0x9e37_79b9_7f4a_7c15u64, |hash, id| {
-            (hash.rotate_left(5) ^ id.get()).wrapping_mul(0xf135_7aea_2e62_a9c5)
-        })
+        path.borrow()
+            .iter()
+            .fold(0x9e37_79b9_7f4a_7c15u64, |hash, id| {
+                (hash.rotate_left(5) ^ id.get()).wrapping_mul(0xf135_7aea_2e62_a9c5)
+            })
     })
 }
 
@@ -1106,7 +1104,11 @@ fn add_dirty_path(path: &[ElementId]) {
             let siblings = edges.entry(pair[0]).or_default();
             match siblings.iter_mut().find(|edge| edge.child == pair[1]) {
                 Some(edge) => edge.paths += 1,
-                None => siblings.push(DirtyEdge { child: pair[1], paths: 1, hint: Cell::new(0) }),
+                None => siblings.push(DirtyEdge {
+                    child: pair[1],
+                    paths: 1,
+                    hint: Cell::new(0),
+                }),
             }
         }
     });
@@ -1284,9 +1286,9 @@ fn begin_rebuild_traversal(root: ElementId) -> RebuildTraversalGuard {
 #[inline]
 pub(crate) fn dirty_paths_cover_current_traversal() -> bool {
     DIRTY_PATHS_READY.with(Cell::get)
-        && REBUILD_TRAVERSAL_ROOT.with(Cell::get).is_some_and(|root| {
-            DIRTY_INDEXED_ROOTS.with(|roots| roots.borrow().contains(&root))
-        })
+        && REBUILD_TRAVERSAL_ROOT
+            .with(Cell::get)
+            .is_some_and(|root| DIRTY_INDEXED_ROOTS.with(|roots| roots.borrow().contains(&root)))
 }
 
 struct RebuildPathGuard;
@@ -1327,21 +1329,68 @@ impl Drop for RebuildDescendGuard {
     }
 }
 
-
 fn bounds_from_element(element: &dyn Element) -> Option<aimer_attribute::Bounds> {
     element.event_tree_bounds().map(|(start, end)| {
-        aimer_attribute::Bounds::new(
-            start.x,
-            start.y,
-            end.x - start.x,
-            end.y - start.y,
-        )
+        aimer_attribute::Bounds::new(start.x, start.y, end.x - start.x, end.y - start.y)
     })
 }
 
 impl<T> Element for T where T: VisitorElement + EventElement + LayoutElement + Rebuildable + Drawable
 {}
 
+/// A node of the retained UI tree: the object a widget's `build` produces and
+/// the framework lays out, routes input to and paints.
+///
+/// `Element` has no methods of its own to implement. It is the combination of
+/// five capability traits, each owning one concern, and it is implemented
+/// automatically for every type that implements all five:
+///
+/// | Trait | Concern |
+/// |---|---|
+/// | [`VisitorElement`] | walking the children; naming and identifying the element |
+/// | [`LayoutElement`] | sizing and placement under constraints |
+/// | [`EventElement`] | pointer and keyboard routing, focus, semantics |
+/// | [`Rebuildable`] | dirty marking, rebuilding, carrying state across rebuilds |
+/// | [`Drawable`] | the per-frame walk and retained paint |
+///
+/// Every capability trait except [`VisitorElement`] (which needs
+/// [`debug_name`](VisitorElement::debug_name)) has defaults for all of its
+/// methods, so an element implements the ones it cares about and writes empty
+/// `impl`s for the rest.
+///
+/// The framework holds elements as `dyn Element`, usually inside an
+/// [`AnyElement`], which [`boxed`](Element::boxed) produces. Erasing is what
+/// gives an element its [`ElementId`], the identity that survives rebuilds.
+/// Most code never writes an element by hand: widgets build elements, and the
+/// framework reconciles the new tree against the old one, carrying state across
+/// where the two are compatible.
+///
+/// # Examples
+///
+/// A minimal element that takes part in the tree and does nothing else:
+///
+/// ```
+/// use aimer_element::{
+///     Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement,
+/// };
+///
+/// struct Spacer;
+///
+/// impl VisitorElement for Spacer {
+///     fn debug_name(&self) -> &'static str {
+///         "Spacer"
+///     }
+/// }
+/// impl EventElement for Spacer {}
+/// impl LayoutElement for Spacer {}
+/// impl Rebuildable for Spacer {}
+/// impl Drawable for Spacer {}
+///
+/// // `Spacer` is an `Element` now; erasing it gives it an identity.
+/// let element = Spacer.boxed();
+/// assert_eq!(element.debug_name(), "Spacer");
+/// let _id = element.id();
+/// ```
 pub trait Element: VisitorElement + EventElement + LayoutElement + Rebuildable + Drawable {
     /// Returns this element's stable logical identity.
     ///
@@ -1389,7 +1438,7 @@ pub trait Element: VisitorElement + EventElement + LayoutElement + Rebuildable +
             ElementNode {
                 id: Cell::new(ElementId::next()),
                 element: self,
-                },
+            },
             allocator,
         )
     }
@@ -1549,7 +1598,9 @@ impl KeepReachable {
     /// Creates a holder that holds nothing.
     #[inline]
     pub const fn new() -> Self {
-        Self { path: RefCell::new(Vec::new()) }
+        Self {
+            path: RefCell::new(Vec::new()),
+        }
     }
 
     /// Keeps the element being rebuilt reachable for the next pass.
@@ -1586,7 +1637,10 @@ impl KeepReachable {
             } else if *path != *current && !is_tail_of_registered {
                 // The index cannot answer a walk from a different root, so the
                 // next pass has to be a full one.
-                if path.first().is_some_and(|old_root| Some(old_root) != current.first()) {
+                if path
+                    .first()
+                    .is_some_and(|old_root| Some(old_root) != current.first())
+                {
                     invalidate_dirty_paths();
                 }
                 if !path.is_empty() {
@@ -1711,9 +1765,15 @@ pub fn rebuild_dirty_children<'a>(
         return false;
     };
     let wanted: SmallVec<[(ElementId, usize); 4]> = DIRTY_EDGES.with(|edges| {
-        edges.borrow().get(&parent).map_or_else(SmallVec::new, |siblings| {
-            siblings.iter().map(|edge| (edge.child, edge.hint.get())).collect()
-        })
+        edges
+            .borrow()
+            .get(&parent)
+            .map_or_else(SmallVec::new, |siblings| {
+                siblings
+                    .iter()
+                    .map(|edge| (edge.child, edge.hint.get()))
+                    .collect()
+            })
     });
     if wanted.is_empty() {
         return false;
@@ -1721,10 +1781,14 @@ pub fn rebuild_dirty_children<'a>(
 
     let mut found: SmallVec<[(usize, &'a dyn Element); 4]> = SmallVec::new();
     for (id, hint) in wanted {
-        let mut located = child_at(hint).filter(|child| child.id() == id).map(|child| (hint, child));
+        let mut located = child_at(hint)
+            .filter(|child| child.id() == id)
+            .map(|child| (hint, child));
         if located.is_none() {
             located = (0..len).find_map(|index| {
-                child_at(index).filter(|child| child.id() == id).map(|child| (index, child))
+                child_at(index)
+                    .filter(|child| child.id() == id)
+                    .map(|child| (index, child))
             });
         }
         let Some((index, child)) = located else {

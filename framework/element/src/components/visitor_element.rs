@@ -1,6 +1,35 @@
 use crate::{Element, ElementId, Key};
+// Only the intra-doc links below name these.
+#[cfg(doc)]
+use crate::{Drawable, EventElement, LayoutElement, Rebuildable};
 
+/// How the rest of the framework walks an element's children, and how it
+/// names the element itself.
+///
+/// This is the base of the [`Element`] family: [`EventElement`],
+/// [`LayoutElement`], [`Rebuildable`] and [`Drawable`] are all defined in terms
+/// of it, and their default methods reach the subtree through
+/// [`visit_children`](VisitorElement::visit_children). An element that has
+/// children therefore implements this trait first, and the defaults of the
+/// other traits (invalidating layout, marking for rebuild, rebuilding dirty
+/// descendants) then work without further code.
+///
+/// Only [`debug_name`](VisitorElement::debug_name) is required. The remaining
+/// methods are identity hooks used by reconciliation; most elements keep their
+/// defaults.
 pub trait VisitorElement {
+    /// Visits the children that are painted, laid out and rebuilt with this
+    /// element, in structural order.
+    ///
+    /// This is the *visual* view of the subtree. The defaults of
+    /// [`LayoutElement::invalidate_layout`], [`Rebuildable::mark_needs_rebuild`]
+    /// and [`Rebuildable::rebuild_if_dirty`] walk it, so an element that holds
+    /// children and does not report them here is silently skipped by all three.
+    /// Event delivery has its own views, [`EventElement::event_children`] and
+    /// [`EventElement::hit_test_children`], which default to this one.
+    ///
+    /// A leaf keeps the default, which visits nothing. The visitor is called
+    /// synchronously and must not be retained.
     #[allow(unused_variables)]
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
@@ -22,6 +51,16 @@ pub trait VisitorElement {
         });
     }
 
+    /// Names the element's type for diagnostics and reconciliation.
+    ///
+    /// Reconciliation treats two elements as the same widget only when their
+    /// concrete type, this name and their [`reconciliation_key`] agree, so the
+    /// name must be stable for a given kind of element and distinct between
+    /// kinds that can occupy the same position. It is also what appears in
+    /// frame statistics and unmapped-draw reports; a short type name such as
+    /// `"Container"` is conventional.
+    ///
+    /// [`reconciliation_key`]: VisitorElement::reconciliation_key
     fn debug_name(&self) -> &'static str;
 
     /// Returns the `TypeId` of the concrete element type, enabling runtime
@@ -56,11 +95,23 @@ pub trait VisitorElement {
         false
     }
 
+    /// Returns the identity this element carries, if it carries one.
+    ///
+    /// Elements are given an [`ElementId`] when they are erased with
+    /// [`Element::boxed`]; the erasing wrapper answers this, so a concrete
+    /// element keeps the default. [`Element::id`] is the infallible form for
+    /// elements that are known to be erased.
     #[doc(hidden)]
     fn element_id(&self) -> Option<ElementId> {
         None
     }
 
+    /// Replaces this element's identity.
+    ///
+    /// Reconciliation calls this to hand the id of the element being replaced
+    /// to its compatible successor, which is what keeps an element's identity
+    /// stable across rebuilds. Only the erasing wrapper stores the id; the
+    /// default ignores it.
     #[doc(hidden)]
     fn set_element_id(&self, _id: ElementId) {}
 }

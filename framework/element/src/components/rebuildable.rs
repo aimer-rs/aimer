@@ -23,8 +23,40 @@ pub trait SelfRebuilding {
     fn reads_inherited_context(&self) -> bool;
 }
 
-// Rebuild capabilities
+/// The rebuild half of an element: how it is marked dirty, rebuilt, and how
+/// it hands its runtime state to the element that replaces it.
+///
+/// A widget's `build` produces a new element tree; this trait is the machinery
+/// that decides *which* parts of the existing tree must run `build` again and
+/// what survives the swap.
+///
+/// - **Marking and rebuilding.** [`mark_needs_rebuild`](Rebuildable::mark_needs_rebuild)
+///   flags a subtree and [`rebuild_if_dirty`](Rebuildable::rebuild_if_dirty)
+///   runs the builds that were flagged. The defaults only recurse through
+///   [`VisitorElement::visit_children`]; the elements that own a `build`
+///   closure (stateless and stateful elements) override them.
+/// - **Skipping work.** The framework keeps an index of the dirty elements so a
+///   pass can skip subtrees that cannot contain work.
+///   [`forwards_marks_only`](Rebuildable::forwards_marks_only) and
+///   [`rebuild_indexed_children`](Rebuildable::rebuild_indexed_children) let an
+///   element take part in that index; the defaults are always safe.
+/// - **Carrying state.** Reconciliation pairs the new tree with the old one and
+///   lets state move across: [`is_stateful_element`](Rebuildable::is_stateful_element),
+///   [`is_carry_state`](Rebuildable::is_carry_state),
+///   [`state_carrier`](Rebuildable::state_carrier) and
+///   [`adopt_runtime_state_from`](Rebuildable::adopt_runtime_state_from).
+///
+/// An element with no `build` and no state of its own, which is most of them,
+/// implements this trait with an empty `impl`. A wrapper that forwards to a
+/// single child should also forward the methods that describe that child, as
+/// the notes on the individual methods say.
 pub trait Rebuildable: VisitorElement {
+    /// Runs every pending rebuild in this subtree.
+    ///
+    /// Elements that own a `build` closure override this to run it when their
+    /// dirty flag is set and then continue into the freshly built child. The
+    /// default only descends, so a container passes the call on to its
+    /// children.
     fn rebuild_if_dirty(&self, ctx: &BuildContext) {
         self.visit_children(&mut |child| {
             child.rebuild_if_dirty(ctx);
@@ -71,10 +103,23 @@ pub trait Rebuildable: VisitorElement {
         false
     }
 
+    /// Exposes the concrete element for downcasting, if it opts in.
+    ///
+    /// `dyn Element` hides the concrete type, so code that needs it back (state
+    /// carry, [`adopt_runtime_state_from`](Rebuildable::adopt_runtime_state_from),
+    /// tests) goes through this. An element returns `Some(self)`; the default
+    /// `None` makes the element opaque. A wrapper that forwards to an inner
+    /// element returns the inner element's answer.
     fn option_any(&self) -> Option<&dyn std::any::Any> {
         None
     }
 
+    /// Whether this element owns widget state that survives rebuilds.
+    ///
+    /// Reconciliation consults it to decide whether an old and a new element
+    /// are a stateful pair whose state must be moved across, instead of
+    /// replacing the old one with the new one outright. Only the stateful
+    /// element returns `true`; wrappers forward their child's answer.
     fn is_stateful_element(&self) -> bool {
         false
     }
@@ -97,6 +142,15 @@ pub trait Rebuildable: VisitorElement {
         None
     }
 
+    /// Whether this element carries the rebuildable state of the stateful
+    /// element above it, and so owns its dirty work.
+    ///
+    /// A stateful element that wraps such a child does not mark itself dirty
+    /// when it is marked for rebuild: the child owns that work, and the mark is
+    /// handed to it instead. Because a carrying element does not publish a path
+    /// for its dirty work, such a mark also discards the dirty-path index and
+    /// the next pass falls back to walking the whole tree. Wrappers that
+    /// forward to a child forward this too; the default is `false`.
     fn is_carry_state(&self) -> bool {
         false
     }

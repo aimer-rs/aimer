@@ -1,32 +1,32 @@
 #![doc = include_str!("../README.md")]
 extern crate self as aimer_element;
 
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod components;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod element_invalidation;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod event_tree;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod frame_work_stats;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod hover_reconciliation;
 pub mod key;
 pub mod layout_cache;
 pub mod page_storage;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod paint_damage;
 pub mod platform_brightness;
 pub mod pointer_claim;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod pointer_occlusion;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod rebuild_stats;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod reconciliation_plan;
 pub mod safe_area;
 pub mod semantics;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub mod state_slots;
 #[doc(hidden)]
 pub mod testing;
@@ -61,9 +61,9 @@ impl CalledCounter {
 }
 pub static CALLED: CalledCounter = CalledCounter::new();
 
-#[doc(hidden)]
+// #[doc(hidden)]
 pub use crate::components::context::{InheritedStates, RetainedNodeHandle};
-#[doc(hidden)]
+// #[doc(hidden)]
 pub use crate::components::drawable::{
     CompositorAnimationDecision, CompositorAnimationFrame, CompositorTransform, Drawable,
 };
@@ -79,7 +79,7 @@ pub use crate::components::element::{
     take_declined_paint_elements, take_paint_frame_damage, take_unmapped_draws,
     update_v2_render_node_geometry, with_v2_render_tree_context,
 };
-#[doc(hidden)]
+// #[doc(hidden)]
 pub use crate::components::element::{
     KeepReachable, ScopedCursor, VisibleWindow, animation_only_targets, has_scoped_rebuilds_since,
     is_animation_only_frame, keep_element_reachable, may_escape_ancestor_clips,
@@ -109,7 +109,7 @@ pub use crate::components::interaction_bounds::{
 pub use crate::components::layout_element::LayoutElement;
 pub use crate::components::rebuildable::Rebuildable;
 pub use crate::components::visitor_element::VisitorElement;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub use crate::element_invalidation::{
     ElementChangeKind, ElementInvalidation, ElementInvalidationBatch, ElementInvalidationBounds,
     ElementInvalidationRevisions,
@@ -122,13 +122,13 @@ pub use crate::frame_work_stats::{
     record_smoothing_step, record_stale_element_id, record_state_update, reset_frame_work_stats,
     take_frame_work_stats,
 };
-#[doc(hidden)]
+// #[doc(hidden)]
 pub use crate::hover_reconciliation::{
     mouse_region_hover_reconciliation_deferred, pointer_capture_active,
     request_mouse_region_hover_reconciliation, set_pointer_capture_active,
     with_deferred_mouse_region_hover_reconciliation,
 };
-#[doc(hidden)]
+// #[doc(hidden)]
 pub use crate::paint_damage::PaintDamageTracker;
 pub use crate::rebuild_stats::RebuildStats;
 #[cfg(feature = "frame-stats")]
@@ -148,7 +148,7 @@ pub mod base {
     pub use aimer_attribute::size::{ResolvedSize, Size};
     pub use aimer_color::prelude::*;
 
-    #[doc(hidden)]
+    // #[doc(hidden)]
     pub use crate::components::context::BuildConsumer;
     pub use crate::components::context::{BuildContext, WindowHandle};
 }
@@ -160,7 +160,7 @@ pub use crate::pointer_claim::{
     claim_pointer, claimed_pointer_count, is_pointer_claimed, release_all_pointers, release_pointer,
 };
 pub use crate::pointer_occlusion::pointer_occluded_at;
-#[doc(hidden)]
+// #[doc(hidden)]
 pub use crate::pointer_occlusion::request_pointer_view_frame;
 pub use crate::reconciliation_plan::{
     ReconciliationMatch, ReconciliationMatchKind, ReconciliationPlan, ReconciliationPlanError,
