@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use aimer_animation::{AnyCurve, Curve};
 use aimer_attribute::position::Vec2d;
+use aimer_input::mouse_region::{PointerState, SharedPointerState};
 use aimer_attribute::size::ResolvedSize;
 use aimer_utils::AnimInstant;
 use aimer_utils::callback::Callback;
@@ -121,13 +122,19 @@ pub struct ScrollState {
     /// Published by the bar as it paints. Touch reads it so a finger cannot grab
     /// a thumb that is not on screen.
     pub(crate) scroll_bar_opacity: Cell<f32>,
-    /// Whether a mouse is over the scroll bar, thumb or track, which keeps the
-    /// bar showing for as long as it stays there.
-    pub(crate) scroll_bar_hovered: Cell<bool>,
-    /// Set when a mouse moves over the scrollable anywhere, and taken by the bar
-    /// the next time it is painted: moving over the content shows the bar, and
-    /// the idle delay before it fades starts from the last such move.
-    pub(crate) scroll_bar_pointer_moved: Cell<bool>,
+    /// Where the viewport's top-left corner is in the window, in logical pixels.
+    ///
+    /// The bar's geometry is published relative to the viewport while pointers
+    /// arrive in window coordinates, so every hit test measures from here.
+    /// Kept current by the container from its own bounds.
+    pub(crate) viewport_origin: Cell<Vec2d>,
+    /// Whether a mouse is over the scroll bar strip, which keeps the bar showing
+    /// for as long as it stays there.
+    ///
+    /// The cell is the one the bar's [`MouseRegion`](aimer_input::mouse_region::MouseRegion)
+    /// writes, so hover is decided by the same bounds and edge detection as any
+    /// other region instead of by a second hit test of the container's own.
+    pub(crate) scroll_bar_pointer: SharedPointerState,
     /// Where a thumb drag took hold: the pointer's position along the bar and
     /// the scroll offset at that moment. The drag is measured from these, not
     /// accumulated, so the thumb stays under the pointer for the whole drag.
@@ -216,6 +223,12 @@ pub struct ScrollState {
     /// touch release).  Used to hard-cap the glide at
     /// [`MAX_MOMENTUM_DURATION_S`] so it doesn't creep for 15–20 s.
     pub(crate) momentum_start_time: Cell<Option<AnimInstant>>,
+    /// Velocity retention that replaces the behavior's friction while a key or
+    /// track-click glide is coasting, and `None` for ordinary momentum.
+    ///
+    /// Cleared when the glide settles and whenever any other input takes over
+    /// the motion (see [`Self::cancel_fling`]).
+    pub(crate) momentum_friction: Cell<Option<f32>>,
     /// Finger delta accumulated since the last emitted drag-velocity sample.
     /// Coalesced same-frame pointer moves (web) fold in here instead of each
     /// producing its own inflated sample; flushed once a real time slice
@@ -323,6 +336,7 @@ impl ScrollState {
         self.spring_velocity
             .set(Self::axis_only(self.axis, prev.spring_velocity.get()));
         self.momentum_start_time.set(prev.momentum_start_time.get());
+        self.momentum_friction.set(prev.momentum_friction.get());
         self.vel_accum
             .set(Self::axis_only(self.axis, prev.vel_accum.get()));
         self.vel_sample_time.set(prev.vel_sample_time.get());
@@ -1176,15 +1190,16 @@ impl ScrollState {
         }
     }
 
-    /// A pointer position, which arrives in logical pixels, in the device pixels
-    /// the bar's geometry is laid out in.
+    /// A pointer position, which arrives in window logical pixels, in the
+    /// viewport-relative device pixels the bar's geometry is laid out in.
     #[inline]
     pub(crate) fn to_device(&self, p: Vec2d) -> Vec2d {
         let scale = self.last_scale.get();
         let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+        let origin = self.viewport_origin.get();
         Vec2d {
-            x: p.x * scale,
-            y: p.y * scale,
+            x: (p.x - origin.x) * scale,
+            y: (p.y - origin.y) * scale,
         }
     }
 
@@ -1248,40 +1263,32 @@ impl ScrollState {
         }
     }
 
-    /// Whether `p` is on the scroll bar, thumb or track.
-    pub(crate) fn on_scroll_bar(&self, p: Vec2d) -> bool {
-        let (viewport_w, viewport_h) = self.cached_viewport.get();
-        self.hit_test_v_thumb(p)
-            || self.hit_test_h_thumb(p)
-            || self.hit_test_v_track(p, viewport_w, viewport_h, self.cached_v_track_width.get())
-            || self.hit_test_h_track(p, viewport_w, viewport_h, self.cached_h_track_width.get())
+    /// Whether a mouse is over the scroll bar strip, as its `MouseRegion`
+    /// last decided.
+    #[inline]
+    pub(crate) fn scroll_bar_hovered(&self) -> bool {
+        matches!(self.scroll_bar_pointer.get(), PointerState::Inside)
     }
 
-    /// Reconciles the remembered hover state of a mouse at `p` with the bar,
+    /// Reconciles the remembered hover state of a mouse at `p` with the thumb,
     /// and reports whether it changed.
     ///
-    /// Two things are remembered: whether the cursor is over a thumb, for its
-    /// highlight, and whether it is over the bar at all, which shows the bar and
-    /// keeps it showing. Both are resolved at draw time from what is stored
-    /// here, and pointer moves no longer buy a frame each, so the move that
-    /// carries the cursor across an edge is detected here and the caller
-    /// schedules the single frame that follows from it.
+    /// Only the thumb highlight is decided here: whether the bar is showing is
+    /// the strip region's business. The highlight is resolved at draw time from
+    /// what is stored, and pointer moves no longer buy a frame each, so the move
+    /// that carries the cursor across a thumb edge is detected here and the
+    /// caller schedules the single frame that follows from it.
     #[inline]
     pub(crate) fn sync_thumb_hover(&self, p: Vec2d) -> bool {
         let hovered = self.hit_test_v_thumb(p) || self.hit_test_h_thumb(p);
-        let on_bar = hovered || self.on_scroll_bar(p);
-        let thumb_changed = self.thumb_hovered.replace(hovered) != hovered;
-        let bar_changed = self.scroll_bar_hovered.replace(on_bar) != on_bar;
-        thumb_changed || bar_changed
+        self.thumb_hovered.replace(hovered) != hovered
     }
 
-    /// Forgets that a mouse was over the bar, for when the cursor has left.
+    /// Forgets that a mouse was over the thumb, for when the cursor has left.
     /// Reports whether it had been.
     #[inline]
-    pub(crate) fn clear_scroll_bar_hover(&self) -> bool {
-        let was = self.scroll_bar_hovered.replace(false);
-        self.thumb_hovered.set(false);
-        was
+    pub(crate) fn clear_thumb_hover(&self) -> bool {
+        self.thumb_hovered.replace(false)
     }
 
     /// Record `velocity` as the speed the finger held for the `dt` seconds
@@ -1395,6 +1402,42 @@ impl ScrollState {
     pub(crate) fn cancel_fling(&self) {
         self.fling_start_time.set(None);
         self.anim_curve.replace(None);
+        // Whoever cancels is taking over the motion, so a glide's own friction
+        // must not outlive it and shape the momentum that follows.
+        self.momentum_friction.set(None);
+    }
+
+    /// Pushes the content so it glides `delta` (an internal, scaled offset
+    /// change) and keeps decelerating to a stop, as a fling does.
+    ///
+    /// The push goes through the same momentum model as a drag release, with
+    /// [`KEY_GLIDE_FRICTION`] in place of the behavior's, sized so the glide
+    /// travels `delta` in total. `carry` keeps the speed already built up, so a
+    /// held key adds to the glide in flight instead of starting over; without
+    /// it, whatever was moving is stopped first.
+    pub(crate) fn glide_by(&self, delta: Vec2d, carry: bool) {
+        let carried = if carry && self.momentum_friction.get().is_some() {
+            Self::axis_only(self.axis, self.pointer_velocity.get())
+        } else {
+            Vec2d::ZERO
+        };
+        self.cancel_fling();
+        self.spring_velocity.set(Vec2d::ZERO);
+        self.release_overscroll_recovery();
+        self.reset_overscroll_peak();
+        self.clear_velocity_history();
+
+        let push = 1.0 - KEY_GLIDE_FRICTION;
+        let delta = Self::axis_only(self.axis, delta);
+        self.pointer_velocity.set(Vec2d {
+            x: carried.x + delta.x * push,
+            y: carried.y + delta.y * push,
+        });
+        self.momentum_friction.set(Some(KEY_GLIDE_FRICTION));
+        self.momentum_start_time.set(None);
+        self.begin_scroll();
+        self.record_input_event();
+        self.request_animation_frame();
     }
 
     /// Arm a programmatic animation that eases the scroll offset from its
@@ -1438,6 +1481,15 @@ impl ScrollState {
         self.fling_duration.set(duration_s);
         self.anim_curve.replace(Some(curve.into_any()));
         self.fling_start_time.set(Some(AnimInstant::now()));
+    }
+
+    /// Eases to `target`, an internal (scaled) offset, as a scroll session of its
+    /// own. The draw loop reports the session over once the animation settles.
+    pub(crate) fn animate_scroll_to(&self, target: Vec2d, duration_s: f32, curve: impl Curve) {
+        self.begin_scroll();
+        self.start_animation(target, duration_s, curve);
+        self.record_input_event();
+        self.request_animation_frame();
     }
 
     /// Arm a cubic-bézier release fling.
@@ -1671,7 +1723,11 @@ impl ScrollState {
                 }
             }
 
-            let decay = self.scroll_behavior.friction.powf(frame_ratio);
+            let friction = self
+                .momentum_friction
+                .get()
+                .unwrap_or(self.scroll_behavior.friction);
+            let decay = friction.powf(frame_ratio);
             offset.x += velocity.x * frame_ratio;
             offset.y += velocity.y * frame_ratio;
             if self.bouncy() {
@@ -1747,6 +1803,10 @@ impl ScrollState {
         } else if velocity.x != 0.0 || velocity.y != 0.0 {
             self.pointer_velocity.set(Vec2d { x: 0.0, y: 0.0 });
             self.momentum_start_time.set(None);
+            self.momentum_friction.set(None);
+        } else {
+            // Nothing is coasting any more, whichever way it came to rest.
+            self.momentum_friction.set(None);
         }
         let v_check = self.pointer_velocity.get();
         let momentum_active =
@@ -1827,8 +1887,8 @@ impl ScrollState {
             h_thumb_rect: Cell::new(None),
             thumb_hovered: Cell::new(false),
             scroll_bar_opacity: Cell::new(0.0),
-            scroll_bar_hovered: Cell::new(false),
-            scroll_bar_pointer_moved: Cell::new(false),
+            scroll_bar_pointer: Default::default(),
+            viewport_origin: Cell::new(Vec2d::ZERO),
             scroll_bar_anchor: Cell::new((0.0, 0.0)),
             v_scroll_multiplier: Cell::new(0.0),
             h_scroll_multiplier: Cell::new(0.0),
@@ -1842,6 +1902,7 @@ impl ScrollState {
             cached_content_size: Cell::new(Default::default()),
             cached_content_size_valid: Cell::new(false),
             fling_start_time: Cell::new(None),
+            momentum_friction: Cell::new(None),
             fling_start_offset: Cell::new(Vec2d { x: 0.0, y: 0.0 }),
             fling_target_offset: Cell::new(Vec2d { x: 0.0, y: 0.0 }),
             fling_duration: Cell::new(0.0),

@@ -8,6 +8,9 @@ use aimer_attribute::size::ResolvedSize;
 use aimer_canvas::Canvas;
 use aimer_cupid::draw_cmd_v2::Rect;
 use aimer_cupid::utilities::Color as V2Color;
+use aimer_input::gesture::GestureEvent;
+use aimer_input::gesture::gesture_detector::GestureDetector;
+use aimer_input::mouse_region::MouseRegion;
 use aimer_widget::base::{BuildContext, Color, Colors};
 use aimer_widget::portable::__anteros::{WidgetDocumentView, WidgetNodeView};
 use aimer_widget::portable::PortableMaterializeError;
@@ -19,6 +22,7 @@ use aimer_widget::{
 use crate::ScrollAxis;
 use crate::scrollable::constants::{
     SCROLLBAR_HIDE_DURATION_MS, SCROLLBAR_IDLE_HOLD_MS, SCROLLBAR_SHOW_DURATION_MS,
+    SCROLLBAR_TRACK_FADE_MS,
 };
 use crate::scrollable::controller::{DragMode, ScrollState};
 
@@ -66,7 +70,9 @@ impl Default for ScrollTrack {
         Self {
             width: Dimension::Auto,
             color: Colors::Transparent,
-            hover_color: Colors::Transparent,
+            // The track shows up with the bar: hovering the strip lights it, and
+            // a transparent default would make that invisible.
+            hover_color: Colors::Rgba(128, 128, 128, 40),
         }
     }
 }
@@ -182,11 +188,32 @@ impl State<ScrollBar> for ScrollBarState {
     }
 
     fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        RawScrollBar {
-            config: self.config.clone(),
-            ctrl: self.config.ctrl.clone(),
-            runtime: self.runtime.clone(),
-        }
+        // The region covers exactly the strip this bar is laid out as, so
+        // hovering it means the pointer is over the bar and not merely over
+        // the content it floats above. A standalone bar has no scroll state to
+        // report to and keeps a private cell.
+        let pointer = self
+            .config
+            .ctrl
+            .as_ref()
+            .map(|ctrl| ctrl.scroll_bar_pointer.clone())
+            .unwrap_or_default();
+        // Presses and drags on the strip are recognised by a detector, and what
+        // they mean for the bar is decided by the scroll state.
+        let ctrl = self.config.ctrl.clone();
+        MouseRegion::new().current_state(pointer).child(
+            GestureDetector::new()
+                .on_gesture(move |event: GestureEvent| {
+                    if let Some(ctrl) = &ctrl {
+                        ctrl.on_bar_gesture(event);
+                    }
+                })
+                .child(RawScrollBar {
+                    config: self.config.clone(),
+                    ctrl: self.config.ctrl.clone(),
+                    runtime: self.runtime.clone(),
+                }),
+        )
     }
 }
 
@@ -201,6 +228,11 @@ struct ScrollBarRuntime {
     held: Cell<bool>,
     transition_start: Cell<Option<aimer_utils::AnimInstant>>,
     transition_from: Cell<f32>,
+    /// How far the track has faded from its resting color toward its hover
+    /// color, `0.0..=1.0`, and when that was last advanced.
+    track_mix: Cell<f32>,
+    track_mix_at: Cell<Option<aimer_utils::AnimInstant>>,
+    track_fading_now: Cell<bool>,
     v2_paint_snapshot: Cell<Option<ScrollBarPaint>>,
 }
 
@@ -248,6 +280,45 @@ impl ScrollBarRuntime {
 
         self.alpha.set(alpha);
         alpha
+    }
+
+    /// Advances the track fade to `now` and returns how far toward its hover
+    /// color the track is.
+    ///
+    /// The fade moves at a fixed rate toward `hovered`, so a pointer that
+    /// leaves halfway through turns it around from where it is instead of
+    /// restarting it.
+    ///
+    /// Time only counts toward the fade when the previous call left it
+    /// unfinished. A settled track is not painted again until something changes,
+    /// so the gap before the frame that changes it is rest, not fade time;
+    /// counting it would jump the track straight to its destination. That frame
+    /// starts the fade, and the ones that follow advance it.
+    fn track_mix(&self, hovered: bool, now: aimer_utils::AnimInstant) -> f32 {
+        let previous = self.track_mix_at.replace(Some(now));
+        let elapsed = previous
+            .filter(|_| self.track_fading_now.get())
+            .map_or(0.0, |previous| now.duration_since(previous).as_secs_f32());
+        let step = elapsed / (SCROLLBAR_TRACK_FADE_MS as f32 / 1000.0);
+        let mix = self.track_mix.get();
+        let mix = if hovered {
+            (mix + step).min(1.0)
+        } else {
+            (mix - step).max(0.0)
+        };
+        self.track_mix.set(mix);
+        // Whether this call left the fade unfinished, which is what makes the
+        // next call's elapsed time count.
+        self.track_fading_now
+            .set(if hovered { mix < 1.0 } else { mix > 0.0 });
+        mix
+    }
+
+    /// Whether the track is still between its resting and hover colors, which
+    /// only a frame can finish.
+    fn track_fading(&self, hovered: bool) -> bool {
+        let mix = self.track_mix.get();
+        if hovered { mix < 1.0 } else { mix > 0.0 }
     }
 
     /// Whether the bar is waiting out its idle delay, which only a frame can
@@ -552,11 +623,9 @@ fn scrollbar_geometry(
             ctrl.hit_test_h_thumb(cursor)
         }
     });
-    let track_color: Color = if is_hover {
-        scroll_bar.track.hover_color.into()
-    } else {
-        scroll_bar.track.color.into()
-    };
+    // The resting track. Hover is blended in by `prepare_scrollbar_paint`, which
+    // owns the fade.
+    let track_color: Color = scroll_bar.track.color.into();
     let thumb_color: Color = if is_active {
         scroll_bar.thumb.active_color.into()
     } else if is_hover {
@@ -741,11 +810,19 @@ fn prepare_scrollbar_paint(
     );
     let alpha = runtime.update(
         ctrl.scroll_offset.get(),
-        ctrl.is_scrolling.get() || ctrl.scroll_bar_pointer_moved.replace(false),
-        dragging || ctrl.scroll_bar_hovered.get(),
+        ctrl.is_scrolling.get(),
+        dragging || ctrl.scroll_bar_hovered(),
         aimer_utils::AnimInstant::now(),
     );
     ctrl.scroll_bar_opacity.set(alpha);
+    // The strip lights the track whether or not the pointer is on the thumb, and
+    // a thumb drag keeps it lit however far the pointer strays from the strip.
+    let track_hovered = dragging || ctrl.scroll_bar_hovered();
+    let track_mix = runtime.track_mix(track_hovered, aimer_utils::AnimInstant::now());
+    let track_color = blend_colors(scroll_bar.track.color, scroll_bar.track.hover_color, track_mix);
+    if runtime.track_fading(track_hovered) {
+        ctrl.request_animation_frame();
+    }
     // A transition, and the idle delay before the fade, end only on a frame
     // that nothing else is going to ask for.
     if runtime.transition_start.get().is_some() || runtime.counting_down() {
@@ -755,7 +832,36 @@ fn prepare_scrollbar_paint(
         return None;
     }
 
-    Some(ScrollBarPaint { alpha, ..paint })
+    Some(ScrollBarPaint {
+        alpha,
+        track_color,
+        ..paint
+    })
+}
+
+/// Blends `from` into `to` by `t`, weighting each color by its alpha so a fade
+/// out of transparent takes on the target's hue instead of passing through
+/// black.
+fn blend_colors(from: Colors, to: Colors, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let (fr, fg, fb, fa) = Color::from(from).to_rgba();
+    let (tr, tg, tb, ta) = Color::from(to).to_rgba();
+    let from_weight = f32::from(fa) * (1.0 - t);
+    let to_weight = f32::from(ta) * t;
+    let alpha = from_weight + to_weight;
+    if alpha <= 0.0 {
+        return Colors::Rgba(0, 0, 0, 0).into();
+    }
+    let channel = |from: u8, to: u8| {
+        ((f32::from(from) * from_weight + f32::from(to) * to_weight) / alpha).round() as u8
+    };
+    Colors::Rgba(
+        channel(fr, tr),
+        channel(fg, tg),
+        channel(fb, tb),
+        alpha.round() as u8,
+    )
+    .into()
 }
 
 fn local_rect(pos: Vec2d, size: ResolvedSize, scale: f32) -> Rect {
@@ -949,5 +1055,118 @@ mod tests {
             ),
             (320.0, 500.0)
         );
+    }
+
+    fn geometry_ctx() -> BuildContext<'static> {
+        let inner = Box::leak(Box::new(aimer_canvas::InnerCanvas::new()));
+        BuildContext::new(
+            aimer_canvas::FrameCanvas::new(inner),
+            ResolvedSize {
+                width: 100.0,
+                height: 100.0,
+            },
+            1.0,
+            Vec2d::default(),
+            Vec2d::default(),
+            aimer_widget::base::WindowHandle::headless(Default::default(), 1.0),
+            tokio::runtime::Handle::current(),
+        )
+    }
+
+    /// The track fades in rather than popping: hovering starts it at nothing and
+    /// it reaches full strength only after the fade duration.
+    #[test]
+    fn the_track_fades_in_over_the_fade_duration() {
+        let runtime = ScrollBarRuntime::default();
+        let start = aimer_utils::AnimInstant::now();
+        let fade = Duration::from_millis(SCROLLBAR_TRACK_FADE_MS);
+
+        assert_eq!(runtime.track_mix(false, start), 0.0);
+        assert_eq!(runtime.track_mix(true, start), 0.0, "the fade begins at nothing");
+        let halfway = runtime.track_mix(true, start + fade / 2);
+        assert!((halfway - 0.5).abs() < 0.01, "halfway through: {halfway}");
+        assert_eq!(runtime.track_mix(true, start + fade), 1.0);
+        assert_eq!(
+            runtime.track_mix(true, start + fade * 3),
+            1.0,
+            "it stays at full strength"
+        );
+    }
+
+    /// Nothing paints while the strip is held, so the first frame after the
+    /// pointer leaves comes long after the previous one. That gap is not fade
+    /// time: the track must start fading out from full strength, not vanish.
+    #[test]
+    fn the_track_fades_out_after_a_long_rest() {
+        let runtime = ScrollBarRuntime::default();
+        let start = aimer_utils::AnimInstant::now();
+        let fade = Duration::from_millis(SCROLLBAR_TRACK_FADE_MS);
+        runtime.track_mix(true, start);
+        assert_eq!(runtime.track_mix(true, start + fade), 1.0);
+
+        let left = start + Duration::from_secs(5);
+        assert_eq!(
+            runtime.track_mix(false, left),
+            1.0,
+            "the fade out begins at full strength"
+        );
+        let leaving = runtime.track_mix(false, left + fade / 2);
+        assert!((leaving - 0.5).abs() < 0.01, "halfway out: {leaving}");
+        assert_eq!(runtime.track_mix(false, left + fade * 2), 0.0);
+    }
+
+    /// The same gap precedes the first frame of a hover.
+    #[test]
+    fn the_track_fades_in_after_a_long_rest() {
+        let runtime = ScrollBarRuntime::default();
+        let start = aimer_utils::AnimInstant::now();
+        let fade = Duration::from_millis(SCROLLBAR_TRACK_FADE_MS);
+        runtime.track_mix(false, start);
+
+        let entered = start + Duration::from_secs(5);
+        assert_eq!(runtime.track_mix(true, entered), 0.0);
+        let halfway = runtime.track_mix(true, entered + fade / 2);
+        assert!((halfway - 0.5).abs() < 0.01, "halfway in: {halfway}");
+    }
+
+    #[test]
+    fn track_colors_blend_without_darkening_through_transparent() {
+        let from = Colors::Transparent;
+        let to = Colors::Rgba(128, 128, 128, 40);
+        assert_eq!(blend_colors(from, to, 0.0).to_rgba(), (0, 0, 0, 0));
+        assert_eq!(blend_colors(from, to, 1.0).to_rgba(), (128, 128, 128, 40));
+        let mid = blend_colors(from, to, 0.5).to_rgba();
+        assert_eq!((mid.0, mid.1, mid.2), (128, 128, 128), "the hue is the target's");
+        assert!((19..=21).contains(&mid.3), "alpha is halfway: {}", mid.3);
+    }
+
+    /// Wiring: a bar painted for the first time while hovered has not faded in
+    /// yet, so its track is still the resting one.
+    #[tokio::test]
+    async fn a_freshly_hovered_track_has_not_popped_in() {
+        let ctrl = Rc::new(ScrollState::for_test_at(Vec2d::ZERO));
+        ctrl.cached_viewport.set((100.0, 100.0));
+        ctrl.cached_content_size.set(ResolvedSize {
+            width: 100.0,
+            height: 400.0,
+        });
+        ctrl.scroll_bar_pointer
+            .set(aimer_input::mouse_region::PointerState::Inside);
+        let mut bar = ScrollBar::default();
+        bar.track.hover_color = Colors::Rgba(10, 20, 30, 40);
+        let ctx = geometry_ctx();
+        let runtime = ScrollBarRuntime::default();
+        // Already fully showing, so the paint is not skipped for being invisible.
+        runtime.showing.set(true);
+        runtime.alpha.set(1.0);
+
+        let paint = prepare_scrollbar_paint(&ctx, &ctrl, &bar, &runtime).unwrap();
+        assert_ne!(paint.track_color, Color::from(bar.track.hover_color));
+    }
+
+    #[test]
+    fn the_default_track_has_a_visible_hover_color() {
+        let hover: Color = ScrollTrack::default().hover_color.into();
+        assert!(hover.to_rgba().3 > 0, "a transparent hover color shows no track");
     }
 }

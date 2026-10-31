@@ -175,9 +175,20 @@ pub const STALE_TOUCH_THRESHOLD_MS: u128 = 1000;
 pub const EASE_OUT_CUBIC: f32 = 1.5;
 
 /// Keyboard scroll step (logical px per keypress).
-pub const KEYBOARD_SCROLL_STEP: f32 = 40.0;
+pub const KEYBOARD_SCROLL_STEP: f32 = 60.0;
 /// Keyboard page-scroll fraction of viewport (0.0–1.0).
 pub const KEYBOARD_PAGE_FRACTION: f32 = 0.85;
+/// How long Home and End take to ease to the edge, the destinations a glide
+/// cannot be sized for.
+pub const KEYBOARD_SCROLL_DURATION_S: f32 = 0.25;
+/// Per-120 Hz-frame velocity retention of a glide launched by a key press or a
+/// click on the scroll bar track.
+///
+/// Far stronger than a drag release's [`ScrollBehavior::friction`], which is
+/// tuned for coasting for seconds: this one carries a push a short, deliberate
+/// distance. A push of `distance · (1 - KEY_GLIDE_FRICTION)` per frame travels
+/// `distance` in total, most of it in the first quarter second.
+pub const KEY_GLIDE_FRICTION: f32 = 0.9;
 
 /// Duration (ms) for scrollbar fade-in / fade-out transitions.
 pub const SCROLLBAR_SHOW_DURATION_MS: u64 = 200;
@@ -185,6 +196,9 @@ pub const SCROLLBAR_HIDE_DURATION_MS: u64 = 400;
 /// How long (ms) the scrollbar stays fully shown after the last scroll or the
 /// last time a pointer was on it, before it starts to fade out by itself.
 pub const SCROLLBAR_IDLE_HOLD_MS: u64 = 1000;
+/// How long the track takes to fade in when the strip is hovered, and to fade
+/// back out when it is left.
+pub const SCROLLBAR_TRACK_FADE_MS: u64 = 150;
 /// How far (logical px) beyond the thumb, across the bar, a finger may land and
 /// still hold it. A thumb a few pixels wide is not something a fingertip hits.
 pub const SCROLLBAR_TOUCH_SLOP_CROSS: f32 = 20.0;

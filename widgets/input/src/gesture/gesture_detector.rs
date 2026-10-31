@@ -437,9 +437,9 @@ fn platform_gesture(event: &ElementEvent) -> Option<(PointerEvent, GestureMask)>
 
 /// Whether a pointer event is this detector's business.
 ///
-/// Inside the bounds, always. Outside them, only a release for a pointer this
-/// detector is already tracking: the finger that pressed inside owns the gesture
-/// until it lifts, wherever it lifts.
+/// Inside the bounds, always. Outside them, only a move or release for a pointer
+/// this detector is already tracking: the finger that pressed inside owns the
+/// gesture until it lifts, wherever it moves and lifts.
 fn should_accept_pointer_event(
     cached_bounds: &InteractionBounds,
     state: &GestureState,
@@ -452,7 +452,9 @@ fn should_accept_pointer_event(
     }
 
     match event {
-        ElementEvent::PointerUp(pointer) => state.has_active_touch(pointer.source, pointer.id),
+        ElementEvent::PointerUp(pointer) | ElementEvent::PointerMove(pointer) => {
+            state.has_active_touch(pointer.source, pointer.id)
+        }
         _ => false,
     }
 }
@@ -1137,6 +1139,36 @@ mod tests {
                 other_device.pos
             ),
             "a mouse release is not the tracked finger, however matching the id"
+        );
+    }
+
+    // A press is captured so the gesture keeps receiving events after it leaves
+    // the detector, which only helps if those events are then accepted: a drag
+    // along a thin strip, a scroll bar's thumb, drifts off it constantly.
+    #[test]
+    fn a_move_outside_the_bounds_is_accepted_for_a_pointer_being_tracked() {
+        let bounds = InteractionBounds::new();
+        bounds.save(1.0, 10.0, 20.0, 100.0, 50.0);
+        let state = pressing(touch(25.0, 35.0, 7));
+        let outside = touch(115.0, 35.0, 7);
+
+        assert!(should_accept_pointer_event(
+            &bounds,
+            &state,
+            &ElementEvent::PointerMove(outside),
+            outside.pos
+        ));
+
+        let untracked = touch(115.0, 35.0, 8);
+
+        assert!(
+            !should_accept_pointer_event(
+                &bounds,
+                &state,
+                &ElementEvent::PointerMove(untracked),
+                untracked.pos
+            ),
+            "a hover, or another finger, outside is still not this detector's"
         );
     }
 

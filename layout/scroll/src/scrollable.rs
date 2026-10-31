@@ -8,7 +8,7 @@ pub mod state;
 // Keep the original module paths available while the implementation is
 // organized by responsibility below `scrollable/`.
 pub use core::raw_scroll;
-pub use input::{device_contact, handle_scroll, scroll_frame};
+pub use input::{bar_gesture, device_contact, handle_scroll, scroll_frame};
 pub use physics::{constants, overscroll_source, scroll_behavior, spring, velocity_history};
 pub use platform::recovery_end;
 #[cfg(any(target_arch = "wasm32", test))]
@@ -652,8 +652,8 @@ impl<W: Widget + 'static> ScrollableState<W> {
             h_thumb_rect: Cell::new(None),
             thumb_hovered: Cell::new(false),
             scroll_bar_opacity: Cell::new(0.0),
-            scroll_bar_hovered: Cell::new(false),
-            scroll_bar_pointer_moved: Cell::new(false),
+            scroll_bar_pointer: Default::default(),
+            viewport_origin: Cell::new(Vec2d::ZERO),
             scroll_bar_anchor: Cell::new((0.0, 0.0)),
             v_scroll_multiplier: Cell::new(0.0),
             h_scroll_multiplier: Cell::new(0.0),
@@ -671,6 +671,7 @@ impl<W: Widget + 'static> ScrollableState<W> {
             cached_content_size: Cell::new(Default::default()),
             cached_content_size_valid: Cell::new(false),
             fling_start_time: Cell::new(None),
+            momentum_friction: Cell::new(None),
             fling_start_offset: Cell::new(Vec2d { x: 0.0, y: 0.0 }),
             fling_target_offset: Cell::new(Vec2d { x: 0.0, y: 0.0 }),
             fling_duration: Cell::new(0.0),
@@ -846,6 +847,7 @@ impl Widget for ScrollableFrame {
                 bounds
             },
             event_dispatcher: RefCell::new(aimer_widget::EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         }
         .boxed()

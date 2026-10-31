@@ -1,3 +1,4 @@
+use aimer_animation::curves;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_events::element::{ElementEvent, KeyAction, NamedKey};
@@ -169,6 +170,77 @@ fn dispatch_child_event<E: Element>(
     }
 }
 
+impl<E: Element> RawScrollableContainer<E> {
+    /// Tells the scroll state where the viewport is in the window, so the bar's
+    /// viewport-relative geometry can be compared with window-space pointers.
+    #[inline]
+    pub(crate) fn sync_viewport_origin(&self) {
+        if let Some(bounds) = self.bounds.get_bounds() {
+            self.ctrl.viewport_origin.set(Vec2d {
+                x: bounds.x,
+                y: bounds.y,
+            });
+        }
+    }
+
+    /// Offers a mouse event to the active scroll bar, and says whether the bar
+    /// took it.
+    ///
+    /// The bar strip holds a hover region and a gesture detector, but is not part
+    /// of the content subtree `event_dispatcher` is rooted at, so it has its own
+    /// dispatcher. Every mouse move reaches it, since a region needs to see the
+    /// cursor leave as much as arrive. A press reaches it only on the bar's
+    /// thumb or track, where it belongs to the bar and not to the content under
+    /// it. From then on the bar owns the pointer until it lets go: a drag that
+    /// leaves the viewport keeps following, and the release lands on the bar.
+    ///
+    /// Returns `Some` with the result to hand back when the bar owns the event.
+    fn route_to_scroll_bar(&self, event: &ElementEvent, cursor: Vec2d) -> Option<EventResult> {
+        let pointer = match event {
+            ElementEvent::PointerDown(info)
+            | ElementEvent::PointerUp(info)
+            | ElementEvent::PointerMove(info)
+                if info.source == PointerSource::Mouse =>
+            {
+                Some(PointerKey::new(info.source, info.id))
+            }
+            ElementEvent::PointerExited(PointerSource::Mouse, id) => {
+                Some(PointerKey::new(PointerSource::Mouse, *id))
+            }
+            ElementEvent::Cancel => None,
+            _ => return None,
+        };
+        let bar = match self.ctrl.axis {
+            ScrollAxis::Vertical => &self.vertical_scroll_bar,
+            ScrollAxis::Horizontal => &self.horizontal_scroll_bar,
+        }
+        .as_ref()?;
+        // A press beside the bar is the content's.
+        if matches!(event, ElementEvent::PointerDown(_)) && self.ctrl.bar_hit(cursor).is_none() {
+            return None;
+        }
+        let mut dispatcher = self.bar_dispatcher.borrow_mut();
+        let was_captured = pointer.is_some_and(|pointer| dispatcher.is_captured(pointer));
+        if matches!(event, ElementEvent::Cancel) && dispatcher.capture_count() == 0 {
+            return None;
+        }
+        let result = dispatcher.dispatch(bar, cursor, event);
+        let is_captured = pointer.is_some_and(|pointer| dispatcher.is_captured(pointer));
+        drop(dispatcher);
+
+        let result = match (pointer, was_captured, is_captured) {
+            (Some(pointer), false, true) => result.with_pointer_capture(pointer),
+            (Some(pointer), true, false) => result.with_pointer_release(pointer),
+            _ => result,
+        };
+        let owns = was_captured
+            || is_captured
+            || matches!(event, ElementEvent::Cancel)
+            || (matches!(event, ElementEvent::PointerDown(_)) && result.is_consumed());
+        owns.then_some(result)
+    }
+}
+
 impl<E: Element> EventElement for RawScrollableContainer<E> {
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::IndexedTarget
@@ -193,15 +265,21 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
             self.ctrl.cursor_pos.set(Some(cursor_pos));
         }
 
+        self.sync_viewport_origin();
+
         let cursor = match self.ctrl.cursor_pos.get() {
             Some(cursor) => cursor,
             None if matches!(event, ElementEvent::Cancel) => Vec2d::default(),
             None => return EventResult::ignored(),
         };
 
-        // A mouse that has left is no longer holding the bar.
+        if let Some(result) = self.route_to_scroll_bar(event, cursor) {
+            return result;
+        }
+
+        // A mouse that has left is no longer on the thumb.
         if matches!(event, ElementEvent::PointerExited(PointerSource::Mouse, _))
-            && self.ctrl.clear_scroll_bar_hover()
+            && self.ctrl.clear_thumb_hover()
         {
             self.ctrl.request_animation_frame();
         }
@@ -214,7 +292,7 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
 
         let inside = self.bounds.is_inside(cursor.x, cursor.y);
         if !child_route_allowed(inside, active_drag, child_captured) {
-            if self.ctrl.clear_scroll_bar_hover() {
+            if self.ctrl.clear_thumb_hover() {
                 self.ctrl.request_animation_frame();
             }
             // The pointer is still over this element as far as the enclosing
@@ -423,21 +501,10 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
             }
             ElementEvent::PointerDown(pointer) => {
                 let p = &pointer.pos;
+                // A mouse press that reached here is not on the bar, which took
+                // its own in `route_to_scroll_bar`: it is the content's.
                 if pointer.source == PointerSource::Mouse {
-                    let (vp_w, vp_h) = self.ctrl.cached_viewport.get();
-                    let vertical_track_width = self.ctrl.cached_v_track_width.get();
-                    let horizontal_track_height = self.ctrl.cached_h_track_width.get();
-                    let hits_scrollbar = self.ctrl.hit_test_v_thumb(*p)
-                        || self.ctrl.hit_test_h_thumb(*p)
-                        || self
-                            .ctrl
-                            .hit_test_v_track(*p, vp_w, vp_h, vertical_track_width)
-                        || self
-                            .ctrl
-                            .hit_test_h_track(*p, vp_w, vp_h, horizontal_track_height);
-                    if !hits_scrollbar {
-                        return child_result;
-                    }
+                    return child_result;
                 }
                 if let Some(prev_id) = self.ctrl.active_touch_id.get()
                     && prev_id != pointer.id
@@ -485,56 +552,6 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
                     // A finger on the thumb is not a swipe, whatever is waiting
                     // to read it as one.
                     aimer_widget::claim_pointer(PointerKey::new(pointer.source, pointer.id));
-                }
-
-                // Scrollbar track click-to-page: if click is on track but not
-                // thumb. A finger on the track is a swipe of the content: only a
-                // mouse pages.
-                if mode == DragMode::Pending && pointer.source == PointerSource::Mouse {
-                    let (vp_w, vp_h) = self.ctrl.cached_viewport.get();
-                    let v_tw = self.ctrl.cached_v_track_width.get();
-                    let h_tw = self.ctrl.cached_h_track_width.get();
-                    let friction = self.ctrl.scroll_behavior.friction;
-                    // velocity = distance / (frame_ref / (1 − friction)) to scroll exactly
-                    // `distance` px.
-                    let vel_scale = (1.0 - friction) / FRAME_REF_120;
-                    let device = self.ctrl.to_device(*p);
-                    if self.ctrl.hit_test_v_track(*p, vp_w, vp_h, v_tw)
-                        && let Some((_x, y, _w, _h)) = self.ctrl.v_thumb_rect.get()
-                    {
-                        let page = vp_h * KEYBOARD_PAGE_FRACTION;
-                        let vy = if device.y < y {
-                            page * vel_scale
-                        } else {
-                            -page * vel_scale
-                        };
-                        self.ctrl.pointer_velocity.set(Vec2d { x: 0.0, y: vy });
-                        self.ctrl.cancel_fling();
-                        self.ctrl.drag_mode.set(DragMode::None);
-                        self.ctrl.last_pointer_pos.set(Some(*p));
-                        self.ctrl.begin_scroll();
-                        self.ctrl.record_input_event();
-                        self.ctrl.request_animation_frame();
-                        return child_result.merge(EventResult::consumed().with_redraw());
-                    }
-                    if self.ctrl.hit_test_h_track(*p, vp_w, vp_h, h_tw)
-                        && let Some((x, _y, _w, _h)) = self.ctrl.h_thumb_rect.get()
-                    {
-                        let page = vp_w * KEYBOARD_PAGE_FRACTION;
-                        let vx = if device.x < x {
-                            page * vel_scale
-                        } else {
-                            -page * vel_scale
-                        };
-                        self.ctrl.pointer_velocity.set(Vec2d { x: vx, y: 0.0 });
-                        self.ctrl.cancel_fling();
-                        self.ctrl.drag_mode.set(DragMode::None);
-                        self.ctrl.last_pointer_pos.set(Some(*p));
-                        self.ctrl.begin_scroll();
-                        self.ctrl.record_input_event();
-                        self.ctrl.request_animation_frame();
-                        return child_result.merge(EventResult::consumed().with_redraw());
-                    }
                 }
 
                 self.ctrl.pointer_velocity.set(Vec2d { x: 0.0, y: 0.0 });
@@ -736,21 +753,21 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
                 // Only a mouse hovers: a finger that has lifted leaves no cursor
                 // behind to hold the bar.
                 if pointer.source == PointerSource::Mouse {
-                    let on_bar_changed = self.ctrl.sync_thumb_hover(*p);
-                    // A mouse moving over the content shows the bar. A bar that
-                    // is already fully showing is counting down on frames of its
-                    // own and picks the move up from them, so only a bar that is
-                    // not there yet needs a frame asked for.
-                    self.ctrl.scroll_bar_pointer_moved.set(true);
-                    if on_bar_changed || self.ctrl.scroll_bar_opacity.get() < 1.0 {
+                    // Only the bar itself shows the bar: a mouse over the
+                    // content must not, so a move asks for a frame solely when
+                    // it crosses the edge of the thumb or track.
+                    if self.ctrl.sync_thumb_hover(*p) {
                         self.ctrl.request_animation_frame();
                     }
                 }
                 false
             }
+            // A held key arrives as a press followed by the platform's repeats, and
+            // each one is another step: the glide builds on itself, so holding
+            // scrolls continuously.
             ElementEvent::KeyInput {
                 key,
-                action: KeyAction::Pressed,
+                action: KeyAction::Pressed | KeyAction::Repeat,
                 ..
             } => {
                 if child_result.is_consumed() {
@@ -762,70 +779,44 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
                 let page_v = vp_h * KEYBOARD_PAGE_FRACTION;
                 let page_h = vp_w * KEYBOARD_PAGE_FRACTION;
 
-                let scroll = match (&self.ctrl.axis, key) {
-                    (ScrollAxis::Vertical, NamedKey::ArrowUp) => Some(Vec2d { x: 0.0, y: line }),
-                    (ScrollAxis::Vertical, NamedKey::ArrowDown) => Some(Vec2d { x: 0.0, y: -line }),
-                    (ScrollAxis::Vertical, NamedKey::PageUp) => Some(Vec2d { x: 0.0, y: page_v }),
-                    (ScrollAxis::Vertical, NamedKey::PageDown) => {
-                        Some(Vec2d { x: 0.0, y: -page_v })
-                    }
-                    (ScrollAxis::Vertical, NamedKey::Home) => {
-                        // Scroll to top: offset.y should be 0 (min_scroll).
-                        let off = self.ctrl.scroll_offset.get();
-                        Some(Vec2d { x: 0.0, y: -off.y })
-                    }
-                    (ScrollAxis::Vertical, NamedKey::End) => {
-                        // Scroll to bottom: offset.y should be -max_scroll.y.
-                        let off = self.ctrl.scroll_offset.get();
-                        let max = self.ctrl.cached_max_scroll.get();
-                        Some(Vec2d {
-                            x: 0.0,
-                            y: -max.y - off.y,
-                        })
-                    }
-                    (ScrollAxis::Horizontal, NamedKey::ArrowLeft) => {
-                        Some(Vec2d { x: line, y: 0.0 })
-                    }
-                    (ScrollAxis::Horizontal, NamedKey::ArrowRight) => {
-                        Some(Vec2d { x: -line, y: 0.0 })
-                    }
-                    (ScrollAxis::Horizontal, NamedKey::PageUp) => Some(Vec2d { x: page_h, y: 0.0 }),
-                    (ScrollAxis::Horizontal, NamedKey::PageDown) => {
-                        Some(Vec2d { x: -page_h, y: 0.0 })
-                    }
-                    (ScrollAxis::Horizontal, NamedKey::Home) => {
-                        let off = self.ctrl.scroll_offset.get();
-                        Some(Vec2d { x: -off.x, y: 0.0 })
-                    }
-                    (ScrollAxis::Horizontal, NamedKey::End) => {
-                        let off = self.ctrl.scroll_offset.get();
-                        let max = self.ctrl.cached_max_scroll.get();
-                        Some(Vec2d {
-                            x: -max.x - off.x,
-                            y: 0.0,
-                        })
-                    }
-                    _ => None,
+                // Steps glide: a push that carries the content on and settles.
+                // Home and End name a destination, so they ease to it.
+                let max = self.ctrl.cached_max_scroll.get();
+                let vertical = matches!(self.ctrl.axis, ScrollAxis::Vertical);
+                let (step, destination) = match (&self.ctrl.axis, key) {
+                    (ScrollAxis::Vertical, NamedKey::ArrowUp) => (Some(Vec2d { x: 0.0, y: line }), None),
+                    (ScrollAxis::Vertical, NamedKey::ArrowDown) => (Some(Vec2d { x: 0.0, y: -line }), None),
+                    (ScrollAxis::Vertical, NamedKey::PageUp) => (Some(Vec2d { x: 0.0, y: page_v }), None),
+                    (ScrollAxis::Vertical, NamedKey::PageDown) => (Some(Vec2d { x: 0.0, y: -page_v }), None),
+                    (ScrollAxis::Horizontal, NamedKey::ArrowLeft) => (Some(Vec2d { x: line, y: 0.0 }), None),
+                    (ScrollAxis::Horizontal, NamedKey::ArrowRight) => (Some(Vec2d { x: -line, y: 0.0 }), None),
+                    (ScrollAxis::Horizontal, NamedKey::PageUp) => (Some(Vec2d { x: page_h, y: 0.0 }), None),
+                    (ScrollAxis::Horizontal, NamedKey::PageDown) => (Some(Vec2d { x: -page_h, y: 0.0 }), None),
+                    // Top: offset 0. Bottom: -max_scroll.
+                    (_, NamedKey::Home) => (None, Some(Vec2d::ZERO)),
+                    (_, NamedKey::End) => (
+                        None,
+                        Some(if vertical {
+                            Vec2d { x: 0.0, y: -max.y }
+                        } else {
+                            Vec2d { x: -max.x, y: 0.0 }
+                        }),
+                    ),
+                    _ => (None, None),
                 };
 
-                if let Some(delta) = scroll {
+                if let Some(step) = step {
                     self.ctrl.set_overscroll_source(OverscrollSource::Keyboard);
-                    let mut offset = self.ctrl.scroll_offset.get();
-                    offset.x += delta.x;
-                    offset.y += delta.y;
-                    if !self.ctrl.bouncy() {
-                        offset = self.ctrl.clamp_offset(offset);
-                    }
-                    self.ctrl.set_scroll_offset(offset);
-                    self.ctrl.pointer_velocity.set(Vec2d { x: 0.0, y: 0.0 });
+                    self.ctrl.glide_by(step, true);
+                    true
+                } else if let Some(destination) = destination {
+                    self.ctrl.set_overscroll_source(OverscrollSource::Keyboard);
                     self.ctrl.clear_velocity_history();
-                    self.ctrl.cancel_fling();
-                    // A keyboard scroll is a discrete, self-contained session: it
-                    // moves the offset with no residual momentum, so the draw loop
-                    // reports it settled (and fires `end`) on the next frame.
-                    self.ctrl.begin_scroll();
-                    self.ctrl.record_input_event();
-                    self.ctrl.request_animation_frame();
+                    self.ctrl.animate_scroll_to(
+                        destination,
+                        KEYBOARD_SCROLL_DURATION_S,
+                        curves::EASE_OUT,
+                    );
                     true
                 } else {
                     false

@@ -254,6 +254,9 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
     fn update(&self, ctx: &BuildContext) {
         // println!("Scrollable drawing child: {})", self.child.debug_name() );
 
+        // The thumb highlight is resolved from the cursor below, in viewport terms.
+        self.sync_viewport_origin();
+
         let scrolling_before_draw = self.ctrl.is_scrolling.get();
 
         let (raw_viewport_w, raw_viewport_h) = self.viewport_size(ctx);

@@ -64,6 +64,14 @@ pub struct RawScrollableContainer<E: Element> {
     pub(crate) horizontal_bar_height: f32,
     pub(crate) bounds: InteractionBounds,
     pub(crate) event_dispatcher: RefCell<EventDispatcher>,
+    /// Routes mouse moves and exits to the active scroll bar.
+    ///
+    /// The bar is not part of the content subtree `event_dispatcher` is rooted
+    /// at, so without this its [`MouseRegion`](aimer_input::mouse_region::MouseRegion)
+    /// would never hear the pointer. It is a separate dispatcher because
+    /// alternating roots on one would rebuild the content's path index on every
+    /// move that crosses between them.
+    pub(crate) bar_dispatcher: RefCell<EventDispatcher>,
     pub(crate) layout_cache: ScrollLayoutCache,
 }
 
@@ -766,6 +774,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         }
     }
@@ -1144,6 +1153,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         }
     }
@@ -1170,6 +1180,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         }
     }
@@ -1190,6 +1201,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         }
     }
@@ -1357,6 +1369,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         }
         .update(&ctx);
@@ -1384,6 +1397,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         };
 
@@ -1428,6 +1442,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         };
 
@@ -1472,6 +1487,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         }
         .update(&ctx);
@@ -1499,6 +1515,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds: InteractionBounds::new(),
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         };
 
@@ -1552,6 +1569,7 @@ mod tests {
                     horizontal_bar_height: 0.0,
                     bounds: InteractionBounds::new(),
                     event_dispatcher: RefCell::new(EventDispatcher::new()),
+                    bar_dispatcher: Default::default(),
                     layout_cache: Default::default(),
                 };
                 scrollable.update(&ctx);
@@ -1679,6 +1697,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds,
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         }
     }
@@ -1912,6 +1931,7 @@ mod tests {
             horizontal_bar_height: 0.0,
             bounds,
             event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
             layout_cache: Default::default(),
         };
         let pointer = |x: f32, y: f32| PointerInfo::mouse(Vec2d { x, y }, PointerButton::Primary);
@@ -1928,5 +1948,389 @@ mod tests {
         // Further moves outside have nothing left to release.
         let _ = scrollable.on_event(&ElementEvent::PointerMove(pointer(110.0, 50.0)));
         assert!(!hovered.get());
+    }
+
+    /// A container whose vertical bar is the real, `MouseRegion`-wrapped one,
+    /// laid out the way `update` lays it out: a 10 px strip at the right edge.
+    fn scrollable_with_bar(ctrl: Rc<ScrollState>) -> RawScrollableContainer<AnyElement> {
+        scrollable_with_bar_at(ctrl, Vec2d::ZERO)
+    }
+
+    /// The same, with the viewport's top-left at `origin` in the window.
+    fn scrollable_with_bar_at(
+        ctrl: Rc<ScrollState>,
+        origin: Vec2d,
+    ) -> RawScrollableContainer<AnyElement> {
+        let bounds = InteractionBounds::new();
+        bounds.save(1.0, origin.x, origin.y, 100.0, 100.0);
+        use crate::ScrollAxis;
+        use aimer_widget::Widget as _;
+        let ctx = drawing_context(None);
+        let bar = crate::scroll_bar::ScrollBar::default()
+            .for_scrollable(ctrl.clone(), ScrollAxis::Vertical)
+            .to_element(&ctx);
+
+        let mut bar_ctx = drawing_context(None);
+        bar_ctx.box_constraint.max_width = 10.0;
+        bar_ctx.parent_size = ResolvedSize {
+            width: 10.0,
+            height: 100.0,
+        };
+        bar_ctx.canvas.save();
+        bar_ctx.canvas.translate(Vec2d {
+            x: origin.x + 90.0,
+            y: origin.y,
+        });
+        bar.update(&bar_ctx);
+        bar_ctx.canvas.restore();
+
+        RawScrollableContainer {
+            child: HoverChild {
+                hovered: Rc::new(Cell::new(false)),
+            }
+            .boxed(),
+            ctrl,
+            vertical_scroll_bar: Some(bar),
+            horizontal_scroll_bar: None,
+            viewport_w: 100.0,
+            viewport_h: 100.0,
+            vertical_bar_width: 10.0,
+            horizontal_bar_height: 0.0,
+            bounds,
+            event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
+            layout_cache: Default::default(),
+        }
+    }
+
+    /// Regression: the bar appeared whenever the mouse entered the viewport.
+    /// Only the bar's own strip may show it, as its `MouseRegion` decides; a
+    /// mouse moving over the content must leave it alone.
+    #[tokio::test]
+    async fn a_mouse_over_the_content_does_not_show_the_scroll_bar() {
+        let ctrl = Rc::new(ScrollState::for_test_at(Vec2d::default()));
+        let scrollable = scrollable_with_bar(ctrl.clone());
+        let pointer = |x: f32, y: f32| PointerInfo::mouse(Vec2d { x, y }, PointerButton::Primary);
+
+        let _ = scrollable.on_event(&ElementEvent::PointerMove(pointer(40.0, 80.0)));
+        assert!(
+            !ctrl.scroll_bar_hovered(),
+            "the cursor is over the content, not the bar"
+        );
+
+        let _ = scrollable.on_event(&ElementEvent::PointerMove(pointer(95.0, 30.0)));
+        assert!(ctrl.scroll_bar_hovered(), "the cursor is on the bar strip");
+
+        let _ = scrollable.on_event(&ElementEvent::PointerMove(pointer(40.0, 80.0)));
+        assert!(
+            !ctrl.scroll_bar_hovered(),
+            "moving back onto the content releases the bar"
+        );
+
+        let _ = scrollable.on_event(&ElementEvent::PointerMove(pointer(95.0, 30.0)));
+        let _ = scrollable.on_event(&ElementEvent::PointerExited(PointerSource::Mouse, 0));
+        assert!(
+            !ctrl.scroll_bar_hovered(),
+            "a mouse that has left is no longer holding the bar"
+        );
+    }
+
+    /// A container without bars, around content that ignores events.
+    fn scrollable_with_thumb(ctrl: Rc<ScrollState>) -> RawScrollableContainer<AnyElement> {
+        let bounds = InteractionBounds::new();
+        bounds.save(1.0, 0.0, 0.0, 100.0, 100.0);
+        RawScrollableContainer {
+            child: HoverChild {
+                hovered: Rc::new(Cell::new(false)),
+            }
+            .boxed(),
+            ctrl,
+            vertical_scroll_bar: None,
+            horizontal_scroll_bar: None,
+            viewport_w: 100.0,
+            viewport_h: 100.0,
+            vertical_bar_width: 0.0,
+            horizontal_bar_height: 0.0,
+            bounds,
+            event_dispatcher: RefCell::new(EventDispatcher::new()),
+            bar_dispatcher: Default::default(),
+            layout_cache: Default::default(),
+        }
+    }
+
+    /// A scrollable that is not at the window's corner: a 100 x 100 viewport
+    /// whose top-left sits at (50, 30), with a thumb at the right edge of the
+    /// viewport (published relative to the viewport, as the bar paints it).
+    fn offset_scrollable_with_thumb() -> (RawScrollableContainer<AnyElement>, Rc<ScrollState>) {
+        let ctrl = Rc::new(ScrollState::for_test_at(Vec2d::default()));
+        ctrl.cached_viewport.set((100.0, 100.0));
+        ctrl.cached_v_track_width.set(10.0);
+        ctrl.v_thumb_rect.set(Some((90.0, 10.0, 10.0, 40.0)));
+        let scrollable = scrollable_with_thumb(ctrl.clone());
+        scrollable.bounds.save(1.0, 50.0, 30.0, 100.0, 100.0);
+        (scrollable, ctrl)
+    }
+
+    /// The same press, but on the content beside the thumb in window terms: the
+    /// window position that would have matched the viewport-relative rectangle
+    /// is not the thumb.
+    #[test]
+    fn a_press_beside_the_thumb_does_not_grab_it() {
+        let (scrollable, ctrl) = offset_scrollable_with_thumb();
+        let press = PointerInfo::mouse(Vec2d { x: 95.0, y: 20.0 }, PointerButton::Primary);
+
+        let _ = scrollable.on_event(&ElementEvent::PointerDown(press));
+
+        assert_ne!(ctrl.drag_mode.get(), DragMode::VerticalScrollbar);
+    }
+
+    const BAR_ORIGIN: Vec2d = Vec2d { x: 50.0, y: 30.0 };
+
+    /// A scrollable offset from the window corner with a real bar over content
+    /// four times its height (so a 4x thumb multiplier), and the thumb rectangle
+    /// the bar published when it was updated.
+    fn scrollable_with_published_thumb() -> (
+        RawScrollableContainer<AnyElement>,
+        Rc<ScrollState>,
+        (f32, f32, f32, f32),
+    ) {
+        let ctrl = Rc::new(ScrollState::for_test_at(Vec2d::default()));
+        ctrl.cached_viewport.set((100.0, 100.0));
+        ctrl.cached_content_size.set(ResolvedSize {
+            width: 100.0,
+            height: 400.0,
+        });
+        ctrl.cached_max_scroll.set(Vec2d { x: 0.0, y: 300.0 });
+        let scrollable = scrollable_with_bar_at(ctrl.clone(), BAR_ORIGIN);
+        let thumb = ctrl.v_thumb_rect.get().expect("the bar publishes its thumb");
+        (scrollable, ctrl, thumb)
+    }
+
+    fn mouse_at(x: f32, y: f32) -> PointerInfo {
+        PointerInfo::mouse(
+            Vec2d {
+                x: BAR_ORIGIN.x + x,
+                y: BAR_ORIGIN.y + y,
+            },
+            PointerButton::Primary,
+        )
+    }
+
+    /// Dragging the thumb moves the content in proportion, whatever the
+    /// viewport's place in the window, and letting go ends the drag.
+    #[tokio::test]
+    async fn dragging_the_thumb_scrolls_the_content() {
+        let (scrollable, ctrl, (x, y, w, h)) = scrollable_with_published_thumb();
+        let (grab_x, grab_y) = (x + w / 2.0, y + h / 2.0);
+        let multiplier = ctrl.v_scroll_multiplier.get();
+        assert!(multiplier > 0.0);
+
+        let _ = scrollable.on_event(&ElementEvent::PointerDown(mouse_at(grab_x, grab_y)));
+        for step in 1..=4 {
+            let _ = scrollable.on_event(&ElementEvent::PointerMove(mouse_at(
+                grab_x,
+                grab_y + 5.0 * step as f32,
+            )));
+        }
+        let dragged = ctrl.scroll_offset.get().y;
+        assert!(
+            (dragged + 20.0 * multiplier).abs() < 0.01,
+            "20 px of thumb is 20 x {multiplier} px of content, got {dragged}"
+        );
+        assert_eq!(ctrl.drag_mode.get(), DragMode::VerticalScrollbar);
+
+        let _ = scrollable.on_event(&ElementEvent::PointerUp(mouse_at(grab_x, grab_y + 20.0)));
+        assert_eq!(ctrl.drag_mode.get(), DragMode::None);
+        assert!((ctrl.scroll_offset.get().y - dragged).abs() < 0.01, "release does not move it");
+    }
+
+    /// A drag that leaves the viewport keeps following the pointer.
+    #[tokio::test]
+    async fn a_thumb_drag_keeps_following_the_pointer_outside_the_viewport() {
+        let (scrollable, ctrl, (x, y, w, h)) = scrollable_with_published_thumb();
+        let (grab_x, grab_y) = (x + w / 2.0, y + h / 2.0);
+        let multiplier = ctrl.v_scroll_multiplier.get();
+
+        let _ = scrollable.on_event(&ElementEvent::PointerDown(mouse_at(grab_x, grab_y)));
+        let _ = scrollable.on_event(&ElementEvent::PointerMove(mouse_at(grab_x, grab_y + 10.0)));
+        let _ = scrollable.on_event(&ElementEvent::PointerMove(mouse_at(grab_x + 80.0, grab_y + 30.0)));
+
+        let dragged = ctrl.scroll_offset.get().y;
+        assert!(
+            (dragged + 30.0 * multiplier).abs() < 0.01,
+            "only the distance along the bar counts, got {dragged}"
+        );
+    }
+
+    /// Clicking the track scrolls to that spot: the thumb centres on the click.
+    /// The content is pushed there with momentum rather than set down in a frame.
+    #[tokio::test]
+    async fn clicking_the_track_glides_to_the_click() {
+        let (scrollable, ctrl, (x, y, w, h)) = scrollable_with_published_thumb();
+        let multiplier = ctrl.v_scroll_multiplier.get();
+        let click_y = y + h + 30.0;
+
+        let _ = scrollable.on_event(&ElementEvent::PointerDown(mouse_at(x + w / 2.0, click_y)));
+        let _ = scrollable.on_event(&ElementEvent::PointerUp(mouse_at(x + w / 2.0, click_y)));
+
+        let distance = -(click_y - h / 2.0 - y) * multiplier;
+        assert_eq!(ctrl.scroll_offset.get().y, 0.0, "it has not jumped");
+        assert!(ctrl.momentum_friction.get().is_some());
+        let launch = ctrl.pointer_velocity.get().y;
+        let expected = distance * (1.0 - crate::scrollable::constants::KEY_GLIDE_FRICTION);
+        assert!((launch - expected).abs() < 1e-3, "launch {launch}, expected {expected}");
+        assert_eq!(ctrl.drag_mode.get(), DragMode::None);
+    }
+
+    /// Pressing the track and dragging carries the thumb from the click.
+    #[tokio::test]
+    async fn dragging_from_the_track_carries_the_thumb_from_the_click() {
+        let (scrollable, ctrl, (x, y, w, h)) = scrollable_with_published_thumb();
+        let multiplier = ctrl.v_scroll_multiplier.get();
+        let press_y = y + h + 30.0;
+
+        let _ = scrollable.on_event(&ElementEvent::PointerDown(mouse_at(x + w / 2.0, press_y)));
+        // The first move past the slop starts the drag, the next one drives it.
+        let _ = scrollable.on_event(&ElementEvent::PointerMove(mouse_at(x + w / 2.0, press_y + 6.0)));
+        let _ = scrollable.on_event(&ElementEvent::PointerMove(mouse_at(x + w / 2.0, press_y + 10.0)));
+
+        let expected = -(press_y - h / 2.0 - y + 10.0) * multiplier;
+        let got = ctrl.scroll_offset.get().y;
+        assert!((got - expected).abs() < 0.01, "expected {expected}, got {got}");
+    }
+
+
+    fn key_press(key: aimer_events::element::NamedKey) -> ElementEvent {
+        ElementEvent::KeyInput {
+            key,
+            action: aimer_events::element::KeyAction::Pressed,
+            modifiers: Default::default(),
+        }
+    }
+
+    /// A key press pushes the content: it does not move on the press itself, it
+    /// leaves with momentum and glides on, like a fling.
+    #[tokio::test]
+    async fn a_key_press_launches_a_glide() {
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+
+        let _ = scrollable.on_event(&key_press(aimer_events::element::NamedKey::ArrowDown));
+
+        assert_eq!(ctrl.scroll_offset.get().y, 0.0, "it has not jumped");
+        assert!(ctrl.fling_start_time.get().is_none(), "it is momentum, not a timed slide");
+        assert!(ctrl.momentum_friction.get().is_some());
+        let launch = ctrl.pointer_velocity.get().y;
+        let expected = -crate::scrollable::constants::KEYBOARD_SCROLL_STEP
+            * (1.0 - crate::scrollable::constants::KEY_GLIDE_FRICTION);
+        assert!((launch - expected).abs() < 1e-4, "launch {launch}, expected {expected}");
+    }
+
+    /// Holding a key repeats it; each repeat adds to the speed already built up
+    /// instead of restarting.
+    #[tokio::test]
+    async fn repeated_key_presses_build_on_the_glide() {
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+        let down = key_press(aimer_events::element::NamedKey::ArrowDown);
+
+        let _ = scrollable.on_event(&down);
+        let one = ctrl.pointer_velocity.get().y;
+        let _ = scrollable.on_event(&down);
+        let _ = scrollable.on_event(&down);
+
+        assert!((ctrl.pointer_velocity.get().y - 3.0 * one).abs() < 1e-4);
+    }
+
+    /// Holding a key makes the platform repeat it. Each repeat is a press as far
+    /// as scrolling goes; ignoring them left only the first step of a held key.
+    #[tokio::test]
+    async fn a_held_key_keeps_scrolling_through_its_repeats() {
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+        let key = aimer_events::element::NamedKey::ArrowDown;
+        let repeat = ElementEvent::KeyInput {
+            key: key.clone(),
+            action: aimer_events::element::KeyAction::Repeat,
+            modifiers: Default::default(),
+        };
+
+        let _ = scrollable.on_event(&key_press(key));
+        let one = ctrl.pointer_velocity.get().y;
+        let result = scrollable.on_event(&repeat);
+        let _ = scrollable.on_event(&repeat);
+
+        assert!(result.is_consumed(), "a repeat is the scrollable's, like the press");
+        assert!(
+            (ctrl.pointer_velocity.get().y - 3.0 * one).abs() < 1e-4,
+            "press and two repeats add up"
+        );
+    }
+
+    /// Letting go is not a step.
+    #[tokio::test]
+    async fn releasing_a_key_does_not_scroll() {
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+        let release = ElementEvent::KeyInput {
+            key: aimer_events::element::NamedKey::ArrowDown,
+            action: aimer_events::element::KeyAction::Released,
+            modifiers: Default::default(),
+        };
+
+        let _ = scrollable.on_event(&release);
+
+        assert_eq!(ctrl.pointer_velocity.get().y, 0.0);
+    }
+
+    /// The push is sized to carry the content one step, then it keeps
+    /// decelerating to a stop on its own. Driven by the real momentum update.
+    #[tokio::test]
+    async fn the_glide_carries_the_content_one_step_and_settles() {
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+        let _ = scrollable.on_event(&key_press(aimer_events::element::NamedKey::ArrowDown));
+
+        let mut offset = ctrl.scroll_offset.get();
+        for _ in 0..400 {
+            tokio::time::sleep(std::time::Duration::from_millis(8)).await;
+            let (next, redraw) = ctrl.update_momentum(offset);
+            offset = next;
+            if !redraw {
+                break;
+            }
+        }
+
+        let step = crate::scrollable::constants::KEYBOARD_SCROLL_STEP;
+        assert!(
+            (offset.y + step).abs() < step * 0.12,
+            "one step of {step}, got {}",
+            offset.y
+        );
+        assert!(ctrl.momentum_friction.get().is_none(), "normal momentum is restored");
+        assert_eq!(ctrl.pointer_velocity.get().y, 0.0);
+    }
+
+    /// Any other input takes over from the glide, including its friction.
+    #[tokio::test]
+    async fn a_new_input_ends_the_glide_friction() {
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+        let _ = scrollable.on_event(&key_press(aimer_events::element::NamedKey::ArrowDown));
+
+        ctrl.cancel_fling();
+
+        assert!(ctrl.momentum_friction.get().is_none());
+    }
+
+    /// The destination is the edge, not past it.
+    #[tokio::test]
+    async fn a_key_scroll_stops_at_the_end_of_the_content() {
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+
+        let _ = scrollable.on_event(&key_press(aimer_events::element::NamedKey::End));
+
+        assert_eq!(ctrl.fling_target_offset.get().y, -300.0);
     }
 }
