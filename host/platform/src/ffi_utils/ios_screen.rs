@@ -45,10 +45,11 @@ pub fn attach_window_to_active_scene(window: &Window) {
             return;
         }
 
-        // Already associated with a scene: nothing to do.
+        // Already associated with a scene: nothing to attach.
         #[allow(unexpected_cfgs)]
         let existing_scene: *mut Object = msg_send![ui_window, windowScene];
         if !existing_scene.is_null() {
+            defer_right_edge_system_gestures(window);
             return;
         }
 
@@ -123,6 +124,33 @@ pub fn attach_window_to_active_scene(window: &Window) {
         let _: () = msg_send![ui_window, layoutIfNeeded];
         info!("attach_window_to_active_scene: attached winit UIWindow to active UIWindowScene");
     }
+    // Only now, with the window in its scene: see the function below.
+    defer_right_edge_system_gestures(window);
+}
+
+/// Hands touches near the right screen edge to the app without delay.
+///
+/// iOS holds back a third-party app's touch that begins within about 20 pt of a
+/// screen edge, for roughly 0.76 s, while it waits to see whether the touch
+/// becomes a system gesture. Apple's own apps are exempt. The scroll bar's thumb
+/// sits at the right edge, so a finger on it reached the app three quarters of a
+/// second after it landed.
+///
+/// `preferredScreenEdgesDeferringSystemGestures` removes that wait for the
+/// edges it names. Only the right edge is named: the bottom and top edges are how
+/// the user goes home and opens the control and notification centres, and
+/// deferring them would make each of those take a second swipe.
+///
+/// This has to be applied after the window has its scene. winit applies the
+/// preference when it creates the window, before [`attach_window_to_active_scene`]
+/// gives the window its scene, and iOS does not read it again by itself, so a
+/// preference set at creation never takes effect. winit's setter stores the
+/// edges and asks UIKit to re-read them, which is the part that matters here;
+/// a native app that attached its window the same way needed exactly this call.
+fn defer_right_edge_system_gestures(window: &Window) {
+    use winit::platform::ios::{ScreenEdge, WindowExtIOS};
+
+    window.set_preferred_screen_edges_deferring_system_gestures(ScreenEdge::RIGHT);
 }
 
 // CGFloat is f64 on all supported (64-bit) iOS targets.
