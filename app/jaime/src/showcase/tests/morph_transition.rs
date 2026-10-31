@@ -340,7 +340,7 @@ fn capture_navigation_bar_frames() {
 
     let library = snapshot.borrow().buttons[9];
     click(&mut app, library);
-    let started = std::time::Instant::now();
+    let started = aimer_time::Instant::now();
     for frame in 1..=20 {
         capture(&app, &mut renderer, &backend, &dir.join(format!("bar_{frame:02}.ppm")), size);
         println!("frame {frame} at {} ms", started.elapsed().as_millis());

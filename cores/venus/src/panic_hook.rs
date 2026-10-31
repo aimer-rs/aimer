@@ -165,7 +165,7 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::thread;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use super::*;
     use crate::on_lifecycle;

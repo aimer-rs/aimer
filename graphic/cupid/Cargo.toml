@@ -99,6 +99,7 @@ name = "cupid-opengl"
 required-features = ["opengl-demo"]
 
 [dependencies]
+aimer_time.workspace = true
 aimer_tls.workspace = true
 aimer_utils = { workspace = true, features = ["time-cost"] }
 aimer_rubick.workspace = true

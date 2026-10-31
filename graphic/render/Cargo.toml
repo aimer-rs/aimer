@@ -28,6 +28,7 @@ test-support = []
 frame-stats = ["aimer_frame_stats/frame-stats", "aimer_cupid/frame-stats"]
 
 [dependencies]
+aimer_time.workspace = true
 aimer_cupid.workspace = true
 aimer_events.workspace = true
 aimer_frame_stats.workspace = true

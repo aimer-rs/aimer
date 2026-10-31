@@ -7,6 +7,7 @@ edition = "2024"
 path = "src/lib.rs"
 
 [dependencies]
+aimer_time.workspace = true
 aimer_animation.workspace = true
 aimer_container.workspace = true
 aimer_events.workspace = true

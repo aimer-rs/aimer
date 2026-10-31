@@ -598,7 +598,7 @@ mod tests {
     use std::hint::black_box;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use super::{BatchExecutor, IndexedJob, PreparationBatch, PreparedResult};
     use crate::font::{FontFamily, FontStyle, FontWeight};

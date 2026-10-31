@@ -131,8 +131,8 @@ impl Widget for Screen {
 impl aimer_widget::PortableWidget for Screen {}
 
 fn run_for<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, millis: u64) {
-    let end = std::time::Instant::now() + Duration::from_millis(millis);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(millis);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(8));
         app.pump_frames(1);
     }
@@ -266,8 +266,8 @@ fn a_panel_that_animates_around_a_collapsed_list_keeps_the_chevron_turned_on_eve
         .set_state(|state| state.animate = true);
     let mut wrong = Vec::new();
     let mut ids = std::collections::BTreeSet::new();
-    let end = std::time::Instant::now() + Duration::from_millis(500);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(500);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(16));
         app.pump_frames(1);
         if let Some(turn) = chevron_turn(&app)

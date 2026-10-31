@@ -732,7 +732,7 @@ fn profile_morph_frames() {
     let card = Rect::new(0.0, 0.0, 600.0, 500.0);
     let mut measure_with = |label: &str, tree: &RenderTree, host: Option<RenderNodeId>, style: MorphStyle, blur: f32| {
         let mut run = |frames: u32| {
-            let started = std::time::Instant::now();
+            let started = aimer_time::Instant::now();
             for frame in 0..frames {
                 if let Some(host) = host {
                     let progress = frame as f32 / frames as f32;

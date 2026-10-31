@@ -585,7 +585,7 @@ mod tests {
     use super::*;
     use crate::element::{AnyElement, Element};
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     struct StressElement;
 

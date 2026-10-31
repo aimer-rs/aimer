@@ -65,7 +65,7 @@ mod frame_overhead {
     //! tasks, or a phase starting to allocate. A real measurement belongs in a
     //! release build with a benchmark harness.
 
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use crate::Venus;
 
@@ -269,7 +269,7 @@ mod runtime_spec {
             });
         }
 
-        let started = web_time::Instant::now();
+        let started = aimer_time::Instant::now();
         venus.run_microtasks();
         let elapsed = started.elapsed();
 
@@ -336,7 +336,7 @@ mod runtime_spec {
     fn a_wake_from_a_worker_notifies_the_event_loop() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::{Arc, mpsc};
-        use std::time::{Duration, Instant};
+        use aimer_time::{Duration, Instant};
 
         let venus = Venus::new();
         let pings = Arc::new(AtomicUsize::new(0));
@@ -396,7 +396,7 @@ mod scope_teardown {
     //! this is not a benchmark, it is a guard against scope cancellation quietly
     //! becoming linear in the number of slots.
 
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use crate::Venus;
 

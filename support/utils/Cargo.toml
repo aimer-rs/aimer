@@ -14,7 +14,7 @@ wasm-bindgen = {workspace = true}
 
 [dependencies]
 aimer_tls.workspace = true
-web-time.workspace = true
+aimer_time.workspace = true
 winit.workspace = true
 aimer_events.workspace = true
 aimer_venus.workspace = true

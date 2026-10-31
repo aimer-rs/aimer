@@ -65,7 +65,7 @@ fn coverage_spans_match_sample_counting_across_pixel_and_vector_boundaries() {
 #[ignore = "manual uncached scan-conversion benchmark"]
 fn profile_scan_conversion() {
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     for size in [8, 16, 32, 64, 128] {
         let extent = size as f32;

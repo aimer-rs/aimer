@@ -907,7 +907,7 @@ fn upload_rgba8<B: crate::backend::GpuBackend>(
 #[cfg(all(test, feature = "wgpu"))]
 mod tests {
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use super::*;
 

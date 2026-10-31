@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
-use std::time::Instant;
+use aimer_time::Instant;
 
 #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
 use aimer_utils::info;

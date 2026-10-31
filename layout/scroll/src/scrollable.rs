@@ -26,7 +26,6 @@ use crate::scrollable::scroll_bar::{reserved_viewport, track_width};
 use aimer_attribute::position::Vec2d;
 #[allow(unused)]
 use aimer_macro::key;
-use aimer_utils::callback::Callback;
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
@@ -123,6 +122,8 @@ pub struct Scrollable<W = RequiredChild> {
     pub child: ChildBuilder,
     #[portable_skip]
     pub scroll_behavior: ScrollBehavior,
+    /// Logical pixels one arrow-key press scrolls. Defaults to
+    /// [`KEYBOARD_SCROLL_STEP`](constants::KEYBOARD_SCROLL_STEP).
     #[portable_skip]
     pub key_scroll_strength: f32,
     #[portable_skip]
@@ -209,7 +210,7 @@ impl Scrollable {
             horizontal_scroll_bar: Some(ScrollBar::default()),
             key: Key::Value(caller.to_string()).with_location(caller),
             remember_scroll_offset: false,
-            key_scroll_strength: 50f32,
+            key_scroll_strength: constants::KEYBOARD_SCROLL_STEP,
             controller: None,
             web_overscroll: OverscrollSources::WEB_DEFAULT,
             config: ScrollPortableConfig::default(),
@@ -237,7 +238,7 @@ impl Scrollable {
             key: Key::Value(caller.to_string()).with_location(caller),
             remember_scroll_offset: false,
             controller: None,
-            key_scroll_strength: 50f32,
+            key_scroll_strength: constants::KEYBOARD_SCROLL_STEP,
             web_overscroll: OverscrollSources::WEB_DEFAULT,
             config: ScrollPortableConfig::default(),
             marker: PhantomData,
@@ -638,6 +639,11 @@ impl<W: Widget + 'static> ScrollableState<W> {
         Rc::new(ScrollState {
             key_scroll_strength: self.key_scroll_strength,
             speed_multiplier: ctx.scale,
+            overscroll: Default::default(),
+            fling: Default::default(),
+            drag_velocity: Default::default(),
+            bar: Default::default(),
+            session: Default::default(),
             scroll_offset: Cell::new(initial_offset),
             storage_key: self.key.clone(),
             remember_scroll_offset: self.remember_scroll_offset,
@@ -648,63 +654,19 @@ impl<W: Widget + 'static> ScrollableState<W> {
             pointer_velocity: Cell::new(initial_velocity),
             last_event_time: Cell::new(None),
             last_frame_time: Cell::new(None),
-            v_thumb_rect: Cell::new(None),
-            h_thumb_rect: Cell::new(None),
-            thumb_hovered: Cell::new(false),
-            scroll_bar_opacity: Cell::new(0.0),
-            scroll_bar_pointer: Default::default(),
-            viewport_origin: Cell::new(Vec2d::ZERO),
-            scroll_bar_anchor: Cell::new((0.0, 0.0)),
             v_scroll_multiplier: Cell::new(0.0),
             h_scroll_multiplier: Cell::new(0.0),
             last_scale: Cell::new(ctx.scale),
             scroll_behavior: self.scroll_behavior,
             overscroll_sources,
-            overscroll_source: Cell::new(OverscrollSource::Wheel),
             axis: self.axis,
             scroll_bar_placement: self.scroll_bar_placement,
             cursor_pos: Cell::new(None),
-            velocity_history: RefCell::new(None),
             cached_viewport: Cell::new((0.0, 0.0)),
-            cached_v_track_width: Cell::new(0.0),
-            cached_h_track_width: Cell::new(0.0),
             cached_content_size: Cell::new(Default::default()),
             cached_content_size_valid: Cell::new(false),
-            fling_start_time: Cell::new(None),
-            momentum_friction: Cell::new(None),
-            fling_start_offset: Cell::new(Vec2d { x: 0.0, y: 0.0 }),
-            fling_target_offset: Cell::new(Vec2d { x: 0.0, y: 0.0 }),
-            fling_duration: Cell::new(0.0),
-            anim_curve: RefCell::new(None),
             active_touch_id: Cell::new(None),
-            spring_velocity: Cell::new(Vec2d { x: 0.0, y: 0.0 }),
-            momentum_start_time: Cell::new(None),
-            vel_accum: Cell::new(Vec2d { x: 0.0, y: 0.0 }),
-            vel_sample_time: Cell::new(None),
-            is_scrolling: Cell::new(false),
-            #[cfg(debug_assertions)]
-            session_input_events: Cell::new(0),
-            #[cfg(debug_assertions)]
-            session_draw_frames: Cell::new(0),
-            #[cfg(debug_assertions)]
-            session_moved_frames: Cell::new(0),
-            // Left empty here; `live_scroll_state` re-shares any
-            // app-registered
-            // scroll-lifecycle callbacks when it attaches the controller.
-            on_scroll_start: RefCell::new(Callback::default()),
-            on_scroll_end: RefCell::new(Callback::default()),
-            on_scroll: RefCell::new(Callback::default()),
-            last_reported_offset: Cell::new(None),
             last_drawn_offset: Cell::new(None),
-            overscroll_hold: Cell::new(None),
-            direct_overscroll_hold: Cell::new(false),
-            highest_overscroll_offset: Default::default(),
-            overscroll_peak_at: Cell::new(None),
-            device_contact: Cell::new(false),
-            #[cfg(target_arch = "wasm32")]
-            web_overscroll_decay: web_overscroll::WebOverscrollDecay::new(),
-            #[cfg(target_arch = "wasm32")]
-            web_recovery_end: web_recovery_end::WebRecoveryEnd::new(),
         })
     }
 }
@@ -778,7 +740,7 @@ impl Widget for ScrollableFrame {
         let vertical_bar_width = if matches!(self.ctrl.axis, ScrollAxis::Vertical) {
             self.vertical_scroll_bar
                 .as_ref()
-                .map(|bar| track_width(bar, full_width, ctx.scale))
+                .map(|bar| track_width(bar, full_width, ctx.scale, self.ctrl.scroll_bar_placement))
                 .unwrap_or(0.0)
         } else {
             0.0
@@ -786,7 +748,7 @@ impl Widget for ScrollableFrame {
         let horizontal_bar_height = if matches!(self.ctrl.axis, ScrollAxis::Horizontal) {
             self.horizontal_scroll_bar
                 .as_ref()
-                .map(|bar| track_width(bar, full_height, ctx.scale))
+                .map(|bar| track_width(bar, full_height, ctx.scale, self.ctrl.scroll_bar_placement))
                 .unwrap_or(0.0)
         } else {
             0.0

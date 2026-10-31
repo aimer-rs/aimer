@@ -235,7 +235,7 @@ fn profile_backdrop_blur_cost() {
         let mut samples = Vec::with_capacity(FRAMES);
         for _ in 0..FRAMES {
             let (_, packet) = direct_headless_frame_packet(&mut app);
-            let started = std::time::Instant::now();
+            let started = aimer_time::Instant::now();
             renderer.render_packet(&backend, &view, &packet, false);
             gpu.device.poll(wgpu::PollType::wait_indefinitely()).expect("wait for the GPU");
             samples.push(started.elapsed().as_secs_f64() * 1000.0);

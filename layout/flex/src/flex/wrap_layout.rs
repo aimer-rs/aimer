@@ -336,7 +336,7 @@ fn align_offset(alignment: BoxAlignment, extra: f32) -> f32 {
 #[cfg(test)]
 mod wrap_tests {
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use aimer_attribute::size::ResolvedSize;
 

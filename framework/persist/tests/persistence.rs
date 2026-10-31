@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::future::Future;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_persist::{
     AppStorage, DecodeError, Document, PersistError, Persisted, Preferences, StorageLocation,

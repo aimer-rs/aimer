@@ -1,6 +1,6 @@
 //! Cross-platform time abstraction.
 //!
-//! Uses `web_time::Instant`, which delegates to the browser's monotonic clock
+//! Uses `aimer_time::Instant`, which delegates to the browser's monotonic clock
 //! on ordinary WASM instead of the unsupported `std::time` clock. Portable
 //! hot-reload guests use the host-provided logical frame clock so they do not
 //! import browser APIs into the isolated interpreter.
@@ -26,7 +26,7 @@ pub struct AnimInstant {
     #[cfg(any(aimer_portable_guest, test))]
     inner: u64,
     #[cfg(not(any(aimer_portable_guest, test)))]
-    inner: web_time::Instant,
+    inner: aimer_time::Instant,
 }
 
 impl AnimInstant {
@@ -36,7 +36,7 @@ impl AnimInstant {
             #[cfg(any(aimer_portable_guest, test))]
             inner: PORTABLE_FRAME_TIME_NANOS.with(Cell::get),
             #[cfg(not(any(aimer_portable_guest, test)))]
-            inner: web_time::Instant::now(),
+            inner: aimer_time::Instant::now(),
         }
     }
 
@@ -133,6 +133,33 @@ pub fn set_portable_frame_time(frame: u64) {
     let _ = frame;
 }
 
+/// The current UTC time of day as `HH:MM:SS.mmm`.
+///
+/// For log lines that have to be lined up with what a person did and when:
+/// instants from [`AnimInstant`] only measure how long, not when. Portable
+/// guests have no wall clock and report placeholders.
+pub fn wall_clock_label() -> String {
+    #[cfg(not(aimer_portable_guest))]
+    {
+        let millis = aimer_time::DateTime::now().unix_timestamp_millis();
+        format_wall_clock(millis.max(0) as u128)
+    }
+    #[cfg(aimer_portable_guest)]
+    {
+        "--:--:--.---".to_string()
+    }
+}
+
+/// Formats `epoch_millis` (milliseconds since the Unix epoch) as the UTC time
+/// of day, `HH:MM:SS.mmm`.
+#[cfg_attr(aimer_portable_guest, allow(dead_code))]
+fn format_wall_clock(epoch_millis: u128) -> String {
+    let millis_of_day = (epoch_millis % 86_400_000) as u64;
+    let (hours, rest) = (millis_of_day / 3_600_000, millis_of_day % 3_600_000);
+    let (minutes, rest) = (rest / 60_000, rest % 60_000);
+    format!("{hours:02}:{minutes:02}:{:02}.{:03}", rest / 1000, rest % 1000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +233,26 @@ mod tests {
         let earlier = AnimInstant::now();
         let later = AnimInstant::now();
         assert!(later.duration_since(earlier) < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_wall_clock_label_is_the_utc_time_of_day_to_the_millisecond() {
+        assert_eq!(format_wall_clock(0), "00:00:00.000");
+        assert_eq!(format_wall_clock(3_723_456), "01:02:03.456");
+        assert_eq!(
+            format_wall_clock(86_400_000 + 3_723_456),
+            "01:02:03.456",
+            "the day it is does not show"
+        );
+        assert_eq!(format_wall_clock(86_399_999), "23:59:59.999");
+    }
+
+    #[test]
+    fn the_live_wall_clock_label_has_the_same_shape() {
+        let label = wall_clock_label();
+        assert_eq!(label.len(), "00:00:00.000".len(), "{label}");
+        assert_eq!(&label[2..3], ":");
+        assert_eq!(&label[8..9], ".");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Run with `cargo run -p aimer_lucide --example construction_profile`, then
 //! repeat with `--release` to compare first use and cached construction.
 use std::hint::black_box;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer_lucide::Icons;
 use aimer_svg::{Svg, SvgDocument};

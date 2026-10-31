@@ -1774,7 +1774,7 @@ impl Default for DrawList {
 #[cfg(test)]
 mod memory_tests {
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use super::*;
     use crate::font::{FontFamily, FontStyle};

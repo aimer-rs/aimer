@@ -78,8 +78,8 @@ fn text_follows_an_animated_scalable() {
     assert_eq!(text_scale(&app), 1.0);
 
     updater.borrow().expect("initialised").set_state(|state| state.target = 2.0);
-    let end = std::time::Instant::now() + Duration::from_millis(400);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(400);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(8));
         app.pump_frames(1);
     }

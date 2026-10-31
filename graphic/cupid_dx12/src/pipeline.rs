@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_utils::info;
 use windows::Win32::Graphics::Direct3D::Fxc::{D3DCOMPILE_OPTIMIZATION_LEVEL0, D3DCompile};

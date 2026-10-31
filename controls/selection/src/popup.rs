@@ -1106,7 +1106,7 @@ mod tests {
                 .unwrap(),
         );
         let iterations = 20;
-        let started = std::time::Instant::now();
+        let started = aimer_time::Instant::now();
         for _ in 0..iterations {
             let state = PopupPanel {
                 model: Rc::clone(&model),

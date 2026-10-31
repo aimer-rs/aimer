@@ -242,10 +242,10 @@ fn a_venus_task_awaits_storage_and_keeps_its_non_send_state() {
         task_finished.set(true);
     });
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let deadline = aimer_time::Instant::now() + std::time::Duration::from_secs(60);
     while !finished.get() {
         assert!(
-            std::time::Instant::now() < deadline,
+            aimer_time::Instant::now() < deadline,
             "the task never finished"
         );
         installed.0.run_microtasks();

@@ -171,8 +171,8 @@ fn click<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>) {
 
 /// Runs frames over `millis` of wall-clock time, as a window would.
 fn run_for<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, millis: u64) {
-    let end = std::time::Instant::now() + Duration::from_millis(millis);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(millis);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(8));
         app.pump_frames(1);
     }

@@ -5,6 +5,7 @@ edition = "2024"
 resolver = "3"
 
 [dependencies]
+aimer_time.workspace = true
 aimer_tls.workspace = true
 allocator-api2.workspace = true
 dlmalloc.workspace = true

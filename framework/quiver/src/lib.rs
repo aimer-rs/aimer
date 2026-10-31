@@ -94,7 +94,7 @@ mod tests {
         use std::rc::Rc;
         use std::sync::{OnceLock, mpsc};
         use std::thread;
-        use std::time::{Duration, Instant};
+        use aimer_time::{Duration, Instant};
 
         use crate::AimerApp;
         use crate::hot_reload::{

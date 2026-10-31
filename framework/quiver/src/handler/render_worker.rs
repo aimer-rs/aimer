@@ -1,5 +1,5 @@
 //! Delivers GPU outcomes without moving application callbacks off the UI thread.
-use std::time::Instant;
+use aimer_time::Instant;
 
 use super::AimerApplicationHandler;
 use crate::aimer_app::FrameRequestKind;

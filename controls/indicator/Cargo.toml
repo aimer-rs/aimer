@@ -9,6 +9,7 @@ license = "MIT"
 path = "src/lib.rs"
 
 [dependencies]
+aimer_time.workspace = true
 aimer_animation.workspace = true
 aimer_attribute.workspace = true
 aimer_canvas.workspace = true

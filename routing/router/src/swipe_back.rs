@@ -132,7 +132,7 @@ impl SwipeLink {
     /// that exists.
     pub(crate) fn detached() -> Rc<Self> {
         use std::sync::OnceLock;
-        use std::time::Instant;
+        use aimer_time::Instant;
         static START: OnceLock<Instant> = OnceLock::new();
         Self::new(|| None, || START.get_or_init(Instant::now).elapsed().as_secs_f64())
     }

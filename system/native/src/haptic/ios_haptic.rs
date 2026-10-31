@@ -28,27 +28,66 @@ impl From<NotificationStyle> for UINotificationFeedbackType {
     }
 }
 
-pub(super) fn impact(style: ImpactStyle) {
+thread_local! {
+    /// One generator per impact style, kept for the life of the thread.
+    ///
+    /// `prepare` only helps if it is called on the same generator that later
+    /// fires, some moments ahead of it: a generator made, prepared and fired in
+    /// one breath pays the Taptic Engine's start-up latency in full. Keeping
+    /// them is what lets `prepare_impact` at touch-down make the impact that
+    /// follows land on time.
+    static IMPACT_GENERATORS: RefCell<[Option<Retained<UIImpactFeedbackGenerator>>; 5]> =
+        const { RefCell::new([None, None, None, None, None]) };
+}
+
+fn impact_slot(style: ImpactStyle) -> usize {
+    match style {
+        ImpactStyle::Light => 0,
+        ImpactStyle::Medium => 1,
+        ImpactStyle::Heavy => 2,
+        ImpactStyle::Soft => 3,
+        ImpactStyle::Rigid => 4,
+    }
+}
+
+/// Runs `f` with the thread's generator for `style`, making it on first use.
+fn with_impact_generator(style: ImpactStyle, f: impl FnOnce(&UIImpactFeedbackGenerator)) {
     // UIFeedbackGenerator subclasses are UIKit objects: main-thread only.
     // If we're off the main thread (e.g. called from a background render
     // task), skip rather than crash.
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
-    // `initWithStyle:` is soft-deprecated in favour of
-    // `feedbackGeneratorWithStyle:forView:`, which needs a `UIView` to
-    // attach the interaction to. We deliberately have no view here — the
-    // framework surfaces haptics as a free function — so the view-less
-    // initialiser stays the correct call.
-    #[allow(deprecated)]
-    let generator = UIImpactFeedbackGenerator::initWithStyle(
-        UIImpactFeedbackGenerator::alloc(mtm),
-        style.into(),
-    );
-    // `prepare` primes the Taptic Engine so the actual trigger has
-    // minimal latency. Cheap to call right before the trigger.
-    generator.prepare();
-    generator.impactOccurred();
+    IMPACT_GENERATORS.with(|generators| {
+        let mut generators = generators.borrow_mut();
+        let generator = generators[impact_slot(style)].get_or_insert_with(|| {
+            // `initWithStyle:` is soft-deprecated in favour of
+            // `feedbackGeneratorWithStyle:forView:`, which needs a `UIView` to
+            // attach the interaction to. We deliberately have no view here — the
+            // framework surfaces haptics as a free function — so the view-less
+            // initialiser stays the correct call.
+            #[allow(deprecated)]
+            UIImpactFeedbackGenerator::initWithStyle(
+                UIImpactFeedbackGenerator::alloc(mtm),
+                style.into(),
+            )
+        });
+        f(generator);
+    });
+}
+
+pub(super) fn prepare_impact(style: ImpactStyle) {
+    with_impact_generator(style, |generator| generator.prepare());
+}
+
+pub(super) fn impact(style: ImpactStyle) {
+    with_impact_generator(style, |generator| {
+        // `prepare` primes the Taptic Engine so the trigger has minimal
+        // latency. A caller that expects the impact can call `prepare_impact`
+        // ahead of it; this one covers the caller that did not.
+        generator.prepare();
+        generator.impactOccurred();
+    });
 }
 
 pub(super) fn selection() {
@@ -98,7 +137,7 @@ use objc2_core_haptics::{
 };
 use objc2_foundation::{NSError, NSMutableArray, NSMutableDictionary, NSNumber, NSString};
 use std::cell::RefCell;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 /// AHAP dictionaries are heterogeneous (strings, numbers, arrays,
 /// nested dictionaries), so the values stay untyped `AnyObject`s.

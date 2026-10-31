@@ -198,9 +198,9 @@ fn outstanding(context: &NativeRenderContext) -> usize {
 /// Waits for every submitted frame to complete, whether or not the submitting
 /// call waited for it.
 fn settle(context: &mut NativeRenderContext) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = aimer_time::Instant::now() + Duration::from_secs(5);
     while outstanding(context) > 0 {
-        assert!(std::time::Instant::now() < deadline, "the worker never completed");
+        assert!(aimer_time::Instant::now() < deadline, "the worker never completed");
         context.poll_completions();
         std::thread::yield_now();
     }
@@ -242,7 +242,7 @@ fn a_frame_of_unchanged_size_is_left_to_the_worker() {
     rendering.recv_timeout(Duration::from_secs(5)).unwrap();
     settle(&mut context);
     // Same size again, with the presenter held: the call must not wait for it.
-    let before = std::time::Instant::now();
+    let before = aimer_time::Instant::now();
     assert_eq!(context.render_frame(|_, _, _| {}), PresentOutcome::Deferred);
     assert!(
         before.elapsed() < Duration::from_millis(50),
@@ -257,7 +257,7 @@ fn a_frame_of_unchanged_size_is_left_to_the_worker() {
 #[test]
 fn a_stalled_worker_cannot_hold_a_resize_forever() {
     let (mut context, release, rendering) = ready_context(true);
-    let before = std::time::Instant::now();
+    let before = aimer_time::Instant::now();
     assert_eq!(context.render_frame(|_, _, _| {}), PresentOutcome::Deferred);
     assert!(before.elapsed() < Duration::from_secs(2));
     assert_eq!(
@@ -277,7 +277,7 @@ fn a_stalled_worker_cannot_hold_a_resize_forever() {
 #[test]
 fn contexts_that_do_not_opt_in_never_wait_for_a_resize() {
     let (mut context, release, rendering) = ready_context(false);
-    let before = std::time::Instant::now();
+    let before = aimer_time::Instant::now();
     assert_eq!(context.render_frame(|_, _, _| {}), PresentOutcome::Deferred);
     assert!(before.elapsed() < Duration::from_millis(50));
     assert_eq!(
@@ -340,7 +340,7 @@ fn windows_presents_a_resized_frame_before_the_resize_returns() {
 #[test]
 fn windows_does_not_wait_for_the_first_frame() {
     let (mut context, release, rendering) = ready_context(true);
-    let before = std::time::Instant::now();
+    let before = aimer_time::Instant::now();
     assert_eq!(context.render_frame(|_, _, _| {}), PresentOutcome::Deferred);
     assert!(
         before.elapsed() < Duration::from_millis(50),
@@ -383,7 +383,7 @@ fn the_redraw_that_follows_a_live_resize_is_also_presented_before_the_call_retur
         release.send(()).unwrap();
         release
     });
-    let before = std::time::Instant::now();
+    let before = aimer_time::Instant::now();
     assert_eq!(context.render_frame(|_, _, _| {}), PresentOutcome::Deferred);
     assert!(before.elapsed() >= Duration::from_millis(25));
     assert_eq!(

@@ -211,8 +211,8 @@ fn start() -> (
 }
 
 fn run_for<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, millis: u64) {
-    let end = std::time::Instant::now() + Duration::from_millis(millis);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(millis);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(8));
         app.pump_frames(1);
     }
@@ -345,8 +345,8 @@ fn a_theme_change_does_not_search_the_whole_tree_for_every_widget_it_touches() {
         .expect("initialised")
         .set_state(|state| state.mode = ThemeMode::Dark);
     let mut frames = 0;
-    let end = std::time::Instant::now() + Duration::from_millis(400);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(400);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(8));
         frames += app.pump_frames(1);
     }

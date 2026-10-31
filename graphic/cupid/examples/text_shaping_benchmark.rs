@@ -1,5 +1,5 @@
 use std::hint::black_box;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_cupid::font::{FontFamily, FontStyle, FontWeight};
 use aimer_cupid::text_layout::shape_text_styled;

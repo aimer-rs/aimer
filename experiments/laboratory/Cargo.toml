@@ -23,6 +23,7 @@ name = "compositor_gpu_e2e"
 required-features = ["wgpu"]
 
 [dependencies]
+aimer_time.workspace = true
 aimer_cupid.workspace = true
 aimer_canvas.workspace = true
 aimer_rubick.workspace = true

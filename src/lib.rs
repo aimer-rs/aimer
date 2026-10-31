@@ -73,6 +73,7 @@ pub use aimer_range as range;
 pub use aimer_selection as selection;
 pub use aimer_shape as shape;
 pub use aimer_storage as storage;
+pub use aimer_time as time;
 pub mod modal {
     pub use aimer_modal::{
         Anchor, AnchorHandle, Floating, FloatingAlign, FloatingPlacement, FloatingSide, Modal,
@@ -3615,7 +3616,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         use std::cell::Cell;
         use std::rc::Rc;
         use std::thread::sleep;
-        use std::time::{Duration, Instant};
+        use aimer_time::{Duration, Instant};
 
         use aimer::modal::ModalHost;
         use aimer::quiver::aimer_app::HeadlessAimerApp;

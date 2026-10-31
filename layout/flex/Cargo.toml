@@ -14,6 +14,7 @@ portable-guest = [
 force-scalar = []
 
 [dependencies]
+aimer_time.workspace = true
 aimer_anteros = { workspace = true, optional = true }
 aimer_attribute.workspace = true
 aimer_animation.workspace = true

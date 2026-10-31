@@ -38,13 +38,13 @@ pub(crate) fn finish_overscroll_recovery(ctrl: &ScrollState, offset: Vec2d) {
     let stretch = ctrl.overscroll_distance(offset);
     let stretched = stretch.x != 0.0 || stretch.y != 0.0;
     let held = stretched && ctrl.overscroll_recovery_held_at(AnimInstant::now());
-    if !ctrl.web_recovery_end.observe_frame(stretched, held) {
+    if !ctrl.overscroll.web_recovery_end.observe_frame(stretched, held) {
         return;
     }
 
     ctrl.pointer_velocity.set(Vec2d::ZERO);
-    ctrl.spring_velocity.set(Vec2d::ZERO);
-    ctrl.momentum_start_time.set(None);
+    ctrl.fling.spring_velocity.set(Vec2d::ZERO);
+    ctrl.fling.momentum_start.set(None);
     ctrl.clear_velocity_history();
     ctrl.cancel_fling();
 
@@ -55,7 +55,7 @@ pub(crate) fn finish_overscroll_recovery(ctrl: &ScrollState, offset: Vec2d) {
         TouchPhase::Ended,
         false,
     );
-    ctrl.web_recovery_end.drain_tail();
+    ctrl.overscroll.web_recovery_end.drain_tail();
 }
 
 /// Whether an arriving scroll frame must be discarded instead of scrolled.
@@ -87,7 +87,7 @@ pub(crate) fn scroll_frame_dropped(
     is_direct_manipulation: bool,
     phase: TouchPhase,
 ) -> bool {
-    ctrl.web_recovery_end
+    ctrl.overscroll.web_recovery_end
         .drops_frame(is_direct_manipulation, phase)
 }
 

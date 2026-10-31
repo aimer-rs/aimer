@@ -306,7 +306,7 @@ fn the_bar_stays_for_a_moment_after_the_scroll_and_then_goes_by_itself() {
 
     // Long enough to have started fading under a hold of a fraction of a second,
     // and well short of the idle delay.
-    let started = std::time::Instant::now();
+    let started = aimer_time::Instant::now();
     while started.elapsed() < Duration::from_millis(500) {
         std::thread::sleep(Duration::from_millis(16));
         page.app.pump_frames(2);

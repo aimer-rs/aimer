@@ -363,7 +363,7 @@ async fn a_stateless_build_can_retain_a_part() {
 /// cargo nextest run -p aimer_widget retain_slots_profile --run-ignored only --no-capture
 /// ```
 mod retain_slots_profile {
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use super::*;
 

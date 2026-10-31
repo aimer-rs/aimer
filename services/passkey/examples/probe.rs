@@ -55,7 +55,7 @@ fn main() {
         Box::pin(async move { format!("{:?}", ceremony.await) })
     };
     let mut future = future;
-    let started = std::time::Instant::now();
+    let started = aimer_time::Instant::now();
     loop {
         if let Poll::Ready(outcome) = future.as_mut().poll(&mut cx) {
             println!("{mode} -> {outcome} after {:?}", started.elapsed());

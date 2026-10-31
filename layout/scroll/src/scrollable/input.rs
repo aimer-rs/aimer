@@ -1,4 +1,9 @@
 pub mod bar_gesture;
 pub mod device_contact;
 pub mod handle_scroll;
+pub mod keyboard;
+pub mod pointer_drag;
+pub mod pointer_press;
+pub mod pointer_release;
 pub mod scroll_frame;
+pub mod thumb_grab;

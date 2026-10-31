@@ -10,7 +10,7 @@ pub mod render_ctx {
     use aimer_utils::info;
     use raw_window_handle::RawWindowHandle;
     use std::ffi::c_void;
-    use std::time::Instant;
+    use aimer_time::Instant;
     use windows::Win32::Foundation::HWND;
     use winit::dpi::PhysicalSize;
     use winit::platform::windows::WindowExtWindows;

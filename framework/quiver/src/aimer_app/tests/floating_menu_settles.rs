@@ -116,8 +116,8 @@ fn a_floating_menu_that_has_entered_keeps_no_entry_transform() {
         )
         .child(panel())
         .show();
-    let end = std::time::Instant::now() + Duration::from_millis(600);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(600);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(8));
         app.pump_frames(1);
     }
@@ -198,8 +198,8 @@ fn a_floating_menus_rows_are_drawn_inside_its_panel() {
         )
         .child(panel())
         .show();
-    let end = std::time::Instant::now() + Duration::from_millis(600);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(600);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(8));
         app.pump_frames(1);
     }

@@ -39,10 +39,10 @@ impl ScrollState {
     fn bar_axis(&self) -> Option<BarAxis> {
         let vertical = matches!(self.axis, ScrollAxis::Vertical);
         let (start, length, multiplier) = if vertical {
-            let (_, y, _, h) = self.v_thumb_rect.get()?;
+            let (_, y, _, h) = self.bar.v_thumb_rect.get()?;
             (y, h, self.v_scroll_multiplier.get())
         } else {
-            let (x, _, w, _) = self.h_thumb_rect.get()?;
+            let (x, _, w, _) = self.bar.h_thumb_rect.get()?;
             (x, w, self.h_scroll_multiplier.get())
         };
         Some(BarAxis {
@@ -60,12 +60,12 @@ impl ScrollState {
         let (thumb, track) = if vertical {
             (
                 self.hit_test_v_thumb(p),
-                self.hit_test_v_track(p, viewport_w, viewport_h, self.cached_v_track_width.get()),
+                self.hit_test_v_track(p, viewport_w, viewport_h, self.bar.v_track_width.get()),
             )
         } else {
             (
                 self.hit_test_h_thumb(p),
-                self.hit_test_h_track(p, viewport_w, viewport_h, self.cached_h_track_width.get()),
+                self.hit_test_h_track(p, viewport_w, viewport_h, self.bar.h_track_width.get()),
             )
         };
         if thumb {
@@ -122,7 +122,7 @@ impl ScrollState {
         // A click is a deliberate jump: nothing that was in flight carries on.
         self.cancel_fling();
         self.pointer_velocity.set(Vec2d::ZERO);
-        self.spring_velocity.set(Vec2d::ZERO);
+        self.fling.spring_velocity.set(Vec2d::ZERO);
         self.release_overscroll_recovery();
         self.reset_overscroll_peak();
         self.begin_scroll();
@@ -145,7 +145,7 @@ impl ScrollState {
         let offset = self.scroll_offset.get();
         // The thumb is measured from where it was taken, so it stays under the
         // pointer however the drag goes.
-        self.scroll_bar_anchor.set(if bar.vertical {
+        self.bar.anchor.set(if bar.vertical {
             (device.y, offset.y)
         } else {
             (device.x, offset.x)
@@ -176,7 +176,7 @@ impl ScrollState {
         ) {
             return;
         }
-        let (from, anchored) = self.scroll_bar_anchor.get();
+        let (from, anchored) = self.bar.anchor.get();
         let device = self.to_device(p);
         let mut offset = self.scroll_offset.get();
         if mode == DragMode::VerticalScrollbar {

@@ -7,6 +7,7 @@ edition = "2024"
 portable-guest = ["aimer_decoration/portable-guest", "aimer_widget/portable-guest", "aimer_provider/portable-guest"]
 
 [dependencies]
+aimer_time.workspace = true
 aimer_decoration.workspace = true
 aimer_animation.workspace = true
 aimer_events.workspace = true

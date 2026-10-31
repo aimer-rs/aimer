@@ -96,7 +96,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::hint::black_box;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer_laboratory::experiment::Shadow;
 

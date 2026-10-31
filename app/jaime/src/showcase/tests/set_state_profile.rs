@@ -20,7 +20,7 @@ use super::*;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer::HeadlessOptions;
 use aimer_cupid::draw_cmd_v2::DrawCommand;

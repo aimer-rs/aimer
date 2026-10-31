@@ -13,7 +13,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::hint::black_box;
-use std::time::Instant;
+use aimer_time::Instant;
 
 const BATCH: u32 = 200_000;
 const ROUNDS: usize = 15;

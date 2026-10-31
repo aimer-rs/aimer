@@ -4,7 +4,7 @@
 
 mod support;
 
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer_selection::{Checkbox, ChoiceOption, RadioGroup, Select};
 use aimer_widget::{Drawable, LayoutElement, State, StatefulWidget, Widget};

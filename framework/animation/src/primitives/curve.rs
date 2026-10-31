@@ -96,7 +96,7 @@ pub struct CurveDescriptor {
 #[cfg(test)]
 mod tests {
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use super::golden::{GOLDEN, INPUTS};
     use super::*;

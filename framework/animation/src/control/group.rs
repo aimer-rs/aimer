@@ -251,7 +251,7 @@ impl StaggeredAnimation {
 #[cfg(test)]
 mod tests {
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use super::*;
     use crate::primitives::curve::curves;

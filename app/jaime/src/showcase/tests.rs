@@ -473,7 +473,7 @@ fn showcase_mounts_with_the_first_example_visible() {
 #[test]
 #[ignore = "profiling harness: prints timings and asserts nothing"]
 fn profile_sidebar_hover_frames() {
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use aimer::HeadlessOptions;
     use aimer::quiver::winit::dpi::{PhysicalPosition, PhysicalSize};
@@ -532,7 +532,7 @@ fn profile_sidebar_hover_frames() {
 #[test]
 #[ignore = "profiling harness: prints timings and asserts nothing"]
 fn profile_resize_frames() {
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use aimer::HeadlessOptions;
     use aimer::quiver::winit::dpi::PhysicalSize;
@@ -599,7 +599,7 @@ fn profile_resize_frames() {
 #[test]
 #[ignore = "profiling harness: 30,000 frames (minutes in debug), prints timings and asserts nothing"]
 fn profile_sidebar_scroll_frames() {
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use aimer::HeadlessOptions;
     use aimer::quiver::frame_stats::{

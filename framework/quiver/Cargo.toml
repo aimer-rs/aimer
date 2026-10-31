@@ -56,6 +56,7 @@ wasm-hot-reload = [
 ]
 
 [dependencies]
+aimer_time.workspace = true
 aimer_tls.workspace = true
 
 crossbeam.workspace = true

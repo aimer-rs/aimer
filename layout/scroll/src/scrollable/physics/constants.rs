@@ -206,7 +206,9 @@ pub const SCROLLBAR_TOUCH_SLOP_CROSS: f32 = 20.0;
 /// still hold it.
 pub const SCROLLBAR_TOUCH_SLOP_ALONG: f32 = 8.0;
 /// How opaque the bar has to be before a finger can take hold of it: a thumb
-/// that is not on screen is not something the user can be holding.
+/// that is not on screen is not something the user can be holding. A finger
+/// may start a hold on a faded-out thumb, which brings the bar back, but the
+/// thumb is not taken until the bar is this visible.
 pub const SCROLLBAR_TOUCH_MIN_OPACITY: f32 = 0.3;
 
 /// Spring-back stiffness (N/m equivalent). Controls how strongly the
@@ -271,3 +273,23 @@ pub const OVERSCROLL_PEAK_IDLE_MS: u128 = 120;
 /// hundreds of pixels while a short one barely moved. 15% of the viewport
 /// matches the stretch Chrome and iOS allow.
 pub const MAX_OVERSCROLL_VIEWPORT_FRACTION: f32 = 0.15;
+
+/// How long a finger must rest on the scroll bar thumb before it takes hold of
+/// it. A swipe that merely starts near the edge is the content's; only a
+/// deliberate press-and-hold drags the thumb.
+///
+/// 150 ms is UIKit's own threshold for a touch on scrolling content: the
+/// delay (`delaysContentTouches`) before a press is treated as a press and not
+/// as the start of a scroll.
+pub const SCROLLBAR_THUMB_HOLD_MS: u64 = 150;
+/// How long the thumb takes to grow to, or shrink back from, its grabbed width.
+pub const SCROLLBAR_THUMB_GROW_MS: u64 = 150;
+/// The thumb's width (logical px) while it is held. It never shrinks below its
+/// resting width.
+pub const SCROLLBAR_THUMB_GRAB_WIDTH_DP: f32 = 8.0;
+/// Width (logical px) of the touch scroll bar strip: wide enough for the
+/// grabbed thumb to grow into, transparent, so the resting bar looks the same.
+pub const SCROLLBAR_TOUCH_STRIP_DP: f32 = 12.0;
+/// Width (logical px) the touch strip used to be, which the resting thumb is
+/// still sized and inset from.
+pub const SCROLLBAR_TOUCH_REST_STRIP_DP: f32 = 6.0;

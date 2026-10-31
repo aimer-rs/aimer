@@ -5,6 +5,7 @@ edition = "2024"
 description = "Embedded Lucide icons for Aimer SVG widgets"
 
 [dependencies]
+aimer_time.workspace = true
 aimer_attribute.workspace = true
 aimer_svg.workspace = true
 aimer_cupid.workspace = true

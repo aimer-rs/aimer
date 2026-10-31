@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-
+aimer_time.workspace = true
 [[bench]]
 name = "vtable"
 harness = false

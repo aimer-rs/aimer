@@ -22,6 +22,7 @@ bundled-fonts = []
 test-counters = []
 
 [dependencies]
+aimer_time.workspace = true
 aimer_tls.workspace = true
 aimer_cupid_svg.workspace = true
 aimer_simd.workspace = true

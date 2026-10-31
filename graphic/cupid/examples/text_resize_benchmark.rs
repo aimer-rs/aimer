@@ -20,7 +20,7 @@
 
 use std::hint::black_box;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_cupid::AntiAlias;
 use aimer_cupid::backend::wgpu::WgpuBackend;

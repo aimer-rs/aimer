@@ -166,8 +166,8 @@ mod focus_ring {
             },
         );
 
-        let end = std::time::Instant::now() + Duration::from_millis(900);
-        while std::time::Instant::now() < end {
+        let end = aimer_time::Instant::now() + Duration::from_millis(900);
+        while aimer_time::Instant::now() < end {
             std::thread::sleep(Duration::from_millis(8));
             app.pump_frames(1);
         }

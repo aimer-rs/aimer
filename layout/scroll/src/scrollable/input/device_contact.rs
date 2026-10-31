@@ -41,7 +41,7 @@ pub(crate) fn device_contact_for_frame(
     phase: TouchPhase,
 ) -> bool {
     crate::scrollable::web_overscroll::web_device_contact(
-        &ctrl.web_overscroll_decay,
+        &ctrl.overscroll.web_decay,
         is_direct_manipulation,
         delta,
         phase,

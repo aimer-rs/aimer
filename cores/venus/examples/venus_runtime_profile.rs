@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use std::thread;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_venus::{LocalScheduler, PollContext, Venus, yield_now};
 

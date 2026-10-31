@@ -21,7 +21,7 @@
 //! separately so the two costs are not confused.
 
 use std::hint::black_box;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer::events::element::ElementEvent;
 use aimer::events::pointer::PointerButton;

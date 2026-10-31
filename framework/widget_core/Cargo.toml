@@ -11,6 +11,7 @@ portable-guest = ["aimer_element/portable-guest", "aimer_portable/portable-guest
 frame-stats = ["aimer_element/frame-stats"]
 
 [dependencies]
+aimer_time.workspace = true
 aimer_element.workspace = true
 aimer_portable.workspace = true
 aimer_tls.workspace = true

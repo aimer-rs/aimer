@@ -3,7 +3,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use serde_json::{Value, json};
 

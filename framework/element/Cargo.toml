@@ -11,6 +11,7 @@ portable-guest = []
 frame-stats = []
 
 [dependencies]
+aimer_time.workspace = true
 aimer_tls.workspace = true
 aimer_accessibility.workspace = true
 aimer_color.workspace = true

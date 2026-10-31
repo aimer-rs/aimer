@@ -29,7 +29,7 @@
 use std::cell::{Cell, RefCell};
 use std::hint::black_box;
 use std::time::Duration;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer::quiver::winit::dpi::PhysicalSize;
 use aimer::router::{

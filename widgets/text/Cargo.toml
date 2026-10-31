@@ -16,6 +16,7 @@ portable-guest = [
 ]
 
 [dependencies]
+aimer_time.workspace = true
 aimer_anteros = { workspace = true, optional = true }
 aimer_accessibility.workspace = true
 aimer_canvas.workspace = true

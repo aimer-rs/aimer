@@ -11,7 +11,7 @@
 //! ```
 
 use std::hint::black_box;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_cupid::text_pipeline::glyph_rasterizer::GlyphRasterizer;
 

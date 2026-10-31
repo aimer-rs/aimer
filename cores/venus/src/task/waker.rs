@@ -413,7 +413,7 @@ mod tests {
     #[test]
     fn a_worker_wake_is_never_lost_between_the_drain_and_the_park() {
         use std::sync::atomic::AtomicUsize;
-        use std::time::{Duration, Instant};
+        use aimer_time::{Duration, Instant};
 
         const ROUNDS: usize = 20_000;
         const PARK_LIMIT: Duration = Duration::from_secs(30);

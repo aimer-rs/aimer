@@ -271,7 +271,7 @@ fn add_f32_selected(left: &[f32], right: &[f32], output: &mut [f32]) -> Result<(
 #[cfg(test)]
 mod tests {
     use core::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use crate::backend::Scalar;
     use crate::kernels::{LengthMismatch, add_f32, add_with};

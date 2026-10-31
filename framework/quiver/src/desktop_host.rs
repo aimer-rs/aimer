@@ -14,7 +14,7 @@ use std::any::Any;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU8;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer_events::window::{
     WindowKey, WindowScopeConfig, WindowScopeRegistration, enter_window_scope,
@@ -546,7 +546,7 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
             .iter()
             .filter_map(|window| window.app.pacing_deadline())
             .min();
-        event_loop.set_control_flow(deadline.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+        event_loop.set_control_flow(deadline.map_or(ControlFlow::Wait, |at| ControlFlow::WaitUntil(at.into())));
         for window in &mut self.windows {
             #[cfg(target_os = "macos")]
             {

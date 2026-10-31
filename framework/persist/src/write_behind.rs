@@ -294,7 +294,7 @@ pub fn flush_all_blocking(timeout: Duration) -> FlushOutcome {
         };
     }
 
-    let deadline = std::time::Instant::now() + timeout;
+    let deadline = aimer_time::Instant::now() + timeout;
     let mut first_error = None;
     let mut context = Context::from_waker(Waker::noop());
     loop {
@@ -316,7 +316,7 @@ pub fn flush_all_blocking(timeout: Duration) -> FlushOutcome {
                 None => FlushOutcome::Complete,
             };
         }
-        if std::time::Instant::now() >= deadline {
+        if aimer_time::Instant::now() >= deadline {
             return FlushOutcome::TimedOut {
                 unsaved: pending.len(),
             };
@@ -407,9 +407,9 @@ fn emergency_flush() {
         .filter_map(WriteBehind::start_emergency_save)
         .collect();
 
-    let deadline = std::time::Instant::now() + lifecycle_timeout();
+    let deadline = aimer_time::Instant::now() + lifecycle_timeout();
     let mut context = Context::from_waker(Waker::noop());
-    while !saves.is_empty() && std::time::Instant::now() < deadline {
+    while !saves.is_empty() && aimer_time::Instant::now() < deadline {
         // Errors are not reported: the process is dying, and nothing can act.
         saves.retain_mut(|save| save.as_mut().poll(&mut context).is_pending());
         if !saves.is_empty() {

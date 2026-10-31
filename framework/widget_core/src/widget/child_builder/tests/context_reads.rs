@@ -296,7 +296,7 @@ async fn reconciling_two_placements_of_one_retained_child_does_not_walk_it() {
 /// cargo nextest run -p aimer_widget context_reads_profile --run-ignored only --no-capture
 /// ```
 mod context_reads_profile {
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use super::*;
     fn median(mut samples: Vec<Duration>) -> Duration {

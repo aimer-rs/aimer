@@ -171,7 +171,7 @@ mod tests {
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::task::{Context, Poll, Wake, Waker};
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use super::*;
     use crate::completion::Interrupted;

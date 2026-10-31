@@ -1962,6 +1962,7 @@ mod tests {
     mod skeleton_ticks;
     mod skeleton_to_rows;
     mod theme_switch;
+    mod thumb_hold;
     mod touch_scroll;
     mod trackpad_gestures;
     mod window_resize;

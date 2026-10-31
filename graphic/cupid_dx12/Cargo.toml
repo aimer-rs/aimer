@@ -5,6 +5,7 @@ edition = "2024"
 description = "The native Direct3D 12 backend for the Cupid rendering engine"
 
 [dependencies]
+aimer_time.workspace = true
 aimer_cupid_gpu.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]

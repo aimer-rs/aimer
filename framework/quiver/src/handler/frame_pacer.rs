@@ -14,7 +14,7 @@
 //! The pacer is off unless `AIMER_FRAME_PACING_PERCENT` names a percentage, so
 //! the same binary measures both behaviours; 100 is the display's own rate.
 
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 /// How long a cached monitor refresh period stays valid. Reading it asks the
 /// windowing system, which is not worth doing every frame.

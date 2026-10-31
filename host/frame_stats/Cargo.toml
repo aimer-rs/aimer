@@ -9,6 +9,7 @@ edition = "2024"
 frame-stats = ["aimer_widget/frame-stats", "aimer_cupid/frame-stats"]
 
 [dependencies]
+aimer_time.workspace = true
 aimer_widget.workspace = true
 aimer_cupid.workspace = true
 aimer_utils.workspace = true

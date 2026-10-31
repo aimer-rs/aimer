@@ -132,7 +132,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::task::Wake;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use super::*;
 

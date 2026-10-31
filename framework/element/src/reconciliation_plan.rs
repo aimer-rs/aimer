@@ -429,7 +429,7 @@ fn object_pointer<'a>(element: &'a dyn Element) -> *const (dyn Element + 'a) {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use super::*;
     use crate::base::BuildContext;

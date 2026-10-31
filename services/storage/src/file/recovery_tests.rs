@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll, Wake, Waker};
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_venus::Venus;
 

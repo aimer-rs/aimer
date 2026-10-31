@@ -142,7 +142,7 @@ mod tests {
     #[ignore = "manual scalar versus unsigned SIMD kernel benchmark"]
     fn profile_unsigned_add_scalar_vs_simd() {
         use std::hint::black_box;
-        use std::time::Instant;
+        use aimer_time::Instant;
 
         fn measure(mut run: impl FnMut()) -> f64 {
             const ROUNDS: usize = 31;

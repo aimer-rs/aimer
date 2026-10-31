@@ -16,7 +16,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::hint::black_box;
 use std::rc::Rc;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer::input::button::Button;
 use aimer::quiver::winit::dpi::PhysicalSize;

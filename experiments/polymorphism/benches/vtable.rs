@@ -2,7 +2,7 @@
 //! Run with `cargo bench`.
 
 use std::hint::black_box;
-use std::time::Instant;
+use aimer_time::Instant;
 
 // ---------- the trait under test ----------
 pub trait NonDyn: Sized {
@@ -482,6 +482,135 @@ impl Drop for SlabSet {
     }
 }
 
+// ---------- 10. NEW: dispatch written in aarch64 inline asm ----------
+// The fn pointers use the "C" ABI because the asm blocks hard-code it (x0 carries the argument
+// and the return value); Rust's own ABI is unspecified, so it cannot be called from asm.
+// Other architectures fall back to an ordinary call so the benchmark still builds and the
+// checksums still match.
+
+/// Calls `f(arg)` with a hand-written `blr`.
+///
+/// # Safety
+/// `f` must be a valid `extern "C"` function that accepts `arg`.
+#[inline(always)]
+unsafe fn asm_call(f: unsafe extern "C" fn(*const ()) -> u64, arg: *const ()) -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let ret: u64;
+        // SAFETY: x0 holds the argument in and the result out (AAPCS64); `clobber_abi("C")`
+        // declares every register the callee may overwrite, including x30 (lr) written by blr.
+        // No `nomem`/`nostack`: the callee reads memory and uses the stack.
+        unsafe {
+            core::arch::asm!(
+                "blr {f}",
+                f = in(reg) f,
+                inout("x0") arg => ret,
+                clobber_abi("C"),
+            );
+        }
+        ret
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        unsafe { f(arg) }
+    }
+}
+
+// 10a. same layout as inline v2 (24 B); only the call is asm.
+struct AsmObj {
+    data: *mut (),
+    work: unsafe extern "C" fn(*const ()) -> u64,
+    drop: unsafe extern "C" fn(*mut ()),
+}
+impl AsmObj {
+    fn new<T: NonDyn + 'static>(v: T) -> Self {
+        unsafe extern "C" fn work<T: NonDyn>(p: *const ()) -> u64 {
+            unsafe { (*(p as *const T)).work() }
+        }
+        unsafe extern "C" fn drop_data<T>(p: *mut ()) {
+            unsafe { drop(Box::from_raw(p as *mut T)) }
+        }
+        Self {
+            data: Box::into_raw(Box::new(v)) as *mut (),
+            work: work::<T>,
+            drop: drop_data::<T>,
+        }
+    }
+    #[inline(always)]
+    fn work(&self) -> u64 {
+        // SAFETY: `work` was built together with `data` from the same `T` in `new`.
+        unsafe { asm_call(self.work, self.data) }
+    }
+}
+impl Drop for AsmObj {
+    fn drop(&mut self) {
+        unsafe { (self.drop)(self.data) }
+    }
+}
+
+// 10b. thin object (8 B): the header load *and* the call are asm, i.e. the whole dispatch is
+// `ldr x9, [x0]; blr x9`, which is what a compiler-generated vtable call boils down to.
+#[repr(C)]
+struct AsmHeader {
+    work: unsafe extern "C" fn(*const AsmHeader) -> u64,
+    drop: unsafe extern "C" fn(*mut AsmHeader),
+}
+#[repr(C)]
+struct AsmCell<T> {
+    h: AsmHeader,
+    v: T,
+}
+struct AsmThinObj(std::ptr::NonNull<AsmHeader>);
+impl AsmThinObj {
+    fn new<T: NonDyn + 'static>(v: T) -> Self {
+        unsafe extern "C" fn work<T: NonDyn>(p: *const AsmHeader) -> u64 {
+            unsafe { (*(p as *const AsmCell<T>)).v.work() }
+        }
+        unsafe extern "C" fn drop_cell<T>(p: *mut AsmHeader) {
+            unsafe { drop(Box::from_raw(p as *mut AsmCell<T>)) }
+        }
+        let b = Box::new(AsmCell {
+            h: AsmHeader {
+                work: work::<T>,
+                drop: drop_cell::<T>,
+            },
+            v,
+        });
+        Self(unsafe { std::ptr::NonNull::new_unchecked(Box::into_raw(b) as *mut AsmHeader) })
+    }
+    #[inline(always)]
+    fn work(&self) -> u64 {
+        let p = self.0.as_ptr();
+        #[cfg(target_arch = "aarch64")]
+        {
+            let ret: u64;
+            // SAFETY: `p` points at an `AsmHeader` whose first field is the work fn pointer
+            // (`repr(C)`), and that fn takes the header pointer in x0. x9 is the scratch for the
+            // loaded pointer; it is caller-saved, so `clobber_abi("C")` already declares it
+            // (a generic `out(reg)` is not allowed next to `clobber_abi`).
+            unsafe {
+                core::arch::asm!(
+                    "ldr x9, [x0]",
+                    "blr x9",
+                    inout("x0") p => ret,
+                    clobber_abi("C"),
+                );
+            }
+            ret
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            unsafe { ((*p).work)(p) }
+        }
+    }
+}
+impl Drop for AsmThinObj {
+    fn drop(&mut self) {
+        let p = self.0.as_ptr();
+        unsafe { ((*p).drop)(p) }
+    }
+}
+
 // ---------- harness ----------
 /// Same pseudo-random type sequence as `build`, handed to a push callback.
 fn fill(n: usize, mut push: impl FnMut(usize, u64)) {
@@ -614,13 +743,15 @@ fn bench_buckets(label: &str, b: &Buckets, n: usize, iters: usize) -> f64 {
 
 fn main() {
     println!(
-        "sizes: Box<dyn>={}B  inline-vtable={}B  shared-vtable={}B  inline-v2={}B  thin={}B  sbo={}B\n",
+        "sizes: Box<dyn>={}B  inline-vtable={}B  shared-vtable={}B  inline-v2={}B  thin={}B  sbo={}B  asm={}B  asm-thin={}B\n",
         std::mem::size_of::<DynObj>(),
         std::mem::size_of::<InlineObj>(),
         std::mem::size_of::<TableObj>(),
         std::mem::size_of::<Inline2Obj>(),
         std::mem::size_of::<ThinObj>(),
-        std::mem::size_of::<SboObj>()
+        std::mem::size_of::<SboObj>(),
+        std::mem::size_of::<AsmObj>(),
+        std::mem::size_of::<AsmThinObj>()
     );
     println!(
         "arena record (A..D) = {}B/object, slab = 8B payload + 1B tag\n",
@@ -671,10 +802,24 @@ fn main() {
             2 => SboObj::new(C(v)),
             _ => SboObj::new(D(v)),
         });
+        let ai = build(n, |k, v| match k {
+            0 => AsmObj::new(A(v)),
+            1 => AsmObj::new(B(v)),
+            2 => AsmObj::new(C(v)),
+            _ => AsmObj::new(D(v)),
+        });
+        let at = build(n, |k, v| match k {
+            0 => AsmThinObj::new(A(v)),
+            1 => AsmThinObj::new(B(v)),
+            2 => AsmThinObj::new(C(v)),
+            _ => AsmThinObj::new(D(v)),
+        });
         let bk = build_buckets(n);
         // correctness: every variant must compute the same checksum
         let sum_d = d.iter().fold(0u64, |a, o| a.wrapping_add(o.work()));
         assert_eq!(sum_d, sbo.iter().fold(0u64, |a, o| a.wrapping_add(o.work())));
+        assert_eq!(sum_d, ai.iter().fold(0u64, |a, o| a.wrapping_add(o.work())));
+        assert_eq!(sum_d, at.iter().fold(0u64, |a, o| a.wrapping_add(o.work())));
         assert_eq!(sum_d, bk.run_all());
         let ar = build_arena(n);
         let sl = build_slabs(n);
@@ -695,7 +840,9 @@ fn main() {
         let r3 = bench("manual, inline v3 (no wrapper)", &i3, |o| o.work(), iters);
         let rh = bench("manual, thin header (8B)", &th, |o| o.work(), iters);
         let rs = bench("NEW inline payload (SBO)", &sbo, |o| o.work(), iters);
-        let rb = bench_buckets("NEW bucketed vtable", &bk, n, iters);
+        let rai = bench("NEW asm call (24B)", &ai, |o| o.work(), iters);
+        let rat = bench("NEW asm thin (8B)", &at, |o| o.work(), iters);
+        let rb =bench_buckets("NEW bucketed vtable", &bk, n, iters);
         let ra = bench_pass("NEW packed arena", n, iters, || black_box(&ar).run_all());
         let rl = bench_pass("NEW tagged slabs", n, iters, || black_box(&sl).run_all());
         println!("  -- order-preserving map into out[i] --");
@@ -711,13 +858,15 @@ fn main() {
         });
         println!("  -> slab-scatter map / dyn map = {:.2}x", ms / md);
         println!(
-            "  -> inline/dyn = {:.2}x, shared/dyn = {:.2}x, v2/dyn = {:.2}x, v3/dyn = {:.2}x, thin/dyn = {:.2}x, sbo/dyn = {:.2}x, bucketed/dyn = {:.2}x, arena/dyn = {:.2}x, slabs/dyn = {:.2}x\n",
+            "  -> inline/dyn = {:.2}x, shared/dyn = {:.2}x, v2/dyn = {:.2}x, v3/dyn = {:.2}x, thin/dyn = {:.2}x, sbo/dyn = {:.2}x, asm/dyn = {:.2}x, asm-thin/dyn = {:.2}x, bucketed/dyn = {:.2}x, arena/dyn = {:.2}x, slabs/dyn = {:.2}x\n",
             ri / rd,
             rt / rd,
             r2 / rd,
             r3 / rd,
             rh / rd,
             rs / rd,
+            rai / rd,
+            rat / rd,
             rb / rd,
             ra / rd,
             rl / rd
@@ -734,6 +883,8 @@ fn main() {
     let i3 = Inline3Obj::new(A(1));
     let th = ThinObj::new(A(1));
     let sbo = SboObj::new(A(1));
+    let ai = AsmObj::new(A(1));
+    let at = AsmThinObj::new(A(1));
     let mut bk = Buckets(Vec::new());
     bk.push(A(1));
     let mut ar = PackedArena { buf: Vec::new() };
@@ -765,6 +916,8 @@ fn main() {
     hot!("manual, inline v3 (no wrapper)", i3);
     hot!("manual, thin header (8B)", th);
     hot!("NEW inline payload (SBO)", sbo);
+    hot!("NEW asm call (24B)", ai);
+    hot!("NEW asm thin (8B)", at);
     {
         let mut best = f64::MAX;
         let mut acc = 0u64;

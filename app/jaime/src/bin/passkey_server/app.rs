@@ -4,7 +4,7 @@
 //! else, so the whole protocol is testable without a network.
 
 use std::sync::{Mutex, PoisonError};
-use std::time::Instant;
+use aimer_time::Instant;
 
 use ring::rand::SystemRandom;
 use serde_json::{Value as Json, json};

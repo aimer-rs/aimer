@@ -22,7 +22,7 @@ path = "src/bin/passkey_server/main.rs"
 required-features = ["passkey-server"]
 
 [dependencies]
-
+aimer_time.workspace = true
 aimer = { path = "../..", features = ["markdown", "icons", "provider", "passkey"] }
 aimer_widget = { path = "../../framework/widget" }
 uuid = { version = "1.22.0", features = ["js", "v4"] }

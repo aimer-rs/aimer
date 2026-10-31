@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 /// A monotonic time source used by feedback lifecycle models.
 pub trait Clock {

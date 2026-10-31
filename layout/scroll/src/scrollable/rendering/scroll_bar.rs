@@ -20,9 +20,12 @@ use aimer_widget::{
 };
 
 use crate::ScrollAxis;
+use super::thumb_layout::{
+    Fade, MOBILE, growth_log_line, rest_strip_width, thumb_cross_layout, touch_strip_width, widened_strip,
+};
 use crate::scrollable::constants::{
     SCROLLBAR_HIDE_DURATION_MS, SCROLLBAR_IDLE_HOLD_MS, SCROLLBAR_SHOW_DURATION_MS,
-    SCROLLBAR_TRACK_FADE_MS,
+    SCROLLBAR_THUMB_GROW_MS, SCROLLBAR_TRACK_FADE_MS,
 };
 use crate::scrollable::controller::{DragMode, ScrollState};
 
@@ -196,7 +199,7 @@ impl State<ScrollBar> for ScrollBarState {
             .config
             .ctrl
             .as_ref()
-            .map(|ctrl| ctrl.scroll_bar_pointer.clone())
+            .map(|ctrl| ctrl.bar.pointer.clone())
             .unwrap_or_default();
         // Presses and drags on the strip are recognised by a detector, and what
         // they mean for the bar is decided by the scroll state.
@@ -229,10 +232,12 @@ struct ScrollBarRuntime {
     transition_start: Cell<Option<aimer_utils::AnimInstant>>,
     transition_from: Cell<f32>,
     /// How far the track has faded from its resting color toward its hover
-    /// color, `0.0..=1.0`, and when that was last advanced.
-    track_mix: Cell<f32>,
-    track_mix_at: Cell<Option<aimer_utils::AnimInstant>>,
-    track_fading_now: Cell<bool>,
+    /// color, `0.0..=1.0`.
+    track: Fade,
+    /// How far the thumb has grown toward its held width, `0.0..=1.0`.
+    grab: Fade,
+    /// What the growth was when it was last logged, so only changes are.
+    grab_logged: Cell<f32>,
     v2_paint_snapshot: Cell<Option<ScrollBarPaint>>,
 }
 
@@ -295,30 +300,34 @@ impl ScrollBarRuntime {
     /// counting it would jump the track straight to its destination. That frame
     /// starts the fade, and the ones that follow advance it.
     fn track_mix(&self, hovered: bool, now: aimer_utils::AnimInstant) -> f32 {
-        let previous = self.track_mix_at.replace(Some(now));
-        let elapsed = previous
-            .filter(|_| self.track_fading_now.get())
-            .map_or(0.0, |previous| now.duration_since(previous).as_secs_f32());
-        let step = elapsed / (SCROLLBAR_TRACK_FADE_MS as f32 / 1000.0);
-        let mix = self.track_mix.get();
-        let mix = if hovered {
-            (mix + step).min(1.0)
-        } else {
-            (mix - step).max(0.0)
-        };
-        self.track_mix.set(mix);
-        // Whether this call left the fade unfinished, which is what makes the
-        // next call's elapsed time count.
-        self.track_fading_now
-            .set(if hovered { mix < 1.0 } else { mix > 0.0 });
-        mix
+        self.track.advance(hovered, now, SCROLLBAR_TRACK_FADE_MS)
     }
 
     /// Whether the track is still between its resting and hover colors, which
     /// only a frame can finish.
     fn track_fading(&self, hovered: bool) -> bool {
-        let mix = self.track_mix.get();
-        if hovered { mix < 1.0 } else { mix > 0.0 }
+        self.track.unfinished(hovered)
+    }
+
+    /// Advances the thumb's growth to `now` and returns how far it has grown:
+    /// `0.0` at its resting width, `1.0` at its held width.
+    fn grab_mix(&self, held: bool, now: aimer_utils::AnimInstant) -> f32 {
+        self.grab.advance(held, now, SCROLLBAR_THUMB_GROW_MS)
+    }
+
+    /// Logs the thumb's growth for this frame if it changed since the last line.
+    fn log_growth(&self, grabbed: bool, width_dp: f32) {
+        let mix = self.grab.value();
+        let previous = self.grab_logged.replace(mix);
+        if let Some(line) = growth_log_line(grabbed, mix, previous, width_dp) {
+            thumb_log!("{line}");
+        }
+    }
+
+    /// Whether the thumb is still growing or shrinking, which only a frame can
+    /// finish.
+    fn grab_changing(&self, held: bool) -> bool {
+        self.grab.unfinished(held)
     }
 
     /// Whether the bar is waiting out its idle delay, which only a frame can
@@ -363,6 +372,7 @@ impl ScrollBarRuntime {
         self.held.set(false);
         self.transition_start.set(None);
         self.transition_from.set(0.0);
+        self.grab.reset();
     }
 }
 
@@ -384,17 +394,20 @@ pub(crate) fn reserved_viewport(
     }
 }
 
-pub(crate) fn track_width(scroll_bar: &ScrollBar, cross_extent: f32, scale: f32) -> f32 {
+pub(crate) fn track_width(
+    scroll_bar: &ScrollBar,
+    cross_extent: f32,
+    scale: f32,
+    placement: ScrollBarPlacement,
+) -> f32 {
     match scroll_bar.track.width {
         Dimension::Px(value) => value * scale,
         Dimension::Percent(percent) => cross_extent * (percent / 100.0),
         Dimension::Auto => {
-            #[cfg(any(target_os = "android", target_os = "ios"))]
-            {
-                6.0 * scale
-            }
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            {
+            if MOBILE {
+                // The room a held thumb grows into (see `thumb_layout`).
+                touch_strip_width(placement, scale)
+            } else {
                 12.0 * scale
             }
         }
@@ -440,13 +453,18 @@ impl Drawable for RawScrollBar {
         };
         // The bar is painted by `paint_local_v2`. Preparing its geometry here
         // publishes the thumb and track metrics hit testing reads.
-        let _ = prepare_scrollbar_paint(ctx, ctrl, &self.config, self.runtime.as_ref());
+        let paint = prepare_scrollbar_paint(ctx, ctrl, &self.config, self.runtime.as_ref());
+        if let Some(paint) = paint {
+            // Once per frame, here: painting prepares the same geometry again.
+            self.runtime
+                .log_growth(ctrl.thumb_armed(), paint.thumb_size.width / ctx.scale);
+        }
     }
 
     fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
         self.ctrl
             .as_ref()
-            .is_none_or(|ctrl| scrollbar_geometry(ctx, ctrl, &self.config).is_ok())
+            .is_none_or(|ctrl| scrollbar_geometry(ctx, ctrl, &self.config, 0.0).is_ok())
     }
 
     fn paint_local_v2(&self, ctx: &BuildContext) {
@@ -512,10 +530,12 @@ fn resolve_button_extent(
     }
 }
 
+/// `grab_mix` is how far the thumb has grown toward its held width, `0.0..=1.0`.
 fn scrollbar_geometry(
     ctx: &BuildContext,
     ctrl: &ScrollState,
     scroll_bar: &ScrollBar,
+    grab_mix: f32,
 ) -> Result<Option<ScrollBarPaint>, ()> {
     let scale = ctx.scale;
     if !scale.is_finite() || scale <= 0.0 {
@@ -528,6 +548,7 @@ fn scrollbar_geometry(
         scroll_bar,
         if is_vertical { viewport_w } else { viewport_h },
         scale,
+        ctrl.scroll_bar_placement,
     );
     let content_size = ctrl.cached_content_size.get();
     let (track_length, content_extent, scroll_pos) = if is_vertical {
@@ -557,11 +578,18 @@ fn scrollbar_geometry(
         return Ok(None);
     }
 
-    let thumb_width = match scroll_bar.thumb.width {
+    // On a touch device the strip is wider than the thumb is at rest, so the
+    // resting thumb is sized from the strip it would have had, and only a held
+    // thumb uses the extra room.
+    let widened = widened_strip(MOBILE, scroll_bar, ctrl.scroll_bar_placement);
+    let sizing_strip = rest_strip_width(widened, track_width, scale);
+    let rest_thumb_width = match scroll_bar.thumb.width {
         Dimension::Px(value) => value * scale,
-        Dimension::Percent(percent) => track_width * (percent / 100.0),
-        Dimension::Auto => (track_width * 0.6).max(4.0),
+        Dimension::Percent(percent) => sizing_strip * (percent / 100.0),
+        Dimension::Auto => (sizing_strip * 0.6).max(4.0),
     };
+    let (thumb_width, thumb_cross_offset) =
+        thumb_cross_layout(track_width, rest_thumb_width, grab_mix, widened, scale);
     let button_extent = (
         scroll_bar
             .up_button
@@ -606,7 +634,6 @@ fn scrollbar_geometry(
         0.0
     };
     let thumb_offset = button_extent.0 + scroll_ratio * max_thumb_move;
-    let thumb_cross_offset = (track_width - thumb_width) / 2.0;
     let cross_offset = ctrl.scroll_bar_placement.cross_offset(
         if is_vertical { viewport_w } else { viewport_h },
         track_width,
@@ -777,15 +804,23 @@ fn prepare_scrollbar_paint(
     scroll_bar: &ScrollBar,
     runtime: &ScrollBarRuntime,
 ) -> Option<ScrollBarPaint> {
-    let paint = match scrollbar_geometry(ctx, ctrl, scroll_bar) {
+    let now = aimer_utils::AnimInstant::now();
+    // A finger that has taken the thumb makes it grow, and letting go shrinks it
+    // back; both are frames' work.
+    let grabbed = ctrl.thumb_armed();
+    let grab_mix = runtime.grab_mix(grabbed, now);
+    if runtime.grab_changing(grabbed) {
+        ctrl.request_animation_frame();
+    }
+    let paint = match scrollbar_geometry(ctx, ctrl, scroll_bar, grab_mix) {
         Ok(Some(paint)) => paint,
         Ok(None) => {
             runtime.hide();
-            ctrl.scroll_bar_opacity.set(0.0);
+            ctrl.bar.opacity.set(0.0);
             if matches!(ctrl.axis, ScrollAxis::Vertical) {
-                ctrl.v_thumb_rect.set(None);
+                ctrl.bar.v_thumb_rect.set(None);
             } else {
-                ctrl.h_thumb_rect.set(None);
+                ctrl.bar.h_thumb_rect.set(None);
             }
             return None;
         }
@@ -795,13 +830,13 @@ fn prepare_scrollbar_paint(
     // reaching for a hidden bar has to find it where it is, and that is what
     // shows it.
     if paint.is_vertical {
-        ctrl.cached_v_track_width.set(paint.track_width);
+        ctrl.bar.v_track_width.set(paint.track_width);
         ctrl.v_scroll_multiplier.set(paint.multiplier);
-        ctrl.v_thumb_rect.set(Some(paint.hit_rect));
+        ctrl.bar.v_thumb_rect.set(Some(paint.hit_rect));
     } else {
-        ctrl.cached_h_track_width.set(paint.track_width);
+        ctrl.bar.h_track_width.set(paint.track_width);
         ctrl.h_scroll_multiplier.set(paint.multiplier);
-        ctrl.h_thumb_rect.set(Some(paint.hit_rect));
+        ctrl.bar.h_thumb_rect.set(Some(paint.hit_rect));
     }
 
     let dragging = matches!(
@@ -810,17 +845,23 @@ fn prepare_scrollbar_paint(
     );
     let alpha = runtime.update(
         ctrl.scroll_offset.get(),
-        ctrl.is_scrolling.get(),
-        dragging || ctrl.scroll_bar_hovered(),
+        ctrl.session.active.get(),
+        dragging || ctrl.scroll_bar_hovered() || ctrl.thumb_holding(),
         aimer_utils::AnimInstant::now(),
     );
-    ctrl.scroll_bar_opacity.set(alpha);
+    ctrl.bar.opacity.set(alpha);
     // The strip lights the track whether or not the pointer is on the thumb, and
     // a thumb drag keeps it lit however far the pointer strays from the strip.
     let track_hovered = dragging || ctrl.scroll_bar_hovered();
-    let track_mix = runtime.track_mix(track_hovered, aimer_utils::AnimInstant::now());
-    let track_color = blend_colors(scroll_bar.track.color, scroll_bar.track.hover_color, track_mix);
-    if runtime.track_fading(track_hovered) {
+    // Nothing is painted for the track on a touch device, so there is no fade to
+    // advance and no frame to ask for.
+    let track_mix = if MOBILE {
+        0.0
+    } else {
+        runtime.track_mix(track_hovered, aimer_utils::AnimInstant::now())
+    };
+    let track_color = track_paint_color(MOBILE, &scroll_bar.track, track_mix);
+    if !MOBILE && runtime.track_fading(track_hovered) {
         ctrl.request_animation_frame();
     }
     // A transition, and the idle delay before the fade, end only on a frame
@@ -837,6 +878,20 @@ fn prepare_scrollbar_paint(
         track_color,
         ..paint
     })
+}
+
+/// The color the track is painted with, `mix` of the way from its resting color
+/// to its hover color.
+///
+/// A touch device shows no track: with no pointer to hover it, the track only
+/// lit up under a held thumb, as a strip the finger was already covering. The
+/// thumb alone is the bar there, whatever colors the track was given.
+fn track_paint_color(mobile: bool, track: &ScrollTrack, mix: f32) -> Color {
+    if mobile {
+        Colors::Rgba(0, 0, 0, 0).into()
+    } else {
+        blend_colors(track.color, track.hover_color, mix)
+    }
 }
 
 /// Blends `from` into `to` by `t`, weighting each color by its alpha so a fade
@@ -1073,6 +1128,50 @@ mod tests {
         )
     }
 
+    /// A held thumb is painted wider than a resting one, from the same edge, and
+    /// the geometry the finger hit-tests against grows with it.
+    #[tokio::test]
+    async fn a_held_thumb_is_painted_wider_and_hit_tested_wider() {
+        let ctx = geometry_ctx();
+        let ctrl = ScrollState::for_test_at(Vec2d::ZERO);
+        ctrl.cached_viewport.set((100.0, 100.0));
+        ctrl.cached_content_size.set(ResolvedSize {
+            width: 100.0,
+            height: 400.0,
+        });
+        let bar = ScrollBar::default();
+
+        let resting = scrollbar_geometry(&ctx, &ctrl, &bar, 0.0).unwrap().unwrap();
+        let held = scrollbar_geometry(&ctx, &ctrl, &bar, 1.0).unwrap().unwrap();
+
+        assert!(held.thumb_size.width > resting.thumb_size.width);
+        assert_eq!(held.thumb_size.height, resting.thumb_size.height, "only the width grows");
+        assert!(held.hit_rect.2 > resting.hit_rect.2, "and so does the target");
+        assert!(
+            ((held.hit_rect.0 + held.hit_rect.2) - (resting.hit_rect.0 + resting.hit_rect.2)).abs()
+                < 1e-3,
+            "from the edge against the viewport"
+        );
+    }
+
+    /// A phone shows no track: the thumb alone is the bar, whatever colors the
+    /// track was given and however far a drag has lit it.
+    #[test]
+    fn a_touch_device_paints_no_track() {
+        let track = ScrollTrack {
+            color: Colors::Rgba(10, 20, 30, 255),
+            hover_color: Colors::Rgba(200, 200, 200, 255),
+            ..ScrollTrack::default()
+        };
+
+        for mix in [0.0, 0.5, 1.0] {
+            let (_, _, _, alpha) = track_paint_color(true, &track, mix).to_rgba();
+            assert_eq!(alpha, 0, "mix {mix}");
+        }
+        let (_, _, _, alpha) = track_paint_color(false, &track, 0.0).to_rgba();
+        assert_eq!(alpha, 255, "other targets still paint their track");
+    }
+
     /// The track fades in rather than popping: hovering starts it at nothing and
     /// it reaches full strength only after the fade duration.
     #[test]
@@ -1150,7 +1249,7 @@ mod tests {
             width: 100.0,
             height: 400.0,
         });
-        ctrl.scroll_bar_pointer
+        ctrl.bar.pointer
             .set(aimer_input::mouse_region::PointerState::Inside);
         let mut bar = ScrollBar::default();
         bar.track.hover_color = Colors::Rgba(10, 20, 30, 40);

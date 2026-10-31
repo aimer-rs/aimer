@@ -4,7 +4,7 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
 use aimer_router::*;

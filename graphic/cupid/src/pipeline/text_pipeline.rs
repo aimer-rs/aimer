@@ -23,7 +23,7 @@ mod phase6_verification;
 
 use std::ops::Range;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use hashbrown::{HashMap, HashSet};
 

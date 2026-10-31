@@ -68,13 +68,13 @@ pub use crate::components::drawable::{
     CompositorAnimationDecision, CompositorAnimationFrame, CompositorTransform, Drawable,
 };
 pub use crate::components::element::{
-    AnyElement, Element, ElementId, ElementNodeMap, ElementPath, EventDispatchContext, EventDispatcher,
-    begin_event_frame, begin_paint_frame, element_tree_generation, focus_is_settling_between_events,
-    frame_instant,
-    has_active_v2_render_presentation, has_active_v2_render_tree, keep_ticking_elements_reachable,
-    layout_invalidation_generation, live_children_generation, mark_paint_damage,
-    mark_paint_damage_full, notify_element_tree_changed, notify_hosted_element_tree_changed,
-    notify_layout_changed, notify_live_children_changed, notify_retained_render_structure_changed,
+    AnyElement, Element, ElementId, ElementNodeMap, ElementPath, EventDispatchContext,
+    EventDispatcher, begin_event_frame, begin_paint_frame, element_tree_generation,
+    focus_is_settling_between_events, frame_instant, has_active_v2_render_presentation,
+    has_active_v2_render_tree, keep_ticking_elements_reachable, layout_invalidation_generation,
+    live_children_generation, mark_paint_damage, mark_paint_damage_full,
+    notify_element_tree_changed, notify_hosted_element_tree_changed, notify_layout_changed,
+    notify_live_children_changed, notify_retained_render_structure_changed,
     rebuild_invalidation_generation, retained_render_structure_generation, set_rebuild_source_path,
     take_declined_paint_elements, take_paint_frame_damage, take_unmapped_draws,
     update_v2_render_node_geometry, with_v2_render_tree_context,
@@ -85,14 +85,14 @@ pub use crate::components::element::{
     is_animation_only_frame, keep_element_reachable, may_escape_ancestor_clips,
     may_skip_settled_offscreen, note_state_update_marked, preserving_dirty_paths,
     rebuild_descent_count, rebuild_dirty_children, rebuild_keepalive_count,
-    rebuild_replaced_subtree, without_placement_marks, rebuild_state_mark_count, rebuild_visit_count,
+    rebuild_replaced_subtree, rebuild_state_mark_count, rebuild_visit_count,
     request_isolated_animation_frame, request_isolated_subtree_animation_frame,
     retained_element_settled, retained_visible_window, retained_visible_window_of_current,
     run_animation_only_pass, scoped_rebuild_cursor, scoped_rebuilds_since,
     set_animation_only_frame, set_frame_rebuilt_roots, set_scroll_only_frame,
     set_settled_offscreen_skip, stable_generation_cursor, stable_generations_since,
     structural_search_count, traversal_counts, unscoped_element_tree_generation,
-    with_v2_animation_only_context,
+    with_v2_animation_only_context, without_placement_marks,
 };
 
 #[cfg(feature = "frame-stats")]

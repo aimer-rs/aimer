@@ -90,7 +90,7 @@ pub struct NativeRenderContext {
     submitted_size: PhysicalSize<u32>,
     /// While a window is being resized, frames keep being presented in their own
     /// turn until this instant. See [`LIVE_RESIZE_WINDOW`].
-    live_resize_until: Option<std::time::Instant>,
+    live_resize_until: Option<aimer_time::Instant>,
     /// Outcomes already consumed while settling a resized frame, reported by the next poll.
     carried: CompletionStatus,
     #[cfg(all(not(feature = "wgpu"), any(target_os = "macos", target_os = "ios")))]
@@ -415,7 +415,7 @@ impl NativeRenderContext {
     /// the compositor shows it stretched until the resized frame lands.
     fn take_resize(&mut self) -> bool {
         let changed = self.submitted_size != self.size;
-        let now = std::time::Instant::now();
+        let now = aimer_time::Instant::now();
         // The first frame's size change is the window appearing, not a drag.
         if SYNC_REDRAW_DURING_RESIZE && self.sync_resize && changed && self.submitted_size.width != 0 {
             self.live_resize_until = Some(now + LIVE_RESIZE_WINDOW);
@@ -440,7 +440,7 @@ impl NativeRenderContext {
     /// pipelined, and a worker that does not answer within
     /// [`RESIZE_PRESENT_TIMEOUT`] is left to finish asynchronously.
     fn settle_resized_frame(&mut self) {
-        let deadline = std::time::Instant::now() + RESIZE_PRESENT_TIMEOUT;
+        let deadline = aimer_time::Instant::now() + RESIZE_PRESENT_TIMEOUT;
         let mut status = std::mem::take(&mut self.carried);
         let mut consumed = false;
         while self
@@ -448,7 +448,7 @@ impl NativeRenderContext {
             .as_ref()
             .is_some_and(|worker| worker.outstanding() > 0)
         {
-            let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            let Some(remaining) = deadline.checked_duration_since(aimer_time::Instant::now()) else {
                 break;
             };
             let Some(event) = self

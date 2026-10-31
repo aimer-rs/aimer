@@ -319,7 +319,7 @@ fn profile_dirty_paths_cover_current_traversal() {
     });
     REBUILD_TRAVERSAL_ROOT.with(|current| current.set(Some(root)));
     const CALLS: u32 = 2_000_000;
-    let start = std::time::Instant::now();
+    let start = aimer_time::Instant::now();
     let mut covered = 0u32;
     for _ in 0..CALLS {
         covered += u32::from(std::hint::black_box(dirty_paths_cover_current_traversal()));

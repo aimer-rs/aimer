@@ -105,8 +105,8 @@ fn an_implicit_animation_moves_through_its_in_between_values() {
         .borrow()
         .expect("initialised")
         .set_state(|state| state.target = 1.0);
-    let end = std::time::Instant::now() + Duration::from_millis(500);
-    while std::time::Instant::now() < end {
+    let end = aimer_time::Instant::now() + Duration::from_millis(500);
+    while aimer_time::Instant::now() < end {
         std::thread::sleep(Duration::from_millis(8));
         app.pump_frames(1);
     }

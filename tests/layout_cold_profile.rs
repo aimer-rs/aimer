@@ -19,7 +19,7 @@ use aimer::{
 };
 use aimer::{ScrollAxis, Scrollable};
 use aimer_attribute::BoxConstraint;
-use std::time::Instant;
+use aimer_time::Instant;
 
 const VIEWPORT_W: f32 = 400.0;
 const VIEWPORT_H: f32 = 800.0;

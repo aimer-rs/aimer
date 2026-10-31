@@ -446,7 +446,7 @@ mod tests {
     use std::rc::Rc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc;
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use super::*;
     use crate::Venus;

@@ -129,6 +129,20 @@ impl HapticPattern {
 pub struct Haptics;
 
 impl Haptics {
+    /// Wakes the haptic hardware ahead of an [`impact`](Self::impact) of
+    /// `style` that is expected within the next moment or two.
+    ///
+    /// The first impact after the device has been idle is late by the time the
+    /// Taptic Engine takes to start. Call this when the gesture that will cause
+    /// the impact begins (a press that may become a hold, say), so the engine
+    /// is ready when the impact fires. A no-op on targets with no such delay.
+    pub fn prepare_impact(style: ImpactStyle) {
+        #[cfg(target_os = "ios")]
+        ios::prepare_impact(style);
+        #[cfg(not(target_os = "ios"))]
+        let _ = style;
+    }
+
     /// A physical "bump" — button presses, drag snapping, drops.
     pub fn impact(style: ImpactStyle) {
         #[cfg(target_os = "ios")]

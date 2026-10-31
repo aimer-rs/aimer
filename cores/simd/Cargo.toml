@@ -7,6 +7,6 @@ edition = "2024"
 force-scalar = []
 
 [dependencies]
-
+aimer_time.workspace = true
 [lints]
 workspace = true

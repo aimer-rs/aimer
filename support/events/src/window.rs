@@ -866,7 +866,7 @@ mod window_scope_tests {
     #[ignore = "measurement, not a check"]
     fn window_scope_cost() {
         use std::hint::black_box;
-        use std::time::Instant;
+        use aimer_time::Instant;
 
         const ROUNDS: u32 = 20_000_000;
         let time = |label: &str, mut body: Box<dyn FnMut()>| {

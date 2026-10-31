@@ -2064,8 +2064,8 @@ mod tests {
     fn offset_scrollable_with_thumb() -> (RawScrollableContainer<AnyElement>, Rc<ScrollState>) {
         let ctrl = Rc::new(ScrollState::for_test_at(Vec2d::default()));
         ctrl.cached_viewport.set((100.0, 100.0));
-        ctrl.cached_v_track_width.set(10.0);
-        ctrl.v_thumb_rect.set(Some((90.0, 10.0, 10.0, 40.0)));
+        ctrl.bar.v_track_width.set(10.0);
+        ctrl.bar.v_thumb_rect.set(Some((90.0, 10.0, 10.0, 40.0)));
         let scrollable = scrollable_with_thumb(ctrl.clone());
         scrollable.bounds.save(1.0, 50.0, 30.0, 100.0, 100.0);
         (scrollable, ctrl)
@@ -2094,7 +2094,18 @@ mod tests {
         Rc<ScrollState>,
         (f32, f32, f32, f32),
     ) {
-        let ctrl = Rc::new(ScrollState::for_test_at(Vec2d::default()));
+        published_thumb_around(ScrollState::for_test_at(Vec2d::default()))
+    }
+
+    /// [`scrollable_with_published_thumb`] around a state the test configured.
+    fn published_thumb_around(
+        state: ScrollState,
+    ) -> (
+        RawScrollableContainer<AnyElement>,
+        Rc<ScrollState>,
+        (f32, f32, f32, f32),
+    ) {
+        let ctrl = Rc::new(state);
         ctrl.cached_viewport.set((100.0, 100.0));
         ctrl.cached_content_size.set(ResolvedSize {
             width: 100.0,
@@ -2102,7 +2113,7 @@ mod tests {
         });
         ctrl.cached_max_scroll.set(Vec2d { x: 0.0, y: 300.0 });
         let scrollable = scrollable_with_bar_at(ctrl.clone(), BAR_ORIGIN);
-        let thumb = ctrl.v_thumb_rect.get().expect("the bar publishes its thumb");
+        let thumb = ctrl.bar.v_thumb_rect.get().expect("the bar publishes its thumb");
         (scrollable, ctrl, thumb)
     }
 
@@ -2175,7 +2186,7 @@ mod tests {
 
         let distance = -(click_y - h / 2.0 - y) * multiplier;
         assert_eq!(ctrl.scroll_offset.get().y, 0.0, "it has not jumped");
-        assert!(ctrl.momentum_friction.get().is_some());
+        assert!(ctrl.fling.friction.get().is_some());
         let launch = ctrl.pointer_velocity.get().y;
         let expected = distance * (1.0 - crate::scrollable::constants::KEY_GLIDE_FRICTION);
         assert!((launch - expected).abs() < 1e-3, "launch {launch}, expected {expected}");
@@ -2218,12 +2229,268 @@ mod tests {
         let _ = scrollable.on_event(&key_press(aimer_events::element::NamedKey::ArrowDown));
 
         assert_eq!(ctrl.scroll_offset.get().y, 0.0, "it has not jumped");
-        assert!(ctrl.fling_start_time.get().is_none(), "it is momentum, not a timed slide");
-        assert!(ctrl.momentum_friction.get().is_some());
+        assert!(ctrl.fling.start_time.get().is_none(), "it is momentum, not a timed slide");
+        assert!(ctrl.fling.friction.get().is_some());
         let launch = ctrl.pointer_velocity.get().y;
         let expected = -crate::scrollable::constants::KEYBOARD_SCROLL_STEP
             * (1.0 - crate::scrollable::constants::KEY_GLIDE_FRICTION);
         assert!((launch - expected).abs() < 1e-4, "launch {launch}, expected {expected}");
+    }
+
+    /// The arrow-key step is the scrollable's own `key_scroll_strength`, not a
+    /// constant: a larger strength launches a proportionally faster glide.
+    #[tokio::test]
+    async fn the_arrow_key_step_follows_the_configured_strength() {
+        let mut state = ScrollState::for_test_at(Vec2d::default());
+        state.key_scroll_strength = 2.0 * crate::scrollable::constants::KEYBOARD_SCROLL_STEP;
+        let (scrollable, ctrl, _) = published_thumb_around(state);
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+
+        let _ = scrollable.on_event(&key_press(aimer_events::element::NamedKey::ArrowDown));
+
+        let expected = -2.0
+            * crate::scrollable::constants::KEYBOARD_SCROLL_STEP
+            * (1.0 - crate::scrollable::constants::KEY_GLIDE_FRICTION);
+        let launch = ctrl.pointer_velocity.get().y;
+        assert!((launch - expected).abs() < 1e-4, "launch {launch}, expected {expected}");
+    }
+
+    /// A touch on the thumb of a bar the test has shown, as a window position
+    /// at the middle of the thumb.
+    fn touch_on_the_thumb(ctrl: &ScrollState, thumb: (f32, f32, f32, f32)) -> Vec2d {
+        ctrl.bar.opacity.set(1.0);
+        touch_on_the_thumb_as_it_is(ctrl, thumb)
+    }
+
+    /// The same, leaving the bar as visible as the test left it.
+    fn touch_on_the_thumb_as_it_is(ctrl: &ScrollState, thumb: (f32, f32, f32, f32)) -> Vec2d {
+        ctrl.bar.viewport_origin.set(BAR_ORIGIN);
+        let at = Vec2d {
+            x: BAR_ORIGIN.x + thumb.0 + thumb.2 / 2.0,
+            y: BAR_ORIGIN.y + thumb.1 + thumb.3 / 2.0,
+        };
+        assert!(ctrl.thumb_at(at, true).is_some(), "the fixture puts a finger on the thumb");
+        at
+    }
+
+    fn touch_down(at: Vec2d) -> ElementEvent {
+        ElementEvent::PointerDown(PointerInfo::touch(at, 5))
+    }
+
+    fn touch_move(at: Vec2d) -> ElementEvent {
+        ElementEvent::PointerMove(PointerInfo::touch(at, 5))
+    }
+
+    fn touch_up(at: Vec2d) -> ElementEvent {
+        ElementEvent::PointerUp(PointerInfo::touch(at, 5))
+    }
+
+    /// The instant the hold on a thumb has certainly run its course.
+    fn after_the_hold() -> aimer_utils::AnimInstant {
+        aimer_utils::AnimInstant::now()
+            + std::time::Duration::from_millis(crate::scrollable::constants::SCROLLBAR_THUMB_HOLD_MS + 50)
+    }
+
+    /// Landing a finger on the thumb is not yet taking it: the thumb is a few
+    /// pixels wide and a fingertip near the edge of a page is usually after the
+    /// page.
+    #[tokio::test]
+    async fn a_finger_landing_on_the_thumb_does_not_take_it_at_once() {
+        let (scrollable, ctrl, thumb) = scrollable_with_published_thumb();
+        let at = touch_on_the_thumb(&ctrl, thumb);
+
+        let _ = scrollable.on_event(&touch_down(at));
+
+        assert!(ctrl.thumb_holding());
+        assert_ne!(ctrl.drag_mode.get(), DragMode::VerticalScrollbar);
+    }
+
+    /// The thumb is still where it is when the bar has faded out, and a finger
+    /// that reaches for it starts a hold. That is what brings the bar back; the
+    /// thumb is only taken once the bar is showing.
+    #[tokio::test]
+    async fn a_finger_on_a_hidden_thumb_starts_a_hold_but_cannot_take_it_unseen() {
+        let (scrollable, ctrl, thumb) = scrollable_with_published_thumb();
+        ctrl.bar.opacity.set(0.0);
+        let at = touch_on_the_thumb_as_it_is(&ctrl, thumb);
+
+        let _ = scrollable.on_event(&touch_down(at));
+
+        assert!(ctrl.thumb_holding(), "the press starts a hold even though nothing is showing");
+        assert!(
+            !scrollable.settle_thumb_hold(after_the_hold(), crate::scrollable::input::thumb_grab::HoldTrigger::Frame),
+            "and the hold cannot finish while the bar is hidden"
+        );
+        assert!(ctrl.thumb_holding());
+
+        ctrl.bar.opacity.set(1.0);
+        assert!(scrollable.settle_thumb_hold(
+            after_the_hold(),
+            crate::scrollable::input::thumb_grab::HoldTrigger::Frame
+        ));
+        assert_eq!(ctrl.drag_mode.get(), DragMode::VerticalScrollbar);
+    }
+
+    /// Rest on the thumb long enough and it is yours: the finger then drags the
+    /// content at the thumb's own ratio, not one to one.
+    #[tokio::test]
+    async fn a_finger_that_rests_on_the_thumb_takes_it_and_drags_it() {
+        let (scrollable, ctrl, thumb) = scrollable_with_published_thumb();
+        let at = touch_on_the_thumb(&ctrl, thumb);
+        let _ = scrollable.on_event(&touch_down(at));
+
+        assert!(scrollable.settle_thumb_hold(after_the_hold(), crate::scrollable::input::thumb_grab::HoldTrigger::Frame));
+        assert_eq!(ctrl.drag_mode.get(), DragMode::VerticalScrollbar);
+        assert!(ctrl.thumb_armed());
+
+        let _ = scrollable.on_event(&touch_move(Vec2d { x: at.x, y: at.y + 10.0 }));
+
+        let multiplier = ctrl.v_scroll_multiplier.get();
+        assert!(multiplier > 1.0, "the fixture's content is taller than its viewport");
+        let expected = -10.0 * multiplier;
+        let got = ctrl.scroll_offset.get().y;
+        assert!((got - expected).abs() < 0.01, "expected {expected}, got {got}");
+    }
+
+    /// A swipe that happens to begin on the thumb is a swipe: the content
+    /// scrolls with the finger and the thumb is never taken.
+    #[tokio::test]
+    async fn a_swipe_that_starts_on_the_thumb_scrolls_the_content() {
+        let (scrollable, ctrl, thumb) = scrollable_with_published_thumb();
+        let at = touch_on_the_thumb(&ctrl, thumb);
+        let _ = scrollable.on_event(&touch_down(at));
+
+        let _ = scrollable.on_event(&touch_move(Vec2d { x: at.x, y: at.y + 30.0 }));
+
+        assert!(!ctrl.thumb_holding());
+        assert_eq!(ctrl.drag_mode.get(), DragMode::Content);
+        assert!(
+            !scrollable.settle_thumb_hold(after_the_hold(), crate::scrollable::input::thumb_grab::HoldTrigger::Frame),
+            "a hold the swipe cancelled never completes"
+        );
+        assert_eq!(ctrl.drag_mode.get(), DragMode::Content);
+    }
+
+    /// Lifting before the hold completes grabs nothing.
+    #[tokio::test]
+    async fn lifting_before_the_hold_completes_takes_nothing() {
+        let (scrollable, ctrl, thumb) = scrollable_with_published_thumb();
+        let at = touch_on_the_thumb(&ctrl, thumb);
+        let _ = scrollable.on_event(&touch_down(at));
+
+        let _ = scrollable.on_event(&touch_up(at));
+
+        assert!(!ctrl.thumb_holding() && !ctrl.thumb_armed());
+        assert!(!scrollable.settle_thumb_hold(after_the_hold(), crate::scrollable::input::thumb_grab::HoldTrigger::Frame));
+        assert_eq!(ctrl.drag_mode.get(), DragMode::None);
+    }
+
+    /// Letting go of a taken thumb puts it down again.
+    #[tokio::test]
+    async fn lifting_a_taken_thumb_puts_it_down() {
+        let (scrollable, ctrl, thumb) = scrollable_with_published_thumb();
+        let at = touch_on_the_thumb(&ctrl, thumb);
+        let _ = scrollable.on_event(&touch_down(at));
+        assert!(scrollable.settle_thumb_hold(after_the_hold(), crate::scrollable::input::thumb_grab::HoldTrigger::Frame));
+
+        let _ = scrollable.on_event(&touch_up(at));
+
+        assert!(!ctrl.thumb_armed());
+        assert_eq!(ctrl.drag_mode.get(), DragMode::None);
+    }
+
+    /// Fingers resting on a stretched edge hold it there. When they lift, the
+    /// platform delivers an empty terminating frame; that frame moves nothing,
+    /// but it is the moment recovery becomes possible, so it has to schedule the
+    /// frame that runs it. Otherwise the content stays stretched until the next
+    /// scroll input happens to wake the frame loop.
+    #[tokio::test]
+    async fn lifting_the_fingers_from_a_stretched_edge_schedules_the_recovery() {
+        use aimer_events::element::{ScrollDeltaKind, TouchPhase};
+
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+        ctrl.scroll_offset.set(Vec2d { x: 0.0, y: 30.0 });
+        ctrl.hold_overscroll_for_direct_manipulation();
+
+        let requests = Rc::new(Cell::new(0usize));
+        let counted = requests.clone();
+        let previous = aimer_events::window::set_thread_redraw_requester(move || {
+            counted.set(counted.get() + 1);
+        });
+        let _ = scrollable.on_event(&ElementEvent::Scroll {
+            delta: Vec2d::ZERO,
+            phase: TouchPhase::Ended,
+            kind: ScrollDeltaKind::Pixel,
+            is_direct_manipulation: false,
+        });
+        aimer_events::window::restore_thread_redraw_requester(previous);
+
+        assert!(
+            !ctrl.overscroll_recovery_held_at(aimer_utils::AnimInstant::now()),
+            "the lift releases the hold"
+        );
+        assert!(
+            requests.get() > 0,
+            "and asks for the frame that springs the edge back"
+        );
+
+        // Those frames then carry the content home.
+        let mut at = aimer_utils::AnimInstant::now();
+        let mut offset = ctrl.scroll_offset.get();
+        for _ in 0..300 {
+            at = at + std::time::Duration::from_millis(16);
+            offset = ctrl.update_momentum_at(offset, at).0;
+        }
+        assert_eq!(offset.y, 0.0, "the edge has sprung back to rest");
+    }
+
+    /// The terminating frame of a gesture can carry a little sideways drift. A
+    /// vertical scroller does not scroll for it, but it must still learn that the
+    /// gesture is over, or the stretch it was holding is never let go.
+    #[tokio::test]
+    async fn an_off_axis_lift_still_lets_go_of_a_stretched_edge() {
+        use aimer_events::element::{ScrollDeltaKind, TouchPhase};
+
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+        ctrl.scroll_offset.set(Vec2d { x: 0.0, y: 30.0 });
+        ctrl.hold_overscroll_for_direct_manipulation();
+
+        let _ = scrollable.on_event(&ElementEvent::Scroll {
+            delta: Vec2d { x: 8.0, y: 1.0 },
+            phase: TouchPhase::Ended,
+            kind: ScrollDeltaKind::Pixel,
+            is_direct_manipulation: false,
+        });
+
+        assert!(!ctrl.overscroll_recovery_held_at(aimer_utils::AnimInstant::now()));
+        assert_eq!(
+            ctrl.scroll_offset.get().y,
+            30.0,
+            "the drift itself does not move a vertical scroller"
+        );
+    }
+
+    /// Mid-gesture drift is still not this scroller's business: only the frame
+    /// that ends the gesture is let through.
+    #[tokio::test]
+    async fn off_axis_drift_mid_gesture_still_leaves_the_hold_alone() {
+        use aimer_events::element::{ScrollDeltaKind, TouchPhase};
+
+        let (scrollable, ctrl, _) = scrollable_with_published_thumb();
+        ctrl.cursor_pos.set(Some(Vec2d { x: 60.0, y: 40.0 }));
+        ctrl.scroll_offset.set(Vec2d { x: 0.0, y: 30.0 });
+        ctrl.hold_overscroll_for_direct_manipulation();
+
+        let _ = scrollable.on_event(&ElementEvent::Scroll {
+            delta: Vec2d { x: 8.0, y: 1.0 },
+            phase: TouchPhase::Moved,
+            kind: ScrollDeltaKind::Pixel,
+            is_direct_manipulation: false,
+        });
+
+        assert!(ctrl.overscroll_recovery_held_at(aimer_utils::AnimInstant::now()));
     }
 
     /// Holding a key repeats it; each repeat adds to the speed already built up
@@ -2307,7 +2574,7 @@ mod tests {
             "one step of {step}, got {}",
             offset.y
         );
-        assert!(ctrl.momentum_friction.get().is_none(), "normal momentum is restored");
+        assert!(ctrl.fling.friction.get().is_none(), "normal momentum is restored");
         assert_eq!(ctrl.pointer_velocity.get().y, 0.0);
     }
 
@@ -2320,7 +2587,7 @@ mod tests {
 
         ctrl.cancel_fling();
 
-        assert!(ctrl.momentum_friction.get().is_none());
+        assert!(ctrl.fling.friction.get().is_none());
     }
 
     /// The destination is the edge, not past it.
@@ -2331,6 +2598,6 @@ mod tests {
 
         let _ = scrollable.on_event(&key_press(aimer_events::element::NamedKey::End));
 
-        assert_eq!(ctrl.fling_target_offset.get().y, -300.0);
+        assert_eq!(ctrl.fling.target_offset.get().y, -300.0);
     }
 }

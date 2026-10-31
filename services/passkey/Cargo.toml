@@ -6,7 +6,7 @@ resolver = "3"
 description = "Aimer's passkeys: WebAuthn ceremonies through the operating system's own provider (AuthenticationServices, Credential Manager, Windows Hello)"
 
 [dependencies]
-
+aimer_time.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 

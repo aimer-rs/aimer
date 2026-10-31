@@ -4,7 +4,7 @@
 //! server wants. A real relying party keeps the same facts in a database.
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use ring::rand::{SecureRandom, SystemRandom};
 

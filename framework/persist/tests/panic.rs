@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_persist::{
     Document, Persisted, Preferences, set_flush_on_panic, set_lifecycle_flush_timeout,

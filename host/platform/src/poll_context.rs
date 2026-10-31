@@ -142,8 +142,8 @@ mod tests {
 
         // Stands in for the event loop: the timer fires on a Tokio thread and
         // wakes the task, which the next drain picks up.
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while venus.task_count() > 0 && std::time::Instant::now() < deadline {
+        let deadline = aimer_time::Instant::now() + Duration::from_secs(5);
+        while venus.task_count() > 0 && aimer_time::Instant::now() < deadline {
             venus.run_microtasks();
             std::thread::sleep(Duration::from_millis(1));
         }

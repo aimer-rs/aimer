@@ -126,7 +126,7 @@ impl VelocityHistory {
 mod tests {
     use std::hint::black_box;
     use std::time::Duration;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use aimer_attribute::position::Vec2d;
     use aimer_utils::AnimInstant;

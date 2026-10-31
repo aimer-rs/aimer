@@ -1106,7 +1106,7 @@ mod swipe_touch {
             let mut rig = rig(true);
             rig.link.set_enabled(enabled);
             rig.down(100.0, 10.0);
-            let started = std::time::Instant::now();
+            let started = aimer_time::Instant::now();
             for n in 0..MOVES {
                 rig.send(ElementEvent::PointerMove(touch(100.0 + (n % 3) as f32, 10.0 + (n % 80) as f32)));
             }

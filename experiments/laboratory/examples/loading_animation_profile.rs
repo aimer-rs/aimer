@@ -13,7 +13,7 @@
 //! Prints the median and p95 frame time plus the work counters of one
 //! steady-state frame. `LOADING_FRAMES=<n>` changes the sample size.
 
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer::animation::{AnimatedBuilder, AnimationController, curves, RotationTransition};
 use aimer::quiver::winit::dpi::PhysicalSize;

@@ -6,6 +6,7 @@ resolver = "3"
 description = "Aimer's unified persistence layer: platform data locations, typed preferences, versioned documents, and persisted provider state"
 
 [dependencies]
+aimer_time.workspace = true
 aimer_tls.workspace = true
 aimer_provider.workspace = true
 aimer_storage.workspace = true

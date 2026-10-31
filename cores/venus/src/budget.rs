@@ -13,7 +13,7 @@ aimer_tls::thread_local! {
 }
 
 #[cfg(not(aimer_portable_guest))]
-use web_time::Instant;
+use aimer_time::Instant;
 
 #[cfg(aimer_portable_guest)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

@@ -21,7 +21,7 @@ mod lazy_tests {
 
     use aimer_events::element::ElementEvent;
 
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use aimer_widget::base::{BuildContext, ResolvedSize, Vec2d};
     use aimer_widget::{

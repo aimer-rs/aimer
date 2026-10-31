@@ -257,7 +257,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
         // The thumb highlight is resolved from the cursor below, in viewport terms.
         self.sync_viewport_origin();
 
-        let scrolling_before_draw = self.ctrl.is_scrolling.get();
+        let scrolling_before_draw = self.ctrl.session.active.get();
 
         let (raw_viewport_w, raw_viewport_h) = self.viewport_size(ctx);
         // debug!("View port size: {:?} x {:?}", raw_viewport_w, raw_viewport_h);
@@ -415,6 +415,15 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
         self.ctrl.last_scale.set(ctx.scale);
 
         let mut offset = self.ctrl.scroll_offset.get();
+
+        // A finger resting on the thumb takes it once the hold completes, and
+        // that needs a frame because a finger at rest produces no events.
+        if self.ctrl.thumb_holding() {
+            self.settle_thumb_hold(
+                aimer_utils::AnimInstant::now(),
+                crate::scrollable::input::thumb_grab::HoldTrigger::Frame,
+            );
+        }
 
         if self.ctrl.drag_mode.get() == DragMode::None {
             // let vel = self.ctrl.pointer_velocity.get();

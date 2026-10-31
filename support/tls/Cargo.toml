@@ -7,3 +7,6 @@ description = "A thread_local! replacement that spends one OS TLS key per thread
 [[bench]]
 name = "tls"
 harness = false
+
+[dependencies]
+aimer_time.workspace = true

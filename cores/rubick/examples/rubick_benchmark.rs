@@ -12,7 +12,7 @@
 //! reported unit is nanoseconds per operation.
 
 use std::hint::black_box;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer_rubick::{ErasedFrom, INLINE_CAPACITY, Rubick, UiMemory};
 

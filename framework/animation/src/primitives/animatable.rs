@@ -116,7 +116,7 @@ impl Animatable for (f32, f32, f32) {
 #[cfg(test)]
 mod tests {
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use super::*;
 

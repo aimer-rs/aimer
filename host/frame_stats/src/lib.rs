@@ -914,7 +914,7 @@ pub fn take_debug_report() -> Option<(FrameBreakdown, FrameContentStats, FrameTi
 /// ```
 #[derive(Debug)]
 pub struct PhaseTimer {
-    // `AnimInstant` rather than `std::time::Instant`: the web backend times the
+    // `AnimInstant` rather than `aimer_time::Instant`: the web backend times the
     // same phases, and `std`'s clock is unsupported there.
     #[cfg(feature = "frame-stats")]
     started: aimer_utils::AnimInstant,

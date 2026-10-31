@@ -113,7 +113,7 @@ fn frame_cost_while_scrolling() {
         inner.take_draw_list();
 
         probe::take();
-        let start = std::time::Instant::now();
+        let start = aimer_time::Instant::now();
         for i in 0..ITERS {
             if scrolling {
                 // What a wheel/drag does every frame: move the offset.

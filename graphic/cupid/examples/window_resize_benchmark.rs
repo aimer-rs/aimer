@@ -10,7 +10,7 @@ fn main() {
     use aimer_cupid::frame::{Frame, FramePacket, FrameRenderMetadata};
     use aimer_cupid::renderer::RendererImpl;
     use objc2_metal::MTLPixelFormat;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     let backend = MetalBackend::new().expect("benchmark requires a Metal device");
     let format = MTLPixelFormat::RGBA8Unorm;

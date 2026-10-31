@@ -9,7 +9,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_persist::{
     Document, FlushOutcome, PersistError, Persisted, Preferences, flush_all_blocking,

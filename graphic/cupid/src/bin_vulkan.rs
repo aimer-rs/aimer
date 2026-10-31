@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_cupid::canvas::CupidCanvas;
 use aimer_cupid::renderer::RendererImpl;

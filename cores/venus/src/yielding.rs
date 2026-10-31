@@ -112,7 +112,7 @@ mod tests {
     use std::rc::Rc;
     use std::time::Duration;
 
-    use web_time::Instant;
+    use aimer_time::Instant;
 
     use super::*;
     use crate::{FrameBudget, Venus};

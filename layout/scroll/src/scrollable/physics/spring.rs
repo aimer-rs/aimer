@@ -95,7 +95,7 @@ pub(crate) fn advance_damped_spring(
 #[cfg(test)]
 mod tests {
     use std::hint::black_box;
-    use std::time::Instant;
+    use aimer_time::Instant;
 
     use super::*;
     use crate::scrollable::constants::SNAP_EPSILON;

@@ -393,7 +393,7 @@ fn a_nested_stateful_child_keeps_its_state_but_builds_again_when_the_parent_upda
 /// cargo nextest run -p aimer_widget rebuild_scope_profile --run-ignored only --no-capture
 /// ```
 mod rebuild_scope_profile {
-    use std::time::{Duration, Instant};
+    use aimer_time::{Duration, Instant};
 
     use super::*;
 

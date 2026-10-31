@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io;
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
-use std::time::{Duration, Instant};
+use aimer_time::{Duration, Instant};
 
 use aimer_reload_protocol::{
     ProtocolError, ProtocolLimits, ReloadCommand, ReloadConnectionOutcome, ReloadResult,

@@ -18,7 +18,7 @@ use std::cell::Cell;
 use std::hint::black_box;
 use std::process::Command;
 use std::rc::Rc;
-use std::time::Instant;
+use aimer_time::Instant;
 
 use aimer::frame_stats::{FrameBreakdown, FrameContentStats, FrameRequestStats};
 use aimer::modal::ModalHost;
