@@ -296,6 +296,7 @@ members = [
     "experiments/reload_protocol",
     "experiments/reload_server",
     "experiments/wasm_guest",
+    "experiments/polymorphism"
 ]
 
 [workspace.dependencies]

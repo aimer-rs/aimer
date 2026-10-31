@@ -1,0 +1,66 @@
+sizes: Box<dyn>=16B  inline-vtable=32B  shared-vtable=16B  inline-v2=24B  thin=8B  sbo=32B
+
+arena record (A..D) = 16B/object, slab = 8B payload + 1B tag
+
+16 objects, mixed concrete types:
+  compiler vtable (Box<dyn>)     0.941 ns/call
+  manual, inline fn ptrs         0.935 ns/call
+  manual, shared static vtable   0.938 ns/call
+  manual, inline v2 (24B)        0.969 ns/call
+  manual, inline v3 (no wrapper)   0.712 ns/call
+  manual, thin header (8B)       1.011 ns/call
+  NEW inline payload (SBO)       0.935 ns/call
+  NEW bucketed vtable            0.936 ns/call
+  NEW packed arena               0.949 ns/call
+  NEW tagged slabs               1.028 ns/call
+  -- order-preserving map into out[i] --
+  map: Box<dyn> + enumerate      0.961 ns/call
+  map: NEW slab scatter          1.047 ns/call
+  -> slab-scatter map / dyn map = 1.09x
+  -> inline/dyn = 0.99x, shared/dyn = 1.00x, v2/dyn = 1.03x, v3/dyn = 0.76x, thin/dyn = 1.07x, sbo/dyn = 0.99x, bucketed/dyn = 1.00x, arena/dyn = 1.01x, slabs/dyn = 1.09x
+
+1000 objects, mixed concrete types:
+  compiler vtable (Box<dyn>)     1.443 ns/call
+  manual, inline fn ptrs         1.455 ns/call
+  manual, shared static vtable   1.440 ns/call
+  manual, inline v2 (24B)        1.424 ns/call
+  manual, inline v3 (no wrapper)   1.570 ns/call
+  manual, thin header (8B)       1.500 ns/call
+  NEW inline payload (SBO)       1.445 ns/call
+  NEW bucketed vtable            0.700 ns/call
+  NEW packed arena               1.416 ns/call
+  NEW tagged slabs               1.511 ns/call
+  -- order-preserving map into out[i] --
+  map: Box<dyn> + enumerate      1.421 ns/call
+  map: NEW slab scatter          0.705 ns/call
+  -> slab-scatter map / dyn map = 0.50x
+  -> inline/dyn = 1.01x, shared/dyn = 1.00x, v2/dyn = 0.99x, v3/dyn = 1.09x, thin/dyn = 1.04x, sbo/dyn = 1.00x, bucketed/dyn = 0.49x, arena/dyn = 0.98x, slabs/dyn = 1.05x
+
+1000000 objects, mixed concrete types:
+  compiler vtable (Box<dyn>)     6.014 ns/call
+  manual, inline fn ptrs         5.914 ns/call
+  manual, shared static vtable   6.664 ns/call
+  manual, inline v2 (24B)        5.018 ns/call
+  manual, inline v3 (no wrapper)   5.599 ns/call
+  manual, thin header (8B)       5.777 ns/call
+  NEW inline payload (SBO)       5.918 ns/call
+  NEW bucketed vtable            0.686 ns/call
+  NEW packed arena               5.629 ns/call
+  NEW tagged slabs               5.496 ns/call
+  -- order-preserving map into out[i] --
+  map: Box<dyn> + enumerate      4.644 ns/call
+  map: NEW slab scatter          0.720 ns/call
+  -> slab-scatter map / dyn map = 0.16x
+  -> inline/dyn = 0.98x, shared/dyn = 1.11x, v2/dyn = 0.83x, v3/dyn = 0.93x, thin/dyn = 0.96x, sbo/dyn = 0.98x, bucketed/dyn = 0.11x, arena/dyn = 0.94x, slabs/dyn = 0.91x
+
+1 object, one concrete type (hot loop):
+  compiler vtable (Box<dyn>)     0.969 ns/call
+  manual, inline fn ptrs         0.965 ns/call
+  manual, shared static vtable   0.962 ns/call
+  manual, inline v2 (24B)        0.962 ns/call
+  manual, inline v3 (no wrapper)   0.742 ns/call
+  manual, thin header (8B)       0.971 ns/call
+  NEW inline payload (SBO)       0.953 ns/call
+  NEW bucketed vtable            1.292 ns/call
+  NEW packed arena               1.236 ns/call
+  NEW tagged slabs               2.143 ns/call
