@@ -1,0 +1,11 @@
+[package]
+name = "aimer_time"
+version = "0.1.0"
+edition = "2024"
+description = "Monotonic clocks, frame timing, timers and UTC calendar utilities for Aimer"
+
+# The browser has no working `std::time` clocks: monotonic time comes from
+# `performance.now()` and wall-clock time from `Date.now()`.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys.workspace = true
+wasm-bindgen.workspace = true

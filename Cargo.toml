@@ -68,6 +68,7 @@ aimer_collapsible.workspace = true
 aimer_canvas.workspace = true
 aimer_cupid.workspace = true
 aimer_std.workspace = true
+aimer_time.workspace = true
 
 
 [dev-dependencies]
@@ -217,6 +218,7 @@ members = [
     "support/utils",
     "support/events",
     "support/tls",
+    "support/time",
     "support/macro",
     # system
     "system/native",
@@ -344,6 +346,7 @@ aimer_attribute = { path = "support/attribute" }
 aimer_utils = { path = "support/utils" }
 aimer_events = { path = "support/events" }
 aimer_tls = { path = "support/tls" }
+aimer_time = { path = "support/time" }
 aimer_focus = { path = "framework/focus" }
 aimer_text = { path = "widgets/text" }
 aimer_router = { path = "routing/router" }
@@ -397,7 +400,6 @@ windows-sys = { version = "0.61.2", features = [
 console_error_panic_hook = "0.1.7"
 winit = { version = "0.30.12", features = ["android-native-activity"] }
 raw-window-handle = "0.6.2"
-web-time = "1.1.0"
 hashbrown = "0.17.1"
 crossbeam = "0.8.4"
 tokio = "1.52.3"
