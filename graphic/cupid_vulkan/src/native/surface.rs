@@ -75,7 +75,7 @@ where
         ash_window::enumerate_required_extensions(display).map_err(|error| {
             VulkanError::new("enumerate Vulkan surface extensions", format!("{error:?}"))
         })?;
-    let owner = super::create_instance_owner(required_extensions, true)?;
+    let owner = super::shared_windowed_instance(required_extensions)?;
     let surface_owner = create_surface_owner(owner.clone(), display, raw_window)?;
     let (core, graphics_family, present_family) = VulkanCore::create(owner, Some(&surface_owner))?;
     let present_family = present_family.expect("windowed device has a present queue");

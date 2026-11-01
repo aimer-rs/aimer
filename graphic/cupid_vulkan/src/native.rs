@@ -23,7 +23,7 @@ pub use commands::{VulkanCommandEncoder, VulkanRenderPass};
 pub use surface::{VulkanSurface, VulkanSurfaceFrame};
 
 use std::ffi::{CStr, CString, c_void};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use ash::vk;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -607,6 +607,34 @@ impl VulkanShared {
     }
 }
 
+/// The instance every window of the process presents through.
+///
+/// Held weakly: it is destroyed when the last window using it goes away, not
+/// before. A `VkInstance` per window is not safe — destroying one while another
+/// window is rendering crashes the other inside the NVIDIA Wayland driver
+/// (a null call in `vkAcquireNextImageKHR`), so closing a child window took the
+/// whole application with it.
+static WINDOWED_INSTANCE: Mutex<Weak<InstanceOwner>> = Mutex::new(Weak::new());
+
+/// Returns the process's windowed instance, creating it for the first window.
+///
+/// `required_extensions` only matter to the call that creates the instance: every
+/// window of a process presents through the same display platform, so they are
+/// the same for all of them.
+fn shared_windowed_instance(
+    required_extensions: &[*const std::ffi::c_char],
+) -> Result<Arc<InstanceOwner>, VulkanError> {
+    let mut slot = WINDOWED_INSTANCE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(owner) = slot.upgrade() {
+        return Ok(owner);
+    }
+    let owner = create_instance_owner(required_extensions, true)?;
+    *slot = Arc::downgrade(&owner);
+    Ok(owner)
+}
+
 fn create_instance_owner(
     required_extensions: &[*const std::ffi::c_char],
     enable_windowed_present_scaling: bool,
@@ -801,5 +829,27 @@ fn image_aspect(format: vk::Format) -> vk::ImageAspectFlags {
             vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
         }
         _ => vk::ImageAspectFlags::COLOR,
+    }
+}
+
+#[cfg(test)]
+mod instance_sharing_tests {
+    use super::*;
+
+    #[test]
+    fn windows_share_one_instance_until_the_last_one_drops_it() {
+        // No loader or driver (CI): nothing to share.
+        let Ok(first) = shared_windowed_instance(&[]) else {
+            return;
+        };
+        let second = shared_windowed_instance(&[]).expect("the instance already exists");
+        assert!(Arc::ptr_eq(&first, &second));
+
+        // Closing one window must leave the instance alive for the other.
+        drop(first);
+        assert!(Arc::ptr_eq(
+            &second,
+            &shared_windowed_instance(&[]).expect("still alive")
+        ));
     }
 }
