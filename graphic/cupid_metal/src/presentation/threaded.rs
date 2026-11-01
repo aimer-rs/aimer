@@ -1,3 +1,6 @@
+use std::ptr::NonNull;
+
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::MTLDrawable;
@@ -41,6 +44,33 @@ impl MetalDrawableSource {
             view,
             presents_with_transaction: true,
         })
+    }
+}
+
+/// Asks Metal to call `observer` with the host time `drawable` reaches the
+/// screen, in seconds on the `CACurrentMediaTime` clock (0 if it was skipped).
+///
+/// The observer runs on a Metal thread after the frame is shown, so it must be
+/// cheap and may not touch UI state. Register it before presenting.
+fn observe_drawable_presentation(
+    drawable: &ProtocolObject<dyn MTLDrawable>,
+    observer: impl Fn(f64) + 'static,
+) {
+    let handler = RcBlock::new(move |shown: NonNull<ProtocolObject<dyn MTLDrawable>>| {
+        // SAFETY: Metal passes the live drawable the handler was added to.
+        observer(unsafe { shown.as_ref() }.presentedTime());
+    });
+    // SAFETY: `handler` is a valid block, and Metal retains it until called.
+    unsafe { drawable.addPresentedHandler(RcBlock::as_ptr(&handler)) };
+}
+
+impl MetalSurfaceFrame {
+    /// Reports when this frame reaches the screen. See
+    /// [`observe_drawable_presentation`]'s contract; call before presenting.
+    #[doc(hidden)]
+    pub fn observe_presentation(&self, observer: impl Fn(f64) + 'static) {
+        let metal_drawable: &ProtocolObject<dyn CAMetalDrawable> = &self.drawable;
+        observe_drawable_presentation(metal_drawable.as_ref(), observer);
     }
 }
 
@@ -100,6 +130,13 @@ impl MetalSurfaceFrame {
 }
 
 impl ScheduledMetalDrawable {
+    /// Reports when this frame reaches the screen; call before [`Self::present`].
+    #[doc(hidden)]
+    pub fn observe_presentation(&self, observer: impl Fn(f64) + 'static) {
+        let metal_drawable: &ProtocolObject<dyn CAMetalDrawable> = &self.drawable;
+        observe_drawable_presentation(metal_drawable.as_ref(), observer);
+    }
+
     /// Returns the acquired drawable dimensions for viewport validation.
     pub fn size(&self) -> (u32, u32) {
         self.size
@@ -168,6 +205,8 @@ mod tests {
         let rendered = encoder.command_buffer.clone();
         backend.submit(encoder);
 
+        // Registering an observer must not change how the frame is presented.
+        frame.observe_presentation(|_| {});
         frame.present(&backend);
 
         let still_recorded = backend

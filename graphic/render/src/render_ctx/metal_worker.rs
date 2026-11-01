@@ -173,6 +173,12 @@ impl MetalHost {
         }
         let present = PhaseTimer::start();
         aimer_utils::frame_trace("present_begin", 0.0, 0.0);
+        if aimer_utils::frame_trace_enabled() {
+            // b: 0 = presented in a transaction.
+            drawable.observe_presentation(|shown| {
+                aimer_utils::frame_trace("displayed", shown, 0.0);
+            });
+        }
         let transaction = Transaction::new();
         #[cfg(target_os = "ios")]
         {
@@ -290,6 +296,12 @@ impl WorkerPresenter for MetalPresenter {
             self.backend.end_gpu_frame_timing();
             aimer_utils::frame_trace("raster_encoded", 0.0, 0.0);
             if direct {
+                if aimer_utils::frame_trace_enabled() {
+                    // a: when the frame reaches the screen; b: 1 = presented directly.
+                    drawable.observe_presentation(|shown| {
+                        aimer_utils::frame_trace("displayed", shown, 1.0);
+                    });
+                }
                 // No wait for the GPU and no main-thread transaction.
                 drawable.present(&self.backend);
                 aimer_utils::frame_trace("raster_presented", 0.0, 0.0);
