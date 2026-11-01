@@ -1,10 +1,26 @@
-use super::{ImpactStyle, NotificationStyle};
-use objc2::MainThreadMarker;
-use objc2::MainThreadOnly;
+//! iOS: UIKit feedback generators for the canned effects, Core Haptics for
+//! programmable patterns.
+
+use crate::{HapticEvent, HapticPattern, ImpactStyle, NotificationStyle};
+use aimer_time::{Duration, Instant};
+use objc2::rc::Retained;
+use objc2::runtime::{AnyObject, ProtocolObject};
+use objc2::{AnyThread, MainThreadMarker, MainThreadOnly};
+use objc2_core_haptics::{
+    CHHapticDeviceCapability, CHHapticEngine, CHHapticEventParameterIDHapticIntensity,
+    CHHapticEventParameterIDHapticSharpness, CHHapticEventType, CHHapticEventTypeHapticContinuous,
+    CHHapticEventTypeHapticTransient, CHHapticPattern, CHHapticPatternKeyEvent,
+    CHHapticPatternKeyEventDuration, CHHapticPatternKeyEventParameters,
+    CHHapticPatternKeyEventType, CHHapticPatternKeyParameterID, CHHapticPatternKeyParameterValue,
+    CHHapticPatternKeyPattern, CHHapticPatternKeyTime, CHHapticPatternKeyVersion,
+    CHHapticPatternPlayer, CHHapticTimeImmediate,
+};
+use objc2_foundation::{NSError, NSMutableArray, NSMutableDictionary, NSNumber, NSString};
 use objc2_ui_kit::{
     UIImpactFeedbackGenerator, UIImpactFeedbackStyle, UINotificationFeedbackGenerator,
     UINotificationFeedbackType, UISelectionFeedbackGenerator,
 };
+use std::cell::RefCell;
 
 impl From<ImpactStyle> for UIImpactFeedbackStyle {
     fn from(style: ImpactStyle) -> Self {
@@ -76,11 +92,14 @@ fn with_impact_generator(style: ImpactStyle, f: impl FnOnce(&UIImpactFeedbackGen
     });
 }
 
-pub(super) fn prepare_impact(style: ImpactStyle) {
+/// Whether this backend can produce feedback at all.
+pub(crate) const SUPPORTED: bool = true;
+
+pub(crate) fn prepare_impact(style: ImpactStyle) {
     with_impact_generator(style, |generator| generator.prepare());
 }
 
-pub(super) fn impact(style: ImpactStyle) {
+pub(crate) fn impact(style: ImpactStyle) {
     with_impact_generator(style, |generator| {
         // `prepare` primes the Taptic Engine so the trigger has minimal
         // latency. A caller that expects the impact can call `prepare_impact`
@@ -90,7 +109,7 @@ pub(super) fn impact(style: ImpactStyle) {
     });
 }
 
-pub(super) fn selection() {
+pub(crate) fn selection() {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
@@ -99,7 +118,7 @@ pub(super) fn selection() {
     generator.selectionChanged();
 }
 
-pub(super) fn notification(style: NotificationStyle) {
+pub(crate) fn notification(style: NotificationStyle) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
@@ -121,23 +140,6 @@ pub(super) fn notification(style: NotificationStyle) {
 // does the work — Core Haptics hands ownership of both the engine and the
 // pattern player to the caller, and playback is asynchronous. Everything
 // therefore lives in a long-lived [`Session`]; see its docs for why.
-
-use super::{HapticEvent, HapticPattern};
-use objc2::AnyThread;
-use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2_core_haptics::{
-    CHHapticDeviceCapability, CHHapticEngine, CHHapticEventParameterIDHapticIntensity,
-    CHHapticEventParameterIDHapticSharpness, CHHapticEventType, CHHapticEventTypeHapticContinuous,
-    CHHapticEventTypeHapticTransient, CHHapticPattern, CHHapticPatternKeyEvent,
-    CHHapticPatternKeyEventDuration, CHHapticPatternKeyEventParameters,
-    CHHapticPatternKeyEventType, CHHapticPatternKeyParameterID, CHHapticPatternKeyParameterValue,
-    CHHapticPatternKeyPattern, CHHapticPatternKeyTime, CHHapticPatternKeyVersion,
-    CHHapticPatternPlayer, CHHapticTimeImmediate,
-};
-use objc2_foundation::{NSError, NSMutableArray, NSMutableDictionary, NSNumber, NSString};
-use std::cell::RefCell;
-use aimer_time::{Duration, Instant};
 
 /// AHAP dictionaries are heterogeneous (strings, numbers, arrays,
 /// nested dictionaries), so the values stay untyped `AnyObject`s.
@@ -255,7 +257,7 @@ const RELEASE_GRACE: Duration = Duration::from_millis(250);
 /// work", which is close to impossible to diagnose from the outside. The
 /// message goes to stderr, i.e. the Xcode console / device log.
 fn report(what: &str, error: &NSError) {
-    eprintln!("aimer_native::haptic: {what} failed: {error}");
+    eprintln!("aimer_haptics: {what} failed: {error}");
 }
 
 impl Session {
@@ -344,7 +346,7 @@ impl Session {
     }
 }
 
-pub(super) fn play_pattern(pattern: &HapticPattern) {
+pub(crate) fn play_pattern(pattern: &HapticPattern) {
     // An empty pattern is rejected by Core Haptics; nothing to play.
     if pattern.events.is_empty() {
         return;
@@ -366,113 +368,16 @@ pub(super) fn play_pattern(pattern: &HapticPattern) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::haptic::Haptics;
-
-    #[test]
-    fn new_pattern_is_empty() {
-        assert!(HapticPattern::new().events.is_empty());
-    }
-
-    #[test]
-    fn transient_event_has_no_duration() {
-        let pattern = HapticPattern::new().transient(0.0, 1.0, 0.5);
-
-        assert_eq!(
-            pattern.events,
-            vec![HapticEvent {
-                time: 0.0,
-                duration: None,
-                intensity: 1.0,
-                sharpness: 0.5,
-            }]
-        );
-    }
-
-    #[test]
-    fn continuous_event_carries_its_duration() {
-        let pattern = HapticPattern::new().continuous(0.1, 0.4, 0.6, 0.2);
-
-        assert_eq!(
-            pattern.events,
-            vec![HapticEvent {
-                time: 0.1,
-                duration: Some(0.4),
-                intensity: 0.6,
-                sharpness: 0.2,
-            }]
-        );
-    }
-
-    #[test]
-    fn events_keep_insertion_order() {
-        let pattern = HapticPattern::new()
-            .transient(0.0, 1.0, 1.0)
-            .continuous(0.1, 0.4, 0.6, 0.2)
-            .transient(0.6, 0.3, 0.9);
-
-        let times: Vec<f64> = pattern.events.iter().map(|event| event.time).collect();
-        assert_eq!(times, vec![0.0, 0.1, 0.6]);
-    }
-
-    #[test]
-    fn duration_spans_until_the_last_event_ends() {
-        let pattern = HapticPattern::new()
-            .transient(0.0, 1.0, 1.0)
-            .continuous(0.1, 0.4, 0.6, 0.2);
-
-        // The buzz starts at 0.1s and lasts 0.4s, so the pattern is 0.5s long.
-        assert!((pattern.duration() - 0.5).abs() < 1e-9, "{pattern:?}");
-    }
-
-    #[test]
-    fn duration_of_an_empty_pattern_is_zero() {
-        assert_eq!(HapticPattern::new().duration(), 0.0);
-    }
-
-    #[test]
-    fn duration_does_not_depend_on_insertion_order() {
-        let late_first = HapticPattern::new()
-            .transient(2.0, 1.0, 1.0)
-            .continuous(0.0, 0.5, 1.0, 1.0);
-
-        assert_eq!(late_first.duration(), 2.0);
-    }
-
-    #[test]
-    fn out_of_range_parameters_are_clamped() {
-        // Core Haptics rejects the *whole* pattern if a single parameter is
-        // outside 0..=1, so the builder never lets one through.
-        let pattern = HapticPattern::new().transient(-1.0, 4.0, -2.0);
-
-        assert_eq!(
-            pattern.events,
-            vec![HapticEvent {
-                time: 0.0,
-                duration: None,
-                intensity: 1.0,
-                sharpness: 0.0,
-            }]
-        );
-    }
-
-    #[test]
-    fn a_negative_duration_is_clamped_to_zero() {
-        let pattern = HapticPattern::new().continuous(0.0, -1.0, 0.5, 0.5);
-
-        assert_eq!(pattern.events[0].duration, Some(0.0));
-    }
-
     #[test]
     fn the_engine_is_never_built_with_the_unavailable_initialiser() {
         // Regression guard: `-[CHHapticEngine init]` is `NS_UNAVAILABLE` in
         // `CHHapticEngine.h` — the designated initialiser is
         // `initAndReturnError:`. Going through plain `init` yields an engine
-        // that silently plays nothing, which is invisible from the host (the
-        // whole `ios` module is `cfg`'d out here) and, on device, looks like
+        // that silently plays nothing, which is invisible from the host (this
+        // module is `cfg`'d out there) and, on device, looks like
         // "`play_pattern` does nothing while `impact` works". Checking the
         // source is the only way to catch it without a Taptic Engine.
-        let source = include_str!("../haptic.rs");
+        let source = include_str!("ios.rs");
         // Spelled in pieces so these needles don't match this test itself.
         let unavailable = concat!("CHHapticEngine::", "init(CHHapticEngine::alloc())");
         let designated = concat!(
@@ -488,15 +393,5 @@ mod tests {
             source.contains(designated),
             "the designated initialiser call went missing"
         );
-    }
-
-    #[test]
-    fn calls_never_panic() {
-        // The point of the `cfg`-free API: widgets can call these on any
-        // target without a panic or a `cfg` guard at the call site.
-        Haptics::impact(ImpactStyle::Light);
-        Haptics::selection();
-        Haptics::notification(NotificationStyle::Success);
-        Haptics::play_pattern(&HapticPattern::new().transient(0.0, 1.0, 1.0));
     }
 }

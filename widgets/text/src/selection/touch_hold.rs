@@ -29,7 +29,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use aimer_attribute::position::Vec2d;
-use aimer_native::haptic::{Haptics, ImpactStyle};
+use aimer_haptics::{Haptics, ImpactStyle};
 use aimer_utils::AnimInstant;
 use aimer_widget::{EventResult, PointerKey};
 

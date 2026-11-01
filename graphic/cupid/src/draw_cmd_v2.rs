@@ -19,6 +19,7 @@ mod context_bounds_tests;
 mod render_order_tests;
 #[cfg(test)]
 mod sync_damage_tests;
+mod escape_index;
 mod subtree_extent;
 #[cfg(test)]
 mod subtree_extent_tests;
@@ -763,6 +764,12 @@ pub struct DrawCommandList {
     /// so every edit to `nodes`, `indices`, `roots`, `parent` or `children`
     /// must advance it. Geometry, clip and paint edits must not.
     topology_revision: u64,
+    /// Advances whenever a node starts or stops escaping its ancestors' clips.
+    /// `escapes` is derived against it and `topology_revision`.
+    escape_revision: u64,
+    /// Which nodes have an escaping descendant; read through
+    /// [`DrawCommandList::escapes_below`].
+    escapes: RefCell<escape_index::EscapeIndex>,
     /// Positions of every parent and child, resolved lazily against
     /// `topology_revision`; read through [`DrawCommandList::topology`].
     topology: RefCell<render_order::Topology>,

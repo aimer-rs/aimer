@@ -787,6 +787,191 @@ fn the_covered_clip_shortcut_matches_the_reference_on_varied_trees() {
     }
 }
 
+/// A node that escapes its ancestors' clips, outside the viewport's subtree.
+fn escaping_button(tree: &RenderTree) -> RenderNodeId {
+    let button = tree.add_root(Rect::new(200.0, 0.0, 50.0, 50.0)).unwrap();
+    tree.set_clip_escape(button, true).unwrap();
+    button
+}
+
+#[test]
+fn a_clip_escape_elsewhere_does_not_disable_the_covered_clip_shortcut() {
+    // One pressable button anywhere in the window escapes its clip; that says
+    // nothing about the descendants of a scrollable's content.
+    const ROWS: usize = 500;
+    let (tree, content) = viewport_with_rows(ROWS, 5000.0);
+    escaping_button(&tree);
+    let inner = tree.draw_cmd.borrow();
+
+    reset_node_lookups();
+    let visible = inner.visible_subtree_bounds(content);
+    let visible_lookups = node_lookups();
+    reset_node_lookups();
+    let damage = inner.subtree_damage_bounds(content);
+    let damage_lookups = node_lookups();
+
+    assert_eq!(visible, Some(Rect::new(0.0, 0.0, 100.0, 100.0)));
+    assert_eq!(damage, Some(Rect::new(0.0, 0.0, 100.0, 100.0)));
+    assert!(
+        visible_lookups < ROWS / 10,
+        "visible_subtree_bounds took {visible_lookups} lookups for {ROWS} descendants"
+    );
+    assert!(
+        damage_lookups < ROWS / 10,
+        "subtree_damage_bounds took {damage_lookups} lookups for {ROWS} descendants"
+    );
+}
+
+/// Timing probe: `cargo nextest run -p aimer_cupid --run-ignored only --no-capture`.
+///
+/// With one escaping node elsewhere in the tree, a scrolled content node used to
+/// be measured by walking all its descendants (the "walked" figure) on every
+/// geometry change; now it is answered from its clip.
+#[test]
+#[ignore = "timing probe, prints results"]
+fn profile_covered_clip_with_an_escape_elsewhere() {
+    for rows in [100, 500, 2000] {
+        let (tree, content) = viewport_with_rows(rows, rows as f32 * 10.0);
+        escaping_button(&tree);
+        let inner = tree.draw_cmd.borrow();
+        let time = |query: &dyn Fn() -> Option<Rect>| {
+            let mut best = f64::MAX;
+            for _ in 0..7 {
+                let start = std::time::Instant::now();
+                for _ in 0..200 {
+                    std::hint::black_box(query());
+                }
+                best = best.min(start.elapsed().as_secs_f64() * 1e6 / 200.0);
+            }
+            best
+        };
+        let shortcut = time(&|| inner.visible_subtree_bounds(content));
+        let walked = time(&|| inner.visible_subtree_bounds_walked(content));
+        println!("{rows:5} rows: shortcut {shortcut:8.2} us, walked {walked:9.2} us");
+    }
+}
+
+#[test]
+fn a_clip_escape_below_the_node_is_measured_not_assumed_clipped() {
+    // A descendant that escapes the clip can reach pixels outside it, so the
+    // clip no longer bounds the footprint.
+    let (tree, content) = viewport_with_rows(5, 5000.0);
+    let row = tree
+        .add_child(content, Rect::new(300.0, 0.0, 50.0, 10.0))
+        .unwrap();
+    tree.set_clip_escape(row, true).unwrap();
+    let inner = tree.draw_cmd.borrow();
+
+    let visible = inner.visible_subtree_bounds(content);
+
+    assert_eq!(visible, inner.visible_subtree_bounds_walked(content));
+    assert_eq!(visible, Some(Rect::new(0.0, 0.0, 350.0, 100.0)));
+    assert_eq!(
+        inner.subtree_damage_bounds(content),
+        inner.subtree_damage_bounds_walked(content)
+    );
+}
+
+#[test]
+fn an_escape_toggled_below_a_node_is_seen_by_the_next_query() {
+    const ROWS: usize = 200;
+    let (tree, content) = viewport_with_rows(ROWS, 5000.0);
+    let row = tree
+        .add_child(content, Rect::new(300.0, 0.0, 50.0, 10.0))
+        .unwrap();
+    let viewport = Some(Rect::new(0.0, 0.0, 100.0, 100.0));
+    let covered_query = || {
+        let inner = tree.draw_cmd.borrow();
+        reset_node_lookups();
+        let bounds = inner.visible_subtree_bounds(content);
+        (bounds, node_lookups())
+    };
+    // Warm any cache the query keeps, with nothing escaping.
+    escaping_button(&tree);
+    let (bounds, lookups) = covered_query();
+    assert_eq!(bounds, viewport);
+    assert!(lookups < ROWS / 10, "{lookups} lookups");
+
+    tree.set_clip_escape(row, true).unwrap();
+    let (bounds, _) = covered_query();
+    assert_eq!(bounds, Some(Rect::new(0.0, 0.0, 350.0, 100.0)));
+
+    tree.set_clip_escape(row, false).unwrap();
+    let (bounds, lookups) = covered_query();
+    assert_eq!(bounds, viewport);
+    assert!(lookups < ROWS / 10, "{lookups} lookups after the escape ended");
+}
+
+#[test]
+fn an_escaping_node_added_below_a_warm_node_is_seen_by_the_next_query() {
+    let (tree, content) = viewport_with_rows(50, 5000.0);
+    escaping_button(&tree);
+    assert_eq!(
+        tree.draw_cmd.borrow().visible_subtree_bounds(content),
+        Some(Rect::new(0.0, 0.0, 100.0, 100.0))
+    );
+
+    // The structure changes: a new descendant, which then escapes.
+    let late = tree
+        .add_child(content, Rect::new(300.0, 0.0, 50.0, 10.0))
+        .unwrap();
+    tree.set_clip_escape(late, true).unwrap();
+
+    assert_eq!(
+        tree.draw_cmd.borrow().visible_subtree_bounds(content),
+        Some(Rect::new(0.0, 0.0, 350.0, 100.0))
+    );
+}
+
+#[test]
+fn the_shortcut_agrees_with_the_walk_when_nodes_escape_clips() {
+    // Cover the clip of every clipped node, as the test above does, and let a
+    // share of the nodes escape: the answer must be the walk's wherever a
+    // descendant escapes and the clip's wherever none does.
+    for seed in [5, 23, 99, 4242, 271_828] {
+        let (tree, ids) = varied_tree(seed, 80);
+        let mut rng = Lcg(seed ^ 0xE5CA_9E);
+        for id in &ids {
+            if rng.chance(15) {
+                tree.set_clip_escape(*id, true).unwrap();
+            }
+        }
+        {
+            let mut inner = tree.draw_cmd.borrow_mut();
+            for id in &ids {
+                let node = inner.node_mut(*id).unwrap();
+                if let Some(clip) = node.clip {
+                    node.bounds = Rect::new(
+                        node.bounds.x,
+                        node.bounds.y,
+                        clip.x + clip.width + 200.0,
+                        clip.y + clip.height + 200.0,
+                    );
+                }
+            }
+        }
+        let inner = tree.draw_cmd.borrow();
+        for id in &ids {
+            assert_eq!(
+                inner.visible_subtree_bounds(*id),
+                inner.visible_subtree_bounds_walked(*id),
+                "visible_subtree_bounds, seed {seed}, {id:?}"
+            );
+            assert_eq!(
+                inner.subtree_damage_bounds(*id),
+                inner.subtree_damage_bounds_walked(*id),
+                "subtree_damage_bounds, seed {seed}, {id:?}"
+            );
+        }
+        let together = inner.visible_subtree_bounds_of(&ids);
+        let alone: Vec<Rect> = ids
+            .iter()
+            .filter_map(|id| inner.visible_subtree_bounds_walked(*id))
+            .collect();
+        assert_eq!(together, alone, "visible_subtree_bounds_of, seed {seed}");
+    }
+}
+
 /// Callers cache a node's world rectangle against the tree's geometry revision,
 /// so every mutation that can move a node has to advance it, and a pure read
 /// must not.

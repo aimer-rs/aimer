@@ -73,10 +73,10 @@ pub use crate::components::element::{
     focus_is_settling_between_events, frame_instant, has_active_v2_render_presentation,
     has_active_v2_render_tree, keep_ticking_elements_reachable, layout_invalidation_generation,
     live_children_generation, mark_paint_damage, mark_paint_damage_full,
-    notify_element_tree_changed, notify_hosted_element_tree_changed, notify_layout_changed,
-    notify_live_children_changed, notify_retained_render_structure_changed,
+    notify_element_tree_changed, notify_extent_changed, notify_hosted_element_tree_changed,
+    notify_layout_changed, notify_live_children_changed, notify_retained_render_structure_changed,
     rebuild_invalidation_generation, retained_render_structure_generation, set_rebuild_source_path,
-    take_declined_paint_elements, take_paint_frame_damage, take_unmapped_draws,
+    take_declined_paint_elements, take_paint_frame_damage, take_unmapped_draws, text_layout_epoch,
     update_v2_render_node_geometry, with_v2_render_tree_context,
 };
 // #[doc(hidden)]

@@ -265,7 +265,8 @@ impl DrawCommandList {
     /// The union of the visible, clipped bounds of the node and everything
     /// below it: the footprint that actually reaches pixels.
     pub(super) fn visible_subtree_bounds(&self, id: RenderNodeId) -> Option<Rect> {
-        let node = self.node(id)?;
+        let index = *self.indices.get(&id)?;
+        let node = self.nodes.get(index)?;
         let parent = self.frame_below(node.parent)?;
 
         // When no node escapes clipping, descendants stay inside the clip this
@@ -278,9 +279,9 @@ impl DrawCommandList {
         // viewport rectangle.
         let world = node.world(&parent);
         if let ClipState::Clipped(clip) = world.frame.clip
-            && self.clip_escape_count == 0
             && let Some(bounds) = world.bounds
             && bounds.intersection(clip) == Some(clip)
+            && !self.escapes_below(index)
         {
             return Some(clip);
         }
@@ -308,9 +309,9 @@ impl DrawCommandList {
                 // not visit a single descendant.
                 let world = node.world(&parent);
                 if let ClipState::Clipped(clip) = world.frame.clip
-                    && self.clip_escape_count == 0
                     && let Some(bounds) = world.bounds
                     && bounds.intersection(clip) == Some(clip)
+                    && !self.escapes_below(index)
                 {
                     return Some(clip);
                 }
@@ -358,13 +359,14 @@ impl DrawCommandList {
     /// finite still contributes its descendants instead of hiding them, so the
     /// result never covers less than the footprints of the nodes below it.
     pub(super) fn subtree_damage_bounds(&self, id: RenderNodeId) -> Option<Rect> {
-        let node = self.node(id)?;
+        let index = *self.indices.get(&id)?;
+        let node = self.nodes.get(index)?;
         let parent = self.frame_below(node.parent)?;
         let world = node.world(&parent);
         if let ClipState::Clipped(clip) = world.frame.clip
-            && self.clip_escape_count == 0
             && let Some(bounds) = world.bounds
             && bounds.intersection(clip) == Some(clip)
+            && !self.escapes_below(index)
         {
             return Some(clip);
         }
@@ -385,6 +387,23 @@ impl DrawCommandList {
             }
         }
         bounds
+    }
+
+    /// [`Self::visible_subtree_bounds`] without the covered-clip shortcut: the
+    /// definition the shortcut has to agree with.
+    #[cfg(test)]
+    pub(super) fn visible_subtree_bounds_walked(&self, id: RenderNodeId) -> Option<Rect> {
+        let node = self.node(id)?;
+        let parent = self.frame_below(node.parent)?;
+        self.visible_subtree_bounds_from(node, &parent)
+    }
+
+    /// [`Self::subtree_damage_bounds`] without the covered-clip shortcut.
+    #[cfg(test)]
+    pub(super) fn subtree_damage_bounds_walked(&self, id: RenderNodeId) -> Option<Rect> {
+        let node = self.node(id)?;
+        let parent = self.frame_below(node.parent)?;
+        self.subtree_damage_bounds_from(node, &parent)
     }
 
     fn visible_subtree_bounds_from(&self, node: &RenderNode, parent: &WorldFrame) -> Option<Rect> {

@@ -821,6 +821,13 @@ impl FlexLayout {
         true
     }
 
+    /// The size a prediction assumes of every child it has not been corrected
+    /// for, or `None` for a table that is not a prediction.
+    #[inline]
+    pub(crate) fn assumed_size(&self) -> Option<ResolvedSize> {
+        (self.origin == Origin::Estimated && self.len > 0).then(|| self.sizes[0])
+    }
+
     /// Takes over what `previous` learned about the extent of its children.
     ///
     /// A prediction made anew would otherwise start from its probed row alone,
@@ -831,13 +838,16 @@ impl FlexLayout {
     /// that finds one of them wrong corrects it as usual.
     ///
     /// Does nothing unless this table is a prediction and `previous` describes
-    /// the same number of children along the same axis. A table with flex
+    /// no more children than it along the same axis. A table with flex
     /// children is not inherited from, because each share depends on what the
     /// others consumed.
     pub(crate) fn inherit_learned(&self, previous: &FlexLayout) {
+        // A list that only grew keeps what it learned about the rows it had:
+        // the rows were appended after them, so each index still names the same
+        // row. One that shrank does not, since nothing says which rows went.
         if self.origin != Origin::Estimated
             || previous.has_flex
-            || self.len != previous.len
+            || self.len < previous.len
             || self.is_row != previous.is_row
         {
             return;
@@ -1155,6 +1165,38 @@ impl FlexLayoutCache {
         (!cached.layout.is_declared()).then(|| Rc::clone(&cached.layout))
     }
 
+    /// The prediction held for this cross-axis extent, if any, whatever main
+    /// axis it was made under.
+    ///
+    /// A prediction assumes one size for every row it has not been corrected
+    /// for, taken from a probed row. Probing again picks the first row of the
+    /// live window, and where that is depends on the extent the previous guess
+    /// reported: a list of rows of unequal height then flips between two totals
+    /// frame after frame, each guess moving the window that chooses the next
+    /// probe. A replacement prediction therefore keeps the size the held one
+    /// assumed, and probes only when the cross-axis extent changed — rows wrap
+    /// differently at another width, so what was assumed no longer holds.
+    #[inline]
+    pub(crate) fn prediction_for_cross(
+        &self,
+        cross_extent: f32,
+        scale_bits: u32,
+        is_row: bool,
+    ) -> Option<Rc<FlexLayout>> {
+        self.tables().find_map(|cached| {
+            let cross = if is_row {
+                cached.constraint.max_height
+            } else {
+                cached.constraint.max_width
+            };
+            (cached.scale_bits == scale_bits
+                && cross == cross_extent
+                && cached.layout.is_estimated()
+                && cached.layout.is_row == is_row)
+                .then(|| Rc::clone(&cached.layout))
+        })
+    }
+
     /// Returns a measured table whose generation is stale but whose children
     /// may still be generation-independent.
     #[inline]
@@ -1351,6 +1393,30 @@ impl FlexLayoutCache {
         unsafe {
             *self.paint_order.get() = None;
             *self.hit_test_index.get() = None;
+        }
+    }
+
+    /// Takes over the tables of the cache this one replaces as a *history*: they
+    /// describe a list that has since grown, so none of them may answer for the
+    /// replacement, but what they learned still seeds its prediction — see
+    /// [`FlexLayoutCache::learned`], [`FlexLayoutCache::prediction_for_cross`] and
+    /// [`FlexLayout::inherit_learned`].
+    ///
+    /// Without this, every chunk appended to a list started its prediction from
+    /// a freshly probed row, which is another row each time, and the extent a
+    /// scroll view had learned jumped under the reader.
+    ///
+    /// Nothing already cached here is overwritten.
+    pub(crate) fn adopt_history(&self, old: &Self) {
+        let held = unsafe { &mut *self.tables.get() };
+        if !held.iter().all(Option::is_none) {
+            return;
+        }
+        *held = unsafe { std::mem::take(&mut *old.tables.get()) };
+        for table in held.iter_mut().flatten() {
+            // No layout generation ever equals this, so `get` and its stale
+            // variants never return the table.
+            table.layout_generation = u64::MAX;
         }
     }
 

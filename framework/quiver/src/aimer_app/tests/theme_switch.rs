@@ -19,6 +19,24 @@ const INSIDE: usize = 300;
 
 type Seen = Rc<RefCell<Vec<Option<Color>>>>;
 
+/// How many probes were built at all. The list is windowed, so rows far from the
+/// viewport never exist; they cannot keep an old color, and they are not counted
+/// as stale. The rows that are on screen, and the ones outside any list, must
+/// exist, or the checks below would pass over nothing.
+fn built(seen: &Seen) -> usize {
+    seen.borrow().iter().flatten().count()
+}
+
+/// The probes that were built with a color other than `expected`.
+fn built_with_another_color(seen: &Seen, expected: Color) -> Vec<usize> {
+    seen.borrow()
+        .iter()
+        .enumerate()
+        .filter(|(_, color)| color.is_some_and(|color| color != expected))
+        .map(|(index, _)| index)
+        .collect()
+}
+
 struct Probe {
     index: usize,
     seen: Seen,
@@ -227,7 +245,11 @@ fn a_theme_change_reaches_every_widget_that_reads_the_theme() {
     let light = ThemeData::light().on_surface_color;
     let dark = ThemeData::dark().on_surface_color;
     assert!(
-        seen.borrow().iter().all(|color| *color == Some(light)),
+        built(&seen) > PLAIN,
+        "no row of the list was built, so there is nothing to follow the theme"
+    );
+    assert!(
+        built_with_another_color(&seen, light).is_empty(),
         "the probes start light"
     );
 
@@ -237,13 +259,11 @@ fn a_theme_change_reaches_every_widget_that_reads_the_theme() {
         .set_state(|state| state.mode = ThemeMode::Dark);
     run_for(&mut app, 500);
 
-    let stale: Vec<usize> = seen
-        .borrow()
-        .iter()
-        .enumerate()
-        .filter(|(_, color)| **color != Some(dark))
-        .map(|(index, _)| index)
-        .collect();
+    assert!(
+        built(&seen) > PLAIN,
+        "no row of the list was built, so there is nothing to follow the theme"
+    );
+    let stale = built_with_another_color(&seen, dark);
     assert!(
         stale.is_empty(),
         "these widgets kept the old theme's color: {stale:?}"
@@ -604,13 +624,11 @@ fn a_stateful_sidebar_that_rebuilt_for_its_resize_edge_still_follows_the_theme()
     run_for(&mut app, 500);
 
     let dark = ThemeData::dark().on_surface_color;
-    let stale: Vec<usize> = seen
-        .borrow()
-        .iter()
-        .enumerate()
-        .filter(|(_, color)| **color != Some(dark))
-        .map(|(index, _)| index)
-        .collect();
+    assert!(
+        built(&seen) > PLAIN,
+        "no row of the list was built, so there is nothing to follow the theme"
+    );
+    let stale = built_with_another_color(&seen, dark);
     assert!(
         stale.is_empty(),
         "these widgets kept the old theme's color: {stale:?}"

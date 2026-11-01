@@ -7,18 +7,14 @@ edition = "2024"
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
 
 [dependencies]
-aimer_time.workspace = true
-aimer_anteros.workspace = true
-aimer_haptics.workspace = true
 aimer_tls.workspace = true
 winit.workspace = true
 
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2.workspace = true
-objc2-ui-kit = { workspace = true, features = ["UIFeedbackGenerator", "UIPasteboard"] }
+objc2-ui-kit = { workspace = true, features = ["UIPasteboard"] }
 objc2-foundation = "0.3.2"
-objc2-core-haptics = "0.3.2"
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 
 [target.'cfg(not(target_os = "android"))'.dependencies]

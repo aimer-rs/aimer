@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 
+use aimer_cupid::draw_cmd_v2::CurrentBuildContext;
+
 /// The hasher for the type-keyed state map.
 ///
 /// A [`TypeId`] is a compiler-generated digest, so running it through SipHash
@@ -13,8 +15,77 @@ use std::rc::Rc;
 /// never input, so the flooding resistance SipHash buys is not needed.
 pub use aimer_cupid::utilities::IdHasher as TypeIdHasher;
 
+type StateMap = HashMap<TypeId, Rc<dyn Any>, BuildHasherDefault<TypeIdHasher>>;
+
 /// The states a build context passes down to its descendants, by type.
-pub type InheritedStates = HashMap<TypeId, Rc<dyn Any>, BuildHasherDefault<TypeIdHasher>>;
+///
+/// One state has a slot of its own instead of an entry in the map: the render
+/// node a retained element is painting or synchronizing. Every element enters
+/// that scope on every frame, and as a map entry each entry cost an `Rc`
+/// allocation and a hash insert on the way in and a hash remove on the way out.
+/// The slot is copied wherever the map is, so it is inherited exactly as the
+/// entry was.
+#[derive(Clone, Default)]
+pub struct InheritedStates {
+    map: StateMap,
+    local_paint: Option<CurrentBuildContext>,
+}
+
+impl InheritedStates {
+    /// The state stored for `key`.
+    #[inline]
+    pub fn get(&self, key: &TypeId) -> Option<&Rc<dyn Any>> {
+        self.map.get(key)
+    }
+
+    /// Stores `value` for `key`, returning the state it replaced.
+    #[inline]
+    pub fn insert(&mut self, key: TypeId, value: Rc<dyn Any>) -> Option<Rc<dyn Any>> {
+        self.map.insert(key, value)
+    }
+
+    /// Removes and returns the state stored for `key`.
+    #[inline]
+    pub fn remove(&mut self, key: &TypeId) -> Option<Rc<dyn Any>> {
+        self.map.remove(key)
+    }
+
+    /// The type-keyed states, in no particular order.
+    ///
+    /// The paint scope is not among them: it is open only around a paint or
+    /// state-sync callback, and replaying a captured one into another context
+    /// would point that context at a render node it is not painting.
+    #[inline]
+    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, TypeId, Rc<dyn Any>> {
+        self.map.iter()
+    }
+
+    /// The render node being painted or synchronized, if a scope is open.
+    #[inline]
+    pub(super) fn local_paint(&self) -> Option<&CurrentBuildContext> {
+        self.local_paint.as_ref()
+    }
+
+    /// Installs `node` as the render node being painted, returning the one it
+    /// replaced so the scope can put it back.
+    #[inline]
+    pub(super) fn replace_local_paint(
+        &mut self,
+        node: Option<CurrentBuildContext>,
+    ) -> Option<CurrentBuildContext> {
+        std::mem::replace(&mut self.local_paint, node)
+    }
+}
+
+impl<'a> IntoIterator for &'a InheritedStates {
+    type Item = (&'a TypeId, &'a Rc<dyn Any>);
+    type IntoIter = std::collections::hash_map::Iter<'a, TypeId, Rc<dyn Any>>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
 
 #[cfg(test)]
 mod tests {

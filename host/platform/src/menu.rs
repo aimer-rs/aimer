@@ -132,20 +132,20 @@ pub fn install_macos_menu() -> muda::Menu {
     let edit_menu = Submenu::new("Edit", true);
     edit_menu
         .append_items(&[
-            &edit_item("undo", "Undo", Accelerator::new(Some(CMD), Code::KeyZ)),
+            &edit_item("undo", "Undo", Accelerator::new(CMD, Code::KeyZ)),
             &edit_item(
                 "redo",
                 "Redo",
-                Accelerator::new(Some(CMD | Accel::SHIFT), Code::KeyZ),
+                Accelerator::new(CMD | Accel::SHIFT, Code::KeyZ),
             ),
             &PredefinedMenuItem::separator(),
-            &edit_item("cut", "Cut", Accelerator::new(Some(CMD), Code::KeyX)),
-            &edit_item("copy", "Copy", Accelerator::new(Some(CMD), Code::KeyC)),
-            &edit_item("paste", "Paste", Accelerator::new(Some(CMD), Code::KeyV)),
+            &edit_item("cut", "Cut", Accelerator::new(CMD, Code::KeyX)),
+            &edit_item("copy", "Copy", Accelerator::new(CMD, Code::KeyC)),
+            &edit_item("paste", "Paste", Accelerator::new(CMD, Code::KeyV)),
             &edit_item(
                 "select_all",
                 "Select All",
-                Accelerator::new(Some(CMD), Code::KeyA),
+                Accelerator::new(CMD, Code::KeyA),
             ),
         ])
         .unwrap();

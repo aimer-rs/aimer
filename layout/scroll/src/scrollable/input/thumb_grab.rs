@@ -6,7 +6,7 @@
 //! frame.
 
 use aimer_events::pointer::PointerSource;
-use aimer_native::haptic::{Haptics, ImpactStyle};
+use aimer_haptics::{Haptics, ImpactStyle};
 use aimer_utils::AnimInstant;
 use aimer_widget::{Element, PointerKey};
 
@@ -78,11 +78,11 @@ impl<E: Element> RawScrollableContainer<E> {
         // long the finger really waited, which is the threshold plus however
         // late that check ran.
         let threshold = crate::scrollable::constants::SCROLLBAR_THUMB_HOLD_MS;
-        thumb_log!(
-            "taken via {trigger} after {} ms (threshold {threshold} ms, {} ms late)",
-            held_for.as_millis(),
-            held_for.as_millis().saturating_sub(u128::from(threshold)),
-        );
+        // thumb_log!(
+        //     "taken via {trigger} after {} ms (threshold {threshold} ms, {} ms late)",
+        //     held_for.as_millis(),
+        //     held_for.as_millis().saturating_sub(u128::from(threshold)),
+        // );
         if let Some(id) = self.ctrl.active_touch_id.get() {
             let finger = PointerKey::new(PointerSource::Touch, id);
             // The content was handed this press when it landed. The finger is

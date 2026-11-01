@@ -59,30 +59,30 @@ impl<E: Element> RawScrollableContainer<E> {
         let on_thumb = self
             .ctrl
             .thumb_at(*p, pointer.source != PointerSource::Mouse);
-        thumb_log!(
-            "press id={} at ({:.1}, {:.1}) bar opacity {:.2} (needed to take the thumb: {:.2}) thumb v={:?} h={:?} -> {}",
-            pointer.id,
-            p.x,
-            p.y,
-            self.ctrl.bar.opacity.get(),
-            SCROLLBAR_TOUCH_MIN_OPACITY,
-            self.ctrl.bar.v_thumb_rect.get(),
-            self.ctrl.bar.h_thumb_rect.get(),
-            match on_thumb {
-                Some(thumb) => format!(
-                    "on the {thumb:?} thumb, hold started (needs {SCROLLBAR_THUMB_HOLD_MS} ms){}",
-                    if self.ctrl.bar.opacity.get() < SCROLLBAR_TOUCH_MIN_OPACITY {
-                        ", bar is hidden: showing it first"
-                    } else {
-                        ""
-                    }
-                ),
-                None => format!(
-                    "not on the thumb, a content press: {}",
-                    self.ctrl.describe_touch_miss(*p)
-                ),
-            }
-        );
+        // thumb_log!(
+        //     "press id={} at ({:.1}, {:.1}) bar opacity {:.2} (needed to take the thumb: {:.2}) thumb v={:?} h={:?} -> {}",
+        //     pointer.id,
+        //     p.x,
+        //     p.y,
+        //     self.ctrl.bar.opacity.get(),
+        //     SCROLLBAR_TOUCH_MIN_OPACITY,
+        //     self.ctrl.bar.v_thumb_rect.get(),
+        //     self.ctrl.bar.h_thumb_rect.get(),
+        //     match on_thumb {
+        //         Some(thumb) => format!(
+        //             "on the {thumb:?} thumb, hold started (needs {SCROLLBAR_THUMB_HOLD_MS} ms){}",
+        //             if self.ctrl.bar.opacity.get() < SCROLLBAR_TOUCH_MIN_OPACITY {
+        //                 ", bar is hidden: showing it first"
+        //             } else {
+        //                 ""
+        //             }
+        //         ),
+        //         None => format!(
+        //             "not on the thumb, a content press: {}",
+        //             self.ctrl.describe_touch_miss(*p)
+        //         ),
+        //     }
+        // );
         if let Some(thumb) = on_thumb {
             // A fingertip near the edge of a page is usually after the page,
             // not the bar, so the thumb is not taken on contact. This starts a

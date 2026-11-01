@@ -1128,3 +1128,42 @@ fn cropped_opacity_groups_render_with_msaa_through_native_metal() {
         [0, 0, 0, 0]
     );
 }
+
+/// Timing probe: `cargo nextest run -p aimer_cupid --run-ignored only --no-capture`.
+///
+/// What the raster thread pays, in the frame a decoded image is first drawn, to
+/// create its texture and stage its pixels, before the blit the GPU runs itself.
+#[test]
+#[ignore = "timing probe, prints results"]
+fn profile_first_upload_of_a_decoded_photo() {
+    let Some(backend) = MetalBackend::new() else {
+        return;
+    };
+    let mut pipeline = crate::pipeline::image_pipeline::ImagePipeline::new(
+        &backend,
+        FORMAT,
+        crate::AntiAlias::Analytic,
+    );
+    for (index, (width, height)) in [(1024_u32, 768_u32), (2048, 1536), (2556, 1917), (4032, 3024)]
+        .into_iter()
+        .enumerate()
+    {
+        let pixels = (0..width as usize * height as usize * 4)
+            .map(|byte| (byte % 251) as u8)
+            .collect::<Vec<u8>>();
+        let megabytes = pixels.len() as f64 / (1024.0 * 1024.0);
+        let start = std::time::Instant::now();
+        pipeline.upload_retained_image_with_id(
+            &backend,
+            index as u32 + 1,
+            index as u64 + 1,
+            width,
+            height,
+            &pixels,
+        );
+        println!(
+            "{width}x{height} ({megabytes:5.1} MiB): create texture + stage pixels {:8.2} ms",
+            start.elapsed().as_secs_f64() * 1e3
+        );
+    }
+}

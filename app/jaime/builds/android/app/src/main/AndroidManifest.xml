@@ -3,6 +3,9 @@
      app/build.gradle.kts; declaring `package` here is ignored since AGP 8. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Haptic feedback (`aimer_haptics`) goes through the system vibrator. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:enableOnBackInvokedCallback="true"
         android:allowBackup="true"

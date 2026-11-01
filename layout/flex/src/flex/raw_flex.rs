@@ -675,9 +675,14 @@ impl RawFlex {
     ///   container already paid for, and a wrong guess would only add a visible
     ///   correction to an ordinary [`Row`](crate::Row) or
     ///   [`Column`](crate::Column);
-    /// - the main axis is bounded, which means the container is not inside a
-    ///   scroll viewport and its total is not what a scroll extent is derived
-    ///   from — there is nothing to win and a correction to lose;
+    /// - the main axis is bounded and the source has not been windowed yet,
+    ///   which means the container is not inside a scroll viewport and its total
+    ///   is not what a scroll extent is derived from — there is nothing to win
+    ///   and a correction to lose. A source that *has* been windowed under an
+    ///   unbounded axis keeps predicting under a bounded one: the render-tree
+    ///   synchronization measures a child again with the finite extent its
+    ///   parent resolved, and giving up there would build every row of a long
+    ///   list on every rebuild;
     /// - the probe is a flex child, whose size comes from distributing the
     ///   leftover space rather than from the child itself.
     ///
@@ -696,48 +701,61 @@ impl RawFlex {
         } else {
             (ctx.box_constraint.max_height, ctx.box_constraint.max_width)
         };
-        if is_bounded(max_main) {
+        if is_bounded(max_main) && self.children.probe_index().is_none() {
             return None;
         }
 
-        // Prefer the representative row retained by a previous window. If a
-        // list is starting cold at a deep offset, row zero is not a useful
-        // representative either: it may carry one-off leading spacing. The
-        // first viewport row is therefore the fallback in that case.
-        let cold_probe = || {
-            let main_start = ctx
-                .visible_rect
-                .map(|(x, y, _, _)| if is_row { x } else { y });
-            (main_start.is_some_and(|start| start > 0.0) && len > 1).then_some(1)
+        // A prediction already held for this cross-axis extent keeps the size it
+        // assumed: probing anew would pick the first row of the live window, and
+        // that depends on the extent the last guess reported, so rows of unequal
+        // height would flip the total between two guesses frame after frame.
+        let probed = match self
+            .layout
+            .prediction_for_cross(max_cross, scale_bits_of(ctx), is_row)
+            .and_then(|held| held.assumed_size())
+        {
+            Some(assumed) => assumed,
+            None => {
+            // Prefer the representative row retained by a previous window. If a
+            // list is starting cold at a deep offset, row zero is not a useful
+            // representative either: it may carry one-off leading spacing. The
+            // first viewport row is therefore the fallback in that case.
+            let cold_probe = || {
+                let main_start = ctx
+                    .visible_rect
+                    .map(|(x, y, _, _)| if is_row { x } else { y });
+                (main_start.is_some_and(|start| start > 0.0) && len > 1).then_some(1)
+            };
+            let index = self
+                .children
+                .probe_index()
+                .or_else(cold_probe)
+                .unwrap_or(0)
+                .min(len - 1);
+            if self.children.get(index).is_none() {
+                self.children.window(index..index + 1, ctx);
+            }
+            let probe = self.children.get(index)?;
+            if probe.flex().is_some() {
+                // Distribution decides the size, so there is nothing to extrapolate
+                // from — and every share depends on the other children anyway.
+                self.children.materialize_all(ctx);
+                return None;
+            }
+
+            // Measured exactly as `FlexLayout::build` would, so a later
+            // revalidation compares like with like.
+            let mut child_ctx = ctx.clone();
+            if is_row {
+                child_ctx.box_constraint.max_width = f32::MAX;
+                child_ctx.box_constraint.max_height = max_cross;
+            } else {
+                child_ctx.box_constraint.max_height = f32::MAX;
+                child_ctx.box_constraint.max_width = max_cross;
+            }
+            probe.computed_size(&child_ctx)
+            }
         };
-        let index = self
-            .children
-            .probe_index()
-            .or_else(cold_probe)
-            .unwrap_or(0)
-            .min(len - 1);
-        if self.children.get(index).is_none() {
-            self.children.window(index..index + 1, ctx);
-        }
-        let probe = self.children.get(index)?;
-        if probe.flex().is_some() {
-            // Distribution decides the size, so there is nothing to extrapolate
-            // from — and every share depends on the other children anyway.
-            self.children.materialize_all(ctx);
-            return None;
-        }
-
-        // Measured exactly as `FlexLayout::build` would, so a later
-        // revalidation compares like with like.
-        let mut child_ctx = ctx.clone();
-        if is_row {
-            child_ctx.box_constraint.max_width = f32::MAX;
-            child_ctx.box_constraint.max_height = max_cross;
-        } else {
-            child_ctx.box_constraint.max_height = f32::MAX;
-            child_ctx.box_constraint.max_width = max_cross;
-        }
-        let probed = probe.computed_size(&child_ctx);
 
         let layout = FlexLayout::estimated(len, probed, is_row, gap_main);
         // Asked under another constraint than the one the held table was made
@@ -1119,7 +1137,8 @@ impl Drawable for RawFlex {
             layout.total(),
         );
         if retired || layout.total() != reported {
-            aimer_widget::notify_layout_changed();
+            // Only the extent moved: no text anywhere wraps differently.
+            aimer_widget::notify_extent_changed();
             self.layout
                 .set(ctx.box_constraint, scale_bits_of(ctx), Rc::clone(&layout));
         }
@@ -1433,12 +1452,16 @@ impl Rebuildable for RawFlex {
 
         self.children.adopt_retained(old.children.take_retained());
 
-        if old.children.len() == self.children.len()
-            && old.direction == self.direction
+        let same_rules = old.direction == self.direction
             && old.gaps == self.gaps
             && old.overflow_behavior == self.overflow_behavior
-            && old.item_extent == self.item_extent
-        {
+            && old.item_extent == self.item_extent;
+        if same_rules && old.children.len() < self.children.len() {
+            // The list grew. Its table no longer describes it, but what the old
+            // one learned seeds the new prediction.
+            self.layout.invalidate();
+            self.layout.adopt_history(&old.layout);
+        } else if same_rules && old.children.len() == self.children.len() {
             // The replacement may already have been measured before this
             // handoff. Drop that provisional table so the learned table from
             // the old container can be adopted instead of being ignored by

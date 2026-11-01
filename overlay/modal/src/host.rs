@@ -165,11 +165,12 @@ impl OverlayLayer {
 
     /// Hosts `element` above every modal as a retained node of its own.
     ///
-    /// `position` is asked for the element's top-left corner every time the
-    /// render tree synchronizes, in device pixels relative to the overlay (the
-    /// same unit [`LayoutElement::pos`] reports), so the element follows a
-    /// pointer without being rebuilt. The element takes no events: it is not
-    /// part of the overlay's routed children.
+    /// `position` is asked for the element's top-left corner every frame, in
+    /// device pixels relative to the overlay (the same unit
+    /// [`LayoutElement::pos`] reports), so the element follows a pointer
+    /// without being rebuilt and without the render tree being resynchronized.
+    /// The element takes no events: it is not part of the overlay's routed
+    /// children.
     #[doc(hidden)]
     pub fn host_element(
         element: AnyElement,
@@ -185,6 +186,7 @@ impl OverlayLayer {
             element: OverlayFollower {
                 child: element,
                 position,
+                anchor: Cell::new(None),
             }
             .boxed(),
         });
@@ -242,9 +244,33 @@ impl HostedContents {
 }
 
 /// Places one hosted element, and positions nothing else.
+///
+/// The render tree asks an element where it is only when the tree changes
+/// shape, and a pointer moving changes nothing of the kind. So the node is left
+/// where `position` first said it was, its anchor, and every frame the child is
+/// moved by how far `position` has travelled since, as a presentation on the
+/// retained child. That costs one transform per frame and invalidates nothing,
+/// where asking the tree to re-read the position would resynchronize all of it.
 struct OverlayFollower {
     child: AnyElement,
     position: Rc<dyn Fn() -> aimer_attribute::Vec2d>,
+    /// Where the node was placed, in device pixels. Read on first use rather
+    /// than when hosted: `position` may borrow state that its caller still
+    /// holds while hosting.
+    anchor: Cell<Option<aimer_attribute::Vec2d>>,
+}
+
+impl OverlayFollower {
+    fn anchor(&self) -> aimer_attribute::Vec2d {
+        match self.anchor.get() {
+            Some(anchor) => anchor,
+            None => {
+                let anchor = (self.position)();
+                self.anchor.set(Some(anchor));
+                anchor
+            }
+        }
+    }
 }
 
 impl VisitorElement for OverlayFollower {
@@ -267,7 +293,7 @@ impl RebuildableTrait for OverlayFollower {
 
 impl LayoutElement for OverlayFollower {
     fn pos(&self) -> Option<aimer_attribute::Vec2d> {
-        Some((self.position)())
+        Some(self.anchor())
     }
 
     fn size(&self) -> Option<Size> {
@@ -308,6 +334,18 @@ impl Drawable for OverlayFollower {
 
     fn paint_local_v2(&self, ctx: &BuildContext) {
         aimer_canvas::Canvas::of(ctx).finish();
+    }
+
+    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+        self.sync_paint_geometry(ctx);
+        let anchor = self.anchor();
+        let now = (self.position)();
+        // The tree is in logical pixels and `position` is in device pixels.
+        let shift = aimer_cupid::utilities::Mat3::translate(
+            (now.x - anchor.x) / ctx.scale,
+            (now.y - anchor.y) / ctx.scale,
+        );
+        ctx.set_local_v2_child_presentation_at(0, shift, 1.0)
     }
 
     fn retained_v2_child_context_at<'a>(
@@ -1261,8 +1299,8 @@ mod tests {
     }
 
     /// Content hosted by an overlay layer is a retained child of the overlay:
-    /// it gets its own render node, placed where the layer says, and it takes
-    /// no events.
+    /// it gets its own render node, placed where the layer first says, and it
+    /// takes no events.
     #[tokio::test]
     async fn hosted_content_is_a_retained_child_of_the_overlay_at_its_position() {
         super::clear_registry();
@@ -1288,13 +1326,17 @@ mod tests {
         // The element reports its place in device pixels, relative to the overlay.
         assert_eq!(retained[0].1, Some(Vec2d { x: 30.0, y: 40.0 }));
 
+        // The node is placed once. Where `position` goes afterwards reaches the
+        // screen as a presentation applied every frame (see `OverlayFollower`),
+        // not by moving the node: the render tree does not ask a node where it
+        // is unless the tree changes shape, which a pointer moving does not do.
         position.set(Vec2d { x: 50.0, y: 60.0 });
-        let mut moved = None;
-        overlay.visit_retained_v2_children(&mut |_, child| moved = child.pos());
+        let mut placed = None;
+        overlay.visit_retained_v2_children(&mut |_, child| placed = child.pos());
         assert_eq!(
-            moved,
-            Some(Vec2d { x: 50.0, y: 60.0 }),
-            "the place is read each time"
+            placed,
+            Some(Vec2d { x: 30.0, y: 40.0 }),
+            "the node stays where it was placed"
         );
 
         let mut routed = 0;

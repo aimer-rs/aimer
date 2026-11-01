@@ -46,10 +46,57 @@ fn remove_cache_key<K: Eq + Hash>(access: &mut HashMap<K, u64>, key: &K) {
     access.remove(key);
 }
 
+/// Decoded RGBA pixels together with the identity the renderer will know them
+/// by, all worked out where the image was decoded.
+///
+/// The texture id is a hash of the pixels, the content revision hashes every one
+/// of them, and the shared buffer is a copy of the decoder's `Vec`: each costs
+/// time proportional to the image, a few milliseconds for a phone photo. Done
+/// when the image first reaches the render thread they stalled the frame it
+/// appeared in; done here, on the decoding thread, the render thread only moves
+/// the finished buffer into a resource.
+#[derive(Clone)]
+struct DecodedPixels {
+    rgba: Arc<[u8]>,
+    texture_id: aimer_cupid::utilities::TextureId,
+    revision: u64,
+}
+
+impl DecodedPixels {
+    /// Takes the pixels of an `upload_width` x `upload_height` image.
+    fn new(rgba: Vec<u8>, upload_width: u32, upload_height: u32) -> Self {
+        Self {
+            texture_id: aimer_cupid::draw_cmd::DrawList::image_texture_id(
+                &rgba,
+                upload_width,
+                upload_height,
+            ),
+            revision: aimer_cupid::draw_cmd::DrawList::image_content_revision(
+                &rgba,
+                upload_width,
+                upload_height,
+            ),
+            rgba: Arc::from(rgba),
+        }
+    }
+}
+
+// Printing the pixels would print megabytes.
+impl std::fmt::Debug for DecodedPixels {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DecodedPixels")
+            .field("bytes", &self.rgba.len())
+            .field("texture_id", &self.texture_id)
+            .field("revision", &self.revision)
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug)]
 enum ImageCacheState {
     Loading,
-    Ready(Vec<u8>, u32, u32, u32, u32),
+    Ready(DecodedPixels, u32, u32, u32, u32),
     Loaded(u32, u32, u32, Arc<ImageResource>),
     Error(String),
 }
@@ -109,7 +156,7 @@ enum CacheLookup {
     StartLoad,
     Loading,
     Ready {
-        bytes: Vec<u8>,
+        pixels: DecodedPixels,
         upload_width: u32,
         upload_height: u32,
         width: u32,
@@ -180,7 +227,7 @@ fn prune_decoded_cache<K, S>(
 #[inline]
 fn image_decoded_bytes(state: &ImageCacheState) -> usize {
     match state {
-        ImageCacheState::Ready(bytes, ..) => bytes.capacity(),
+        ImageCacheState::Ready(pixels, ..) => pixels.rgba.len(),
         ImageCacheState::Loaded(_, _, _, resource) => resource.rgba().len(),
         ImageCacheState::Loading | ImageCacheState::Error(..) => 0,
     }
@@ -191,21 +238,17 @@ fn new_retained_image_resource(
     upload_height: u32,
     intrinsic_width: u32,
     intrinsic_height: u32,
-    rgba: Vec<u8>,
+    pixels: DecodedPixels,
 ) -> Arc<ImageResource> {
-    let texture_id =
-        aimer_cupid::draw_cmd::DrawList::image_texture_id(&rgba, upload_width, upload_height);
-    let revision =
-        aimer_cupid::draw_cmd::DrawList::image_content_revision(&rgba, upload_width, upload_height);
     Arc::new(
         ImageResource::rgba8_with_intrinsic_size(
-            texture_id,
-            revision,
+            pixels.texture_id,
+            pixels.revision,
             upload_width,
             upload_height,
             intrinsic_width,
             intrinsic_height,
-            Arc::from(rgba),
+            pixels.rgba,
         )
         .expect("decoded RGBA image dimensions match its pixel payload"),
     )
@@ -214,9 +257,9 @@ fn new_retained_image_resource(
 fn materialize_retained_resource(state: &mut ImageCacheState) -> Option<Arc<ImageResource>> {
     let current = std::mem::replace(state, ImageCacheState::Loading);
     match current {
-        ImageCacheState::Ready(bytes, upload_width, upload_height, width, height) => {
+        ImageCacheState::Ready(pixels, upload_width, upload_height, width, height) => {
             let resource =
-                new_retained_image_resource(upload_width, upload_height, width, height, bytes);
+                new_retained_image_resource(upload_width, upload_height, width, height, pixels);
             let id = resource.texture_id();
             *state = ImageCacheState::Loaded(id, width, height, resource.clone());
             Some(resource)
@@ -299,9 +342,9 @@ fn lookup_cache<K: Clone + Eq + Hash>(
             ImageCacheState::Loading,
         );
         return match state {
-            ImageCacheState::Ready(bytes, upload_width, upload_height, width, height) => {
+            ImageCacheState::Ready(pixels, upload_width, upload_height, width, height) => {
                 CacheLookup::Ready {
-                    bytes,
+                    pixels,
                     upload_width,
                     upload_height,
                     width,
@@ -491,21 +534,147 @@ fn venus_unavailable() -> String {
 const BROWSER_IMAGE_MAX_DIMENSION: u32 = 2048;
 #[allow(dead_code)]
 fn constrained_browser_image_size(width: u32, height: u32) -> (u32, u32) {
-    if width <= BROWSER_IMAGE_MAX_DIMENSION && height <= BROWSER_IMAGE_MAX_DIMENSION {
+    constrained_image_size(width, height, BROWSER_IMAGE_MAX_DIMENSION)
+}
+
+/// `width` x `height` scaled down, aspect ratio kept, until neither side is
+/// longer than `max_dimension`. Never scaled up, and never to an empty side.
+fn constrained_image_size(width: u32, height: u32, max_dimension: u32) -> (u32, u32) {
+    if width <= max_dimension && height <= max_dimension {
         return (width, height);
     }
 
     if width >= height {
         (
-            BROWSER_IMAGE_MAX_DIMENSION,
-            ((height as u64 * BROWSER_IMAGE_MAX_DIMENSION as u64) / width as u64).max(1) as u32,
+            max_dimension,
+            ((height as u64 * max_dimension as u64) / width as u64).max(1) as u32,
         )
     } else {
         (
-            ((width as u64 * BROWSER_IMAGE_MAX_DIMENSION as u64) / height as u64).max(1) as u32,
-            BROWSER_IMAGE_MAX_DIMENSION,
+            ((width as u64 * max_dimension as u64) / height as u64).max(1) as u32,
+            max_dimension,
         )
     }
+}
+
+/// The smallest upload limit: windows smaller than this still keep this much
+/// detail, so that growing the window later does not show a blurry image.
+#[cfg(not(target_arch = "wasm32"))]
+const MIN_UPLOAD_LIMIT: u32 = 2048;
+
+/// The longest side an image is worth uploading at, given the longest side of
+/// its window in physical pixels.
+///
+/// A texture longer than the window cannot show its extra pixels: a 12
+/// megapixel camera photo is 46 MiB to hold, to copy to the GPU and to sample
+/// without mip levels, on a phone screen that shows a quarter of it. `0` means
+/// the window's size is not known, and then nothing is scaled.
+#[cfg(not(target_arch = "wasm32"))]
+fn upload_limit_for(window_longest_side: u32) -> u32 {
+    match window_longest_side {
+        0 => u32::MAX,
+        side => side.max(MIN_UPLOAD_LIMIT),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn upload_limit(window: &WindowHandle) -> u32 {
+    let size = window.inner_size();
+    upload_limit_for(size.width.max(size.height))
+}
+
+/// `source`, a `source_width` x `source_height` RGBA image, averaged down to
+/// `width` x `height`, which must not be larger.
+///
+/// Every output pixel is the mean of the block of source pixels it covers
+/// (a box filter), weighted by alpha so that a transparent pixel's color, which
+/// is meaningless, cannot darken the edge of a shape. Plain slice loops rather
+/// than `image::imageops::resize`: that is generic code that a debug build
+/// compiles without optimization, and took four seconds for a 12 megapixel
+/// photo where this takes a fraction of one.
+#[cfg(not(target_arch = "wasm32"))]
+fn downscale_rgba(
+    source: &[u8],
+    source_width: u32,
+    source_height: u32,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    let (source_width, source_height) = (source_width as usize, source_height as usize);
+    let (width, height) = (width as usize, height as usize);
+    assert_eq!(source.len(), source_width * source_height * 4);
+    assert!(
+        (1..=source_width).contains(&width) && (1..=source_height).contains(&height),
+        "downscale_rgba only makes images smaller"
+    );
+
+    // The source columns each output column averages: `[start, end)`, never empty.
+    let columns: Vec<(usize, usize)> = (0..width)
+        .map(|x| {
+            let start = x * source_width / width;
+            let end = ((x + 1) * source_width).div_ceil(width).clamp(start + 1, source_width);
+            (start, end)
+        })
+        .collect();
+
+    let mut output = vec![0_u8; width * height * 4];
+    for (y, output_row) in output.chunks_exact_mut(width * 4).enumerate() {
+        let top = y * source_height / height;
+        let bottom = ((y + 1) * source_height).div_ceil(height).clamp(top + 1, source_height);
+        for (pixel, &(left, right)) in output_row.chunks_exact_mut(4).zip(&columns) {
+            // Sums of `channel * alpha`, of alpha, and the number of pixels.
+            let (mut red, mut green, mut blue, mut alpha, mut count) = (0_u64, 0_u64, 0_u64, 0_u64, 0_u64);
+            for row in top..bottom {
+                let start = (row * source_width + left) * 4;
+                let end = (row * source_width + right) * 4;
+                // Indexed rather than iterated: in a debug build every iterator
+                // step is a call, and this is the innermost loop of the scale.
+                let block = &source[start..end];
+                let mut at = 0;
+                while at < block.len() {
+                    let a = block[at + 3] as u64;
+                    red += block[at] as u64 * a;
+                    green += block[at + 1] as u64 * a;
+                    blue += block[at + 2] as u64 * a;
+                    alpha += a;
+                    at += 4;
+                }
+                count += (right - left) as u64;
+            }
+            if alpha == 0 {
+                continue; // fully transparent: the zeroed pixel
+            }
+            pixel[0] = ((red + alpha / 2) / alpha) as u8;
+            pixel[1] = ((green + alpha / 2) / alpha) as u8;
+            pixel[2] = ((blue + alpha / 2) / alpha) as u8;
+            pixel[3] = ((alpha + count / 2) / count) as u8;
+        }
+    }
+    output
+}
+
+/// A decoded image as the cache holds it: scaled down to `limit` if it is
+/// larger, with its pixels prepared for the render thread.
+///
+/// The size layout sees stays the image's own; only the pixels uploaded to the
+/// GPU shrink. Runs on the decoding thread, where the scale (a few tens of
+/// milliseconds for a photo) costs the frame loop nothing.
+#[cfg(not(target_arch = "wasm32"))]
+fn ready_image(image: image::RgbaImage, limit: u32) -> ImageCacheState {
+    let (width, height) = image.dimensions();
+    let (upload_width, upload_height) = constrained_image_size(width, height, limit);
+    let rgba = if (upload_width, upload_height) == (width, height) {
+        image.into_raw()
+    } else {
+        downscale_rgba(image.as_raw(), width, height, upload_width, upload_height)
+    };
+    ImageCacheState::Ready(
+        DecodedPixels::new(rgba, upload_width, upload_height),
+        upload_width,
+        upload_height,
+        width,
+        height,
+    )
 }
 #[allow(dead_code)]
 fn image_mime_type(bytes: &[u8]) -> &'static str {
@@ -653,14 +822,14 @@ impl ImageSource {
                 Success(id)
             }
             CacheLookup::Ready {
-                bytes,
+                pixels,
                 upload_width,
                 upload_height,
                 width,
                 height,
             } => {
                 let resource =
-                    new_retained_image_resource(upload_width, upload_height, width, height, bytes);
+                    new_retained_image_resource(upload_width, upload_height, width, height, pixels);
                 let id = resource.texture_id();
                 ctx.canvas.set_texture_size(id, width, height);
                 IMAGE_CACHES.with(|caches| {
@@ -683,19 +852,10 @@ impl ImageSource {
                     let error_path = path.clone();
                     let window = ctx.window.clone();
                     let error_window = window.clone();
+                    let limit = upload_limit(&window);
                     if !schedule_native_image_load(
                         move || match image::open(&task_path) {
-                            Ok(image) => {
-                                let rgba = image.to_rgba8();
-                                let (width, height) = (rgba.width(), rgba.height());
-                                ImageCacheState::Ready(
-                                    rgba.into_raw(),
-                                    width,
-                                    height,
-                                    width,
-                                    height,
-                                )
-                            }
+                            Ok(image) => ready_image(image.into_rgba8(), limit),
                             Err(_) => ImageCacheState::Error("Failed to load image".into()),
                         },
                         move |state| ImageCacheUpdate::File {
@@ -725,7 +885,13 @@ impl ImageSource {
                         let state = match Self::fetch_bytes(&url).await {
                             Ok(bytes) => match Self::decode_image_browser(&bytes).await {
                                 Ok((rgba, upload_w, upload_h, w, h)) => {
-                                    ImageCacheState::Ready(rgba, upload_w, upload_h, w, h)
+                                    ImageCacheState::Ready(
+                                        DecodedPixels::new(rgba, upload_w, upload_h),
+                                        upload_w,
+                                        upload_h,
+                                        w,
+                                        h,
+                                    )
                                 }
                                 Err(error) => ImageCacheState::Error(error),
                             },
@@ -765,14 +931,14 @@ impl ImageSource {
                 Success(id)
             }
             CacheLookup::Ready {
-                bytes,
+                pixels,
                 upload_width,
                 upload_height,
                 width,
                 height,
             } => {
                 let resource =
-                    new_retained_image_resource(upload_width, upload_height, width, height, bytes);
+                    new_retained_image_resource(upload_width, upload_height, width, height, pixels);
                 let id = resource.texture_id();
                 ctx.canvas.set_texture_size(id, width, height);
                 IMAGE_CACHES.with(|caches| {
@@ -796,20 +962,11 @@ impl ImageSource {
                 let error_key = key_owned;
                 let window = ctx.window.clone();
                 let error_window = window.clone();
+                let limit = upload_limit(&window);
                 if !schedule_native_image_load(
                     move || match Self::load_asset_bytes(&task_key) {
                         Ok(bytes) => match image::load_from_memory(&bytes) {
-                            Ok(image) => {
-                                let rgba = image.to_rgba8();
-                                let (width, height) = (rgba.width(), rgba.height());
-                                ImageCacheState::Ready(
-                                    rgba.into_raw(),
-                                    width,
-                                    height,
-                                    width,
-                                    height,
-                                )
-                            }
+                            Ok(image) => ready_image(image.into_rgba8(), limit),
                             Err(_) => ImageCacheState::Error(format!(
                                 "Failed to decode asset image '{task_key}'"
                             )),
@@ -914,14 +1071,14 @@ impl ImageSource {
                 Success(id)
             }
             CacheLookup::Ready {
-                bytes,
+                pixels,
                 upload_width,
                 upload_height,
                 width,
                 height,
             } => {
                 let resource =
-                    new_retained_image_resource(upload_width, upload_height, width, height, bytes);
+                    new_retained_image_resource(upload_width, upload_height, width, height, pixels);
                 let id = resource.texture_id();
                 ctx.canvas.set_texture_size(id, width, height);
                 IMAGE_CACHES.with(|caches| {
@@ -947,8 +1104,9 @@ impl ImageSource {
                     let update_url = url_owned.clone();
                     let error_url = url_owned;
                     let error_window = window.clone();
+                    let limit = upload_limit(&window);
                     if !schedule_native_image_load(
-                        move || match Self::fetch_full_image_with_headers(&task_url, &headers) {
+                        move || match Self::fetch_full_image_with_headers(&task_url, &headers, limit) {
                             Ok(state) => state,
                             Err(error) => {
                                 error!("Error to fetch network image : {}", error);
@@ -1023,7 +1181,7 @@ impl ImageSource {
             Self::decode_image_browser(&bytes).await?;
 
         Ok(ImageCacheState::Ready(
-            rgba,
+            DecodedPixels::new(rgba, upload_width, upload_height),
             upload_width,
             upload_height,
             width,
@@ -1173,6 +1331,7 @@ impl ImageSource {
     fn fetch_full_image_with_headers(
         url: &str,
         headers: &HashMap<String, String>,
+        limit: u32,
     ) -> Result<ImageCacheState, String> {
         let mut request_builder = ureq::get(url).header("User-Agent", "aimer/0.1.0");
         for (key, value) in headers {
@@ -1199,16 +1358,7 @@ impl ImageSource {
             .map_err(|error| format!("Failed to download bytes: {error}"))?;
 
         match image::load_from_memory(&all_bytes) {
-            Ok(image) => {
-                let image = image.into_rgba8();
-                let width = image.width();
-                let height = image.height();
-                let rgba_bytes = image.into_raw();
-
-                Ok(ImageCacheState::Ready(
-                    rgba_bytes, width, height, width, height,
-                ))
-            }
+            Ok(image) => Ok(ready_image(image.into_rgba8(), limit)),
             Err(_) => {
                 // error!("Failed to decode image: {}", e);
                 Err("Failed to decode image".into())
@@ -1223,10 +1373,13 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        DECODED_CACHE_BUDGET_BYTES, DECODED_CACHE_IDLE_ACCESSES, IMAGE_CACHES, ImageCacheState,
-        ImageCacheUpdate, ImageCaches, constrained_browser_image_size, drain_cache_updates,
-        image_mime_type, new_retained_image_resource, prune_decoded_cache, send_cache_update,
+        DECODED_CACHE_BUDGET_BYTES, DECODED_CACHE_IDLE_ACCESSES, DecodedPixels, IMAGE_CACHES,
+        ImageCacheState, ImageCacheUpdate, ImageCaches, constrained_browser_image_size,
+        constrained_image_size, drain_cache_updates, image_mime_type, new_retained_image_resource,
+        prune_decoded_cache, send_cache_update,
     };
+    #[cfg(not(target_arch = "wasm32"))]
+    use super::{MIN_UPLOAD_LIMIT, downscale_rgba, ready_image, upload_limit_for};
 
     #[cfg(not(target_arch = "wasm32"))]
     fn context() -> aimer_widget::base::BuildContext<'static> {
@@ -1366,6 +1519,202 @@ mod tests {
     }
 
     #[test]
+    fn an_image_is_constrained_to_the_limit_keeping_its_aspect_ratio() {
+        assert_eq!(constrained_image_size(4032, 3024, 2048), (2048, 1536));
+        assert_eq!(constrained_image_size(3024, 4032, 2048), (1536, 2048));
+        assert_eq!(constrained_image_size(2048, 100, 2048), (2048, 100));
+        assert_eq!(constrained_image_size(1000, 500, 2048), (1000, 500));
+    }
+
+    #[test]
+    fn a_very_thin_image_is_never_constrained_to_an_empty_side() {
+        assert_eq!(constrained_image_size(10_000, 1, 100), (100, 1));
+        assert_eq!(constrained_image_size(1, 10_000, 100), (1, 100));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_upload_limit_follows_the_window_but_not_below_the_floor() {
+        // A phone in portrait: the screen's long side.
+        assert_eq!(upload_limit_for(2556), 2556);
+        // A big desktop window.
+        assert_eq!(upload_limit_for(5120), 5120);
+        // A small window keeps enough detail to survive being enlarged.
+        assert_eq!(upload_limit_for(480), MIN_UPLOAD_LIMIT);
+        // An unknown size is no reason to throw detail away.
+        assert_eq!(upload_limit_for(0), u32::MAX);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_photo_larger_than_the_limit_is_scaled_for_upload_but_keeps_its_own_size() {
+        let photo = image::RgbaImage::from_pixel(400, 200, image::Rgba([10, 20, 30, 255]));
+
+        match ready_image(photo, 100) {
+            ImageCacheState::Ready(pixels, 100, 50, 400, 200) => {
+                assert_eq!(pixels.rgba.len(), 100 * 50 * 4);
+                // A flat color survives the resampling untouched.
+                assert!(pixels.rgba.chunks_exact(4).all(|pixel| pixel == [10, 20, 30, 255]));
+            }
+            other => panic!("expected a scaled, ready image, got {other:?}"),
+        }
+    }
+
+    /// An RGBA image whose pixel at `(x, y)` is `pixel(x, y)`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn rgba_from(width: u32, height: u32, pixel: impl Fn(u32, u32) -> [u8; 4]) -> Vec<u8> {
+        (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .flat_map(|(x, y)| pixel(x, y))
+            .collect()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn downscaling_averages_the_pixels_each_output_pixel_covers() {
+        // Left half black, right half white, halved horizontally: one black and
+        // one white pixel survive; halved again they average to gray.
+        let source = rgba_from(4, 2, |x, _| if x < 2 { [0, 0, 0, 255] } else { [255, 255, 255, 255] });
+        assert_eq!(
+            downscale_rgba(&source, 4, 2, 2, 1),
+            [0, 0, 0, 255, 255, 255, 255, 255]
+        );
+        assert_eq!(downscale_rgba(&source, 4, 2, 1, 1), [128, 128, 128, 255]);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn downscaling_a_checkerboard_gives_the_mean_gray() {
+        let source = rgba_from(8, 8, |x, y| {
+            let v = if (x + y) % 2 == 0 { 0 } else { 255 };
+            [v, v, v, 255]
+        });
+
+        let scaled = downscale_rgba(&source, 8, 8, 2, 2);
+
+        assert!(scaled.chunks_exact(4).all(|p| p == [128, 128, 128, 255]), "{scaled:?}");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_transparent_pixel_does_not_darken_the_color_beside_it() {
+        // Opaque red next to transparent black: the mean is red at half opacity,
+        // not a dark red.
+        let source = rgba_from(2, 1, |x, _| if x == 0 { [255, 0, 0, 255] } else { [0, 0, 0, 0] });
+
+        assert_eq!(downscale_rgba(&source, 2, 1, 1, 1), [255, 0, 0, 128]);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_fully_transparent_block_stays_transparent() {
+        let source = rgba_from(4, 4, |_, _| [9, 9, 9, 0]);
+
+        assert!(downscale_rgba(&source, 4, 4, 2, 2).iter().all(|byte| *byte == 0));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn downscaling_by_a_ratio_that_is_not_whole_uses_every_source_pixel_and_stays_in_range() {
+        // 5 -> 3 and 7 -> 2: blocks overlap by one pixel, none is empty.
+        let source = rgba_from(5, 7, |x, y| [(x * 40) as u8, (y * 30) as u8, 100, 255]);
+
+        let scaled = downscale_rgba(&source, 5, 7, 3, 2);
+
+        assert_eq!(scaled.len(), 3 * 2 * 4);
+        assert!(scaled.chunks_exact(4).all(|p| p[2] == 100 && p[3] == 255));
+        // Brightness grows left to right and top to bottom, as in the source.
+        assert!(scaled[0] < scaled[4] && scaled[4] < scaled[8]);
+        assert!(scaled[1] < scaled[3 * 4 + 1]);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn downscaling_to_a_single_pixel_averages_the_whole_image() {
+        let source = rgba_from(3, 3, |x, y| [(x * 100) as u8, (y * 100) as u8, 0, 255]);
+
+        assert_eq!(downscale_rgba(&source, 3, 3, 1, 1), [100, 100, 0, 255]);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn an_image_within_the_limit_is_uploaded_exactly_as_decoded() {
+        let mut photo = image::RgbaImage::new(4, 2);
+        for (index, pixel) in photo.pixels_mut().enumerate() {
+            *pixel = image::Rgba([index as u8, 2 * index as u8, 3 * index as u8, 255]);
+        }
+        let decoded = photo.as_raw().clone();
+
+        match ready_image(photo, 100) {
+            ImageCacheState::Ready(pixels, 4, 2, 4, 2) => assert_eq!(&*pixels.rgba, &decoded[..]),
+            other => panic!("expected the image unchanged, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decoded_pixels_carry_the_identity_the_renderer_would_have_computed() {
+        let rgba = (0..2 * 3 * 4).map(|byte| byte as u8).collect::<Vec<u8>>();
+        let expected_id = aimer_cupid::draw_cmd::DrawList::image_texture_id(&rgba, 2, 3);
+        let expected_revision = aimer_cupid::draw_cmd::DrawList::image_content_revision(&rgba, 2, 3);
+
+        let resource = new_retained_image_resource(2, 3, 2, 3, DecodedPixels::new(rgba.clone(), 2, 3));
+
+        assert_eq!(resource.texture_id(), expected_id);
+        assert_eq!(resource.revision(), expected_revision);
+        assert_eq!(resource.rgba(), &rgba[..]);
+    }
+
+    #[test]
+    fn retaining_decoded_pixels_moves_the_buffer_instead_of_copying_it() {
+        // Copying a photo's pixels is the time this exists to keep off the
+        // render thread.
+        let pixels = DecodedPixels::new(vec![9; 2 * 2 * 4], 2, 2);
+        let buffer = pixels.rgba.as_ptr();
+
+        let resource = new_retained_image_resource(2, 2, 2, 2, pixels);
+
+        assert_eq!(resource.rgba().as_ptr(), buffer);
+    }
+
+    /// Timing probe: `cargo nextest run -p aimer_assets --run-ignored only --no-capture`.
+    ///
+    /// What each thread pays to turn a decoded photo into a retained resource:
+    /// the decoding thread prepares the pixels (and, past the limit, scales them);
+    /// the render thread, in the frame the image first appears, only retains them.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "timing probe, prints results"]
+    fn profile_retaining_a_decoded_photo() {
+        // 12 megapixels, on a phone-sized (2556 px) and a small window.
+        for limit in [upload_limit_for(2556), upload_limit_for(800)] {
+            let mut photo = image::RgbaImage::new(4032, 3024);
+            for (index, byte) in photo.iter_mut().enumerate() {
+                *byte = (index % 251) as u8;
+            }
+            let start = std::time::Instant::now();
+            let state = ready_image(photo, limit);
+            let worker = start.elapsed();
+            let ImageCacheState::Ready(pixels, upload_width, upload_height, width, height) = state
+            else {
+                panic!("a decoded image is ready");
+            };
+            let megabytes = pixels.rgba.len() as f64 / (1024.0 * 1024.0);
+
+            let start = std::time::Instant::now();
+            let resource = new_retained_image_resource(upload_width, upload_height, width, height, pixels);
+            let render_thread = start.elapsed();
+            std::hint::black_box(resource);
+
+            println!(
+                "limit {limit:4}: uploads {upload_width}x{upload_height} ({megabytes:5.1} MiB) | \
+                 decoding thread {:7.2} ms | render thread {:6.3} ms",
+                worker.as_secs_f64() * 1e3,
+                render_thread.as_secs_f64() * 1e3
+            );
+        }
+    }
+
+    #[test]
     fn decoded_cache_prunes_cold_entries_but_keeps_visible_and_loading_work() {
         struct Entry {
             bytes: usize,
@@ -1420,7 +1769,7 @@ mod tests {
     fn painted_network_resource_survives_idle_pressure_from_other_images() {
         let url = "https://example.invalid/visible-avatar.png".to_string();
         let mut caches = ImageCaches::default();
-        let resource = new_retained_image_resource(1, 1, 1, 1, vec![255; 4]);
+        let resource = new_retained_image_resource(1, 1, 1, 1, DecodedPixels::new(vec![255; 4], 1, 1));
         let id = resource.texture_id();
         // The retained render tree keeps its own handle to what it paints.
         let render_tree_handle = std::sync::Arc::clone(&resource);
@@ -1443,7 +1792,7 @@ mod tests {
     fn unreferenced_network_resource_is_still_evicted_when_idle() {
         let url = "https://example.invalid/offscreen-avatar.png".to_string();
         let mut caches = ImageCaches::default();
-        let resource = new_retained_image_resource(1, 1, 1, 1, vec![255; 4]);
+        let resource = new_retained_image_resource(1, 1, 1, 1, DecodedPixels::new(vec![255; 4], 1, 1));
         let id = resource.texture_id();
         caches.set_network_loaded(url.clone(), id, 1, 1, resource);
 
@@ -1465,7 +1814,7 @@ mod tests {
         std::thread::spawn(move || {
             send_cache_update(ImageCacheUpdate::File {
                 path: update_path,
-                state: ImageCacheState::Ready(vec![1, 2, 3, 4], 1, 1, 1, 1),
+                state: ImageCacheState::Ready(DecodedPixels::new(vec![1, 2, 3, 4], 1, 1), 1, 1, 1, 1),
             });
         })
         .join()
@@ -1478,7 +1827,7 @@ mod tests {
         IMAGE_CACHES.with(|caches| {
             assert!(matches!(
                 caches.borrow().file.get(&path),
-                Some(ImageCacheState::Ready(bytes, 1, 1, 1, 1)) if bytes == &[1, 2, 3, 4]
+                Some(ImageCacheState::Ready(pixels, 1, 1, 1, 1)) if &*pixels.rgba == &[1, 2, 3, 4]
             ));
             caches.borrow_mut().remove_file(&path);
         });

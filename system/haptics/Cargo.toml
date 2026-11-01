@@ -7,3 +7,18 @@ publish = false
 [dependencies]
 aimer_anteros.workspace = true
 aimer_macro.workspace = true
+
+[target.'cfg(target_os = "ios")'.dependencies]
+aimer_time.workspace = true
+objc2.workspace = true
+objc2-ui-kit = { workspace = true, features = ["UIFeedbackGenerator"] }
+objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSDictionary", "NSError", "NSString", "NSValue"] }
+objc2-core-haptics.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = ["std", "NSHapticFeedback"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+ndk-context.workspace = true

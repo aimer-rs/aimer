@@ -454,11 +454,11 @@ impl Drawable for RawScrollBar {
         // The bar is painted by `paint_local_v2`. Preparing its geometry here
         // publishes the thumb and track metrics hit testing reads.
         let paint = prepare_scrollbar_paint(ctx, ctrl, &self.config, self.runtime.as_ref());
-        if let Some(paint) = paint {
-            // Once per frame, here: painting prepares the same geometry again.
-            self.runtime
-                .log_growth(ctrl.thumb_armed(), paint.thumb_size.width / ctx.scale);
-        }
+        // if let Some(paint) = paint {
+        //     // Once per frame, here: painting prepares the same geometry again.
+        //     self.runtime
+        //         .log_growth(ctrl.thumb_armed(), paint.thumb_size.width / ctx.scale);
+        // }
     }
 
     fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {

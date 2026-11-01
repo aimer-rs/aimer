@@ -614,7 +614,7 @@ impl EventDispatcher {
         root: &dyn Element,
         pointer: PointerKey,
         previous: Option<HoverHitChain>,
-        current: HoverHitChain,
+        mut current: HoverHitChain,
         mut outcome: RoutedEventResult,
     ) -> RoutedEventResult {
         // The chain of the last move is still the right list of what the pointer
@@ -656,6 +656,18 @@ impl EventDispatcher {
             let current_mark = self.mark_hover_membership(&current.elements);
             for previous_element in previous.elements.iter().rev() {
                 if self.is_current_hover_element(*previous_element, current_mark) {
+                    continue;
+                }
+
+                // A capture inside a forwarding boundary routes this pointer's
+                // moves straight to its owner, so the walk that built `current`
+                // never visited it. That is not the pointer leaving: a captured
+                // pointer belongs to its owner until the capture ends, which is
+                // what the window-level capture path already assumes by skipping
+                // hover transitions altogether. Keep the owner in the chain so
+                // the exit it is owed is still sent once the capture is over.
+                if self.holds_nested_capture(pointer, *previous_element) {
+                    current.elements.push(*previous_element);
                     continue;
                 }
 
@@ -705,6 +717,16 @@ impl EventDispatcher {
     }
 
     #[inline]
+    /// Whether `element` owns a capture of `pointer` recorded for a forwarding
+    /// boundary. The map holds one entry per captured pointer, so a scan is
+    /// cheaper than any index and is empty on every move that is not a drag.
+    #[inline]
+    fn holds_nested_capture(&self, pointer: PointerKey, element: ElementId) -> bool {
+        self.nested_captures
+            .iter()
+            .any(|((_, captured), owner)| *captured == pointer && *owner == element)
+    }
+
     fn is_current_hover_element(&self, element: ElementId, mark: u32) -> bool {
         record_hover_membership_check();
         let Some(path_index) = self.path_indices.get(&element).copied() else {

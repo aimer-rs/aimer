@@ -9,7 +9,7 @@ use aimer_canvas::Canvas;
 use aimer_style::TextTransform;
 use aimer_style::{FontStyle, LineHeight, TextAlign, TextDecorationLine, TextOverflow};
 use aimer_widget::base::{BuildContext, Color};
-use aimer_widget::layout_invalidation_generation;
+use aimer_widget::text_layout_epoch;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::paragraph::geometry::{
@@ -526,7 +526,7 @@ impl Paragraph {
     pub(crate) fn layout_for_paint(&self, ctx: &BuildContext) -> Rc<PreparedLayout> {
         let width_bits = self.wrap_width(ctx).to_bits();
         let scale_bits = ctx.scale.to_bits();
-        let layout_generation = layout_invalidation_generation();
+        let layout_generation = text_layout_epoch();
         if let Some((cached, layout)) = self.layout_cache.borrow().as_ref()
             && cached.width_bits == width_bits
             && cached.scale_bits == scale_bits
@@ -546,7 +546,7 @@ impl Paragraph {
         let key = PreparedLayoutKey {
             width_bits: width.to_bits(),
             scale_bits: ctx.scale.to_bits(),
-            layout_generation: layout_invalidation_generation(),
+            layout_generation: text_layout_epoch(),
             include_graphemes,
         };
         if let Some((cached_key, layout)) = self.layout_cache.borrow().as_ref()
@@ -1314,6 +1314,62 @@ mod tests {
             (first.decorations[1].underline_center - first.decorations[0].underline_center - 40.0)
                 .abs()
                 < 0.001
+        );
+    }
+
+    /// A windowed list corrects the extent it reported every time a row it had
+    /// only guessed at is painted, and tells the containers above it through
+    /// `notify_extent_changed`. A paragraph's layout depends on its width, scale
+    /// and fonts and on no container's extent, so every visible row laid its text
+    /// out again for each row that scrolled in. Anything that can change the text
+    /// itself still retires it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_prepared_layout_survives_an_extent_correction_but_not_a_layout_invalidation() {
+        use aimer_attribute::{ResolvedSize, Vec2d};
+        use aimer_canvas::{FrameCanvas, InnerCanvas};
+        use aimer_style::{TextAlign, TextOverflow};
+        use aimer_widget::base::{BuildContext, WindowHandle};
+
+        let inner = InnerCanvas::new();
+        let canvas = FrameCanvas::new(&inner);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let context = BuildContext::new(
+            canvas,
+            ResolvedSize {
+                width: 200.0,
+                height: 100.0,
+            },
+            1.0,
+            Vec2d::default(),
+            Vec2d::default(),
+            WindowHandle::headless(winit::dpi::PhysicalSize::new(200, 100), 1.0),
+            runtime.handle().clone(),
+        );
+        let paragraph = Paragraph::new(
+            vec![ResolvedTextSpan::plain(
+                Rc::from("some words to lay out"),
+                TextStyle::new().font_size(16),
+            )],
+            TextAlign::TopLeft,
+            TextOverflow::Wrap,
+        );
+
+        let first = paragraph.prepare(&context);
+        aimer_widget::notify_extent_changed();
+        let after_correction = paragraph.prepare(&context);
+        assert!(
+            Rc::ptr_eq(&first, &after_correction),
+            "an extent correction laid the text out again"
+        );
+
+        aimer_widget::notify_layout_changed();
+        let after_invalidation = paragraph.prepare(&context);
+        assert!(
+            !Rc::ptr_eq(&first, &after_invalidation),
+            "a layout invalidation kept a layout made before it"
         );
     }
 

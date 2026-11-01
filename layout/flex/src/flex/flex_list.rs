@@ -568,6 +568,22 @@ mod tests {
             })
     }
 
+    /// A column whose first row is three times as tall as every other, so a
+    /// prediction taken from row zero is wrong for all the rest.
+    fn tall_first_row_column(counters: &Counters, len: u32) -> impl Widget + use<> {
+        let counters = counters.clone();
+        Column::new()
+            .list(0..len)
+            .builder(move |index: &u32| Counting {
+                counters: counters.clone(),
+                extent: if *index == 0 {
+                    3.0 * ROW_EXTENT
+                } else {
+                    ROW_EXTENT
+                },
+            })
+    }
+
     /// The context a `Scrollable` hands its child: an unbounded main axis, plus
     /// the viewport it exposes at `offset`.
     fn scrolled_context(offset: f32) -> BuildContext<'static> {
@@ -1283,6 +1299,68 @@ mod tests {
         let mut visited = 0;
         element.visit_children(&mut |_| visited += 1);
         assert_eq!(visited, 20);
+    }
+
+    /// Inside a scroll viewport a list is laid out under an unbounded main axis,
+    /// but the render-tree synchronization then measures it again under the
+    /// extent its parent resolved, which is finite. That second measure must
+    /// neither build every row nor report another total: a list of a few hundred
+    /// comments paid for all of them on every rebuild, and once the second answer
+    /// came from a freshly probed row the total flipped between two guesses every
+    /// frame, each one moving the window that chose the next probe.
+    #[test]
+    fn a_windowed_list_measured_under_the_extent_it_resolved_stays_windowed_and_reports_it() {
+        let counters = Counters::default();
+        let ctx = scrolled_context(0.0);
+        let element = tall_first_row_column(&counters, 2_000).to_element(&ctx);
+        element.computed_size(&ctx);
+
+        // Painting deep in the list corrects the prediction made from row zero.
+        let offset = 1_000.0 * ROW_EXTENT;
+        let deep = scrolled_context(offset);
+        element.update(&deep);
+        let reported = element.computed_size(&deep).height;
+        assert!(
+            reported < 2_000.0 * 3.0 * ROW_EXTENT,
+            "painting did not correct the prediction"
+        );
+
+        let mut resolved = scrolled_context(offset);
+        resolved.box_constraint.max_height = reported;
+        assert_eq!(
+            element.computed_size(&resolved).height,
+            reported,
+            "the measure under the resolved extent reported another total"
+        );
+        assert!(
+            counters.built.get() <= 2 * VISIBLE_BUDGET,
+            "built {} rows when measured under the extent it resolved",
+            counters.built.get()
+        );
+    }
+
+    /// A chunk appended to a list replaces its element with one that has more
+    /// rows. What the old one learned about the rows it had still holds, and
+    /// dropping it made the scroll extent jump under the reader on every chunk,
+    /// because the new prediction started from whichever row it probed.
+    #[test]
+    fn a_list_that_grew_keeps_what_it_learned_about_the_rows_it_had() {
+        let counters = Counters::default();
+        let ctx = scrolled_context(0.0);
+
+        let old = varying_column(&counters, 1, 20).to_element(&ctx);
+        old.update(&ctx);
+        assert_eq!(old.computed_size(&ctx).height, 21.0 * ROW_EXTENT);
+
+        let new = varying_column(&counters, 1, 30).to_element(&ctx);
+        new.adopt_runtime_state_from(old.as_ref());
+        replace_a_generated_subtree(&ctx);
+
+        assert_eq!(
+            new.computed_size(&ctx).height,
+            31.0 * ROW_EXTENT,
+            "the grown list forgot the extent of the tall row it had learned"
+        );
     }
 
     /// Wrapping resolves line breaks from every preceding child, so it cannot be

@@ -107,17 +107,17 @@ impl<E: Element> RawScrollableContainer<E> {
         }
 
         self.ctrl.last_frame_time.set(Some(now));
-        match self.ctrl.end_thumb_grab() {
-            ThumbGrab::Holding { since, .. } => thumb_log!(
-                "finger lifted before the hold completed: down {} ms, needs {SCROLLBAR_THUMB_HOLD_MS} ms",
-                now.duration_since(since).as_millis()
-            ),
-            ThumbGrab::Armed { since } => thumb_log!(
-                "thumb let go after being held {} ms",
-                now.duration_since(since).as_millis()
-            ),
-            ThumbGrab::Idle => {}
-        }
+        // match self.ctrl.end_thumb_grab() {
+        //     ThumbGrab::Holding { since, .. } => thumb_log!(
+        //         "finger lifted before the hold completed: down {} ms, needs {SCROLLBAR_THUMB_HOLD_MS} ms",
+        //         now.duration_since(since).as_millis()
+        //     ),
+        //     ThumbGrab::Armed { since } => thumb_log!(
+        //         "thumb let go after being held {} ms",
+        //         now.duration_since(since).as_millis()
+        //     ),
+        //     ThumbGrab::Idle => {}
+        // }
         self.ctrl.drag_mode.set(DragMode::None);
         self.ctrl.last_pointer_pos.set(None);
         // A pointer interaction owns the edge from here on, so a wheel or

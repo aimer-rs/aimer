@@ -169,8 +169,7 @@ impl<'a> CanvasContext for BuildContext<'a> {
     fn paint_background(&self) -> Color { self.paint_background }
 
     fn current_canvas_context(&self) -> CurrentBuildContext {
-        self.get_state::<CurrentLocalV2PaintContext>()
-            .map(|context| context.0.clone())
+        self.local_paint()
             .unwrap_or_else(|| panic!("Canvas::of(ctx) requires an active local-v2 paint callback"))
     }
 }
@@ -233,9 +232,6 @@ impl Drop for BuildConsumer {
 #[derive(Clone)]
 struct CurrentBuildConsumer(Rc<BuildConsumer>);
 
-#[derive(Clone)]
-struct CurrentLocalV2PaintContext(CurrentBuildContext);
-
 /// A retained render node that can report where it currently is.
 ///
 /// It stays valid after the frame that produced it, so a registry can hold one
@@ -251,6 +247,21 @@ impl RetainedNodeHandle {
         self.0
             .world_bounds()
             .map(|rect| (rect.x, rect.y, rect.width, rect.height))
+    }
+}
+
+/// Puts the previous local paint scope back when the one entered ends, however
+/// it ends.
+struct LocalPaintGuard<'a> {
+    states: &'a RefCell<InheritedStates>,
+    previous: Option<CurrentBuildContext>,
+}
+
+impl Drop for LocalPaintGuard<'_> {
+    fn drop(&mut self) {
+        self.states
+            .borrow_mut()
+            .replace_local_paint(self.previous.take());
     }
 }
 
@@ -526,7 +537,26 @@ impl<'a> BuildContext<'a> {
         context: CurrentBuildContext,
         callback: impl FnOnce(&Self) -> R,
     ) -> R {
-        self.with_state(CurrentLocalV2PaintContext(context), callback)
+        let previous = self
+            .inherited_states
+            .borrow_mut()
+            .replace_local_paint(Some(context));
+        let _guard = LocalPaintGuard {
+            states: &self.inherited_states,
+            previous,
+        };
+        callback(self)
+    }
+
+    /// The render node of the local paint scope that is open, if any.
+    ///
+    /// Reading it counts as observing inherited context, as every read of an
+    /// inherited state does while a widget is building.
+    fn local_paint(&self) -> Option<CurrentBuildContext> {
+        if let Some(consumer) = self.current_build_consumer() {
+            consumer.dirty_source.note_context_read();
+        }
+        self.inherited_states.borrow().local_paint().cloned()
     }
 
     /// Updates one direct retained child's transform and opacity during local
@@ -538,12 +568,8 @@ impl<'a> BuildContext<'a> {
         transform: aimer_cupid::utilities::Mat3,
         opacity: f32,
     ) -> bool {
-        self.get_state::<CurrentLocalV2PaintContext>()
-            .is_some_and(|context| {
-                context
-                    .0
-                    .set_child_presentation_at(child_index, transform, opacity)
-            })
+        self.local_paint()
+            .is_some_and(|context| context.set_child_presentation_at(child_index, transform, opacity))
     }
 
     /// Updates one direct retained child's own clip and corner radii during
@@ -559,8 +585,8 @@ impl<'a> BuildContext<'a> {
         radius: [f32; 4],
     ) -> bool {
         let clip = clip.map(|(x, y, width, height)| aimer_cupid::draw_cmd_v2::Rect::new(x, y, width, height));
-        self.get_state::<CurrentLocalV2PaintContext>()
-            .is_some_and(|context| context.0.set_child_clip_at(child_index, clip, radius))
+        self.local_paint()
+            .is_some_and(|context| context.set_child_clip_at(child_index, clip, radius))
     }
 
     /// Returns a handle to the render node being synchronized, from which its
@@ -570,16 +596,15 @@ impl<'a> BuildContext<'a> {
     /// paints locally.
     #[doc(hidden)]
     pub fn local_v2_node_handle(&self) -> Option<RetainedNodeHandle> {
-        self.get_state::<CurrentLocalV2PaintContext>()
-            .map(|context| RetainedNodeHandle(context.0.clone()))
+        self.local_paint().map(RetainedNodeHandle)
     }
 
     /// Allows the current render node to escape all ancestor widget clips.
     /// Descendant-owned clips remain local to those descendants.
     #[doc(hidden)]
     pub fn set_local_v2_clip_escape(&self, enabled: bool) -> bool {
-        self.get_state::<CurrentLocalV2PaintContext>()
-            .is_some_and(|context| context.0.set_clip_escape(enabled))
+        self.local_paint()
+            .is_some_and(|context| context.set_clip_escape(enabled))
     }
 
     #[doc(hidden)]
@@ -833,6 +858,124 @@ mod tests {
         let result = catch_unwind(AssertUnwindSafe(|| context.canvas.save()));
 
         assert!(result.is_err());
+    }
+
+    /// A render node to hand to `with_local_v2_paint_context`, and its handle.
+    fn paint_scope() -> (aimer_cupid::draw_cmd_v2::RenderTree, [CurrentBuildContext; 2]) {
+        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+
+        let tree = RenderTree::new();
+        let first = tree.add_root(Rect::new(1.0, 2.0, 10.0, 10.0)).unwrap();
+        let second = tree.add_root(Rect::new(30.0, 40.0, 10.0, 10.0)).unwrap();
+        let contexts = [tree.context(first).unwrap(), tree.context(second).unwrap()];
+        (tree, contexts)
+    }
+
+    fn node_origin(context: &BuildContext) -> Option<(f32, f32)> {
+        context
+            .local_v2_node_handle()
+            .and_then(|handle| handle.world_bounds())
+            .map(|(x, y, _, _)| (x, y))
+    }
+
+    #[test]
+    fn the_local_paint_context_is_available_only_inside_its_scope() {
+        let (_tree, [first, _]) = paint_scope();
+        let context = context();
+        assert_eq!(node_origin(&context), None);
+
+        context.with_local_v2_paint_context(first, |context| {
+            assert_eq!(node_origin(context), Some((1.0, 2.0)));
+        });
+
+        assert_eq!(node_origin(&context), None);
+    }
+
+    #[test]
+    fn a_nested_local_paint_scope_restores_the_outer_one() {
+        let (_tree, [first, second]) = paint_scope();
+        let context = context();
+
+        context.with_local_v2_paint_context(first, |context| {
+            context.with_local_v2_paint_context(second, |context| {
+                assert_eq!(node_origin(context), Some((30.0, 40.0)));
+            });
+            assert_eq!(node_origin(context), Some((1.0, 2.0)));
+        });
+    }
+
+    #[test]
+    fn the_local_paint_context_is_restored_after_a_panic() {
+        let (_tree, [first, second]) = paint_scope();
+        let context = context();
+
+        context.with_local_v2_paint_context(first, |context| {
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                context.with_local_v2_paint_context(second, |_| panic!("stop"));
+            }));
+            assert!(result.is_err());
+            assert_eq!(node_origin(context), Some((1.0, 2.0)));
+        });
+        assert_eq!(node_origin(&context), None);
+    }
+
+    #[test]
+    fn a_clone_shares_the_scope_a_snapshot_copies_it() {
+        let (_tree, [first, second]) = paint_scope();
+        let context = context();
+
+        context.with_local_v2_paint_context(first, |context| {
+            // A clone is the same scope: it sees what the original enters.
+            let shared = context.clone();
+            context.with_local_v2_paint_context(second.clone(), |_| {
+                assert_eq!(node_origin(&shared), Some((30.0, 40.0)));
+            });
+            assert_eq!(node_origin(&shared), Some((1.0, 2.0)));
+
+            // A forked context starts from the scope as it is and keeps it.
+            let forked = context.fork_with_state(0_u8);
+            assert_eq!(node_origin(&forked), Some((1.0, 2.0)));
+            context.with_local_v2_paint_context(second, |_| {
+                assert_eq!(node_origin(&forked), Some((1.0, 2.0)));
+            });
+        });
+    }
+
+    #[test]
+    fn scoped_state_and_the_local_paint_context_do_not_disturb_each_other() {
+        let (_tree, [first, _]) = paint_scope();
+        let context = context();
+        context.insert_state(1_u32);
+
+        context.with_local_v2_paint_context(first, |context| {
+            context.with_state(2_u32, |context| {
+                assert_eq!(*context.get_state::<u32>().unwrap(), 2);
+                assert_eq!(node_origin(context), Some((1.0, 2.0)));
+            });
+            assert_eq!(*context.get_state::<u32>().unwrap(), 1);
+        });
+    }
+
+    /// Timing probe for `cargo nextest run -p aimer_element --run-ignored only --no-capture`.
+    ///
+    /// The retained element update enters this scope once per element per frame.
+    #[test]
+    #[ignore = "timing probe, prints results"]
+    fn profile_entering_the_local_paint_scope() {
+        let (_tree, [first, _]) = paint_scope();
+        let context = context();
+        const CALLS: u32 = 200_000;
+        let mut best = f64::MAX;
+        for _ in 0..7 {
+            let start = std::time::Instant::now();
+            for _ in 0..CALLS {
+                context.with_local_v2_paint_context(first.clone(), |context| {
+                    std::hint::black_box(context);
+                });
+            }
+            best = best.min(start.elapsed().as_secs_f64() * 1e9 / f64::from(CALLS));
+        }
+        println!("with_local_v2_paint_context: {best:.1} ns per scope");
     }
 
     #[test]

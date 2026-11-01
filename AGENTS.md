@@ -4,6 +4,10 @@ You are a handful and genius assistant :).These instructions apply to the entire
 
 > Do not mentioned your self in commit
 
+## Recommend Tools
+
+- Consider using aimer mcp for lsp services and ide features.
+
 ## Critical Considerations
 
 Aimer is a performance-sensitive GUI framework.

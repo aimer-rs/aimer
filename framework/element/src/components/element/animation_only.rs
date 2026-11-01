@@ -66,13 +66,73 @@ aimer_tls::thread_local! {
     /// The roots of the subtrees rebuilt since the previous walk or pass.
     static REBUILT_ROOTS: RefCell<Vec<ElementId>> = const { RefCell::new(Vec::new()) };
     static HAS_REBUILT_ROOTS: Cell<bool> = const { Cell::new(false) };
-    /// Whether some rebuilt root is waiting for the full walk in progress to
-    /// refresh it.
-    static HAS_STALE_ROOTS: Cell<bool> = const { Cell::new(false) };
+    /// The rebuilt roots waiting for the full walk in progress to refresh them.
+    static STALE_ROOTS: StaleRoots = const { StaleRoots::new() };
     static NEXT_SERIAL: Cell<u64> = const { Cell::new(0) };
     /// How many revisited elements whose subtree is being walked enclose the
     /// element being drawn.
     static SUBTREE_WALKS: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Which rebuilt roots a full walk has yet to reach, in a form cheap enough to
+/// ask about for every element the walk updates.
+///
+/// A walk that never reaches some remembered root (it is off screen, or gone)
+/// stays "waiting" until it ends, and every element updated meanwhile has to
+/// ask whether it is that root. Answering from the registry costs a hash lookup
+/// per element; this answers from a bitset in a few instructions, and only the
+/// elements whose bit is set go on to the exact lookup. The set errs on the
+/// side of saying "maybe" (ids share bits, and a bit stays set until the walk
+/// ends), never on the side of saying "no" for a root that is waiting.
+struct StaleRoots {
+    waiting: Cell<bool>,
+    bits: [Cell<u64>; Self::WORDS],
+}
+
+impl StaleRoots {
+    /// 1024 bits: at most [`MAX_REBUILT_ROOTS`] roots wait, so about one id in
+    /// sixteen needs the exact lookup.
+    const WORDS: usize = 16;
+
+    const fn new() -> Self {
+        Self {
+            waiting: Cell::new(false),
+            bits: [const { Cell::new(0) }; Self::WORDS],
+        }
+    }
+
+    /// The word and mask of `element`'s bit. A multiplicative hash, because
+    /// element ids are consecutive and their low bits alone would pile up.
+    #[inline]
+    fn slot(element: ElementId) -> (usize, u64) {
+        let bit = (u64::from(element.get()).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 54) as usize;
+        (bit / 64, 1 << (bit % 64))
+    }
+
+    #[inline]
+    fn waiting(&self) -> bool {
+        self.waiting.get()
+    }
+
+    /// Whether `element` might be a waiting root.
+    #[inline]
+    fn may_contain(&self, element: ElementId) -> bool {
+        let (word, mask) = Self::slot(element);
+        self.bits[word].get() & mask != 0
+    }
+
+    fn insert(&self, element: ElementId) {
+        let (word, mask) = Self::slot(element);
+        self.bits[word].set(self.bits[word].get() | mask);
+    }
+
+    /// Nothing is waiting any more.
+    fn clear(&self) {
+        self.waiting.set(false);
+        for word in &self.bits {
+            word.set(0);
+        }
+    }
 }
 
 fn next_serial() -> u64 {
@@ -197,17 +257,21 @@ fn is_rebuilt_root(element: ElementId) -> bool {
 #[inline]
 pub(crate) fn capture_rebuilt_root(element: ElementId, ctx: &BuildContext) {
     let rebuilt = HAS_REBUILT_ROOTS.with(Cell::get) && is_rebuilt_root(element);
-    if !rebuilt && !HAS_STALE_ROOTS.with(Cell::get) {
+    if !rebuilt && !STALE_ROOTS.with(|stale| stale.waiting() && stale.may_contain(element)) {
         return;
     }
     REGISTRY.with(|registry| {
         let mut registry = registry.borrow_mut();
+        // Whether this call dropped or refreshed a waiting root, which is the
+        // only way it can leave none waiting.
+        let mut waiting_changed = false;
         match registry.get_mut(&element) {
             Some(existing) if existing.reason == Reason::Rebuilt => {
                 if rebuilt {
                     existing.serial = next_serial();
                 }
                 if existing.stale {
+                    waiting_changed = true;
                     // A full walk reached it: what it was given this time is the
                     // context to revisit it with from now on.
                     match reproducible_translation(ctx) {
@@ -237,7 +301,8 @@ pub(crate) fn capture_rebuilt_root(element: ElementId, ctx: &BuildContext) {
                             .min_by_key(|(_, registration)| registration.serial)
                             .map(|(id, _)| *id)
                     {
-                        registry.remove(&oldest);
+                        waiting_changed |=
+                            registry.remove(&oldest).is_some_and(|dropped| dropped.stale);
                     }
                     registry.insert(
                         element,
@@ -255,8 +320,8 @@ pub(crate) fn capture_rebuilt_root(element: ElementId, ctx: &BuildContext) {
             }
             None => {}
         }
-        if registry.values().all(|registration| !registration.stale) {
-            HAS_STALE_ROOTS.with(|flag| flag.set(false));
+        if waiting_changed && registry.values().all(|registration| !registration.stale) {
+            STALE_ROOTS.with(StaleRoots::clear);
         }
     });
 }
@@ -366,20 +431,24 @@ pub(crate) fn begin_full_traversal() {
             return;
         }
         registry.retain(|_, registration| registration.reason == Reason::Rebuilt);
-        for registration in registry.values_mut() {
-            registration.stale = true;
-        }
-        HAS_STALE_ROOTS.with(|flag| flag.set(!registry.is_empty()));
+        STALE_ROOTS.with(|stale| {
+            stale.clear();
+            for (element, registration) in registry.iter_mut() {
+                registration.stale = true;
+                stale.insert(*element);
+            }
+            stale.waiting.set(!registry.is_empty());
+        });
     });
 }
 
 /// Called as a full traversal ends: drops the rebuilt roots it did not reach.
 pub(crate) fn finish_full_traversal() {
-    if !HAS_STALE_ROOTS.with(Cell::get) {
+    if !STALE_ROOTS.with(StaleRoots::waiting) {
         return;
     }
     REGISTRY.with(|registry| registry.borrow_mut().retain(|_, registration| !registration.stale));
-    HAS_STALE_ROOTS.with(|flag| flag.set(false));
+    STALE_ROOTS.with(StaleRoots::clear);
 }
 
 /// Resolves the elements an animation-only pass has to revisit: everything that
@@ -518,5 +587,282 @@ mod tests {
         set_animation_only_frame(true);
         assert!(is_animation_only_frame());
         set_animation_only_frame(false);
+    }
+
+    use crate::components::context::WindowHandle;
+
+    fn context() -> BuildContext<'static> {
+        use std::sync::OnceLock;
+
+        static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+        let runtime = RUNTIME.get_or_init(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+        });
+        let _guard = runtime.enter();
+        let canvas = {
+            let inner = Box::leak(Box::new(aimer_canvas::InnerCanvas::new()));
+            FrameCanvas::new(inner)
+        };
+        BuildContext::new(
+            canvas,
+            Default::default(),
+            1.0,
+            Default::default(),
+            Default::default(),
+            WindowHandle::headless(Default::default(), 1.0),
+            tokio::runtime::Handle::current(),
+        )
+    }
+
+    /// Remembers `root` the way the first walk after its rebuild does.
+    fn remember_rebuilt(root: ElementId, ctx: &BuildContext) {
+        set_frame_rebuilt_roots(&[root]);
+        capture_rebuilt_root(root, ctx);
+        set_frame_rebuilt_roots(&[]);
+    }
+
+    fn is_remembered(id: ElementId) -> bool {
+        REGISTRY.with(|registry| registry.borrow().contains_key(&id))
+    }
+
+    fn is_stale(id: ElementId) -> bool {
+        REGISTRY.with(|registry| registry.borrow().get(&id).is_some_and(|r| r.stale))
+    }
+
+    fn walk_is_waiting_for_roots() -> bool {
+        STALE_ROOTS.with(StaleRoots::waiting)
+    }
+
+    fn remembered_count() -> usize {
+        REGISTRY.with(|registry| registry.borrow().len())
+    }
+
+    #[test]
+    fn a_rebuilt_root_is_remembered_after_the_walk_that_reaches_it() {
+        let ctx = context();
+        let root = ElementId::next();
+
+        remember_rebuilt(root, &ctx);
+
+        assert!(is_remembered(root));
+        assert!(!is_stale(root));
+        assert!(!walk_is_waiting_for_roots());
+    }
+
+    #[test]
+    fn elements_that_are_not_rebuilt_roots_are_not_remembered() {
+        let ctx = context();
+
+        capture_rebuilt_root(ElementId::next(), &ctx);
+
+        assert_eq!(remembered_count(), 0);
+    }
+
+    #[test]
+    fn a_full_walk_marks_remembered_roots_stale_until_it_reaches_them() {
+        let ctx = context();
+        let root = ElementId::next();
+        remember_rebuilt(root, &ctx);
+
+        begin_full_traversal();
+        assert!(is_stale(root));
+        assert!(walk_is_waiting_for_roots());
+
+        capture_rebuilt_root(root, &ctx);
+        assert!(!is_stale(root));
+        assert!(!walk_is_waiting_for_roots());
+    }
+
+    #[test]
+    fn the_walk_keeps_waiting_until_every_stale_root_is_reached() {
+        let ctx = context();
+        let (first, second) = (ElementId::next(), ElementId::next());
+        remember_rebuilt(first, &ctx);
+        remember_rebuilt(second, &ctx);
+        begin_full_traversal();
+
+        capture_rebuilt_root(first, &ctx);
+        assert!(walk_is_waiting_for_roots());
+        assert!(is_stale(second));
+
+        capture_rebuilt_root(second, &ctx);
+        assert!(!walk_is_waiting_for_roots());
+    }
+
+    #[test]
+    fn other_elements_do_not_disturb_a_root_the_walk_has_not_reached() {
+        let ctx = context();
+        let root = ElementId::next();
+        remember_rebuilt(root, &ctx);
+        begin_full_traversal();
+
+        for _ in 0..100 {
+            capture_rebuilt_root(ElementId::next(), &ctx);
+        }
+
+        assert!(is_stale(root));
+        assert!(walk_is_waiting_for_roots());
+        assert_eq!(remembered_count(), 1);
+    }
+
+    #[test]
+    fn an_element_sharing_a_filter_bit_with_a_waiting_root_is_still_not_that_root() {
+        let ctx = context();
+        let root = ElementId::next();
+        remember_rebuilt(root, &ctx);
+        begin_full_traversal();
+        let (word, mask) = StaleRoots::slot(root);
+        // Ids are handed out in sequence, so a colliding one turns up soon.
+        let twin = std::iter::repeat_with(ElementId::next)
+            .take(100_000)
+            .find(|id| StaleRoots::slot(*id) == (word, mask))
+            .expect("some id shares the bit");
+        assert!(STALE_ROOTS.with(|stale| stale.may_contain(twin)));
+
+        capture_rebuilt_root(twin, &ctx);
+
+        assert!(is_stale(root));
+        assert!(walk_is_waiting_for_roots());
+        assert!(!is_remembered(twin));
+    }
+
+    #[test]
+    fn every_waiting_root_passes_the_filter() {
+        let ctx = context();
+        let roots: Vec<ElementId> = (0..MAX_REBUILT_ROOTS).map(|_| ElementId::next()).collect();
+        for root in &roots {
+            remember_rebuilt(*root, &ctx);
+        }
+
+        begin_full_traversal();
+
+        assert!(STALE_ROOTS.with(|stale| roots.iter().all(|root| stale.may_contain(*root))));
+    }
+
+    #[test]
+    fn the_filter_is_empty_once_the_walk_ends() {
+        let ctx = context();
+        let root = ElementId::next();
+        remember_rebuilt(root, &ctx);
+        begin_full_traversal();
+
+        finish_full_traversal();
+
+        assert!(!STALE_ROOTS.with(|stale| stale.may_contain(root)));
+    }
+
+    #[test]
+    fn a_root_the_walk_never_reaches_is_forgotten_when_it_ends() {
+        let ctx = context();
+        let (reached, missed) = (ElementId::next(), ElementId::next());
+        remember_rebuilt(reached, &ctx);
+        remember_rebuilt(missed, &ctx);
+        begin_full_traversal();
+        capture_rebuilt_root(reached, &ctx);
+
+        finish_full_traversal();
+
+        assert!(is_remembered(reached));
+        assert!(!is_remembered(missed));
+        assert!(!walk_is_waiting_for_roots());
+    }
+
+    #[test]
+    fn reaching_a_root_again_replaces_the_context_it_is_revisited_with() {
+        let mut ctx = context();
+        let root = ElementId::next();
+        remember_rebuilt(root, &ctx);
+        begin_full_traversal();
+        ctx.paint_background = Color::WHITE;
+
+        capture_rebuilt_root(root, &ctx);
+
+        let remembered = REGISTRY.with(|registry| {
+            registry.borrow()[&root].snapshot.restore(ctx.canvas.clone()).paint_background
+        });
+        assert_eq!(remembered, Color::WHITE);
+    }
+
+    #[test]
+    fn a_root_reached_with_a_context_that_cannot_be_reproduced_is_forgotten() {
+        let ctx = context();
+        let root = ElementId::next();
+        remember_rebuilt(root, &ctx);
+        begin_full_traversal();
+        ctx.canvas.scale(2.0, 2.0);
+
+        capture_rebuilt_root(root, &ctx);
+
+        assert!(!is_remembered(root));
+        assert!(!walk_is_waiting_for_roots());
+    }
+
+    #[test]
+    fn the_oldest_root_is_dropped_when_too_many_are_remembered() {
+        let ctx = context();
+        let roots: Vec<ElementId> = (0..MAX_REBUILT_ROOTS + 1).map(|_| ElementId::next()).collect();
+        for root in &roots {
+            remember_rebuilt(*root, &ctx);
+        }
+
+        assert_eq!(remembered_count(), MAX_REBUILT_ROOTS);
+        assert!(!is_remembered(roots[0]));
+        assert!(is_remembered(roots[MAX_REBUILT_ROOTS]));
+    }
+
+    #[test]
+    fn dropping_a_stale_root_for_a_newer_one_does_not_stop_the_walk_waiting_for_the_rest() {
+        let ctx = context();
+        let roots: Vec<ElementId> = (0..MAX_REBUILT_ROOTS).map(|_| ElementId::next()).collect();
+        for root in &roots {
+            remember_rebuilt(*root, &ctx);
+        }
+        begin_full_traversal();
+
+        // A new root arrives mid-walk and pushes the oldest, still stale, one out.
+        let newcomer = ElementId::next();
+        remember_rebuilt(newcomer, &ctx);
+        assert!(!is_remembered(roots[0]));
+        assert!(walk_is_waiting_for_roots());
+
+        for root in &roots[1..] {
+            assert!(walk_is_waiting_for_roots());
+            capture_rebuilt_root(*root, &ctx);
+        }
+        assert!(!walk_is_waiting_for_roots());
+    }
+
+    /// Timing probe for `cargo nextest run ... --run-ignored only --no-capture`.
+    ///
+    /// A scroll frame is a full walk. Rebuilt roots remembered from earlier
+    /// rebuilds are stale until the walk reaches them, and one it never reaches
+    /// (off screen, or gone) keeps every element updated after it on the slow
+    /// path of `capture_rebuilt_root`.
+    #[test]
+    #[ignore = "timing probe, prints results"]
+    fn profile_capture_with_roots_the_walk_never_reaches() {
+        let ctx = context();
+        let others: Vec<ElementId> = (0..20_000).map(|_| ElementId::next()).collect();
+        let time = |label: &str| {
+            let mut best = f64::MAX;
+            for _ in 0..7 {
+                let start = std::time::Instant::now();
+                for id in &others {
+                    capture_rebuilt_root(*id, &ctx);
+                }
+                best = best.min(start.elapsed().as_secs_f64() * 1e9 / others.len() as f64);
+            }
+            println!("{label}: {best:.1} ns per element");
+        };
+
+        time("no remembered roots (fast path)");
+        for _ in 0..MAX_REBUILT_ROOTS {
+            remember_rebuilt(ElementId::next(), &ctx);
+        }
+        begin_full_traversal();
+        time("64 stale roots never reached");
     }
 }

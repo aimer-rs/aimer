@@ -398,7 +398,7 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_SystemInformation",
 ] }
 console_error_panic_hook = "0.1.7"
-winit = { version = "0.30.12", features = ["android-native-activity"] }
+winit = { version = "0.30.13", features = ["android-native-activity"] }
 raw-window-handle = "0.6.2"
 hashbrown = "0.17.1"
 crossbeam = "0.8.4"
@@ -485,10 +485,17 @@ ndk-context = "0.1.1"
 # Apple Family
 
 objc = { version = "0.2.7" }
-muda = "0.19.3"
+muda = "0.21.2"
 objc2-ui-kit = "0.3.2"
+# Core Haptics for `aimer_haptics`' programmable iOS patterns.
+objc2-core-haptics = "0.3.2"
 objc2-app-kit = { version = "0.3.2", default-features = false }
-objc2 = "0.6.4"
+# `disable-encoding-assertions` drops the check objc2 runs on *every* message
+# send in a debug build: it re-parses the method's type encoding and compares it
+# with the runtime's. On the iOS raster thread that was ~70% of its time (every
+# Metal `set_bind_group` / `set_vertex_buffer` / `draw` call). It has no effect
+# in release builds, which never run the check.
+objc2 = { version = "0.6.5", features = ["disable-encoding-assertions"] }
 block2 = "0.6.2"
 objc2-core-text = { version = "0.3.2", default-features = false }
 objc2-core-foundation = { version = "0.3.2", default-features = false }

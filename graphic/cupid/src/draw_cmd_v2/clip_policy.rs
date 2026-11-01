@@ -24,6 +24,7 @@ impl RenderTree {
         }
         let old = tree.subtree_damage_bounds(element);
         tree.node_mut(element).unwrap().escapes_clip = enabled;
+        tree.escape_revision = tree.escape_revision.wrapping_add(1);
         if enabled {
             tree.clip_escape_count += 1;
         } else {

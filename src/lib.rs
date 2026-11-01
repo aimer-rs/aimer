@@ -31,7 +31,7 @@ pub use aimer_decoration as decoration;
 pub use aimer_dnd as dnd;
 pub use aimer_dnd::{
     DragAxis, DragOverlay, DragPayload, DragSession, DragStartMode, DragTarget, DragTargetState,
-    Draggable, DropZone, FileDrop,
+    Draggable, DropZone, FileDrop, InsertionList, InsertionState, ListAxis, slot_after_removal,
 };
 pub use aimer_events as events;
 pub use aimer_events::element::ElementEvent;

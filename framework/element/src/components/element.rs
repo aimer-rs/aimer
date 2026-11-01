@@ -100,6 +100,9 @@ const MAX_PENDING_LOCAL_PAINT_INVALIDATIONS: usize = 1 << 16;
 
 static REBUILD_INVALIDATION_GENERATION: AtomicU64 = AtomicU64::new(0);
 static LAYOUT_INVALIDATION_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// Advances with every layout invalidation except an extent correction; see
+/// [`text_layout_epoch`].
+static TEXT_LAYOUT_EPOCH: AtomicU64 = AtomicU64::new(0);
 /// Advances of the rebuild generation that only kept an element reachable.
 static REBUILD_KEEPALIVE_COUNT: AtomicU64 = AtomicU64::new(0);
 /// Advances of the rebuild generation made by `set_state` marking an element
@@ -1977,9 +1980,47 @@ pub fn notify_layout_changed() {
     advance_layout_invalidation_generation();
 }
 
-/// Advances the layout invalidation generation.
+/// Returns the epoch a cached text layout is valid for.
+///
+/// It advances with every layout invalidation except
+/// [`notify_extent_changed`]. A paragraph's layout is a function of its width,
+/// its scale and its fonts; no container's extent enters it, so a container
+/// correcting the extent it reported must not make every paragraph on screen lay
+/// its text out again.
+#[doc(hidden)]
+#[inline]
+pub fn text_layout_epoch() -> u64 {
+    TEXT_LAYOUT_EPOCH.load(Ordering::Acquire)
+}
+
+/// Tells the containers above one that the extent it reported was corrected.
+///
+/// A windowed list reports a guess for the rows it has not painted and corrects
+/// it as they are, so the containers that measured it keep a total that is out
+/// of date. This retires their cached measurements, exactly as
+/// [`notify_layout_changed`] does, but leaves [`text_layout_epoch`] alone: a
+/// correction changes where things sit, not how any text wraps.
+#[doc(hidden)]
+#[inline]
+pub fn notify_extent_changed() {
+    advance_layout_generation_only();
+}
+
+/// Advances the layout invalidation generation, and with it the text layout
+/// epoch.
 #[inline]
 pub(crate) fn advance_layout_invalidation_generation() {
+    TEXT_LAYOUT_EPOCH
+        .try_update(Ordering::Release, Ordering::Relaxed, |epoch| {
+            epoch.checked_add(1)
+        })
+        .expect("exhausted all text layout epochs");
+    advance_layout_generation_only();
+}
+
+/// Advances the layout invalidation generation alone.
+#[inline]
+fn advance_layout_generation_only() {
     LAYOUT_INVALIDATION_GENERATION
         .try_update(Ordering::Release, Ordering::Relaxed, |generation| {
             generation.checked_add(1)

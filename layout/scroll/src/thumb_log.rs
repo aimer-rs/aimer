@@ -6,10 +6,10 @@
 /// `thumb-hold` tag is what to filter on.
 macro_rules! thumb_log {
     ($($arg:tt)*) => {
-        aimer_utils::debug!(
-            "[thumb-hold {}] {}",
-            aimer_utils::wall_clock_label(),
-            format_args!($($arg)*)
-        )
+        // aimer_utils::debug!(
+        //     "[thumb-hold {}] {}",
+        //     aimer_utils::wall_clock_label(),
+        //     format_args!($($arg)*)
+        // )
     };
 }

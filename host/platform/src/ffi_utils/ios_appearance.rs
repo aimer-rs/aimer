@@ -75,10 +75,10 @@ pub fn observe_appearance_changes(window: &Window) {
     };
     OBSERVER.set(observer);
 
-    if register_for_trait_changes(ui_view, observer) {
-        info!("observe_appearance_changes: observing UITraitUserInterfaceStyle");
-        return;
-    }
+    // if register_for_trait_changes(ui_view, observer) {
+    //     info!("observe_appearance_changes: observing UITraitUserInterfaceStyle");
+    //     return;
+    // }
     // iOS 16 and earlier: only a member of the view hierarchy is told about a
     // trait change, so the observer joins it. An empty frame and no
     // interaction keep it out of layout and out of the touch path.
@@ -86,7 +86,7 @@ pub fn observe_appearance_changes(window: &Window) {
         let _: () = msg_send![observer, setUserInteractionEnabled: false];
         let _: () = msg_send![ui_view, addSubview: observer];
     }
-    info!("observe_appearance_changes: observing traitCollectionDidChange:");
+    // info!("observe_appearance_changes: observing traitCollectionDidChange:");
 }
 
 /// Recovers winit's `UIView` from the window handle.

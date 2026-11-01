@@ -106,6 +106,7 @@ mod auto_scroll;
 mod draggable;
 mod drop_zone;
 mod file_drop;
+mod insertion;
 mod overlay;
 mod reorder;
 mod session;
@@ -122,6 +123,9 @@ pub use crate::drop_zone::DropZone;
 pub use crate::file_drop::{
     FileDropEntry, FileDropOutcome, FileDropPolicy, FileDropRejectReason, FileDropRejection,
     ValidatedFileDrop,
+};
+pub use crate::insertion::{
+    InsertionList, InsertionState, ListAxis, insertion_slot, slot_after_removal,
 };
 pub use crate::overlay::{DragAxis, DragOverlay};
 pub use crate::reorder::{
