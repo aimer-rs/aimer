@@ -18,4 +18,4 @@ mylog
 website/builds
 .vscode
 
-app/jaime/builds/linux/bundle/debug/jaime/jaime
+app/jaime/builds/linux/bundle/
