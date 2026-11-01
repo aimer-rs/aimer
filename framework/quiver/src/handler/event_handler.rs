@@ -852,11 +852,6 @@ impl WindowEventHandler {
         phase: TouchPhase,
         app: &mut AimerApplicationHandler<W>,
     ) {
-        const DELTA_MULTIPLY: f64 = if cfg!(target_os = "windows") {
-            4.5
-        } else {
-            1.0
-        };
         let (scroll_delta, kind) = Self::normalize_wheel_delta(delta, app.window_scale);
 
         // Where the platform has no pinch event, `ctrl` + wheel is the zoom
@@ -870,9 +865,10 @@ impl WindowEventHandler {
 
         if app.active_root().is_some() {
             aimer_widget::record_scroll_event();
+            let multiply = Self::wheel_multiplier(kind);
             let delta = PhysicalPosition::new(
-                scroll_delta.x as f64 * DELTA_MULTIPLY,
-                scroll_delta.y as f64 * DELTA_MULTIPLY,
+                scroll_delta.x as f64 * multiply,
+                scroll_delta.y as f64 * multiply,
             );
             match kind {
                 aimer_events::element::ScrollDeltaKind::Pixel => {
@@ -978,6 +974,23 @@ impl WindowEventHandler {
     }
 
     pub(crate) const SCROLL_MULTIPLIER: f32 = 1.5;
+
+    /// How far one unit of a wheel delta scrolls on this platform.
+    ///
+    /// A line delta is a notch of a mouse wheel: 20 logical pixels is far
+    /// less than the desktop toolkits and browsers on Windows and Linux scroll
+    /// per notch (about 90–100), so it is stretched there. A pixel delta is the
+    /// distance a touchpad's fingers travelled and is stretched only on
+    /// Windows, where it always has been.
+    #[inline]
+    pub(crate) const fn wheel_multiplier(kind: aimer_events::element::ScrollDeltaKind) -> f64 {
+        use aimer_events::element::ScrollDeltaKind::{Line, Pixel};
+        match kind {
+            Line if cfg!(any(target_os = "windows", target_os = "linux")) => 4.5,
+            Pixel if cfg!(target_os = "windows") => 4.5,
+            _ => 1.0,
+        }
+    }
 
     #[inline]
     fn normalize_wheel_delta(

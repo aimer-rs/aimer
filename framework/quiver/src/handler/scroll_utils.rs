@@ -34,8 +34,34 @@ pub struct MomentumScroller {
     pub(crate) friction: f32,
     min_velocity: f32,
     pub(crate) max_velocity: f32,
+    /// Seconds over which pending distance eases out, or `None` for the
+    /// friction model above.
+    ///
+    /// The friction model is defined per rendered frame: each frame takes a
+    /// fixed fraction plus a fixed-length follow-up step, so how long a notch
+    /// takes to land depends on the display's refresh rate, and on a fast
+    /// display a clamp on the step length makes it land sooner still. Easing by
+    /// a time constant depends only on the wall-clock time between frames, so a
+    /// 60 Hz and a 240 Hz window glide for the same duration.
+    pub(crate) time_constant: Option<f64>,
     last_tick: Instant,
 }
+
+/// Distance, in pixels, below which an easing smoother delivers what is left.
+///
+/// An exponential tail never reaches zero; the last half pixel is invisible but
+/// would keep frames being requested for no visible change.
+const EASING_SETTLE_PX: f32 = 0.5;
+
+/// Shortest and longest frame time the easing smoother believes.
+///
+/// A stalled frame must not deliver a whole gesture at once, and a burst of
+/// frames closer together than a refresh cannot make it glide any faster. The
+/// lower bound is the friction model's own (`FOLLOW_UP_DT`), so a frame driven
+/// without waiting for a display — a headless pump — advances a glide by the
+/// same amount in both. Only a display faster than 120 Hz is affected: its
+/// easing runs in proportion faster than the wall clock.
+const EASING_DT_RANGE: (f64, f64) = (FOLLOW_UP_DT, 1.0 / 20.0);
 
 impl MomentumScroller {
     pub fn new() -> Self {
@@ -45,6 +71,7 @@ impl MomentumScroller {
             friction: 0.65,
             min_velocity: 0.01,
             max_velocity: 60.0,
+            time_constant: None,
             last_tick: Instant::now(),
         }
     }
@@ -55,6 +82,12 @@ impl MomentumScroller {
     /// velocity, so the smoother cannot manufacture inertial travel after the
     /// device stops reporting deltas.
     pub fn on_line_delta(&mut self, delta: Vec2d) {
+        if self.time_constant.is_some() && !self.is_active() {
+            // Easing is measured in wall-clock time, so the time since the last
+            // frame of the previous gesture must not count towards this one:
+            // a notch after a pause would otherwise land in its first frame.
+            self.last_tick = Instant::now();
+        }
         self.remaining = self.remaining + delta.scale(self.pixels_per_line);
     }
 
@@ -90,6 +123,9 @@ impl MomentumScroller {
     /// every refresh rate. It stays part of the response; it no longer costs a
     /// second trip through the widget tree.
     pub(crate) fn frame_step(&mut self, dt: f64) -> Option<PhysicalPosition<f64>> {
+        if let Some(time_constant) = self.time_constant {
+            return self.eased_step(dt, time_constant);
+        }
         let first = self.tick_with_dt(dt);
         let follow_up = self.tick_with_dt(FOLLOW_UP_DT);
         match (first, follow_up) {
@@ -99,6 +135,38 @@ impl MomentumScroller {
             )),
             (step, None) | (None, step) => step,
         }
+    }
+
+    /// The portion of pending input that eases out in `dt` seconds.
+    ///
+    /// `1 - e^(-dt/τ)` of what is owed, which composes: two steps of `dt / 2`
+    /// deliver what one step of `dt` does. `max_velocity` keeps its meaning of
+    /// pixels per 1/60 s tick, and a frame of the friction model was two of
+    /// them, so the cap is `max_velocity` × 120 pixels per second.
+    fn eased_step(&mut self, dt: f64, time_constant: f64) -> Option<PhysicalPosition<f64>> {
+        let magnitude = self.remaining.magnitude();
+        if magnitude == 0.0 {
+            return None;
+        }
+        if magnitude <= EASING_SETTLE_PX {
+            let rest = self.remaining;
+            self.remaining = Vec2d::ZERO;
+            return Some(PhysicalPosition::new(rest.x as f64, rest.y as f64));
+        }
+
+        let dt = dt.clamp(EASING_DT_RANGE.0, EASING_DT_RANGE.1);
+        let fraction = 1.0 - (-dt / time_constant).exp();
+        let mut step = self.remaining.scale(fraction as f32);
+        let limit = self.max_velocity as f64 * 120.0 * dt;
+        let step_magnitude = step.magnitude() as f64;
+        if step_magnitude > limit {
+            step = step.scale((limit / step_magnitude) as f32);
+        }
+        self.remaining = Vec2d {
+            x: self.remaining.x - step.x,
+            y: self.remaining.y - step.y,
+        };
+        Some(PhysicalPosition::new(step.x as f64, step.y as f64))
     }
 
     fn tick_with_dt(&mut self, dt: f64) -> Option<PhysicalPosition<f64>> {
@@ -266,4 +334,94 @@ mod tests {
 
         assert!((total + 16.0).abs() < 0.0001);
     }
+    /// A smoother easing over `time_constant` seconds with `remaining` pixels owed.
+    fn eased(time_constant: f64, remaining: f32) -> MomentumScroller {
+        let mut scroller = scroller(0.4, 60.0, remaining);
+        scroller.remaining = Vec2d { x: 0.0, y: -remaining };
+        scroller.time_constant = Some(time_constant);
+        scroller
+    }
+
+    /// What is still owed after `frames` frames of `dt` seconds each.
+    fn owed_after(scroller: &mut MomentumScroller, dt: f64, frames: usize) -> f32 {
+        for _ in 0..frames {
+            scroller.frame_step(dt);
+        }
+        -scroller.remaining.y
+    }
+
+    #[test]
+    fn an_eased_notch_is_spread_over_frames_not_delivered_at_once() {
+        let mut scroller = eased(0.05, 90.0);
+        let first = scroller.frame_step(1.0 / 60.0).expect("distance is owed");
+
+        // The 0.40 friction smoother hands over three quarters of a notch in
+        // its first frame, which reads as a jump rather than a glide.
+        assert!(-first.y < 90.0 * 0.35, "first frame moved {}", -first.y);
+        assert!(-first.y > 0.0);
+    }
+
+    /// The same wall-clock time must leave the same distance owed whatever the
+    /// refresh rate, or a faster display would scroll differently.
+    #[test]
+    fn easing_takes_the_same_time_at_every_refresh_rate_up_to_120_hz() {
+        let at_60 = owed_after(&mut eased(0.05, 90.0), 1.0 / 60.0, 6);
+        let at_120 = owed_after(&mut eased(0.05, 90.0), 1.0 / 120.0, 12);
+        let at_90 = owed_after(&mut eased(0.05, 90.0), 1.0 / 90.0, 9);
+
+        // 100 ms each, up to the length of one frame.
+        for owed in [at_120, at_90] {
+            assert!((owed - at_60).abs() < 6.0, "{owed} vs {at_60}");
+        }
+    }
+
+    #[test]
+    fn easing_delivers_the_exact_total_and_settles() {
+        for dt in [1.0 / 120.0, 1.0 / 90.0, 1.0 / 60.0, 1.0 / 30.0] {
+            let mut scroller = eased(0.05, 90.0);
+            let mut total = 0.0;
+            let mut frames = 0;
+            while let Some(step) = scroller.frame_step(dt) {
+                assert!(step.y <= 0.0, "scrolled backwards");
+                total += step.y;
+                frames += 1;
+                assert!(frames < 400, "never settled at dt {dt}");
+            }
+            assert!((total + 90.0).abs() < 1e-3, "delivered {total} at dt {dt}");
+            assert!(!scroller.is_active());
+        }
+    }
+
+    #[test]
+    fn easing_settles_within_a_third_of_a_second() {
+        let mut scroller = eased(0.05, 90.0);
+        let mut elapsed = 0.0;
+        while scroller.frame_step(1.0 / 60.0).is_some() {
+            elapsed += 1.0 / 60.0;
+        }
+        assert!(elapsed < 0.34, "took {elapsed}s");
+    }
+
+    #[test]
+    fn easing_never_exceeds_the_speed_limit() {
+        let mut scroller = eased(0.05, 100_000.0);
+        scroller.max_velocity = 60.0;
+        let step = scroller.frame_step(1.0 / 60.0).expect("distance is owed");
+
+        // `max_velocity` is per 1/60 s tick, and a frame was two of them.
+        assert!(-step.y <= 120.0 + 1e-6, "moved {}", -step.y);
+    }
+
+    #[test]
+    fn a_fresh_notch_after_idle_does_not_jump() {
+        let mut scroller = eased(0.05, 0.0);
+        scroller.last_tick = Instant::now() - std::time::Duration::from_secs(5);
+        scroller.on_line_delta(Vec2d { x: 0.0, y: -90.0 });
+
+        // The wall clock stood still for five seconds; the first step must not
+        // treat that as five seconds of easing.
+        let first = scroller.tick().expect("distance is owed");
+        assert!(-first.y < 90.0 * 0.5, "first step moved {}", -first.y);
+    }
+
 }

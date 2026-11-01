@@ -374,6 +374,10 @@ pub struct ScrollFrame {
 impl DualScroller {
     const BASE_PIXEL_LINE: f32 = 1.0;
     const MAX_VELO: f32 = 80.0;
+    /// Time constant of a Linux wheel notch: most of it lands within ~100 ms and
+    /// the tail is gone in about a quarter of a second.
+    #[cfg(target_os = "linux")]
+    const LINUX_WHEEL_EASING_SECS: f64 = 0.05;
 
     pub fn new() -> Self {
         let mut trackpad = MomentumScroller::new();
@@ -385,6 +389,14 @@ impl DualScroller {
         wheel.pixels_per_line = 1.0;
         wheel.friction = 0.40;
         wheel.max_velocity = 60.0;
+        // X11 and Wayland deliver a mouse wheel as discrete notches. Easing a
+        // notch over a fixed time makes it glide for as long on a 60 Hz panel
+        // as on a 240 Hz one; the friction model lands it in about three
+        // frames, and sooner the faster the display.
+        #[cfg(target_os = "linux")]
+        {
+            wheel.time_constant = Some(Self::LINUX_WHEEL_EASING_SECS);
+        }
 
         Self {
             classifier: ScrollClassifier::new(),
@@ -1046,4 +1058,15 @@ mod tests {
             Some(TouchPhase::Started)
         );
     }
+    /// The wheel channel eases over a fixed time on Linux, where a notch used to
+    /// land in about three frames and at a different pace on every display.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_linux_wheel_channel_eases_by_time() {
+        let scroller = DualScroller::new();
+        assert!(scroller.wheel.time_constant.is_some());
+        // Trackpads report their own gesture and keep their momentum model.
+        assert!(scroller.trackpad.time_constant.is_none());
+    }
+
 }

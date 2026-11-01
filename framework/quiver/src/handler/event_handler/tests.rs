@@ -59,3 +59,22 @@ fn precise_wheel_delta_uses_safe_scale_fallback() {
         assert_eq!(delta.y, -8.0 * WindowEventHandler::SCROLL_MULTIPLIER);
     }
 }
+
+/// A notch is 20 logical pixels before the platform multiplier, which on
+/// Linux and Windows brings it to the distance toolkits and browsers there
+/// scroll per notch. A precision touchpad's pixels are already the distance the
+/// fingers moved, so only Windows (which has always scaled them) stretches them.
+#[test]
+fn a_wheel_notch_scrolls_a_desktop_distance_per_platform() {
+    use aimer_events::element::ScrollDeltaKind::{Line, Pixel};
+
+    let notch = 20.0 * WindowEventHandler::wheel_multiplier(Line);
+    if cfg!(any(target_os = "linux", target_os = "windows")) {
+        assert_eq!(notch, 90.0);
+    } else {
+        assert_eq!(notch, 20.0);
+    }
+
+    let touchpad = WindowEventHandler::wheel_multiplier(Pixel);
+    assert_eq!(touchpad, if cfg!(target_os = "windows") { 4.5 } else { 1.0 });
+}
