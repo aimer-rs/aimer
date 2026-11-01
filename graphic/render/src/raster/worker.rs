@@ -121,7 +121,9 @@ impl<T: Send + 'static> FrameWorker<T> {
                                 presenter.resize(next_size);
                                 size = next_size;
                             }
+                            aimer_utils::frame_trace("raster_start", 0.0, 0.0);
                             let output = presenter.render(&packet);
+                            aimer_utils::frame_trace("raster_done", 0.0, 0.0);
                             submitted.cpu.finish_cpu_frame();
                             let generation = submitted.generation;
                             let draw_list = packet.into_frame().into_draw_list();

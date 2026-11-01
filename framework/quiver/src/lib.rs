@@ -23,6 +23,7 @@ pub use android_storage::register_android_app;
 pub(crate) use aimer_platform::shutdown_signals;
 pub(crate) use aimer_platform::{ffi_utils, link_inbox};
 mod first_frame;
+mod frame_wake;
 mod window_locals;
 #[cfg(any(target_os = "ios", test))]
 mod ios_input;

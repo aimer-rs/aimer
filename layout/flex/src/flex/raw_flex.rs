@@ -421,7 +421,10 @@ impl RawFlex {
         let mut distribution = self.main_distribution(ctx, layout.total(), layout.len());
         let mut range = self.painted_range(ctx, &layout, distribution);
 
-        self.children.window(range.clone(), ctx);
+        // Only make the rows exist. The paint that follows decides which rows
+        // leave: if both passes dropped rows and they disagreed by one, that row
+        // would be dropped and rebuilt on every frame.
+        self.children.reach(range.clone(), ctx);
 
         for _ in 0..RECONCILE_PASSES {
             let outcome = self.reconcile(ctx, &layout, &range);
@@ -436,7 +439,7 @@ impl RawFlex {
             }
             distribution = self.main_distribution(ctx, layout.total(), layout.len());
             range = self.painted_range(ctx, &layout, distribution);
-            self.children.window(range.clone(), ctx);
+            self.children.reach(range.clone(), ctx);
             if rebuilt {
                 break;
             }

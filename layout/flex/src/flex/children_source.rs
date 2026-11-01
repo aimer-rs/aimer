@@ -183,6 +183,21 @@ pub(crate) trait ChildrenSource {
     #[allow(unused_variables)]
     fn window(&self, range: Range<usize>, ctx: &BuildContext) {}
 
+    /// Makes sure `range`, plus a small overscan, exists, and never drops a
+    /// child that already does.
+    ///
+    /// For a pass that needs rows to measure but is not the one that paints:
+    /// [`ChildrenSource::window`] is where rows leave, and calling it from two
+    /// passes that disagree by a row drops and rebuilds that row every frame.
+    /// The one exception is a range that shares nothing with the live run,
+    /// which has nothing to keep and is rebuilt as a window would be.
+    ///
+    /// The safety contract of [`ChildrenSource::window`] applies only to that
+    /// exceptional rebuild.
+    #[inline]
+    #[allow(unused_variables)]
+    fn reach(&self, range: Range<usize>, ctx: &BuildContext) {}
+
     /// Surrenders every materialized child, emptying the source.
     ///
     /// Called on the source of a container being replaced. An eager source has
@@ -451,6 +466,81 @@ where
         self.revive(index, &element, ctx);
         element
     }
+
+    /// Moves the live run to cover `range` plus the overscan.
+    ///
+    /// With `trim` the run ends up exactly there and what left it is retired.
+    /// Without, it only grows, so a pass that merely needs rows to exist cannot
+    /// undo what the pass that paints settled on. A range that shares nothing
+    /// with the run replaces it either way.
+    fn slide(&self, range: Range<usize>, ctx: &BuildContext, trim: bool) {
+        if self.eager.get() {
+            return;
+        }
+        let len = self.items.len();
+        let wanted = range.start.saturating_sub(OVERSCAN).min(len)
+            ..range.end.saturating_add(OVERSCAN).min(len);
+
+        // A row that was here before is reclaimed rather than rebuilt, so
+        // building is the only allocation this method can perform.
+        let build = |index: usize| -> Box<AnyElement> { self.build_row(index, ctx) };
+
+        let live = unsafe { self.window_mut() };
+        let already_there = if trim {
+            live.start == wanted.start && live.end() == wanted.end
+        } else {
+            // A reach keeps whatever it finds, so a wider run is as good as
+            // the exact one.
+            live.start <= wanted.start && live.end() >= wanted.end && !live.elements.is_empty()
+        };
+        if already_there {
+            return;
+        }
+
+        // A jump — the scroll bar was dragged, or this is the first frame —
+        // shares nothing with the live run, so rebuilding it outright is both
+        // cheaper and simpler than sliding across the gap.
+        if live.elements.is_empty() || wanted.start >= live.end() || wanted.end <= live.start {
+            let leaving = live.start;
+            for (offset, element) in live.elements.drain(..).enumerate() {
+                self.retire(leaving + offset, element);
+            }
+            live.start = wanted.start;
+            live.elements.reserve(wanted.len());
+            for index in wanted {
+                live.elements.push_back(build(index));
+            }
+            aimer_widget::notify_live_children_changed();
+            return;
+        }
+
+        // Grow first, then trim, so a row that stays in range is never dropped
+        // and rebuilt — that is what keeps its state and layout cache alive.
+        while live.start > wanted.start {
+            live.start -= 1;
+            let element = build(live.start);
+            live.elements.push_front(element);
+        }
+        while live.end() < wanted.end {
+            let element = build(live.end());
+            live.elements.push_back(element);
+        }
+        if trim {
+            while live.start < wanted.start {
+                if let Some(element) = live.elements.pop_front() {
+                    self.retire(live.start, element);
+                }
+                live.start += 1;
+            }
+            while live.end() > wanted.end {
+                let leaving = live.end() - 1;
+                if let Some(element) = live.elements.pop_back() {
+                    self.retire(leaving, element);
+                }
+            }
+        }
+        aimer_widget::notify_live_children_changed();
+    }
 }
 
 impl<T, W, F> ChildrenSource for WindowedChildren<T, F>
@@ -540,63 +630,11 @@ where
     }
 
     fn window(&self, range: Range<usize>, ctx: &BuildContext) {
-        if self.eager.get() {
-            return;
-        }
-        let len = self.items.len();
-        let wanted = range.start.saturating_sub(OVERSCAN).min(len)
-            ..range.end.saturating_add(OVERSCAN).min(len);
+        self.slide(range, ctx, true);
+    }
 
-        // A row that was here before is reclaimed rather than rebuilt, so
-        // building is the only allocation this method can perform.
-        let build = |index: usize| -> Box<AnyElement> { self.build_row(index, ctx) };
-
-        let live = unsafe { self.window_mut() };
-        if live.start == wanted.start && live.end() == wanted.end {
-            return;
-        }
-
-        // A jump — the scroll bar was dragged, or this is the first frame —
-        // shares nothing with the live run, so rebuilding it outright is both
-        // cheaper and simpler than sliding across the gap.
-        if live.elements.is_empty() || wanted.start >= live.end() || wanted.end <= live.start {
-            let leaving = live.start;
-            for (offset, element) in live.elements.drain(..).enumerate() {
-                self.retire(leaving + offset, element);
-            }
-            live.start = wanted.start;
-            live.elements.reserve(wanted.len());
-            for index in wanted {
-                live.elements.push_back(build(index));
-            }
-            aimer_widget::notify_live_children_changed();
-            return;
-        }
-
-        // Grow first, then trim, so a row that stays in range is never dropped
-        // and rebuilt — that is what keeps its state and layout cache alive.
-        while live.start > wanted.start {
-            live.start -= 1;
-            let element = build(live.start);
-            live.elements.push_front(element);
-        }
-        while live.end() < wanted.end {
-            let element = build(live.end());
-            live.elements.push_back(element);
-        }
-        while live.start < wanted.start {
-            if let Some(element) = live.elements.pop_front() {
-                self.retire(live.start, element);
-            }
-            live.start += 1;
-        }
-        while live.end() > wanted.end {
-            let leaving = live.end() - 1;
-            if let Some(element) = live.elements.pop_back() {
-                self.retire(leaving, element);
-            }
-        }
-        aimer_widget::notify_live_children_changed();
+    fn reach(&self, range: Range<usize>, ctx: &BuildContext) {
+        self.slide(range, ctx, false);
     }
 
     fn take_retained(&self) -> Vec<RetainedRow> {
@@ -786,6 +824,87 @@ mod tests {
 
         assert!(children.get(99_999).is_some());
         assert!(children.get(100_000).is_none());
+    }
+
+    /// A pass that runs before painting only needs the rows to exist. It must
+    /// not drop any, or the paint that follows has to build them again: that
+    /// turned one row of disagreement between the two passes into a drop, a
+    /// rebuild and two live-children notifications on every frame.
+    #[test]
+    fn reaching_a_range_inside_the_live_window_changes_nothing() {
+        let built = Rc::new(Cell::new(0));
+        let children = source(&built);
+        let ctx = dummy_build_context(100.0, 100.0, None);
+        children.window(100..110, &ctx);
+        let first = children.get(100 - OVERSCAN).unwrap() as *const dyn Element;
+        let last = children.get(109 + OVERSCAN).unwrap() as *const dyn Element;
+        let built_before = built.get();
+        let generation = aimer_widget::live_children_generation();
+
+        children.reach(103..108, &ctx);
+
+        assert_eq!(built.get(), built_before, "nothing may be built");
+        assert_eq!(
+            aimer_widget::live_children_generation(),
+            generation,
+            "nothing changed, so nothing may be reported"
+        );
+        assert!(std::ptr::eq(first, children.get(100 - OVERSCAN).unwrap()));
+        assert!(std::ptr::eq(last, children.get(109 + OVERSCAN).unwrap()));
+    }
+
+    #[test]
+    fn reaching_past_the_window_grows_it_and_drops_nothing() {
+        let built = Rc::new(Cell::new(0));
+        let children = source(&built);
+        let ctx = dummy_build_context(100.0, 100.0, None);
+        children.window(100..110, &ctx);
+        let kept = children.get(100 - OVERSCAN).unwrap() as *const dyn Element;
+        built.set(0);
+        let generation = aimer_widget::live_children_generation();
+
+        // One row further down: exactly one row is built, and the top stays.
+        children.reach(101..111, &ctx);
+
+        assert_eq!(built.get(), 1);
+        assert_ne!(aimer_widget::live_children_generation(), generation);
+        assert!(std::ptr::eq(kept, children.get(100 - OVERSCAN).unwrap()));
+        assert!(children.get(110 + OVERSCAN).is_some());
+    }
+
+    /// With nothing in common there is nothing to keep, so reaching is a
+    /// jump, exactly as for a window.
+    #[test]
+    fn reaching_a_distant_range_replaces_the_window() {
+        let built = Rc::new(Cell::new(0));
+        let children = source(&built);
+        let ctx = dummy_build_context(100.0, 100.0, None);
+        children.window(0..4, &ctx);
+        built.set(0);
+
+        children.reach(50_000..50_004, &ctx);
+
+        assert_eq!(built.get(), 4 + 2 * OVERSCAN);
+        assert!(children.get(0).is_none());
+        assert!(children.get(50_000).is_some());
+    }
+
+    /// The pass that paints is still the one that drops: a window trims what a
+    /// reach left behind.
+    #[test]
+    fn a_window_still_trims_what_a_reach_kept() {
+        let built = Rc::new(Cell::new(0));
+        let children = source(&built);
+        let ctx = dummy_build_context(100.0, 100.0, None);
+        children.window(100..110, &ctx);
+        children.reach(101..111, &ctx);
+
+        children.window(101..109, &ctx);
+
+        assert!(children.get(100 - OVERSCAN + 1).is_some());
+        assert!(children.get(100 - OVERSCAN).is_none());
+        assert!(children.get(108 + OVERSCAN).is_some());
+        assert!(children.get(109 + OVERSCAN).is_none());
     }
 
     /// Giving up on windowing has to be final: every child exists from then on,

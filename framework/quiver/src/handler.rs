@@ -58,6 +58,16 @@ use aimer_cupid::draw_cmd_v2::{
 use aimer_cupid::frame::{Frame, FramePacket, FrameRenderMetadata};
 use aimer_rubick::{UiAllocator, UiMemory};
 use aimer_utils::debug;
+
+/// Records the end of a `render` call when dropped, however it returns.
+struct RenderTraceEnd;
+
+impl Drop for RenderTraceEnd {
+    #[inline]
+    fn drop(&mut self) {
+        aimer_utils::frame_trace("render_end", 0.0, 0.0);
+    }
+}
 use aimer_venus::Venus;
 use aimer_widget::base::{BuildContext, WindowHandle};
 use aimer_widget::{
@@ -493,12 +503,16 @@ impl WindowRenderTree {
                 &mut element_path,
             );
         }
+        // a: nodes collected from the whole element tree.
+        aimer_utils::frame_trace("sync_collected", specs.len() as f64, 0.0);
         let added_nodes = element_ids
             .iter()
             .any(|element_id| !self.element_nodes.contains_key(element_id));
+        aimer_utils::frame_trace("sync_added_checked", 0.0, 0.0);
         let render_ids = self
             .tree
             .sync_structure_with_clip_radii(&specs, &clips, &clip_radii)?;
+        aimer_utils::frame_trace("sync_structured", 0.0, 0.0);
         self.sync_cache = Some(scoped_sync::SyncCache::new(
             element_ids.clone(),
             specs,
@@ -514,6 +528,7 @@ impl WindowRenderTree {
         );
         self.synced = Some(stamp);
         self.invalid_bounds = invalid_bounds;
+        aimer_utils::frame_trace("sync_cached", 0.0, 0.0);
         self.adopt_interaction_bounds(&interactive, &render_ids, scale);
         self.interaction_adopted = interactive.len();
         self.interaction_adopted_by_type.clear();
@@ -1641,6 +1656,7 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         width: u32,
         height: u32,
     ) -> (f32, DamageSet) {
+        aimer_utils::frame_trace("draw_start", 0.0, 0.0);
         let allocator = self.ui_allocator.clone();
         #[cfg(debug_assertions)]
         let debug_started = self
@@ -1755,6 +1771,7 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
             prepared_root = Some(root.id());
         }
 
+        aimer_utils::frame_trace("draw_rebuilt", 0.0, 0.0);
         #[cfg(feature = "frame-stats")]
         let slow_rebuilt = slow_frame.elapsed();
         if let Some(root) = root {
@@ -1803,6 +1820,8 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         self.window_render_tree.walk_cursor = Some(aimer_widget::scoped_rebuild_cursor());
         let rebuilt_known = rebuilt.is_some();
         let rebuilt_roots = rebuilt.unwrap_or_default();
+        // a: subtrees rebuilt since the last walk; b: 1 when that is known.
+        aimer_utils::frame_trace("rebuilt_roots", rebuilt_roots.len() as f64, rebuilt_known as u8 as f64);
 
         #[cfg(not(feature = "wasm-hot-reload"))]
         let animation_only_targets = match root {
@@ -1832,6 +1851,7 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         #[cfg(feature = "wasm-hot-reload")]
         let animation_only_targets: Option<Vec<(ElementId, &dyn Element)>> = None;
 
+        aimer_utils::frame_trace("draw_synced", 0.0, 0.0);
         #[cfg(feature = "frame-stats")]
         let slow_synced = slow_frame.elapsed();
         // Stale entries from earlier work must not be mistaken for this frame's.
@@ -1862,6 +1882,7 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
             }
             aimer_widget::set_frame_rebuilt_roots(&[]);
         }
+        aimer_utils::frame_trace("draw_updated", 0.0, 0.0);
         #[cfg(feature = "frame-stats")]
         let slow_drawn = slow_frame.elapsed();
 
@@ -1870,21 +1891,30 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
             .sync(root, &build_ctx, (width, height), self.scale)
         {
             Ok(sync) if sync.refreshed => {
+                // a: render nodes the sync added; b: 1 when it refreshed.
+                aimer_utils::frame_trace(
+                    "resync_done",
+                    sync.added_render_nodes.len() as f64,
+                    1.0,
+                );
                 if sync.added_nodes
                     && !record_new_local_v2_paints(
                         &self.window_render_tree.tree,
                         sync.added_render_nodes,
                     )
                 {
+                    aimer_utils::frame_trace("paints_incomplete", 0.0, 0.0);
                     self.window.request_redraw();
                     render_tree_sync_incomplete = true;
                 }
+                aimer_utils::frame_trace("paints_recorded", 0.0, 0.0);
             }
-            Ok(_) => {}
+            Ok(_) => aimer_utils::frame_trace("resync_done", 0.0, 0.0),
             Err(_) => render_tree_sync_incomplete = true,
         }
 
         self.window_render_tree.settle_unmapped_draws();
+        aimer_utils::frame_trace("draw_settled", 0.0, 0.0);
 
         // The periodic report averages thirty frames, which hides one frame that
         // hitches. A frame past two display intervals at 60 Hz is named on its own.
@@ -2474,6 +2504,9 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
 
     #[allow(unused)]
     pub(crate) fn render(&mut self, event_loop: &ActiveEventLoop) {
+        aimer_utils::frame_trace("render_start", 0.0, 0.0);
+        // Marks the end on every way out, including the early returns below.
+        let _render_end = RenderTraceEnd;
         // UIKit can lay out the view before winit delivers its queued Resized
         // event. Refresh before rebuilding or measuring the tree for this frame.
         #[cfg(target_os = "ios")]
@@ -2495,6 +2528,7 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         }
         let kind = self.take_frame_request_reason();
         let preparation = self.begin_frame();
+        aimer_utils::frame_trace("begin_done", 0.0, 0.0);
 
         #[cfg(target_os = "android")]
         {
@@ -2538,6 +2572,7 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
                 self.show_window_after_first_frame = false;
             }
         }
+        aimer_utils::frame_trace("packet_done", 0.0, 0.0);
         // Worker completions dispatch this same notification on the UI thread.
         crate::first_frame::notify_first_frame_presented(outcome.is_presented());
         if outcome.needs_retry() {
@@ -2584,6 +2619,8 @@ mod tests {
         Widget,
     };
     use std::cell::Cell;
+
+    mod row_sync_profile;
 
     struct SizedLeaf {
         width: Rc<Cell<f32>>,

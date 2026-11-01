@@ -62,3 +62,6 @@ objc2-metal = { workspace = true, features = [
     "MTLTypes",
     "MTLVertexDescriptor",
 ] }
+
+[dev-dependencies]
+objc2-core-foundation.workspace = true

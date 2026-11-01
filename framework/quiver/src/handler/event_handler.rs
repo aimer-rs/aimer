@@ -403,6 +403,16 @@ impl WindowEventHandler {
         app.touch_pointer = true;
         // info!("Location: {pos:?}" );
         let touch_id = item.id;
+        aimer_utils::frame_trace(
+            "touch",
+            match item.phase {
+                TouchPhase::Started => 0.0,
+                TouchPhase::Moved => 1.0,
+                TouchPhase::Ended => 2.0,
+                TouchPhase::Cancelled => 3.0,
+            },
+            touch_id as f64,
+        );
         // All touch events are passed through with their finger ID.
         // Individual widgets (scrollable, gesture detector) decide which
         // fingers to track — the scrollable keeps its own primary-finger

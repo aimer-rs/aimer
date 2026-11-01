@@ -313,6 +313,12 @@ pub use native_ctx::{CompletionStatus, NativeRenderContext as AimerRenderContext
     any(target_os = "macos", target_os = "ios")
 ))]
 mod metal_worker;
+#[cfg(all(
+    not(feature = "wgpu"),
+    feature = "native",
+    any(target_os = "macos", target_os = "ios")
+))]
+mod present_gate;
 
 #[doc(hidden)]
 pub fn configured_context(

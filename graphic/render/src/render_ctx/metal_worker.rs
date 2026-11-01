@@ -12,9 +12,11 @@ use objc2_quartz_core::{CAMetalLayer, CATransaction};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::dpi::PhysicalSize;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use winit::window::Window;
 
 use super::native_ctx::BackendOutput;
+use super::present_gate::{PresentGate, PresentMode};
 use aimer_frame_stats::{FramePhase, PhaseTimer};
 use crate::raster::WorkerPresenter;
 
@@ -25,18 +27,26 @@ pub(super) struct MetalHost {
     window: Arc<Window>,
     size: PhysicalSize<u32>,
     scale: f64,
+    /// Whether the raster thread may present on its own (see [`PresentGate`]).
+    gate: PresentGate,
+    /// The gate's answer for the raster thread: `true` while frames go direct.
+    /// Written only here, so the layer's `presentsWithTransaction` and this
+    /// flag change together, in the order the worker relies on.
+    direct: Arc<AtomicBool>,
 }
 
 pub(super) struct MetalSeed {
     backend: MetalBackend,
     source: MetalDrawableSource,
     antialiasing: AntiAlias,
+    direct: Arc<AtomicBool>,
 }
 
 pub(super) struct MetalPresenter {
     backend: MetalBackend,
     source: MetalDrawableSource,
     renderer: RendererImpl<MetalBackend>,
+    direct: Arc<AtomicBool>,
 }
 
 impl MetalHost {
@@ -82,11 +92,18 @@ impl MetalHost {
         surface.layer().setAllowsNextDrawableTimeout(true);
         let max_dimension = backend.limits().max_texture_dimension_2d;
         let source = surface.drawable_source();
+        let direct = Arc::new(AtomicBool::new(false));
+        // `AIMER_TRANSACTIONAL_PRESENT` keeps every frame on the transaction
+        // path, for a device where direct presentation misbehaves.
+        let allowed = PresentGate::platform_allows_direct()
+            && std::env::var_os("AIMER_TRANSACTIONAL_PRESENT").is_none();
         let mut host = Self {
             surface,
             window: window.clone(),
             size: PhysicalSize::new(0, 0),
             scale: 0.0,
+            gate: PresentGate::new(allowed),
+            direct: direct.clone(),
         };
         host.prepare(PhysicalSize::new(
             size.width.min(max_dimension),
@@ -98,6 +115,7 @@ impl MetalHost {
                 backend,
                 source,
                 antialiasing,
+                direct,
             },
             max_dimension,
         )
@@ -110,6 +128,12 @@ impl MetalHost {
         }
         self.size = size;
         self.scale = scale;
+        // The layer's geometry is about to change, so the frames that follow
+        // must reach the screen together with it.
+        if self.gate.geometry_changed().is_some() {
+            self.direct.store(false, Ordering::Release);
+            self.surface.layer().setPresentsWithTransaction(true);
+        }
         let _transaction = Transaction::new();
         #[cfg(target_os = "macos")]
         self.surface.layer().setContentsScale(scale);
@@ -119,7 +143,7 @@ impl MetalHost {
             .setDrawableSize(CGSize::new(f64::from(size.width), f64::from(size.height)));
     }
 
-    pub(super) fn present(&self, drawable: ScheduledMetalDrawable) -> bool {
+    pub(super) fn present(&mut self, drawable: ScheduledMetalDrawable) -> bool {
         if drawable.size() != (self.size.width, self.size.height) {
             return false;
         }
@@ -148,6 +172,7 @@ impl MetalHost {
             }
         }
         let present = PhaseTimer::start();
+        aimer_utils::frame_trace("present_begin", 0.0, 0.0);
         let transaction = Transaction::new();
         #[cfg(target_os = "ios")]
         {
@@ -157,8 +182,17 @@ impl MetalHost {
                 .setContentsScale(view.contentScaleFactor());
         }
         drawable.present();
+        aimer_utils::frame_trace("present_called", 0.0, 0.0);
         drop(transaction);
+        aimer_utils::frame_trace("present_committed", 0.0, 0.0);
         present.finish(FramePhase::Present);
+        if self.gate.transactional_frame_presented() == Some(PresentMode::Direct) {
+            // The layer first stops waiting for a transaction, then the worker
+            // is told: a frame is never encoded for direct presentation while
+            // the layer would still hold it for a transaction.
+            self.surface.layer().setPresentsWithTransaction(false);
+            self.direct.store(true, Ordering::Release);
+        }
         true
     }
 }
@@ -214,6 +248,7 @@ impl MetalSeed {
             backend: self.backend,
             source: self.source,
             renderer,
+            direct: self.direct,
         })
     }
 }
@@ -226,9 +261,16 @@ impl WorkerPresenter for MetalPresenter {
     }
     fn render(&mut self, packet: &FramePacket) -> BackendOutput {
         objc2::rc::autoreleasepool(|_| {
+            // Read once: the mode this frame is acquired, encoded and presented in.
+            let direct = self.direct.load(Ordering::Acquire);
             let acquire = PhaseTimer::start();
-            let drawable = self.source.next_drawable();
+            let drawable = if direct {
+                self.source.next_direct_drawable()
+            } else {
+                self.source.next_drawable()
+            };
             acquire.finish_acquire();
+            aimer_utils::frame_trace("raster_acquired", 0.0, 0.0);
             let Some(drawable) = drawable else {
                 self.renderer.discard_frame(&self.backend, packet);
                 return BackendOutput::Presented(false);
@@ -246,7 +288,16 @@ impl WorkerPresenter for MetalPresenter {
             encode.finish(FramePhase::Encode);
             #[cfg(feature = "frame-stats")]
             self.backend.end_gpu_frame_timing();
-            BackendOutput::Metal(drawable.schedule_transactional_presentation(&self.backend))
+            aimer_utils::frame_trace("raster_encoded", 0.0, 0.0);
+            if direct {
+                // No wait for the GPU and no main-thread transaction.
+                drawable.present(&self.backend);
+                aimer_utils::frame_trace("raster_presented", 0.0, 0.0);
+                return BackendOutput::Presented(true);
+            }
+            let scheduled = drawable.schedule_transactional_presentation(&self.backend);
+            aimer_utils::frame_trace("raster_scheduled", 0.0, 0.0);
+            BackendOutput::Metal(scheduled)
         })
     }
 }

@@ -95,6 +95,7 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
             }
         }
         AimerNativePlatformEvent::FrameReady => {
+            aimer_utils::frame_trace("frame_ready", 0.0, 0.0);
             let kind = crate::aimer_app::frame_ready_delivered();
             app.note_frame_request(kind);
             on_frame_ready(app, kind);

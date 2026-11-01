@@ -44,6 +44,29 @@ impl MetalDrawableSource {
     }
 }
 
+impl MetalDrawableSource {
+    /// Acquires a drawable the rendering thread presents by itself.
+    ///
+    /// Call [`MetalSurfaceFrame::present`] on the returned frame once it is
+    /// rendered: it schedules the presentation on the command queue and returns
+    /// at once, with no wait for the GPU and no main-thread transaction. That is
+    /// only right while the layer's size and scale are not changing, because the
+    /// frame then reaches the screen on its own schedule instead of together with
+    /// the layer's geometry. The layer must not present with a transaction.
+    #[doc(hidden)]
+    pub fn next_direct_drawable(&self) -> Option<MetalSurfaceFrame> {
+        let drawable = self.layer.nextDrawable()?;
+        let texture = MetalTexture(drawable.texture());
+        let view = MetalTextureView(texture.0.clone());
+        Some(MetalSurfaceFrame {
+            drawable,
+            texture,
+            view,
+            presents_with_transaction: false,
+        })
+    }
+}
+
 /// A drawable whose actual producer submission has already been scheduled.
 ///
 /// The UI can present it in a Core Animation transaction without a GPU wait.
@@ -94,5 +117,65 @@ impl ScheduledMetalDrawable {
         let metal_drawable: &ProtocolObject<dyn CAMetalDrawable> = &self.drawable;
         let drawable: &ProtocolObject<dyn MTLDrawable> = metal_drawable.as_ref();
         drawable.present();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use objc2_core_foundation::CGSize;
+    use objc2_quartz_core::CAMetalLayer;
+
+    use super::*;
+    use crate::backend::{
+        GpuBackend, LoadOp, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
+    };
+    use objc2_metal::MTLPixelFormat;
+
+    /// A direct presentation must not wait for the GPU to schedule the frame:
+    /// that wait is what ties the rendering thread to the transaction path.
+    /// Waiting consumes the recorded submission, so a direct present that
+    /// leaves it in place did not wait.
+    #[test]
+    fn a_direct_present_does_not_wait_for_the_render_submission() {
+        let backend = MetalBackend::new().expect("native Metal regression test requires a GPU");
+        let layer = CAMetalLayer::new();
+        let surface = MetalSurface::new(&backend, layer, MTLPixelFormat::BGRA8Unorm);
+        surface
+            .layer()
+            .setDrawableSize(CGSize::new(16.0, 16.0));
+        let source = surface.drawable_source();
+
+        let frame = source
+            .next_direct_drawable()
+            .expect("a detached layer hands out a drawable");
+        assert!(!frame.presents_with_transaction);
+        let mut encoder = backend.create_command_encoder("direct presentation regression");
+        backend.begin_render_pass(
+            &mut encoder,
+            &RenderPassDescriptor {
+                label: None,
+                color_attachments: &[RenderPassColorAttachment {
+                    view: frame.view(),
+                    resolve_target: None,
+                    ops: crate::backend::Operations {
+                        load: LoadOp::Clear([0.0; 4]),
+                        store: StoreOp::Store,
+                    },
+                }],
+                depth_stencil_attachment: None,
+            },
+        );
+        let rendered = encoder.command_buffer.clone();
+        backend.submit(encoder);
+
+        frame.present(&backend);
+
+        let still_recorded = backend
+            .wait_for_render_submission()
+            .expect("a direct present leaves the submission for whoever waits next");
+        assert_eq!(
+            Retained::as_ptr(&still_recorded),
+            Retained::as_ptr(&rendered)
+        );
     }
 }

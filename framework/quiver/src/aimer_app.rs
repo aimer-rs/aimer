@@ -258,19 +258,32 @@ fn request_frame_ready() {
         return;
     }
 
-    if !try_begin_frame_ready_request(&FRAME_READY_PENDING, current_frame_request_kind()) {
-        crate::frame_stats::record_frame_request_coalesced();
-        return;
-    }
-    crate::frame_stats::record_frame_request_accepted();
-    let sent = EVENT_PROXY.get().is_some_and(|proxy| {
-        proxy
-            .send_event(AimerNativePlatformEvent::FrameReady)
-            .is_ok()
-    });
-    if !sent {
-        complete_frame_ready_request(&FRAME_READY_PENDING);
-    }
+    crate::frame_wake::wake_frame(
+        crate::frame_wake::FrameWake::PLATFORM,
+        || {
+            // A wake from a task or worker must not render in the middle of a
+            // refresh interval: it would be a second frame beside the one the
+            // display link starts next. Safe from any thread: it sets a flag
+            // and unpauses the link on the main queue.
+            aimer_utils::frame_trace("wake_display_link", 0.0, 0.0);
+            aimer_events::window::request_animation_frame();
+        },
+        || {
+            if !try_begin_frame_ready_request(&FRAME_READY_PENDING, current_frame_request_kind()) {
+                crate::frame_stats::record_frame_request_coalesced();
+                return;
+            }
+            crate::frame_stats::record_frame_request_accepted();
+            let sent = EVENT_PROXY.get().is_some_and(|proxy| {
+                proxy
+                    .send_event(AimerNativePlatformEvent::FrameReady)
+                    .is_ok()
+            });
+            if !sent {
+                complete_frame_ready_request(&FRAME_READY_PENDING);
+            }
+        },
+    );
 }
 
 /// Wakes the event loop for a native callback queued by a hot-reloaded tree.
@@ -325,12 +338,16 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 pub extern "C" fn aimer_ios_frame_tick() {
     if !aimer_events::window::take_frame_requested() {
+        aimer_utils::frame_trace("tick_idle", 0.0, 0.0);
+        // The link is about to sleep, which is a quiet moment to write the trace.
+        aimer_utils::frame_trace_flush();
         // No frame pending — idle the display link until the next request.
         unsafe {
             aimer_ios_pause_frames();
         }
         return;
     }
+    aimer_utils::frame_trace("tick_request", 0.0, 0.0);
 
     let Some(proxy) = EVENT_PROXY.get() else {
         aimer_utils::debug!("aimer_ios_frame_tick: EVENT_PROXY not initialized yet");
@@ -340,6 +357,34 @@ pub extern "C" fn aimer_ios_frame_tick() {
     if let Err(e) = proxy.send_event(AimerNativePlatformEvent::FrameReady) {
         aimer_utils::error!("aimer_ios_frame_tick: failed to send event: {:?}", e);
     }
+}
+
+/// Reports the display link's own clock readings for the tick being delivered.
+///
+/// `timestamp` is the vsync the tick belongs to and `target` the vsync the
+/// frame it starts will be shown at, both on the `CACurrentMediaTime` clock.
+/// Recorded only under `AIMER_FRAME_TRACE`; hosts that never call it lose
+/// nothing.
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn aimer_ios_frame_trace_tick(timestamp: f64, target: f64) {
+    aimer_utils::frame_trace("tick_swift", timestamp, target);
+}
+
+/// Reports a display-link state change made on the Swift side: `1` when the
+/// link was unpaused to deliver a requested frame, `2` when it was paused.
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn aimer_ios_frame_trace_mark(kind: u32) {
+    aimer_utils::frame_trace(
+        match kind {
+            1 => "link_unpause",
+            2 => "link_pause",
+            _ => "link_other",
+        },
+        0.0,
+        0.0,
+    );
 }
 
 #[cfg(target_os = "ios")]

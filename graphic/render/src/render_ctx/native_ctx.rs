@@ -312,6 +312,12 @@ impl NativeRenderContext {
             .unwrap()
             .try_submit_tagged(packet, cpu, self.generation)
             .unwrap_or_else(|_| panic!("admitted frame lost capacity"));
+        // a: frames in flight, this one included.
+        aimer_utils::frame_trace(
+            "raster_submit",
+            self.worker.as_ref().map_or(0, FrameWorker::outstanding) as f64,
+            0.0,
+        );
         if resized {
             self.settle_resized_frame();
         }
@@ -519,6 +525,7 @@ impl NativeRenderContext {
                 self.ready = true;
             }
             WorkerEvent::Completed(frame) => {
+                aimer_utils::frame_trace("completion_applied", 0.0, 0.0);
                 let presented = match frame.output {
                     BackendOutput::Presented(presented) => {
                         presented && !self.suspended && !self.closing
@@ -530,10 +537,12 @@ impl NativeRenderContext {
                             && frame.generation == self.generation
                             && self
                                 .host
-                                .as_ref()
+                                .as_mut()
                                 .is_some_and(|host| host.present(drawable))
                     }
                 };
+                // a: 1 when the frame went on screen.
+                aimer_utils::frame_trace("presented", presented as u8 as f64, 0.0);
                 if let Some(canvas) = &self.canvas {
                     canvas.recycle_draw_list(frame.draw_list);
                 }

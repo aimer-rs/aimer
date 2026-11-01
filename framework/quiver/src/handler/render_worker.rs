@@ -48,6 +48,8 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         if self.render_ctx.can_begin_frame() {
             return true;
         }
+        // The raster worker holds both of its frame slots: this tick draws nothing.
+        aimer_utils::frame_trace("frame_deferred", 0.0, 0.0);
         self.render_ctx.defer_frame();
         false
     }
