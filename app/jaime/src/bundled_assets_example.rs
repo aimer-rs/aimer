@@ -134,6 +134,7 @@ pub fn start_bundled_assets_example() {
 #[cfg(test)]
 mod tests {
     use aimer::{BundleDocuments, BundleFont, BundleImage, BundleSvg};
+    use aimer::style::FontFamily;
 
     use super::*;
 

@@ -78,6 +78,7 @@ pub(super) enum ExampleId {
     AssetImage,
     BundledAssets,
     CustomPaint,
+    ColorMelt,
 }
 
 pub(super) const EXAMPLES: &[ExampleId] = &[
@@ -153,6 +154,7 @@ pub(super) const EXAMPLES: &[ExampleId] = &[
     ExampleId::AssetImage,
     ExampleId::BundledAssets,
     ExampleId::CustomPaint,
+    ExampleId::ColorMelt,
 ];
 
 pub(super) struct ExampleCategory {
@@ -263,6 +265,7 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
         label: "Drawing & vector",
         examples: &[
             ExampleId::CustomPaint,
+            ExampleId::ColorMelt,
             ExampleId::CustomShape,
             ExampleId::SvgCompletion,
             ExampleId::Svg,
@@ -381,6 +384,7 @@ impl ExampleId {
             Self::AssetImage => "Asset image",
             Self::BundledAssets => "Bundled assets",
             Self::CustomPaint => "Custom paint",
+            Self::ColorMelt => "Color melt",
         }
     }
 
@@ -447,6 +451,7 @@ impl ExampleId {
             Self::Align => "⊡",
             Self::BorderOutline => "□",
             Self::CustomPaint => "✎",
+            Self::ColorMelt => "◐",
         }
     }
 
@@ -526,6 +531,7 @@ impl ExampleId {
             Self::AssetImage => "asset-image",
             Self::BundledAssets => "bundled-assets",
             Self::CustomPaint => "custom-paint",
+            Self::ColorMelt => "color-melt",
         }
     }
 
@@ -676,6 +682,9 @@ impl ExampleId {
             }
             Self::CustomPaint => {
                 "Draw rectangles and text into a laid-out box with a CanvasPainter."
+            }
+            Self::ColorMelt => {
+                "An app-defined shader effect: melting colors with live speed, scale, melt and palette controls."
             }
         }
     }

@@ -98,6 +98,8 @@ pub use aimer_lucide as icons;
 pub use aimer_lucide::Icons;
 pub use aimer_screen as screen;
 pub use aimer_custom_paint::{CanvasPainter, CustomPaint};
+/// Application-defined shader effects; see [`effects::ShaderEffect`].
+pub use aimer_effect_pipeline as effects;
 pub use aimer_scroll::*;
 pub use aimer_space::*;
 #[cfg(feature = "svg")]

@@ -20,6 +20,7 @@ mod color_sync;
 mod container_transform_example;
 mod custom_animated_theme;
 mod custom_font;
+mod color_melt_example;
 mod custom_paint_example;
 mod custom_shape_example;
 pub mod custom_text_field_caret_example;
