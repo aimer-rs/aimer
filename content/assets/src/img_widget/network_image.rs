@@ -7,6 +7,7 @@ use aimer_style::BoxFit;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{AnyElement, AnyWidget, Element, LayoutCache, Widget};
 
+use crate::img_widget::gif::{GifController, GifLoops, GifOptions, GifSlot};
 use crate::img_widget::image_widget::RawImageWidget;
 use crate::img_widget::source::ImageSource;
 
@@ -33,6 +34,9 @@ use crate::img_widget::source::ImageSource;
 ///                                                                .height(180.0)
 ///                                                                .fit(BoxFit::Cover);
 /// ```
+///
+/// A GIF response plays as an animation; see [`NetworkImage::gif_controller`]
+/// and [`NetworkImage::gif_loops`].
 pub struct NetworkImage {
     pub url: String,
     pub width: Dimension,
@@ -43,6 +47,7 @@ pub struct NetworkImage {
     pub loading_widget: Option<AnyWidget>,
     pub delay: Option<u64>,
     pub scale: f32,
+    pub animation: GifOptions,
 }
 
 impl NetworkImage {
@@ -63,6 +68,7 @@ impl NetworkImage {
             loading_widget: None,
             delay: None,
             scale: 1.0,
+            animation: GifOptions::new(),
         }
     }
 
@@ -137,6 +143,20 @@ impl NetworkImage {
         self.scale = scale.into();
         self
     }
+
+    /// Attaches a controller that plays, pauses and seeks the image when it is
+    /// an animated GIF. It has no effect on other images.
+    pub fn gif_controller(mut self, controller: GifController) -> Self {
+        self.animation = self.animation.controller(controller);
+        self
+    }
+
+    /// Sets how many times an animated GIF plays. The default follows the
+    /// loop count stored in the file.
+    pub fn gif_loops(mut self, loops: GifLoops) -> Self {
+        self.animation = self.animation.loops(loops);
+        self
+    }
 }
 
 impl Widget for NetworkImage {
@@ -162,6 +182,7 @@ impl Widget for NetworkImage {
             cached_texture_epoch: Cell::new(0),
             paint_changed: Cell::new(false),
             scale: self.scale,
+            animation: GifSlot::new(self.animation),
         }
         .boxed()
     }

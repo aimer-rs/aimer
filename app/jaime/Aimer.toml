@@ -16,6 +16,7 @@ macos_screenshot = "assets/macos_screenshot.png"
 android_screenshot = "assets/android_screenshot.png"
 github_svgrepo_com = "assets/github-svgrepo-com.png"
 cat_svgrepo_com = "assets/cat-svgrepo-com.svg"
+giphy = "assets/giphy.gif"
 
 
 [font]

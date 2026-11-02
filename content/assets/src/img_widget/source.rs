@@ -539,7 +539,7 @@ fn constrained_browser_image_size(width: u32, height: u32) -> (u32, u32) {
 
 /// `width` x `height` scaled down, aspect ratio kept, until neither side is
 /// longer than `max_dimension`. Never scaled up, and never to an empty side.
-fn constrained_image_size(width: u32, height: u32, max_dimension: u32) -> (u32, u32) {
+pub(super) fn constrained_image_size(width: u32, height: u32, max_dimension: u32) -> (u32, u32) {
     if width <= max_dimension && height <= max_dimension {
         return (width, height);
     }
@@ -578,7 +578,7 @@ fn upload_limit_for(window_longest_side: u32) -> u32 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn upload_limit(window: &WindowHandle) -> u32 {
+pub(super) fn upload_limit(window: &WindowHandle) -> u32 {
     let size = window.inner_size();
     upload_limit_for(size.width.max(size.height))
 }
@@ -593,7 +593,7 @@ fn upload_limit(window: &WindowHandle) -> u32 {
 /// compiles without optimization, and took four seconds for a 12 megapixel
 /// photo where this takes a fraction of one.
 #[cfg(not(target_arch = "wasm32"))]
-fn downscale_rgba(
+pub(super) fn downscale_rgba(
     source: &[u8],
     source_width: u32,
     source_height: u32,
@@ -676,6 +676,18 @@ fn ready_image(image: image::RgbaImage, limit: u32) -> ImageCacheState {
         height,
     )
 }
+
+/// Decodes `bytes` after remembering them under `key` when they are a GIF, so
+/// the image widget can play the animation of which the cache keeps one frame.
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn decode_registering(
+    key: String,
+    bytes: &[u8],
+) -> image::ImageResult<image::DynamicImage> {
+    super::gif::register(key, bytes);
+    image::load_from_memory(bytes)
+}
+
 #[allow(dead_code)]
 fn image_mime_type(bytes: &[u8]) -> &'static str {
     if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
@@ -742,6 +754,24 @@ pub enum ImageSource {
 }
 
 impl ImageProvider for ImageSource {
+    fn animation_bytes(&self) -> Option<Arc<[u8]>> {
+        let key = match self {
+            ImageSource::Id(_) => return None,
+            #[cfg(not(target_arch = "wasm32"))]
+            ImageSource::Asset(key) => super::gif::key_asset(key),
+            // Web assets are fetched like network images, from the site root.
+            #[cfg(target_arch = "wasm32")]
+            ImageSource::Asset(key) if key.starts_with('/') => super::gif::key_network(key),
+            #[cfg(target_arch = "wasm32")]
+            ImageSource::Asset(key) => super::gif::key_network(&format!("/{key}")),
+            ImageSource::File(path) => super::gif::key_file(path),
+            ImageSource::Network(url) | ImageSource::NetworkWithHeaders(url, _) => {
+                super::gif::key_network(url)
+            }
+        };
+        super::gif::lookup(&key)
+    }
+
     fn get_image(&self, ctx: &BuildContext) -> ImageResult {
         match self {
             ImageSource::Id(id) => Success(*id),
@@ -854,9 +884,11 @@ impl ImageSource {
                     let error_window = window.clone();
                     let limit = upload_limit(&window);
                     if !schedule_native_image_load(
-                        move || match image::open(&task_path) {
-                            Ok(image) => ready_image(image.into_rgba8(), limit),
-                            Err(_) => ImageCacheState::Error("Failed to load image".into()),
+                        move || match std::fs::read(&task_path).ok().and_then(|bytes| {
+                            decode_registering(super::gif::key_file(&task_path), &bytes).ok()
+                        }) {
+                            Some(image) => ready_image(image.into_rgba8(), limit),
+                            None => ImageCacheState::Error("Failed to load image".into()),
                         },
                         move |state| ImageCacheUpdate::File {
                             path: update_path,
@@ -883,7 +915,12 @@ impl ImageSource {
                     let window = ctx.window.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         let state = match Self::fetch_bytes(&url).await {
-                            Ok(bytes) => match Self::decode_image_browser(&bytes).await {
+                            Ok(bytes) => match Self::decode_registering_browser(
+                                super::gif::key_file(&path_buf),
+                                &bytes,
+                            )
+                            .await
+                            {
                                 Ok((rgba, upload_w, upload_h, w, h)) => {
                                     ImageCacheState::Ready(
                                         DecodedPixels::new(rgba, upload_w, upload_h),
@@ -965,7 +1002,7 @@ impl ImageSource {
                 let limit = upload_limit(&window);
                 if !schedule_native_image_load(
                     move || match Self::load_asset_bytes(&task_key) {
-                        Ok(bytes) => match image::load_from_memory(&bytes) {
+                        Ok(bytes) => match decode_registering(super::gif::key_asset(&task_key), &bytes) {
                             Ok(image) => ready_image(image.into_rgba8(), limit),
                             Err(_) => ImageCacheState::Error(format!(
                                 "Failed to decode asset image '{task_key}'"
@@ -1178,7 +1215,7 @@ impl ImageSource {
         };
 
         let (rgba, upload_width, upload_height, width, height) =
-            Self::decode_image_browser(&bytes).await?;
+            Self::decode_registering_browser(super::gif::key_network(url), &bytes).await?;
 
         Ok(ImageCacheState::Ready(
             DecodedPixels::new(rgba, upload_width, upload_height),
@@ -1246,6 +1283,16 @@ impl ImageSource {
         .await
         .map_err(|e| format!("{:?}", e))?;
         Ok(js_sys::Uint8Array::new(&buf).to_vec())
+    }
+
+    /// Remembers `bytes` under `key` when they are a GIF, then decodes them.
+    #[cfg(target_arch = "wasm32")]
+    async fn decode_registering_browser(
+        key: String,
+        bytes: &[u8],
+    ) -> Result<(Vec<u8>, u32, u32, u32, u32), String> {
+        super::gif::register(key, bytes);
+        Self::decode_image_browser(bytes).await
     }
 
     /// Decode raw image bytes (PNG/JPEG/WebP/GIF) to RGBA using the browser's
@@ -1357,7 +1404,7 @@ impl ImageSource {
             .read_to_end(&mut all_bytes)
             .map_err(|error| format!("Failed to download bytes: {error}"))?;
 
-        match image::load_from_memory(&all_bytes) {
+        match decode_registering(super::gif::key_network(url), &all_bytes) {
             Ok(image) => Ok(ready_image(image.into_rgba8(), limit)),
             Err(_) => {
                 // error!("Failed to decode image: {}", e);

@@ -76,6 +76,7 @@ pub(super) enum ExampleId {
     Align,
     BorderOutline,
     AssetImage,
+    Gif,
     BundledAssets,
     CustomPaint,
     ColorMelt,
@@ -152,6 +153,7 @@ pub(super) const EXAMPLES: &[ExampleId] = &[
     ExampleId::Align,
     ExampleId::BorderOutline,
     ExampleId::AssetImage,
+    ExampleId::Gif,
     ExampleId::BundledAssets,
     ExampleId::CustomPaint,
     ExampleId::ColorMelt,
@@ -277,6 +279,7 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
         examples: &[
             ExampleId::AssetsMedia,
             ExampleId::AssetImage,
+            ExampleId::Gif,
             ExampleId::BundledAssets,
         ],
     },
@@ -382,6 +385,7 @@ impl ExampleId {
             Self::Align => "Align",
             Self::BorderOutline => "Border and outline",
             Self::AssetImage => "Asset image",
+            Self::Gif => "Animated GIF",
             Self::BundledAssets => "Bundled assets",
             Self::CustomPaint => "Custom paint",
             Self::ColorMelt => "Color melt",
@@ -442,6 +446,7 @@ impl ExampleId {
             Self::Overflow => "↔",
             Self::JustifyContent => "☷",
             Self::Svg | Self::AssetImage => "◇",
+            Self::Gif => "▶",
             Self::CustomFont | Self::BundledAssets => "Aa",
             Self::PanicRecovery => "!",
 
@@ -529,6 +534,7 @@ impl ExampleId {
             Self::Align => "align",
             Self::BorderOutline => "border-outline",
             Self::AssetImage => "asset-image",
+            Self::Gif => "gif",
             Self::BundledAssets => "bundled-assets",
             Self::CustomPaint => "custom-paint",
             Self::ColorMelt => "color-melt",
@@ -677,6 +683,7 @@ impl ExampleId {
             Self::Align => "Compare all nine positions for a child within its parent.",
             Self::BorderOutline => "Compare a border and an outline around a field.",
             Self::AssetImage => "Load and decorate a bundled raster asset.",
+            Self::Gif => "Play, pause, restart and seek a bundled animated GIF.",
             Self::BundledAssets => {
                 "Typed handles for Aimer.toml assets and fonts, with lazy font loading."
             }

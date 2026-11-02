@@ -27,6 +27,7 @@ use crate::floating::FloatingShowcase;
 use crate::focus_node_example::FocusNodeExample;
 use crate::foreground_decoration_example::foreground_decoration_example;
 use crate::form_example::form_example;
+use crate::gif_example::gif_example;
 use crate::glass_liquid_example::glass_liquid_example;
 use crate::gradient_example::gradient_example;
 use crate::http_request_button::http_request_button_example;
@@ -489,6 +490,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::Align => align_example(app_theme).boxed(),
         ExampleId::BorderOutline => border_outline_example(app_theme),
         ExampleId::AssetImage => asset_image_example(app_theme),
+        ExampleId::Gif => gif_example().boxed(),
         ExampleId::BundledAssets => bundled_assets_example().boxed(),
         ExampleId::CustomPaint => custom_paint_example().boxed(),
         ExampleId::ColorMelt => color_melt_example().boxed(),

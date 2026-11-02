@@ -38,6 +38,7 @@ impl Widget for ReadyImage {
             cached_texture_epoch: Cell::new(0),
             paint_changed: Cell::new(false),
             scale: 1.0,
+            animation: Default::default(),
         }
         .boxed()
     }

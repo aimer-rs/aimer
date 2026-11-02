@@ -7,9 +7,11 @@ use aimer_style::BoxFit;
 use aimer_widget::base::{BuildContext, Color, Colors, ResolvedSize, Size, Vec2d};
 use aimer_widget::{
     AnyElement, Drawable, Element, LayoutCache, LayoutElement, VisitorElement, Widget,
+    request_isolated_animation_frame,
 };
 
 use crate::ImageResult::Success;
+use crate::img_widget::gif::{GifController, GifLoops, GifOptions, GifSlot};
 use crate::img_widget::source::ImageSource;
 use crate::{ImageProvider, ImageResult};
 
@@ -94,12 +96,16 @@ fn image_paint_geometry(
 ///                                           .height(180.0)
 ///                                           .fit(BoxFit::Cover);
 /// ```
+///
+/// A GIF file plays as an animation; see [`Image::gif_controller`] and
+/// [`Image::gif_loops`].
 pub struct Image {
     pub path: PathBuf,
     pub width: Dimension,
     pub height: Dimension,
     pub fit: BoxFit,
     pub scale: f32,
+    pub animation: GifOptions,
 }
 
 impl Image {
@@ -115,6 +121,7 @@ impl Image {
             height: Dimension::default(),
             fit: BoxFit::default(),
             scale: 1.0,
+            animation: GifOptions::new(),
         }
     }
 
@@ -153,6 +160,20 @@ impl Image {
         self.scale = scale.into();
         self
     }
+
+    /// Attaches a controller that plays, pauses and seeks the image when it is
+    /// an animated GIF. It has no effect on other images.
+    pub fn gif_controller(mut self, controller: GifController) -> Self {
+        self.animation = self.animation.controller(controller);
+        self
+    }
+
+    /// Sets how many times an animated GIF plays. The default follows the
+    /// loop count stored in the file.
+    pub fn gif_loops(mut self, loops: GifLoops) -> Self {
+        self.animation = self.animation.loops(loops);
+        self
+    }
 }
 
 impl Widget for Image {
@@ -173,6 +194,7 @@ impl Widget for Image {
             cached_texture_epoch: Cell::new(0),
             paint_changed: Cell::new(false),
             scale: self.scale,
+            animation: GifSlot::new(self.animation),
         }
         .boxed()
     }
@@ -201,6 +223,8 @@ pub struct RawImageWidget<P: ImageProvider> {
     /// so the retained node re-records exactly when its pixels can differ.
     pub paint_changed: Cell<bool>,
     pub scale: f32,
+    /// Plays the image when it is an animated GIF; inert for every other image.
+    pub animation: GifSlot,
 }
 
 impl<P: ImageProvider> VisitorElement for RawImageWidget<P> {
@@ -334,6 +358,23 @@ impl<P: ImageProvider> RawImageWidget<P> {
         }
     }
 
+    /// Advances a playing GIF. Runs once the still image has settled, which is
+    /// when its animation (if it has one) is known.
+    fn sync_animation(&self, ctx: &BuildContext) {
+        if !matches!(unsafe { &*self.cached_id.get() }, Some(Success(_))) {
+            return;
+        }
+        let tick = self.animation.sync(ctx, || self.source.animation_bytes());
+        if tick.changed {
+            self.paint_changed.set(true);
+        }
+        if tick.wants_frame {
+            // A frame of the animation changes this element's own picture and
+            // nothing else, so the next frame may revisit it alone.
+            request_isolated_animation_frame(ctx);
+        }
+    }
+
     fn local_v2_image_paint(
         &self,
         ctx: &BuildContext,
@@ -343,7 +384,10 @@ impl<P: ImageProvider> RawImageWidget<P> {
         ImagePaintGeometry,
         Option<std::sync::Arc<aimer_cupid::draw_cmd_v2::ImageResource>>,
     )> {
-        let resource = self.source.retained_image_resource(ctx);
+        let resource = self
+            .animation
+            .current_resource()
+            .or_else(|| self.source.retained_image_resource(ctx));
         let id = if let Some(resource) = &resource {
             resource.texture_id()
         } else {
@@ -438,6 +482,7 @@ impl<P: ImageProvider> Drawable for RawImageWidget<P> {
     fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
         self.sync_paint_geometry(ctx);
         self.refresh(ctx);
+        self.sync_animation(ctx);
         true
     }
 
@@ -548,6 +593,41 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Debug)]
+    struct GifProvider {
+        bytes: std::sync::Arc<[u8]>,
+    }
+
+    impl ImageProvider for GifProvider {
+        fn get_image(&self, ctx: &BuildContext) -> ImageResult {
+            ctx.canvas.set_texture_size(7, 4, 4);
+            ImageResult::Success(7)
+        }
+
+        fn animation_bytes(&self) -> Option<std::sync::Arc<[u8]>> {
+            Some(self.bytes.clone())
+        }
+    }
+
+    fn two_frame_gif() -> std::sync::Arc<[u8]> {
+        use image::codecs::gif::{GifEncoder, Repeat};
+        use image::{Delay, Frame, Rgba, RgbaImage};
+
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = GifEncoder::new(&mut bytes);
+            encoder.set_repeat(Repeat::Infinite).unwrap();
+            for color in [[255, 0, 0, 255], [0, 255, 0, 255]] {
+                let image = RgbaImage::from_pixel(4, 4, Rgba(color));
+                let delay = Delay::from_numer_denom_ms(100, 1);
+                encoder
+                    .encode_frame(Frame::from_parts(image, 0, 0, delay))
+                    .unwrap();
+            }
+        }
+        std::sync::Arc::from(bytes)
+    }
+
     fn context() -> BuildContext<'static> {
         use aimer_attribute::{BoxConstraint, Vec2d};
         use aimer_canvas::{FrameCanvas, InnerCanvas};
@@ -597,6 +677,7 @@ mod tests {
             cached_texture_epoch: Cell::new(0),
             paint_changed: Cell::new(false),
             scale: 1.0,
+            animation: GifSlot::default(),
         }
     }
 
@@ -652,6 +733,53 @@ mod tests {
             damage.is_full(),
             "a loading image becoming drawable must invalidate its retained paint"
         );
+    }
+
+    #[test]
+    fn a_gif_provider_paints_its_animation_instead_of_the_still_texture() {
+        let ctx = context();
+        let image = image_with_source(GifProvider {
+            bytes: two_frame_gif(),
+        });
+
+        image.sync_local_v2_state(&ctx);
+
+        assert!(
+            image.local_v2_paint_needs_recording(&ctx),
+            "the first animation frame must be recorded"
+        );
+        let (id, _, _, resource) = image
+            .local_v2_image_paint(&ctx)
+            .expect("a settled image has paint");
+        let resource = resource.expect("the current frame is painted as a retained resource");
+        assert_eq!(id, resource.texture_id());
+        assert_ne!(id, 7, "the still texture is replaced by the frame");
+        assert_eq!(
+            (resource.intrinsic_width(), resource.intrinsic_height()),
+            (4, 4)
+        );
+    }
+
+    #[test]
+    fn a_paused_gif_keeps_painting_its_first_frame_without_new_recordings() {
+        use crate::GifController;
+
+        let ctx = context();
+        let controller = GifController::paused();
+        let mut image = image_with_source(GifProvider {
+            bytes: two_frame_gif(),
+        });
+        image.animation = GifSlot::new(GifOptions::new().controller(controller.clone()));
+
+        image.sync_local_v2_state(&ctx);
+        let first = image.local_v2_image_paint(&ctx).unwrap().3.unwrap();
+        image.paint_changed.set(false);
+        image.sync_local_v2_state(&ctx);
+
+        assert!(!image.local_v2_paint_needs_recording(&ctx));
+        let still_first = image.local_v2_image_paint(&ctx).unwrap().3.unwrap();
+        assert_eq!(first.texture_id(), still_first.texture_id());
+        assert_eq!(controller.current_frame(), 0);
     }
 
     #[test]

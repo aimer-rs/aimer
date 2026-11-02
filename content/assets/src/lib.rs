@@ -32,6 +32,7 @@ pub use font::{
     bundled_monospace_bytes,
 };
 pub use img_widget::asset_image::AssetImage;
+pub use img_widget::gif::{GifController, GifLoops, GifOptions};
 pub use img_widget::image_widget::Image;
 pub use img_widget::network_image::NetworkImage;
 pub use img_widget::source::ImageSource;
@@ -95,6 +96,17 @@ pub trait ImageProvider: Clone + Debug {
     /// still has the texture ID returned by `get_image`.
     #[doc(hidden)]
     fn retained_image_resource(&self, _ctx: &BuildContext) -> Option<Arc<ImageResource>> {
+        None
+    }
+
+    /// Returns the encoded bytes of an animated GIF this provider showed, once
+    /// its still image has settled.
+    ///
+    /// The image widget plays the animation from these bytes in place of the
+    /// still frame `get_image` returns. Providers that do not load GIFs keep
+    /// returning `None`.
+    #[doc(hidden)]
+    fn animation_bytes(&self) -> Option<Arc<[u8]>> {
         None
     }
 }
