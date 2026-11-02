@@ -13,6 +13,8 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
+pub mod glsl_package;
+
 // ──────────────────────────────────────────────
 //  Descriptor types shared by all backends
 // ──────────────────────────────────────────────
@@ -733,6 +735,22 @@ pub trait GpuRenderPass<B: GpuBackend> {
 
 // ── GpuBackend trait ──────────────────────────────────────────────────────
 
+/// A shader language [`GpuBackend::create_shader_module`] can be handed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ShaderLanguage {
+    /// WGSL text. The `wgpu` and WebGPU backends consume it directly, and the
+    /// Vulkan backend compiles it to SPIR-V when it creates the module.
+    Wgsl,
+    /// Metal Shading Language text.
+    Msl,
+    /// HLSL text for Direct3D 12.
+    Hlsl,
+    /// A [`glsl_package`] of desktop GLSL 3.30 core.
+    Glsl,
+    /// A [`glsl_package`] of GLSL ES 3.00.
+    GlslEs,
+}
+
 /// Identifies a built-in shader module used by Cupid's generic pipelines.
 ///
 /// The generic WGPU path resolves these to the repository's WGSL sources;
@@ -859,6 +877,17 @@ pub trait GpuBackend: Sized + 'static {
     #[doc(hidden)]
     fn builtin_shader_source(&self, shader: BuiltinShader) -> &'static [u8] {
         shader.wgsl_source()
+    }
+
+    /// The language this backend compiles for shaders supplied at run time.
+    ///
+    /// [`GpuBackend::builtin_shader_source`] ships each built-in shader in the
+    /// backend's own language ahead of time; an application-supplied shader has
+    /// to be translated for it, so this says what to translate to. `None` means
+    /// the backend cannot take run-time shaders yet, and a pipeline that needs one
+    /// must report itself unsupported instead of creating a module.
+    fn runtime_shader_language(&self) -> Option<ShaderLanguage> {
+        Some(ShaderLanguage::Wgsl)
     }
 
     /// Compile a shader module from an opaque source blob.

@@ -1,0 +1,68 @@
+shader water;
+
+import aimer::clip::clip_alpha;
+
+// The reference effect: refracts the backdrop through travelling waves and
+// lays a translucent tint over it. Everything above `time` is the frame header
+// every effect shares (see the crate docs); the rest are this effect's own
+// parameters, written in the same order by `Water::write_params`.
+uniform struct Frame {
+    target_size: vec2,
+    surface_is_srgb: f32,
+    opacity: f32,
+    rect: vec4,
+    clip_rect: vec4,
+    clip_radii: vec4,
+    time: f32,
+    amplitude: f32,
+    frequency: f32,
+    _pad: f32,
+}
+
+#[bind(0, 0)]
+uniform frame: Frame;
+#[bind(0, 1)]
+texture backdrop: texture2d;
+#[bind(0, 2)]
+sampler backdrop_sampler;
+
+#[varying]
+struct VertexOutput {
+    @position position: vec4,
+    pixel_pos: vec2,
+    uv: vec2,
+}
+
+const CORNERS: [vec2; 6] = [
+    vec2(0.0, 0.0),
+    vec2(1.0, 0.0),
+    vec2(0.0, 1.0),
+    vec2(1.0, 0.0),
+    vec2(1.0, 1.0),
+    vec2(0.0, 1.0),
+];
+
+#[vertex]
+fn vs_main(vi: @vertex_index) -> VertexOutput {
+    let corner = CORNERS[vi];
+    let pixel = frame.rect.xy + corner * frame.rect.zw;
+    let ndc = vec2(
+        pixel.x / frame.target_size.x * 2.0 - 1.0,
+        1.0 - pixel.y / frame.target_size.y * 2.0,
+    );
+    VertexOutput { position: vec4(ndc, 0.0, 1.0), pixel_pos: pixel, uv: corner }
+}
+
+#[fragment]
+fn fs_main(input: VertexOutput) -> @frag_color {
+    let wave = vec2(
+        sin(input.uv.y * frame.frequency + frame.time),
+        cos(input.uv.x * frame.frequency + frame.time),
+    ) * frame.amplitude;
+    let refracted = backdrop.sample(backdrop_sampler, (input.pixel_pos + wave) / frame.target_size);
+    let tint = vec4(0.05, 0.30, 0.55, 0.35);
+    let rgb = mix(refracted.rgb, tint.rgb, tint.a);
+    let coverage = clip_alpha(input.pixel_pos, frame.clip_rect, frame.clip_radii) * frame.opacity;
+    // Premultiplied, like every other pipeline's output.
+    vec4(rgb * coverage, coverage)
+}

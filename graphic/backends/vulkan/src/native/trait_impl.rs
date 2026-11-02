@@ -138,22 +138,17 @@ impl GpuBackend for VulkanBackend {
         source: &[u8],
         label: &str,
     ) -> Result<Self::ShaderModule, BackendError> {
-        if source.len() < 20 || source.len() % 4 != 0 {
-            return Err(BackendError {
+        // Built-ins arrive as SPIR-V; a run-time shader arrives as WGSL.
+        let spirv = crate::wgsl_spirv::resolve_spirv(source, label).map_err(|message| {
+            BackendError {
                 operation: "create_shader_module",
-                message: format!("{label} is not a complete SPIR-V module"),
-            });
-        }
-        let words: Vec<u32> = source
+                message,
+            }
+        })?;
+        let words: Vec<u32> = spirv
             .chunks_exact(4)
             .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
             .collect();
-        if words.first().copied() != Some(0x0723_0203) {
-            return Err(BackendError {
-                operation: "create_shader_module",
-                message: format!("{label} has an invalid SPIR-V magic number"),
-            });
-        }
         let create_info = vk::ShaderModuleCreateInfo::default().code(&words);
         let raw = unsafe {
             self.shared

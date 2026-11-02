@@ -14,6 +14,9 @@ pub(crate) use aimer_cupid_gpu as backend;
 
 pub(crate) mod vulkan_descriptor_kind;
 pub(crate) mod vulkan_surface_format;
+mod wgsl_spirv;
+
+pub use wgsl_spirv::compile_wgsl_to_spirv;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod native;

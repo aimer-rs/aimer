@@ -23,6 +23,19 @@ fn packet_needs_backdrop(bytes: &[u8]) -> bool {
     }
 }
 
+/// Whether a custom command named `pipeline_name` reads the backdrop.
+///
+/// `material_packet` is the check for the built-in material's payload, which is
+/// the only pipeline whose payload this module can inspect. An application
+/// effect declares it once, at registration.
+fn custom_samples_backdrop(pipeline_name: &str, material_packet: impl FnOnce() -> bool) -> bool {
+    if pipeline_name == MATERIAL_PIPELINE_NAME {
+        material_packet()
+    } else {
+        crate::effects::samples_backdrop(pipeline_name)
+    }
+}
+
 pub(super) fn draw_list_uses_material(draw_list: &DrawList) -> bool {
     draw_list.commands().iter().any(|command| {
         let DrawCommand::Custom {
@@ -32,14 +45,13 @@ pub(super) fn draw_list_uses_material(draw_list: &DrawList) -> bool {
         else {
             return false;
         };
-        if pipeline_name != MATERIAL_PIPELINE_NAME {
-            return false;
-        }
-        if let Some(request) = data.downcast_ref::<MaterialRequest>() {
-            return request.kind.samples_backdrop();
-        }
-        data.downcast_ref::<Vec<u8>>()
-            .is_none_or(|bytes| packet_needs_backdrop(bytes))
+        custom_samples_backdrop(pipeline_name, || {
+            if let Some(request) = data.downcast_ref::<MaterialRequest>() {
+                return request.kind.samples_backdrop();
+            }
+            data.downcast_ref::<Vec<u8>>()
+                .is_none_or(|bytes| packet_needs_backdrop(bytes))
+        })
     })
 }
 
@@ -53,7 +65,7 @@ pub(super) fn render_plan_uses_material(
             crate::frame::RetainedRenderOperationKind::LocalV2(item) => item.commands.iter().any(
                 |command| matches!(command,
                     crate::draw_cmd_v2::DrawCommand::DrawCustom { pipeline_name, data }
-                        if pipeline_name.as_ref() == MATERIAL_PIPELINE_NAME && packet_needs_backdrop(data)),
+                        if custom_samples_backdrop(pipeline_name, || packet_needs_backdrop(data))),
             ),
             crate::frame::RetainedRenderOperationKind::OpacityGroupBegin { .. }
             | crate::frame::RetainedRenderOperationKind::OpacityGroupEnd { .. } => false,
@@ -80,7 +92,7 @@ pub(super) fn groups_sampling_backdrop(
                 let samples = item.commands.iter().any(|command| {
                     matches!(command,
                         crate::draw_cmd_v2::DrawCommand::DrawCustom { pipeline_name, data }
-                            if pipeline_name.as_ref() == MATERIAL_PIPELINE_NAME && packet_needs_backdrop(data))
+                            if custom_samples_backdrop(pipeline_name, || packet_needs_backdrop(data)))
                 });
                 if samples {
                     found.extend(open.iter().copied());

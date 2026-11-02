@@ -552,6 +552,10 @@ impl GpuBackend for Dx12Backend {
         }
     }
 
+    fn runtime_shader_language(&self) -> Option<crate::backend::ShaderLanguage> {
+        Some(crate::backend::ShaderLanguage::Hlsl)
+    }
+
     fn create_shader_module(&self, source: &[u8], label: &str) -> Self::ShaderModule {
         self.try_create_shader_module(source, label)
             .unwrap_or_else(|error| panic!("{error}"))

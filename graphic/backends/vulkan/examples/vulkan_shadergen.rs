@@ -84,26 +84,7 @@ fn main() {
 }
 
 fn compile_spirv(source: &str) -> Result<Vec<u8>, String> {
-    let module = naga::front::wgsl::parse_str(source).map_err(|error| error.to_string())?;
-    let info = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::all(),
-    )
-    .validate(&module)
-    .map_err(|error| error.to_string())?;
-    let options = naga::back::spv::Options {
-        flags: naga::back::spv::WriterFlags::ADJUST_COORDINATE_SPACE
-            | naga::back::spv::WriterFlags::LABEL_VARYINGS
-            | naga::back::spv::WriterFlags::CLAMP_FRAG_DEPTH,
-        ..Default::default()
-    };
-    let words = naga::back::spv::write_vec(&module, &info, &options, None)
-        .map_err(|error| error.to_string())?;
-    let mut bytes = Vec::with_capacity(words.len() * 4);
-    for word in words {
-        bytes.extend_from_slice(&word.to_le_bytes());
-    }
-    Ok(bytes)
+    aimer_vulkan::compile_wgsl_to_spirv(source)
 }
 
 #[cfg(test)]

@@ -19,6 +19,22 @@ mod unpresented_tests;
 ))]
 mod prewarm_tests;
 
+#[cfg(all(
+    test,
+    feature = "native",
+    not(feature = "wgpu"),
+    any(target_os = "macos", target_os = "ios")
+))]
+mod custom_context_tests;
+
+#[cfg(all(
+    test,
+    feature = "native",
+    not(feature = "wgpu"),
+    any(target_os = "macos", target_os = "ios")
+))]
+mod effect_tests;
+
 #[cfg(test)]
 mod gradient_scale_tests;
 

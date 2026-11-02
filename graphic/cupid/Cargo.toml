@@ -110,6 +110,7 @@ aimer_image_pipeline.workspace = true
 aimer_svg_pipeline.workspace = true
 aimer_text_pipeline.workspace = true
 aimer_material_pipeline.workspace = true
+aimer_effect_pipeline.workspace = true
 aimer_cupid_svg.workspace = true
 aimer_cupid_font.workspace = true
 aimer_cupid_gpu.workspace = true

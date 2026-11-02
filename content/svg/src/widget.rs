@@ -82,7 +82,7 @@ struct CallbackRule {
 /// ```
 pub struct Svg {
     document: SvgDocument,
-    source: String,
+    _source: String,
     width: Option<Dimension>,
     height: Option<Dimension>,
     styles: Vec<StyleRule>,
@@ -99,10 +99,10 @@ impl Svg {
     /// rules are installed.
     pub fn new(document: impl Into<SvgDocument>) -> Self {
         let document = document.into();
-        let source = document.source().to_owned();
+        let _source = document.source().to_owned();
         Self {
             document,
-            source,
+            _source,
             width: None,
             height: None,
             styles: Vec::new(),
@@ -601,7 +601,7 @@ impl RawSvgAsset {
         let source = document.source().to_owned();
         let svg = Svg {
             document,
-            source,
+            _source: source,
             width: self.width,
             height: self.height,
             styles: self.styles.clone(),

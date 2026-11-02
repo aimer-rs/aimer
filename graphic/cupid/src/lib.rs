@@ -24,6 +24,9 @@ mod material_pixel_tests {
 // The scene model lives in `aimer_scene`; these paths keep resolving.
 pub use aimer_scene::compositor;
 pub use aimer_pipeline_core::custom_pipeline;
+/// Application-defined shader effects: implement [`effects::ShaderEffect`], then
+/// [`effects::register`] it once and draw it with [`effects::EffectCommand`].
+pub use aimer_effect_pipeline as effects;
 #[doc(hidden)]
 pub use aimer_scene::damage_region;
 pub use aimer_scene::{draw_cmd, draw_cmd_v2};
@@ -80,7 +83,7 @@ pub use backend::webgpu::{WebGpuBackend, WebGpuError, WebGpuTextureFormat, WebGp
 #[cfg(feature = "wgpu")]
 pub use backend::wgpu::WgpuBackend;
 pub use backend::{GpuBackend, GpuLimits, GpuRenderPass};
-pub use custom_pipeline::{CustomPipelineGeneric, RenderContextGeneric};
+pub use custom_pipeline::{CommandContext, CustomPipelineGeneric, RenderContextGeneric};
 #[cfg(feature = "wgpu")]
 pub use gpu_context::GpuDevice;
 pub use renderer::{Renderer, RendererImpl};

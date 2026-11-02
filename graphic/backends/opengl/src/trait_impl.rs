@@ -69,6 +69,15 @@ impl GpuBackend for OpenGlBackend {
         }
     }
 
+    fn runtime_shader_language(&self) -> Option<crate::backend::ShaderLanguage> {
+        // Android links GLES 3, which wants the ES dialect; desktop wants 3.30 core.
+        Some(if cfg!(target_os = "android") {
+            crate::backend::ShaderLanguage::GlslEs
+        } else {
+            crate::backend::ShaderLanguage::Glsl
+        })
+    }
+
     fn create_shader_module(&self, source: &[u8], label: &str) -> Self::ShaderModule {
         self.try_create_shader_module(source, label)
             .unwrap_or_else(|error| panic!("{error}"))

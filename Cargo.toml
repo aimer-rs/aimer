@@ -207,6 +207,7 @@ members = [
     "graphic/pipelines/svg",
     "graphic/pipelines/text",
     "graphic/pipelines/material",
+    "graphic/pipelines/effect",
     "graphic/vectors/svg",
     "graphic/vectors/font",
     "graphic/cupid_gpu",
@@ -219,6 +220,7 @@ members = [
     "graphic/backends/webgpu",
     "graphic/canvas",
     "graphic/render",
+    "graphic/transpiler",
     # framework
     "framework/quiver",
     "framework/element",
@@ -286,6 +288,7 @@ aimer_image_pipeline = { path = "graphic/pipelines/image" }
 aimer_svg_pipeline = { path = "graphic/pipelines/svg" }
 aimer_text_pipeline = { path = "graphic/pipelines/text" }
 aimer_material_pipeline = { path = "graphic/pipelines/material" }
+aimer_effect_pipeline = { path = "graphic/pipelines/effect" }
 aimer_cupid_svg = { path = "graphic/vectors/svg" }
 aimer_cupid_font = { path = "graphic/vectors/font" }
 aimer_cupid_gpu = { path = "graphic/cupid_gpu" }
@@ -304,6 +307,7 @@ aimer_platform = { path = "host/platform" }
 aimer_render = { path = "graphic/render", default-features = false }
 aimer_window = { path = "host/window" }
 aimer_canvas = { path = "graphic/canvas" }
+aimer_transpiler = { path = "graphic/transpiler" }
 aimer_animation = { path = "framework/animation" }
 aimer_input = { path = "interactions/input" }
 aimer_container = { path = "layout/container" }
@@ -539,3 +543,7 @@ opt-level = 3
 
 [profile.dev.package.miniz_oxide]
 opt-level = 3
+
+[workspace.lints]
+rust.dead_code = "allow"
+rust.unused = "allow"

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ffi::{CString, c_void};
 use std::rc::Rc;
 
@@ -18,26 +18,7 @@ use super::{
 
 const BINDINGS_PER_GROUP: u32 = 16;
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) enum ShaderResource {
-    UniformBlock {
-        group: u32,
-        binding: u32,
-        name: String,
-    },
-    Sampler {
-        texture_group: u32,
-        texture_binding: u32,
-        sampler_group: u32,
-        sampler_binding: u32,
-        name: String,
-    },
-    Texture {
-        group: u32,
-        binding: u32,
-        name: String,
-    },
-}
+pub(super) use crate::backend::glsl_package::GlslResource as ShaderResource;
 
 pub struct OpenGlShaderModule(pub(super) Rc<OpenGlShaderModuleInner>);
 
@@ -608,12 +589,11 @@ impl GpuRenderPass<OpenGlBackend> for OpenGlExecutorPass {
                     }
                 }
                 OpenGlBoundResource::TextureView(view) => {
-                    if let Some(mapping) =
-                        pipeline.0.textures.iter().find(|mapping| {
+                    if let OpenGlViewTarget::Texture { texture, .. } = &view.0.target {
+                        // Several sampler uniforms can read one texture, each on its own unit.
+                        for mapping in pipeline.0.textures.iter().filter(|mapping| {
                             mapping.group == index && mapping.binding == entry.binding
-                        })
-                    {
-                        if let OpenGlViewTarget::Texture { texture, .. } = &view.0.target {
+                        }) {
                             shared.bind_texture(
                                 mapping.texture_unit,
                                 texture.0.target,
@@ -623,7 +603,8 @@ impl GpuRenderPass<OpenGlBackend> for OpenGlExecutorPass {
                     }
                 }
                 OpenGlBoundResource::Sampler(sampler) => {
-                    if let Some(mapping) = pipeline.0.samplers.iter().find(|mapping| {
+                    // One sampler object can serve every unit that names it.
+                    for mapping in pipeline.0.samplers.iter().filter(|mapping| {
                         mapping.sampler_group == index && mapping.sampler_binding == entry.binding
                     }) {
                         shared.bind_sampler(mapping.texture_unit, sampler.0.raw);
@@ -1068,11 +1049,14 @@ impl OpenGlShaderModule {
             operation: "create_shader_module",
             message: format!("{label} is not UTF-8 GLSL package data: {error}"),
         })?;
-        let (vertex_source, fragment_source, resources) =
-            parse_shader_package(source).map_err(|error| BackendError {
-                operation: "create_shader_module",
-                message: format!("{label}: {error}"),
-            })?;
+        let crate::backend::glsl_package::GlslPackage {
+            vertex: vertex_source,
+            fragment: fragment_source,
+            resources,
+        } = crate::backend::glsl_package::parse(source).map_err(|error| BackendError {
+            operation: "create_shader_module",
+            message: format!("{label}: {error}"),
+        })?;
         shared
             .context
             .make_current()
@@ -1116,70 +1100,6 @@ impl OpenGlShaderModule {
             resources,
         })))
     }
-}
-
-fn parse_shader_package(source: &str) -> Result<(&str, &str, Vec<ShaderResource>), String> {
-    let source = source
-        .strip_prefix("AIMER-OPENGL-SHADER-PACK-1\n")
-        .ok_or_else(|| "unknown GLSL shader package header".to_owned())?;
-    let (vertex, rest) = source
-        .split_once("[FRAGMENT]\n")
-        .ok_or_else(|| "GLSL shader package has no fragment section".to_owned())?;
-    let vertex = vertex
-        .strip_prefix("[VERTEX]\n")
-        .ok_or_else(|| "GLSL shader package has no vertex section".to_owned())?;
-    let (fragment, resource_text) = rest
-        .split_once("[RESOURCES]\n")
-        .ok_or_else(|| "GLSL shader package has no resource section".to_owned())?;
-    let mut resources = Vec::new();
-    for line in resource_text.lines().filter(|line| !line.is_empty()) {
-        let parts: Vec<_> = line.split_whitespace().collect();
-        let resource = match parts.as_slice() {
-            ["UBO", group, binding, name] => ShaderResource::UniformBlock {
-                group: group
-                    .parse()
-                    .map_err(|_| format!("invalid UBO group in `{line}`"))?,
-                binding: binding
-                    .parse()
-                    .map_err(|_| format!("invalid UBO binding in `{line}`"))?,
-                name: (*name).to_owned(),
-            },
-            ["TEXTURE", group, binding, name] => ShaderResource::Texture {
-                group: group
-                    .parse()
-                    .map_err(|_| format!("invalid texture group in `{line}`"))?,
-                binding: binding
-                    .parse()
-                    .map_err(|_| format!("invalid texture binding in `{line}`"))?,
-                name: (*name).to_owned(),
-            },
-            [
-                "SAMPLER",
-                texture_group,
-                texture_binding,
-                sampler_group,
-                sampler_binding,
-                name,
-            ] => ShaderResource::Sampler {
-                texture_group: texture_group
-                    .parse()
-                    .map_err(|_| format!("invalid texture group in `{line}`"))?,
-                texture_binding: texture_binding
-                    .parse()
-                    .map_err(|_| format!("invalid texture binding in `{line}`"))?,
-                sampler_group: sampler_group
-                    .parse()
-                    .map_err(|_| format!("invalid sampler group in `{line}`"))?,
-                sampler_binding: sampler_binding
-                    .parse()
-                    .map_err(|_| format!("invalid sampler binding in `{line}`"))?,
-                name: (*name).to_owned(),
-            },
-            _ => return Err(format!("invalid GLSL resource metadata `{line}`")),
-        };
-        resources.push(resource);
-    }
-    Ok((vertex.trim(), fragment.trim(), resources))
 }
 
 fn compile_shader(
@@ -1276,7 +1196,6 @@ pub(super) struct SamplerBinding {
     pub(super) sampler_group: u32,
     pub(super) sampler_binding: u32,
     pub(super) texture_unit: u32,
-    pub(super) uniform_location: i32,
 }
 
 #[derive(Clone)]
@@ -1284,7 +1203,6 @@ pub(super) struct TextureBinding {
     pub(super) group: u32,
     pub(super) binding: u32,
     pub(super) texture_unit: u32,
-    pub(super) uniform_location: i32,
 }
 
 #[derive(Clone)]
@@ -1468,8 +1386,8 @@ pub(super) fn create_render_pipeline(
     }
 
     let mut uniform_blocks = Vec::new();
-    let mut sampler_resources = BTreeSet::new();
-    let mut texture_resources = BTreeSet::new();
+    // Sampler and texture rows of both stages; units are assigned from them below.
+    let mut sampler_resources: Vec<ShaderResource> = Vec::new();
     for module in std::iter::once(&desc.vertex.module.0)
         .chain(desc.fragment.iter().map(|fragment| &fragment.module.0))
     {
@@ -1516,104 +1434,62 @@ pub(super) fn create_render_pipeline(
                         }
                     }
                 }
-                ShaderResource::Sampler {
-                    texture_group,
-                    texture_binding,
-                    sampler_group,
-                    sampler_binding,
-                    name,
-                } => {
-                    sampler_resources.insert((
-                        *texture_group,
-                        *texture_binding,
-                        *sampler_group,
-                        *sampler_binding,
-                        name.clone(),
-                    ));
-                }
-                ShaderResource::Texture {
-                    group,
-                    binding,
-                    name,
-                } => {
-                    texture_resources.insert((*group, *binding, name.clone()));
+                ShaderResource::Sampler { .. } | ShaderResource::Texture { .. } => {
+                    sampler_resources.push(resource.clone());
                 }
             }
         }
     }
 
-    let mut samplers = Vec::new();
-    let mut textures = Vec::new();
-    let mut next_unit = 0_u32;
-    for (texture_group, texture_binding, sampler_group, sampler_binding, name) in sampler_resources
-    {
-        if next_unit >= shared.max_texture_units {
+    // One unit per `sampler2D` uniform. Several uniforms can read one texture (a
+    // fused sampler and a sampler-less fetch), so a unit is not a texture slot.
+    let mut invalid_name = None;
+    let assigned = crate::backend::glsl_package::assign_texture_units(
+        &sampler_resources,
+        |name| {
+            let Ok(uniform_name) = CString::new(name) else {
+                invalid_name.get_or_insert_with(|| name.to_owned());
+                return None;
+            };
+            let location =
+                unsafe { (shared.gl.get_uniform_location)(program, uniform_name.as_ptr()) };
+            // A negative location is a uniform the compiler removed as unread.
+            (location >= 0).then_some(location)
+        },
+        shared.max_texture_units,
+    );
+    let units = match (assigned, invalid_name) {
+        (Ok(units), None) => units,
+        (Err(message), _) | (Ok(_), Some(message)) => {
             unsafe {
                 (shared.gl.delete_program)(program);
                 (shared.gl.delete_vertex_arrays)(1, &vertex_array);
             }
-            return Err(backend_error(
-                "create_render_pipeline",
-                "sampler count exceeds the OpenGL texture-unit limit",
-            ));
+            return Err(backend_error("create_render_pipeline", message));
         }
-        let uniform_name = CString::new(name.as_str())
-            .map_err(|error| backend_error("create_render_pipeline", error.to_string()))?;
-        let location = unsafe { (shared.gl.get_uniform_location)(program, uniform_name.as_ptr()) };
-        if location >= 0 {
-            samplers.push(SamplerBinding {
-                sampler_group,
-                sampler_binding,
-                texture_unit: next_unit,
-                uniform_location: location,
-            });
-            textures.push(TextureBinding {
-                group: texture_group,
-                binding: texture_binding,
-                texture_unit: next_unit,
-                uniform_location: location,
-            });
-            next_unit += 1;
-        }
-    }
-    for (group, binding, name) in texture_resources {
-        if textures
-            .iter()
-            .any(|texture| texture.group == group && texture.binding == binding)
-        {
-            continue;
-        }
-        if next_unit >= shared.max_texture_units {
-            unsafe {
-                (shared.gl.delete_program)(program);
-                (shared.gl.delete_vertex_arrays)(1, &vertex_array);
-            }
-            return Err(backend_error(
-                "create_render_pipeline",
-                "texture count exceeds the OpenGL texture-unit limit",
-            ));
-        }
-        let uniform_name = CString::new(name.as_str())
-            .map_err(|error| backend_error("create_render_pipeline", error.to_string()))?;
-        let location = unsafe { (shared.gl.get_uniform_location)(program, uniform_name.as_ptr()) };
-        if location >= 0 {
-            textures.push(TextureBinding {
-                group,
-                binding,
-                texture_unit: next_unit,
-                uniform_location: location,
-            });
-            next_unit += 1;
-        }
-    }
+    };
+    let samplers: Vec<SamplerBinding> = units
+        .iter()
+        .filter_map(|unit| {
+            unit.sampler
+                .map(|(sampler_group, sampler_binding)| SamplerBinding {
+                    sampler_group,
+                    sampler_binding,
+                    texture_unit: unit.unit,
+                })
+        })
+        .collect();
+    let textures: Vec<TextureBinding> = units
+        .iter()
+        .map(|unit| TextureBinding {
+            group: unit.texture.0,
+            binding: unit.texture.1,
+            texture_unit: unit.unit,
+        })
+        .collect();
     shared.use_program(program);
-    unsafe {
-        for sampler in &samplers {
-            (shared.gl.uniform_1i)(sampler.uniform_location, sampler.texture_unit as i32);
-        }
-        for texture in &textures {
-            (shared.gl.uniform_1i)(texture.uniform_location, texture.texture_unit as i32);
-        }
+    for unit in &units {
+        unsafe { (shared.gl.uniform_1i)(unit.location, unit.unit as i32) };
     }
     shared.use_program(0);
 

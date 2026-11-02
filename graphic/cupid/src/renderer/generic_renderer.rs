@@ -18,7 +18,7 @@ use crate::backend::{
 };
 use crate::compositor::{CompositorScene, CompositorStats, RetainedSceneTree};
 use crate::custom_pipeline::{
-    CustomPipelineGeneric, CustomPipelineSlotGeneric, RenderContextGeneric,
+    CommandContext, CustomPipelineGeneric, CustomPipelineSlotGeneric, RenderContextGeneric,
 };
 use crate::damage_region::DamageRect;
 use crate::draw_cmd::{DrawCommand, DrawList, RetainedLayerContent};
@@ -136,6 +136,8 @@ pub struct Renderer<B: GpuBackend = crate::backend::DefaultGpuBackend> {
     group_seed_target: PersistentTargetGeneric<B>,
     group_seed_bind_group: Option<B::BindGroup>,
     custom_pipelines: Vec<CustomPipelineSlotGeneric<B>>,
+    /// The effect registry's generation when effects were last installed.
+    effects_generation: u64,
     antialiasing: crate::AntiAlias,
     material_pipeline_enabled: bool,
     material_pipeline_initialized: bool,
@@ -356,6 +358,7 @@ impl<B: GpuBackend> Renderer<B> {
             group_seed_target: PersistentTargetGeneric::default(),
             group_seed_bind_group: None,
             custom_pipelines: Vec::new(),
+            effects_generation: 0,
             antialiasing,
             material_pipeline_enabled: initialize_all,
             material_pipeline_initialized: false,
@@ -494,6 +497,35 @@ impl<B: GpuBackend> Renderer<B> {
             .as_mut()
             .expect("text warming requires the text pipeline")
             .prepare(backend, width, height, false, &[request], &[]);
+    }
+
+    /// Installs a pipeline for every application effect registered since the
+    /// last frame (see [`crate::effects::register`]).
+    ///
+    /// One atomic load when nothing changed. An effect whose name is already
+    /// taken, by an earlier install or by [`register_custom_pipeline`], is left
+    /// alone.
+    ///
+    /// [`register_custom_pipeline`]: Self::register_custom_pipeline
+    fn sync_effects(&mut self) {
+        let generation = crate::effects::generation();
+        if generation == self.effects_generation {
+            return;
+        }
+        self.effects_generation = generation;
+        for spec in crate::effects::registered() {
+            if self
+                .custom_pipelines
+                .iter()
+                .any(|slot| slot.pipeline.name() == spec.name())
+            {
+                continue;
+            }
+            self.register_custom_pipeline(crate::effects::EffectPipeline::<B>::new(
+                spec,
+                self.antialiasing,
+            ));
+        }
     }
 
     /// Registers a backend-generic custom pipeline.
@@ -2636,6 +2668,7 @@ impl<B: GpuBackend> Renderer<B> {
         self.textures_to_remove.clear();
         self.transform_stack.clear();
         self.clip_stack.clear();
+        self.sync_effects();
         for slot in &mut self.custom_pipelines {
             slot.pipeline.begin_frame();
         }
@@ -3101,9 +3134,24 @@ impl<B: GpuBackend> Renderer<B> {
                                 .prepare_command(data.as_ref())
                         }
                     } else {
+                        let cols = &current_transform.cols;
+                        let context = CommandContext {
+                            transform: [
+                                cols[0][0], cols[0][1], cols[0][2], cols[1][0], cols[1][1],
+                                cols[1][2], cols[2][0], cols[2][1], cols[2][2],
+                            ],
+                            scale: current_scales,
+                            clip: self.clip_stack.last().map(|clip| {
+                                (
+                                    [clip.rect.x, clip.rect.y, clip.rect.width, clip.rect.height],
+                                    clip.border_radius,
+                                )
+                            }),
+                            alpha: alpha_state.current(),
+                        };
                         self.custom_pipelines[pipeline_index]
                             .pipeline
-                            .prepare_command(data.as_ref())
+                            .prepare_command_in(data.as_ref(), &context)
                     };
                     self.resolved.push(ResolvedCommand::Custom {
                         pipeline_index,

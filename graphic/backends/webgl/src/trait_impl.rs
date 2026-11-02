@@ -67,6 +67,12 @@ impl GpuBackend for WebGl2Backend {
         }
     }
 
+    /// WebGL still reads only the legacy `.glslpack`, so it takes no run-time
+    /// shaders until it adopts `glsl_package`.
+    fn runtime_shader_language(&self) -> Option<crate::backend::ShaderLanguage> {
+        None
+    }
+
     fn create_shader_module(&self, source: &[u8], label: &str) -> Self::ShaderModule {
         self.try_create_shader_module(source, label)
             .unwrap_or_else(|error| panic!("{error}"))

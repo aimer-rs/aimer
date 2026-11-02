@@ -3,8 +3,8 @@
 
 use aimer::style::{BoxFit, LayoutSpacing, Spacing, TextStyle, ThemeData};
 use aimer::{
-    AimerApp, AnyWidget, AssetImage, BundleAsset, Column, Container, Dimension,
-    FontFamily, FontWeight, Row, SizedBox, SvgAsset, Text, Widget,
+    AimerApp, AnyWidget, AssetImage, BundleAsset, Column, Container, Dimension, FontWeight, Row,
+    SizedBox, SvgAsset, Text, Widget,
 };
 
 use crate::{Assets, theme};
@@ -31,9 +31,17 @@ fn row(constant: &'static str, bundle: &'static str, asset: impl BundleAsset) ->
 fn asset_rows() -> [AssetRow; 4] {
     [
         row("Assets::MY_IMAGE", "BundleImage", Assets::MY_IMAGE),
-        row("Assets::CAT_SVGREPO_COM", "BundleSvg", Assets::CAT_SVGREPO_COM),
+        row(
+            "Assets::CAT_SVGREPO_COM",
+            "BundleSvg",
+            Assets::CAT_SVGREPO_COM,
+        ),
         row("Assets::JAIME_MD", "BundleDocuments", Assets::JAIME_MD),
-        row("Assets::JETBRAINS_MONO", "BundleFont", Assets::JETBRAINS_MONO),
+        row(
+            "Assets::JETBRAINS_MONO",
+            "BundleFont",
+            Assets::JETBRAINS_MONO,
+        ),
     ]
 }
 
@@ -146,7 +154,10 @@ mod tests {
 
     #[test]
     fn rows_describe_const_path_and_generated_type() {
-        let lines: Vec<String> = asset_rows().iter().map(describe).collect();
+        let lines: Vec<String> = asset_rows()
+            .iter()
+            .map(describe)
+            .collect();
 
         assert_eq!(
             lines[0],

@@ -1,0 +1,46 @@
+shader solid;
+
+import aimer::clip::clip_alpha;
+
+// A flat-color rectangle, the smallest useful effect. `color` is the only
+// parameter and it is already 16-byte aligned, so there is no `_pad`.
+uniform struct Frame {
+    target_size: vec2,
+    surface_is_srgb: f32,
+    opacity: f32,
+    rect: vec4,
+    clip_rect: vec4,
+    clip_radii: vec4,
+    color: vec4,
+}
+
+#[bind(0, 0)]
+uniform frame: Frame;
+
+#[varying]
+struct VertexOutput {
+    @position position: vec4,
+    pixel_pos: vec2,
+}
+
+const CORNERS: [vec2; 6] = [
+    vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0),
+    vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0),
+];
+
+#[vertex]
+fn vs_main(vi: @vertex_index) -> VertexOutput {
+    let pixel = frame.rect.xy + CORNERS[vi] * frame.rect.zw;
+    let ndc = vec2(
+        pixel.x / frame.target_size.x * 2.0 - 1.0,
+        1.0 - pixel.y / frame.target_size.y * 2.0,
+    );
+    VertexOutput { position: vec4(ndc, 0.0, 1.0), pixel_pos: pixel }
+}
+
+#[fragment]
+fn fs_main(input: VertexOutput) -> @frag_color {
+    let a = frame.color.a * frame.opacity * clip_alpha(input.pixel_pos, frame.clip_rect, frame.clip_radii);
+    // Premultiplied.
+    vec4(frame.color.rgb * a, a)
+}
