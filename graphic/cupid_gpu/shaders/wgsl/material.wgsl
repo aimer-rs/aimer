@@ -192,10 +192,13 @@ fn sample_backdrop(pixel: vec2<f32>) -> vec4<f32> {
         valid_size - vec2<f32>(1.0, 1.0),
     );
     let texture_size = vec2<f32>(textureDimensions(backdrop));
-    return textureSample(
+    // Explicit level 0, like the other backdrop reads: an implicit-derivative sample
+    // must be called from uniform control flow, and callers sit behind alpha masks.
+    return textureSampleLevel(
         backdrop,
         backdrop_sampler,
         (local_pixel + vec2<f32>(0.5, 0.5)) / max(texture_size, vec2<f32>(1.0, 1.0)),
+        0.0,
     );
 }
 
@@ -736,7 +739,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let mask = clamp(material.effect.y * sdf_alpha(distance) * clip_alpha(input.pixel_pos), 0.0, 1.0);
         if mask <= 0.0 { discard; }
         let enlarged = sample_backdrop(sample_pixel);
-        if mask >= 1.0 { return enlarged; }
+        // No early `return enlarged` for `mask >= 1.0`: `mask` comes from derivatives, so
+        // returning on it makes the rest of `fs_main` non-uniform and `fwidth` is rejected
+        // there. `mix(.., enlarged, 1.0)` is `enlarged` anyway.
         return mix(sample_backdrop(input.pixel_pos), enlarged, mask);
     }
     var filtered: vec4<f32>;

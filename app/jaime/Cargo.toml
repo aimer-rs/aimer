@@ -6,8 +6,10 @@ edition = "2024"
 
 
 
+# No "rlib": with one, cargo also builds the lib for the bin, and Trunk then sees two
+# artifacts named `jaime` ("found more than one target artifact").
 [lib]
-crate-type = ["cdylib", "staticlib", "rlib"]
+crate-type = ["cdylib", "staticlib"]
 path = "src/main.rs"
 
 [[bin]]

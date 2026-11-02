@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use aimer::effects::{self, EffectCommand, ShaderEffect};
-use aimer::quiver::winit::dpi::PhysicalSize;
+use aimer::quiver::winit::dpi::{PhysicalPosition, PhysicalSize};
+use aimer::quiver::winit::event::{DeviceId, MouseScrollDelta, TouchPhase, WindowEvent};
 use aimer::{AimerApp, HeadlessOptions};
 use aimer_cupid::draw_cmd_v2::{DrawCommand, RenderOp};
 use aimer_time::{Duration as TimeDuration, Instant};
@@ -160,4 +161,52 @@ fn the_page_draws_the_effect_and_its_time_advances() {
     }
     let after = time_of(melt_payloads(&app).last().expect("still drawn"));
     assert!(after > before, "time moved from {before} to {after}");
+}
+
+/// The top edge of the box the effect is drawn in, `None` when it is off screen.
+fn picture_top(app: &aimer::HeadlessAimerApp<impl Widget + 'static>) -> Option<f32> {
+    app.render_ops().into_iter().find_map(|op| match op {
+        RenderOp::Draw(item)
+            if item.snapshot().commands.iter().any(|command| {
+                matches!(command, DrawCommand::DrawCustom { pipeline_name, .. }
+                    if &**pipeline_name == Melt::NAME)
+            }) =>
+        {
+            Some(item.bounds.y)
+        }
+        _ => None,
+    })
+}
+
+/// The controls sit below the picture, so in a short window the page is taller
+/// than the window and must scroll to reach them.
+#[test]
+fn the_page_scrolls_with_the_wheel_in_a_short_window() {
+    let mut app = AimerApp::start_headless_with(
+        theme::provide(color_melt_example()),
+        HeadlessOptions {
+            size: PhysicalSize::new(900, 500),
+            scale_factor: 1.0,
+        },
+    );
+    app.pump_frames(3);
+    let before = picture_top(&app).expect("the picture is on screen");
+
+    // Over the picture, which takes no pointer events of its own.
+    app.send_window_event(WindowEvent::CursorMoved {
+        device_id: DeviceId::dummy(),
+        position: PhysicalPosition::new(450.0, 300.0),
+    });
+    app.render_frame();
+    for _ in 0..4 {
+        app.send_window_event(WindowEvent::MouseWheel {
+            device_id: DeviceId::dummy(),
+            delta: MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -60.0)),
+            phase: TouchPhase::Moved,
+        });
+        app.render_frame();
+    }
+    app.pump_frames(20);
+    let after = picture_top(&app).map_or(f32::NEG_INFINITY, |top| top);
+    assert!(after < before, "the picture moves up as the page scrolls: {before} -> {after}");
 }

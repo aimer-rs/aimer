@@ -372,3 +372,4 @@ fn render_mode_from_args() -> aimer::RenderMode {
     }
     aimer::RenderMode::default()
 }
+ 

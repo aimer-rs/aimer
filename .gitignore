@@ -19,3 +19,4 @@ website/builds
 .vscode
 
 app/jaime/builds/linux/bundle/
+app/jaime/builds/ios/Jaime.xcodeproj/project.xcworkspace/xcuserdata/cottons.xcuserdatad/UserInterfaceState.xcuserstate

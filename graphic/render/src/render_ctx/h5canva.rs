@@ -342,21 +342,15 @@ pub mod render_ctx {
 
             #[cfg(all(feature = "web", not(feature = "wgpu")))]
             {
-                let frame = packet.frame();
+                // `render_packet` (not `render` on the draw list) so a retained
+                // render plan, whose content is not in the draw list, is drawn too.
                 match &mut state.backend {
                     BrowserGpuState::WebGpu {
                         backend,
                         surface_view,
                         renderer,
                     } => {
-                        renderer.render(
-                            backend,
-                            surface_view,
-                            frame.width,
-                            frame.height,
-                            backend.is_srgb(),
-                            &frame.draw_list,
-                        );
+                        renderer.render_packet(backend, surface_view, packet, backend.is_srgb());
                         encode.finish(FramePhase::Encode);
                         if renderer.has_postponed_text_preparation() {
                             aimer_events::window::request_animation_frame();
@@ -370,14 +364,7 @@ pub mod render_ctx {
                         surface_view,
                         renderer,
                     } => {
-                        renderer.render(
-                            backend,
-                            surface_view,
-                            frame.width,
-                            frame.height,
-                            false,
-                            &frame.draw_list,
-                        );
+                        renderer.render_packet(backend, surface_view, packet, false);
                         encode.finish(FramePhase::Encode);
                         if renderer.has_postponed_text_preparation() {
                             aimer_events::window::request_animation_frame();

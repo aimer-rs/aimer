@@ -18,8 +18,8 @@ use aimer::style::{
     BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextDecoration, TextStyle, Theme, ThemeData,
 };
 use aimer::{
-    AimerApp, AnyWidget, BuildContext, CanvasPainter, Column, Container, CustomPaint, Row, State,
-    StateUpdater, StatefulWidget, Text, TextButton, Widget,
+    AimerApp, AnyWidget, BuildContext, CanvasPainter, Column, Container, CustomPaint, Row,
+    ScrollAxis, Scrollable, State, StateUpdater, StatefulWidget, Text, TextButton, Widget,
 };
 use aimer::ResolvedSize;
 use aimer::canvas::Canvas;
@@ -28,8 +28,13 @@ use aimer_time::Instant;
 use crate::theme;
 
 /// Builds the color-melt page without starting the application.
+///
+/// The picture and the six controls are taller than a small window, so the page
+/// scrolls vertically.
 pub fn color_melt_example() -> impl Widget {
-    ColorMeltExample::new()
+    Scrollable::new()
+        .axis(ScrollAxis::Vertical)
+        .child(ColorMeltExample::new())
 }
 
 /// Starts the standalone color-melt showcase.
