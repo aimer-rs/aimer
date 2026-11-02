@@ -330,7 +330,7 @@ impl EventElement for SelectionAreaElement {
                         if text.is_empty() {
                             return false.into();
                         }
-                        let _ = aimer_native::clipboard::set_text(&text);
+                        let _ = aimer_clipboard::clipboard::set_text(&text);
                         true
                     }
                     _ => false,

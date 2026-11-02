@@ -48,7 +48,7 @@ aimer_passkey = { workspace = true, optional = true }
 aimer_markdown.workspace = true
 aimer_modal.workspace = true
 aimer_dnd.workspace = true
-aimer_native.workspace = true
+aimer_clipboard.workspace = true
 aimer_ctxmenu.workspace = true
 aimer_accessibility.workspace = true
 aimer_selection.workspace = true
@@ -214,17 +214,17 @@ members = [
     "contracts/i18n",
     "contracts/media",
     # support
-    "support/attribute",
-    "support/utils",
-    "support/events",
-    "support/tls",
-    "support/time",
-    "support/macro",
+    "utilities/attribute",
+    "utilities/utils",
+    "utilities/events",
+    "utilities/tls",
+    "utilities/time",
+    "utilities/macro",
     # system
-    "system/native",
-    "system/haptics",
-    "system/device",
-    "system/screen",
+    "native/clipboard",
+    "native/haptics",
+    "native/device",
+    "native/screen",
     # services
     "services/storage",
     "services/vault",
@@ -267,21 +267,21 @@ members = [
     "overlay/modal",
     "overlay/ctxmenu",
     # widgets
-    "widgets/input",
-    "widgets/assets",
-    "widgets/text",
-    "widgets/markdown",
-    "widgets/svg",
-    "widgets/custom_paint",
-    "widgets/lucide",
+    "interactions/input",
+    "content/assets",
+    "content/text",
+    "content/markdown",
+    "content/svg",
+    "content/custom_paint",
+    "content/lucide",
     # controls
-    "controls/dnd",
-    "controls/selection",
-    "controls/indicator",
-    "controls/range",
-    "controls/picker",
-    "controls/feedback",
-    "controls/collapsible",
+    "interactions/dnd",
+    "interactions/selection",
+    "interactions/indicator",
+    "interactions/range",
+    "interactions/picker",
+    "interactions/feedback",
+    "interactions/collapsible",
     # routing
     "routing/router",
     "routing/navigation",
@@ -328,7 +328,7 @@ aimer_hot_reload = { path = "host/hot_reload" }
 aimer_window = { path = "host/window" }
 aimer_canvas = { path = "graphic/canvas" }
 aimer_animation = { path = "framework/animation" }
-aimer_input = { path = "widgets/input" }
+aimer_input = { path = "interactions/input" }
 aimer_container = { path = "layout/container" }
 aimer_decoration = { path = "framework/decoration" }
 aimer_flex = { path = "layout/flex" }
@@ -342,32 +342,32 @@ aimer_async_builder = { path = "framework/async_builder" }
 aimer_focusable = { path = "framework/focusable" }
 aimer_element = { path = "framework/element" }
 aimer_color = { path = "cores/color" }
-aimer_attribute = { path = "support/attribute" }
-aimer_utils = { path = "support/utils" }
-aimer_events = { path = "support/events" }
-aimer_tls = { path = "support/tls" }
-aimer_time = { path = "support/time" }
+aimer_attribute = { path = "utilities/attribute" }
+aimer_utils = { path = "utilities/utils" }
+aimer_events = { path = "utilities/events" }
+aimer_tls = { path = "utilities/tls" }
+aimer_time = { path = "utilities/time" }
 aimer_focus = { path = "framework/focus" }
-aimer_text = { path = "widgets/text" }
+aimer_text = { path = "content/text" }
 aimer_router = { path = "routing/router" }
-aimer_assets = { path = "widgets/assets" }
+aimer_assets = { path = "content/assets" }
 aimer_style = { path = "framework/style" }
 aimer_std = { path = "cores/std" }
-aimer_macro = { path = "support/macro" }
+aimer_macro = { path = "utilities/macro" }
 aimer_provider = { path = "framework/provider" }
-aimer_svg = { path = "widgets/svg" }
-aimer_custom_paint = { path = "widgets/custom_paint" }
-aimer_lucide = { path = "widgets/lucide" }
-aimer_markdown = { path = "widgets/markdown" }
+aimer_svg = { path = "content/svg" }
+aimer_custom_paint = { path = "content/custom_paint" }
+aimer_lucide = { path = "content/lucide" }
+aimer_markdown = { path = "content/markdown" }
 aimer_modal = { path = "overlay/modal" }
-aimer_dnd = { path = "controls/dnd" }
+aimer_dnd = { path = "interactions/dnd" }
 aimer_accessibility = { path = "contracts/accessibility" }
-aimer_selection = { path = "controls/selection" }
-aimer_indicator = { path = "controls/indicator" }
-aimer_range = { path = "controls/range" }
+aimer_selection = { path = "interactions/selection" }
+aimer_indicator = { path = "interactions/indicator" }
+aimer_range = { path = "interactions/range" }
 aimer_form = { path = "contracts/form" }
-aimer_picker = { path = "controls/picker" }
-aimer_feedback = { path = "controls/feedback" }
+aimer_picker = { path = "interactions/picker" }
+aimer_feedback = { path = "interactions/feedback" }
 aimer_navigation = { path = "routing/navigation" }
 aimer_data_view = { path = "contracts/data_view" }
 aimer_i18n = { path = "contracts/i18n" }
@@ -377,11 +377,11 @@ aimer_persist = { path = "framework/persist" }
 aimer_vault = { path = "services/vault" }
 aimer_passkey = { path = "services/passkey" }
 aimer_shape = { path = "cores/shape" }
-aimer_collapsible = { path = "controls/collapsible" }
-aimer_native = { path = "system/native" }
-aimer_haptics = { path = "system/haptics" }
-aimer_device = { path = "system/device" }
-aimer_screen = { path = "system/screen" }
+aimer_collapsible = { path = "interactions/collapsible" }
+aimer_clipboard = { path = "native/clipboard" }
+aimer_haptics = { path = "native/haptics" }
+aimer_device = { path = "native/device" }
+aimer_screen = { path = "native/screen" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
 aimer_anteros = { path = "host/anteros" }
 aimer_reload_protocol = { path = "experiments/reload_protocol" }

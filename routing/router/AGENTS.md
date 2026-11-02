@@ -35,7 +35,7 @@ routes working.
 - Introduce RouteMatch { path_params, query_params } and extend the Route trait in
  routing/router/src/router.rs with a default name() method.
 - Update Route::parse/format handling to split and re-emit ?query=... in addition to path segments.
-- Extend the macro in support/macro/src/codegen/router.rs to accept name = "..." and query placeholders,
+- Extend the macro in utilities/macro/src/codegen/router.rs to accept name = "..." and query placeholders,
  generating a name→variant builder table and query parse/format arms.
 - Add push_named(name, params) to NavigatorController in navigator.rs.
 - Write failing inline #[cfg(test)] tests first for round-trip parse/format of named and query routes, then

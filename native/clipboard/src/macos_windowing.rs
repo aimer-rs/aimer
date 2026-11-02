@@ -105,7 +105,7 @@ fn resolve_drag_band(
 /// # Examples
 ///
 /// ```no_run
-/// use aimer_native::macos_windowing::MacosWindowing;
+/// use aimer_clipboard::macos_windowing::MacosWindowing;
 ///
 /// let windowing = MacosWindowing::new()
 ///     .titlebar_transparent(true)

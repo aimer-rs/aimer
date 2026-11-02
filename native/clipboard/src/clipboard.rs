@@ -14,7 +14,7 @@
 //! # Examples
 //!
 //! ```
-//! use aimer_native::clipboard;
+//! use aimer_clipboard::clipboard;
 //!
 //! // Both calls are fallible; a widget usually just ignores the failure.
 //! let _ = clipboard::set_text("copied from Aimer");
@@ -75,7 +75,7 @@ mod platform {
 /// # Examples
 ///
 /// ```
-/// use aimer_native::clipboard::ClipboardError;
+/// use aimer_clipboard::clipboard::ClipboardError;
 ///
 /// let error = ClipboardError::Unavailable("no display server".into());
 /// assert_eq!(
@@ -114,7 +114,7 @@ impl std::error::Error for ClipboardError {}
 /// # Examples
 ///
 /// ```
-/// use aimer_native::clipboard;
+/// use aimer_clipboard::clipboard;
 ///
 /// // A copy control does not fail the frame over a clipboard it cannot reach.
 /// if let Err(error) = clipboard::set_text("hello") {
@@ -139,7 +139,7 @@ pub fn set_text(text: &str) -> Result<(), ClipboardError> {
 /// # Examples
 ///
 /// ```
-/// use aimer_native::clipboard;
+/// use aimer_clipboard::clipboard;
 ///
 /// // Paste is best-effort: an unreachable clipboard simply inserts nothing.
 /// let pasted = clipboard::get_text().ok();

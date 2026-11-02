@@ -293,7 +293,7 @@ impl SelectionSession {
             MenuAction::Copy => {
                 let text = self.selected_text();
                 if !text.is_empty() {
-                    let _ = aimer_native::clipboard::set_text(&text);
+                    let _ = aimer_clipboard::clipboard::set_text(&text);
                 }
                 self.ui.hide_menu();
             }

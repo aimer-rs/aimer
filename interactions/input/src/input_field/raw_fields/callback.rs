@@ -3,7 +3,7 @@
 /// Copy is best-effort: a clipboard the platform will not give us is not worth
 /// failing an edit over.
 fn clipboard_write(text: &str) {
-    let _ = aimer_native::clipboard::set_text(text);
+    let _ = aimer_clipboard::clipboard::set_text(text);
 }
 
 /// Read text from the system clipboard.
@@ -12,7 +12,7 @@ fn clipboard_write(text: &str) {
 /// a key handler, so the hidden `<input>` the IME already writes through is used
 /// as the fallback — the browser fills it on a native paste.
 fn clipboard_read() -> Option<String> {
-    if let Ok(text) = aimer_native::clipboard::get_text() {
+    if let Ok(text) = aimer_clipboard::clipboard::get_text() {
         return Some(text);
     }
     #[cfg(target_arch = "wasm32")]

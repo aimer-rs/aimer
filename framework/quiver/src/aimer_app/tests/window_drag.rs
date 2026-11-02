@@ -12,7 +12,7 @@
 use super::*;
 
 use aimer_input::button::Button;
-use aimer_native::macos_windowing::MacosWindowing;
+use aimer_clipboard::macos_windowing::MacosWindowing;
 use winit::event::{ElementState, MouseButton};
 
 /// The strip, in logical points from the top of the window.

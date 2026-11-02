@@ -1032,7 +1032,7 @@ pub struct AimerApplicationHandler<W: Widget + 'static> {
     /// Delays a requested visible state until the first DX12 present succeeds.
     #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
     pub(crate) show_window_after_first_frame: bool,
-    pub(crate) macos_windowing: aimer_native::macos_windowing::MacosWindowing,
+    pub(crate) macos_windowing: aimer_clipboard::macos_windowing::MacosWindowing,
     pub render_ctx: AimerRenderContext,
     /// Retained render nodes and stable element identities for this window.
     pub(crate) render_tree: WindowRenderTree,
@@ -2161,7 +2161,7 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
     /// work that asks it for frames.
     pub(crate) fn create_native_window(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
-            self.macos_windowing = aimer_native::macos_windowing::take_pending();
+            self.macos_windowing = aimer_clipboard::macos_windowing::take_pending();
         }
 
         #[cfg(target_os = "android")]

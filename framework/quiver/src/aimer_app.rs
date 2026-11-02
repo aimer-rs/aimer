@@ -1011,7 +1011,7 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
         // A headless setup may install macOS window customization through the
         // same public hook, but there is no native window to consume it. Clear
         // that thread-local value so it cannot leak into a later windowed run.
-        drop(aimer_native::macos_windowing::take_pending());
+        drop(aimer_clipboard::macos_windowing::take_pending());
 
         // An application that has just come up owes the screen a frame, and the
         // windowed loop asks for it the moment its window exists. Starting with
@@ -1534,7 +1534,7 @@ impl AimerApp {
     /// application lifecycle.
     ///
     /// macOS window customization can be registered here by constructing an
-    /// [`aimer_native::macos_windowing::MacosWindowing`] value and calling its
+    /// [`aimer_clipboard::macos_windowing::MacosWindowing`] value and calling its
     /// `install` method. That API is a no-op on other platforms, so the same
     /// setup callback can be compiled and used cross-platform.
     #[inline]

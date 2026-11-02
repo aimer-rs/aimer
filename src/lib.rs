@@ -130,7 +130,7 @@ pub use aimer_wasm_guest;
 pub use aimer_widget::base::BuildContext;
 pub use aimer_widget::{self, Key, State, StatefulWidget, StatelessWidget, Widget, *};
 
-pub use aimer_native as native;
+pub use aimer_clipboard as native;
 
 pub mod widget {
     pub use aimer_widget::base::BuildContext;

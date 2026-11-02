@@ -100,7 +100,7 @@ fn build_code_header(
                     .hover_decoration(decoration.background_color(theme.icon_color.with_alpha(0.3)))
                     .on_press(move || {
                         if let Err(error) =
-                            copy_code_with(&source, aimer_native::clipboard::set_text)
+                            copy_code_with(&source, aimer_clipboard::clipboard::set_text)
                         {
                             eprintln!("Failed to copy Markdown code block: {error}");
                         }
