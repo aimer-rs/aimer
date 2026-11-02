@@ -1,0 +1,24 @@
+[package]
+name = "aimer_material_pipeline"
+version = "0.1.0"
+edition = "2024"
+description = "Backdrop blur, glass and gradient material pipeline for the Cupid rendering engine"
+
+[features]
+# Exposes `MaterialRequest::encode_for_test` to the renderer-driven tests in `aimer_cupid`.
+test-support = []
+# Enables the tests that drive the pipeline through the wgpu backend.
+wgpu = ["dep:wgpu", "dep:aimer_wgpu", "dep:aimer_utils"]
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+aimer_pipeline_core.workspace = true
+aimer_primitives.workspace = true
+bytemuck.workspace = true
+aimer_utils = { workspace = true, optional = true }
+aimer_wgpu = { workspace = true, optional = true }
+wgpu = { workspace = true, optional = true }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dev-dependencies]
+aimer_metal.workspace = true
+objc2-metal = { workspace = true, features = ["std", "MTLPixelFormat"] }

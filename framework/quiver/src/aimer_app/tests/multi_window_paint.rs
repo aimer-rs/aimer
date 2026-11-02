@@ -30,8 +30,6 @@ impl Widget for HoverButton {
     }
 }
 
-impl aimer_widget::PortableWidget for HoverButton {}
-
 fn open(size: PhysicalSize<u32>) -> HeadlessAimerApp<impl Widget + 'static + use<>> {
     let mut app = AimerApp::start_headless_with(
         HoverButton,

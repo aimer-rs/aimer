@@ -11,7 +11,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 struct Captured(Rc<RefCell<Vec<RecordedPaint>>>);
-impl aimer::PortableWidget for Captured {}
 impl Widget for Captured {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let example = EXAMPLES

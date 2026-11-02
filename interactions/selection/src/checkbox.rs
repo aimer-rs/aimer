@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, PortableWidget, State, StateUpdater, StatefulElement,
-    StatefulWidget, Widget,
+    AnyElement, AnyWidget, ChildBuilder, State, StateUpdater, StatefulElement, StatefulWidget,
+    Widget,
 };
 
 use crate::binary::{Binary, ChangeCallback, VisualBuilder};
@@ -216,4 +216,3 @@ impl Widget for Checkbox {
     }
 }
 
-impl PortableWidget for Checkbox {}

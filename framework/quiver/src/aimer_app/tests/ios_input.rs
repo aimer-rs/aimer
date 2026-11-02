@@ -3,7 +3,6 @@ use aimer_events::element::{KeyAction, Modifiers, NamedKey};
 use aimer_events::pointer::PointerSource;
 
 struct InputRecorder(Arc<Mutex<Vec<ElementEvent>>>);
-impl aimer_widget::PortableWidget for InputRecorder {}
 impl Widget for InputRecorder {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         InputElement(self.0).boxed()

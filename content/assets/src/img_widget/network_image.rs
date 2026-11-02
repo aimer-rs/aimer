@@ -33,21 +33,14 @@ use crate::img_widget::source::ImageSource;
 ///                                                                .height(180.0)
 ///                                                                .fit(BoxFit::Cover);
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_assets::NetworkImage", schema_only)]
 pub struct NetworkImage {
     pub url: String,
     pub width: Dimension,
     pub height: Dimension,
-    #[portable_skip]
     pub fit: BoxFit,
-    #[portable_skip]
     pub header: Option<HashMap<String, String>>,
-    #[portable_skip]
     pub error_widget: Option<AnyWidget>,
-    #[portable_skip]
     pub loading_widget: Option<AnyWidget>,
-    #[portable_skip]
     pub delay: Option<u64>,
     pub scale: f32,
 }

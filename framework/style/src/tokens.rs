@@ -226,8 +226,7 @@ impl ThemeTokens {
     ///
     /// The remaining semantic roles use appearance-appropriate defaults and
     /// are then derived from the supplied palette. This is an additive bridge
-    /// for existing themes; it does not alter `ThemeData`'s portable six-color
-    /// wire format.
+    /// for existing themes; it does not alter `ThemeData`'s six core colors.
     pub fn from_core_colors(
         primary: Color,
         on_primary: Color,

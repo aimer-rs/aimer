@@ -165,7 +165,7 @@ impl Chrome {
 /// Resolves a decoration handed to a builder method.
 ///
 /// A [`BoxDecoration`] stays a plain value, because the field paints it with
-/// its text and its public fields are part of the portable wire schema. Any
+/// its text and its public fields are read directly. Any
 /// other decoration is erased once, here, and never while painting.
 pub(crate) fn split<D: Decoration + 'static>(
     mut decoration: D,
@@ -193,8 +193,6 @@ struct VisualState {
     visual: Visual,
     updater: StateUpdater<Self>,
 }
-
-impl aimer_widget::PortableWidget for Visual {}
 
 impl Widget for Visual {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

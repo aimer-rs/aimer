@@ -73,8 +73,6 @@ pub enum WindowHandle {
     /// destroyed when the last handle is dropped.
     Native(Arc<Window>),
     Headless(Arc<HeadlessWindowState>),
-    #[cfg(feature = "portable-guest")]
-    Portable(Arc<HeadlessWindowState>),
 }
 
 impl WindowHandle {
@@ -95,21 +93,6 @@ impl WindowHandle {
         }))
     }
 
-    #[cfg(feature = "portable-guest")]
-    #[doc(hidden)]
-    pub fn portable() -> Self {
-        Self::Portable(Arc::new(HeadlessWindowState {
-            width: AtomicU32::new(0),
-            height: AtomicU32::new(0),
-            scale_factor: AtomicU64::new(1.0_f64.to_bits()),
-            redraw_requested: AtomicBool::new(false),
-            redraw_request_count: AtomicU64::new(0),
-            coalesced_redraw_count: AtomicU64::new(0),
-            display_tick_count: AtomicU64::new(0),
-            cursor: AtomicUsize::new(cursor_id(winit::window::CursorIcon::Default)),
-        }))
-    }
-
     /// Returns the drawable client area in physical pixels.
     ///
     /// On iOS this uses the UIView's local bounds and content scale, including
@@ -118,18 +101,11 @@ impl WindowHandle {
     /// live resize and do not describe the drawable's pixel dimensions.
     pub fn inner_size(&self) -> winit::dpi::PhysicalSize<u32> {
         match self {
-            #[cfg(all(not(aimer_portable_guest), not(target_os = "ios")))]
+            #[cfg(not(target_os = "ios"))]
             Self::Native(window) => window.inner_size(),
-            #[cfg(all(not(aimer_portable_guest), target_os = "ios"))]
+            #[cfg(target_os = "ios")]
             Self::Native(window) => uikit::inner_size(window),
-            #[cfg(aimer_portable_guest)]
-            Self::Native(_) => Default::default(),
             Self::Headless(state) => winit::dpi::PhysicalSize::new(
-                state.width.load(Ordering::Relaxed),
-                state.height.load(Ordering::Relaxed),
-            ),
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(state) => winit::dpi::PhysicalSize::new(
                 state.width.load(Ordering::Relaxed),
                 state.height.load(Ordering::Relaxed),
             ),
@@ -138,13 +114,8 @@ impl WindowHandle {
 
     pub fn scale_factor(&self) -> f64 {
         match self {
-            #[cfg(not(aimer_portable_guest))]
             Self::Native(window) => window.scale_factor(),
-            #[cfg(aimer_portable_guest)]
-            Self::Native(_) => 1.0,
             Self::Headless(state) => f64::from_bits(state.scale_factor.load(Ordering::Relaxed)),
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(state) => f64::from_bits(state.scale_factor.load(Ordering::Relaxed)),
         }
     }
 
@@ -158,8 +129,6 @@ impl WindowHandle {
         let address = match self {
             Self::Native(window) => Arc::as_ptr(window) as usize,
             Self::Headless(state) => Arc::as_ptr(state) as usize,
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(state) => Arc::as_ptr(state) as usize,
         };
         aimer_events::window::WindowKey::from_address(address)
     }
@@ -168,13 +137,8 @@ impl WindowHandle {
         crate::frame_work_stats::record_redraw_request();
         aimer_events::window::notify_redraw_requested();
         match self {
-            #[cfg(not(aimer_portable_guest))]
             Self::Native(window) => window.request_redraw(),
-            #[cfg(aimer_portable_guest)]
-            Self::Native(_) => {},
             Self::Headless(state) => Self::request_headless_redraw(state),
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(_) => {}
         }
     }
 
@@ -189,13 +153,8 @@ impl WindowHandle {
         crate::frame_work_stats::record_redraw_request();
         aimer_events::window::notify_redraw_requested();
         match self {
-            #[cfg(not(aimer_portable_guest))]
             Self::Native(_) => aimer_events::window::request_animation_frame(),
-            #[cfg(aimer_portable_guest)]
-            Self::Native(_) => {},
             Self::Headless(state) => Self::request_headless_redraw(state),
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(_) => {}
         }
     }
 
@@ -210,15 +169,10 @@ impl WindowHandle {
 
     pub fn set_cursor(&self, cursor: winit::window::CursorIcon) {
         match self {
-            #[cfg(not(aimer_portable_guest))]
             Self::Native(window) => window.set_cursor(cursor),
-            #[cfg(aimer_portable_guest)]
-            Self::Native(_) => {},
             Self::Headless(state) => {
                 state.cursor.store(cursor_id(cursor), Ordering::Relaxed);
             }
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(_) => {}
         }
     }
 
@@ -227,8 +181,6 @@ impl WindowHandle {
         match self {
             Self::Native(_) => None,
             Self::Headless(state) => Some(cursor_from_id(state.cursor.load(Ordering::Relaxed))),
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(_) => None,
         }
     }
 
@@ -246,27 +198,14 @@ impl WindowHandle {
 
     pub fn native_window(&self) -> Option<&Arc<Window>> {
         match self {
-            #[cfg(not(aimer_portable_guest))]
             Self::Native(window) => Some(window),
-            #[cfg(aimer_portable_guest)]
-            Self::Native(_) => None,
             Self::Headless(_) => None,
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(_) => None,
         }
     }
 
     pub fn update_headless_metrics(&self, size: winit::dpi::PhysicalSize<u32>, scale_factor: f64) {
         match self {
             Self::Headless(state) => {
-                state.width.store(size.width, Ordering::Relaxed);
-                state.height.store(size.height, Ordering::Relaxed);
-                state
-                    .scale_factor
-                    .store(scale_factor.to_bits(), Ordering::Relaxed);
-            }
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(state) => {
                 state.width.store(size.width, Ordering::Relaxed);
                 state.height.store(size.height, Ordering::Relaxed);
                 state
@@ -287,8 +226,6 @@ impl WindowHandle {
                 }
                 pending
             }
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(_) => false,
         }
     }
 
@@ -302,8 +239,6 @@ impl WindowHandle {
                 state.display_tick_count.load(Ordering::Relaxed),
             )),
             Self::Native(_) => None,
-            #[cfg(feature = "portable-guest")]
-            Self::Portable(_) => None,
         }
     }
 }

@@ -13,7 +13,6 @@ use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_events::element::ElementEvent;
 use aimer_events::pointer::{PointerEvent, PointerSource};
-use aimer_macro::{PortableValue, PortableWidget};
 use aimer_utils::AnimInstant;
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::{BuildContext, WindowHandle};
@@ -33,17 +32,11 @@ use crate::gesture::{
 
 /// Controls whether a [`GestureDetector`] also exposes its child to event
 /// traversal.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PortableValue)]
-#[portable_value(
-    id = "aimer.value:aimer_input::gesture::gesture_detector::GestureDetectorBehavior",
-    max_encoded_bytes = 16
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GestureDetectorBehavior {
     /// The child participates in event, focus, and broadcast dispatch.
-    #[portable_value(tag = 0)]
     PassThrough,
     /// The child remains laid out and painted but receives no events.
-    #[portable_value(tag = 1)]
     BlockChild,
 }
 
@@ -128,42 +121,24 @@ impl Default for GestureDetectorBehavior {
 ///     .child(Text::new("Save"));
 /// ```
 #[allow(dead_code)]
-#[derive(PortableWidget)]
-#[portable_widget(id = "aimer_input::GestureDetector", schema_only)]
 pub struct GestureDetector<W = RequiredChild> {
     // The flat no-argument mirrors give the derive stable callback slots. The
     // aggregate handler set remains the native hot-path dispatch object.
-    #[portable_callback(async)]
     on_tap: VoidCallback,
-    #[portable_callback(async)]
     on_double_press: VoidCallback,
-    #[portable_callback(async)]
     on_long_press: VoidCallback,
-    #[portable_skip]
     on_drag_start: DragCallback,
-    #[portable_skip]
     on_drag_update: DragUpdateCallback,
-    #[portable_callback(async)]
     on_drag_end: VoidCallback,
-    #[portable_callback(async)]
     on_right_tap: VoidCallback,
-    #[portable_skip]
     on_swipe: SwipeCallback,
-    #[portable_skip]
     on_scroll: ScrollCallback,
-    #[portable_skip]
     on_scale: ScaleCallback,
-    #[portable_skip]
     on_pan: PanCallback,
-    #[portable_skip]
     on_smart_zoom: SmartZoomCallback,
-    #[portable_skip]
     on_gesture: GestureStreamCallback,
-    #[portable_skip]
     handlers: Rc<GestureHandlers>,
-    #[portable_optional]
     behavior: GestureDetectorBehavior,
-    #[portable_child(discriminator = 0)]
     child: W,
 }
 
@@ -736,8 +711,6 @@ mod tests {
             panic!("not needed for builder tests")
         }
     }
-
-    impl aimer_widget::PortableWidget for TestWidget {}
 
     struct TestElement;
 

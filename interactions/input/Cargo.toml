@@ -5,18 +5,9 @@ edition = "2024"
 resolver = "3"
 
 [features]
-portable-guest = [
-    "dep:aimer_anteros",
-    "aimer_style/portable-guest",
-    "aimer_widget/portable-guest",
-    "aimer_container/portable-guest",
-    "aimer_decoration/portable-guest",
-]
-
 [dependencies]
 aimer_time.workspace = true
 aimer_tls.workspace = true
-aimer_anteros = { workspace = true, optional = true }
 aimer_widget.workspace = true
 aimer_accessibility.workspace = true
 aimer_attribute.workspace =  true

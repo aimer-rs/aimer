@@ -162,8 +162,6 @@ impl Widget for Panel {
     }
 }
 
-impl aimer::PortableWidget for Panel {}
-
 fn attr(number: usize) -> WindowAttr {
     WindowAttr::new()
         .title(format!("Window {number}"))

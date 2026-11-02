@@ -173,14 +173,9 @@ impl AnimationEffect {
 ///                              AnimationEffect::Opacity { from: 0.0, to: 1.0 },
 ///                              ErrorWidget::new("Unable to load preview"));
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_animation::Animated", schema_only)]
 pub struct Animated<T = RequiredChild> {
-    #[portable_skip]
     pub controller: AnimationController,
-    #[portable_skip]
     pub effect: AnimationEffect,
-    #[portable_child]
     pub child: T,
 }
 //

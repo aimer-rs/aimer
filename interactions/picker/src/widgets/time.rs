@@ -13,8 +13,7 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventResult, FocusNode, LayoutElement, PointerKey,
-    PortableWidget, Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget,
-    VisitorElement, Widget,
+    Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
 };
 
 use crate::{PICKER_FIELD_HEIGHT, PICKER_FOOTER_HEIGHT, PickerOutcome, TimeOfDay, TimePicker};
@@ -206,8 +205,6 @@ impl Widget for TimePickerView {
     }
 }
 
-impl PortableWidget for TimePickerView {}
-
 struct TimePickerSurface {
     runtime: Rc<TimePickerRuntime>,
     width: f32,
@@ -244,8 +241,6 @@ impl Widget for TimePickerSurface {
         "RawTimePicker"
     }
 }
-
-impl PortableWidget for TimePickerSurface {}
 
 struct RawTimePicker {
     runtime: Rc<TimePickerRuntime>,
@@ -715,7 +710,6 @@ impl Drawable for RawTimePicker {
 }
 
 impl Rebuildable for RawTimePicker {}
-impl PortableWidget for RawTimePicker {}
 
 impl Widget for RawTimePicker {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {

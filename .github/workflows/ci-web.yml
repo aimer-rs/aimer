@@ -21,9 +21,8 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      # Every library in the workspace has to keep compiling for wasm32, the
-      # hot-reload host included: it is native-only in practice, but a crate
-      # that stops building for the web takes `--workspace` down with it.
+      # Every library in the workspace has to keep compiling for wasm32: a
+      # crate that stops building for the web takes `--workspace` down with it.
       #
       # Test targets are not part of `--workspace`: most of them use tokio's
       # `net` feature, and mio does not support wasm. Only the browser test

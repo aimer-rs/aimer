@@ -12,9 +12,8 @@ use aimer_style::ThemeTokens;
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, Drawable, Element, EventElement, EventResult, FocusNode, LayoutElement,
-    PortableWidget, Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget,
-    VisitorElement, Widget,
+    AnyElement, Drawable, Element, EventElement, EventResult, FocusNode, LayoutElement, Rebuildable,
+    State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
 };
 
 use super::widget_helpers::{color_sliders, format_rgba};
@@ -192,8 +191,6 @@ impl Widget for ColorPickerView {
     }
 }
 
-impl PortableWidget for ColorPickerView {}
-
 struct ColorPickerSurface {
     runtime: Rc<ColorPickerRuntime>,
     width: f32,
@@ -230,8 +227,6 @@ impl Widget for ColorPickerSurface {
         "RawColorPicker"
     }
 }
-
-impl PortableWidget for ColorPickerSurface {}
 
 struct RawColorPicker {
     runtime: Rc<ColorPickerRuntime>,
@@ -651,7 +646,6 @@ impl Drawable for RawColorPicker {
 }
 
 impl Rebuildable for RawColorPicker {}
-impl PortableWidget for RawColorPicker {}
 
 impl Widget for RawColorPicker {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {

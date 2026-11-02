@@ -49,5 +49,5 @@ pub(crate) mod test_frame_requester {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod builder_tests;

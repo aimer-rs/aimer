@@ -4,7 +4,6 @@ use std::time::Duration;
 use aimer_events::element::ElementEvent;
 use aimer_events::pointer::PointerSource;
 use aimer_events::window::request_animation_frame;
-use aimer_macro::PortableWidget;
 use aimer_style::{TextOverflow, TextStyle};
 use aimer_utils::AnimInstant;
 use aimer_utils::callback::{CallbackExecutor, VoidCallback};
@@ -39,23 +38,17 @@ use crate::text_source::TextSource;
 /// let button = TextButton::new("Learn more").color(Color::BLUE)
 ///                                           .on_press(|| println!("open"));
 /// ```
-#[derive(Clone, PortableWidget)]
-#[portable_widget(id = "aimer_text::TextButton", schema_only)]
+#[derive(Clone)]
 pub struct TextButton {
     disabled: bool,
     label: TextSource,
     color: Option<Color>,
     hover_color: Option<Color>,
     disabled_color: Option<Color>,
-    #[portable_optional]
     style: TextStyle,
-    #[portable_optional]
     hover_style: TextStyle,
-    #[portable_optional]
     disabled_style: TextStyle,
-    #[portable_callback(async)]
     on_press: VoidCallback,
-    #[portable_callback(async)]
     on_double_press: VoidCallback,
 }
 
@@ -954,197 +947,6 @@ mod tests {
         assert!(!result.is_consumed());
         aimer_widget::begin_paint_frame(300, 100);
         assert!(aimer_widget::take_paint_frame_damage(300, 100).is_empty());
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn text_button_publishes_its_derived_properties_and_async_callbacks() {
-        use aimer_widget::portable::PortableWidgetSchema;
-
-        let schema = <super::TextButton as PortableWidgetSchema>::SCHEMA;
-
-        assert_eq!(
-            schema.widget().canonical_name(),
-            "aimer.widget:aimer_text::TextButton"
-        );
-        assert_eq!(
-            schema
-                .properties()
-                .iter()
-                .map(|property| property.canonical_name())
-                .collect::<Vec<_>>(),
-            vec![
-                "aimer.property:aimer_text::TextButton:disabled",
-                "aimer.property:aimer_text::TextButton:label",
-                "aimer.property:aimer_text::TextButton:color",
-                "aimer.property:aimer_text::TextButton:hover_color",
-                "aimer.property:aimer_text::TextButton:disabled_color",
-                "aimer.property:aimer_text::TextButton:style",
-                "aimer.property:aimer_text::TextButton:hover_style",
-                "aimer.property:aimer_text::TextButton:disabled_style",
-            ]
-        );
-        assert_eq!(
-            schema
-                .callbacks()
-                .iter()
-                .map(|callback| callback.canonical_name())
-                .collect::<Vec<_>>(),
-            vec![
-                "aimer.event:aimer_text::TextButton:on_press",
-                "aimer.event:aimer_text::TextButton:on_double_press",
-            ]
-        );
-        assert!(
-            schema
-                .callbacks()
-                .iter()
-                .all(|callback| callback.async_schema().is_some())
-        );
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn text_button_lowering_retains_properties_and_callback_routes() {
-        use std::cell::Cell;
-
-        use aimer_anteros::WidgetDocumentView;
-        use aimer_widget::PortableWidget;
-        use aimer_widget::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, PortableWidgetSchema,
-            SourceFingerprint, StableId128,
-        };
-
-        let calls = Rc::new(Cell::new(0_u8));
-        let press_calls = Rc::clone(&calls);
-        let double_press_calls = Rc::clone(&calls);
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 4_096)
-                .with_max_callbacks(4)
-                .with_max_blob_bytes(128),
-            PortableLimits::new(8, 16, 64, 128, 4_096),
-        )
-        .unwrap();
-        let source = SourceFingerprint::new(StableId128::from_bytes([4; 16]));
-        let root = super::TextButton::new("Open")
-            .disabled(true)
-            .color(Color::Rgba(1, 2, 3, 4))
-            .hover_color(Color::Rgba(5, 6, 7, 8))
-            .disabled_color(Color::Rgba(9, 10, 11, 12))
-            .style(TextStyle::default().font_size(14))
-            .hover_style(TextStyle::default().font_size(15))
-            .disabled_style(TextStyle::default().font_size(16))
-            .on_press(move || press_calls.set(press_calls.get() | 1))
-            .on_double_press(move || double_press_calls.set(double_press_calls.get() | 2))
-            .to_portable_node(&mut context, source)
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        let schema = <super::TextButton as PortableWidgetSchema>::SCHEMA;
-        let mut expected = schema
-            .properties()
-            .iter()
-            .map(|property| property.id())
-            .collect::<Vec<_>>();
-        expected.sort_unstable();
-        let mut actual = node
-            .properties()
-            .map(|property| property.property_id())
-            .collect::<Vec<_>>();
-        actual.sort_unstable();
-        let callbacks = node.callbacks().collect::<Vec<_>>();
-
-        assert_eq!(actual, expected);
-        assert_eq!(callbacks.len(), 2);
-        for callback in callbacks {
-            context
-                .callback_registry()
-                .dispatch(
-                    aimer_widget::portable::StableId128::from_bytes(
-                        *callback.callback_id().as_bytes(),
-                    ),
-                    &mut context,
-                )
-                .unwrap();
-        }
-        assert_eq!(calls.get(), 3);
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn text_button_async_callback_uses_the_reflected_async_route() {
-        use aimer_anteros::WidgetDocumentView;
-        use aimer_widget::PortableWidget;
-        use aimer_widget::portable::{
-            PortableBuildContext, PortableCallbackStart, PortableLimits, PortableWidgetLimits,
-            SourceFingerprint, StableId128,
-        };
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 4_096)
-                .with_max_callbacks(4)
-                .with_max_blob_bytes(128),
-            PortableLimits::new(8, 16, 64, 128, 4_096),
-        )
-        .unwrap();
-        let source = SourceFingerprint::new(StableId128::from_bytes([6; 16]));
-        let root = super::TextButton::new("Open")
-            .on_press(VoidCallback::from_async(|| async {}))
-            .to_portable_node(&mut context, source)
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let binding = view
-            .node(root.index())
-            .unwrap()
-            .callbacks()
-            .next()
-            .expect("the configured async callback is reflected");
-        let callback_id =
-            aimer_widget::portable::StableId128::from_bytes(*binding.callback_id().as_bytes());
-
-        assert!(binding.is_async());
-        assert!(matches!(
-            context
-                .callback_registry()
-                .dispatch_start(callback_id, &mut context)
-                .unwrap(),
-            PortableCallbackStart::Started { .. }
-        ));
-        context.run_async_microtasks();
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn text_button_portable_lowering_encodes_non_default_styles() {
-        use aimer_widget::PortableWidget;
-        use aimer_widget::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-            StableId128,
-        };
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 4_096)
-                .with_max_callbacks(4)
-                .with_max_blob_bytes(128),
-            PortableLimits::new(8, 16, 64, 128, 4_096),
-        )
-        .unwrap();
-        let source = SourceFingerprint::new(StableId128::from_bytes([7; 16]));
-        let root = TextButton::new("Open")
-            .style(TextStyle::default().font_size(18))
-            .to_portable_node(&mut context, source)
-            .unwrap();
-        context.finish_document(root).unwrap();
     }
 
     fn underline_on_hover_button() -> RawTextButton {

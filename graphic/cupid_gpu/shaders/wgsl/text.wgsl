@@ -9,7 +9,7 @@ struct VertexOutput {
     @location(3) clip_rect: vec4<f32>,
     @location(4) clip_border_radius: vec4<f32>,
     // Exponent applied to the atlas coverage before blending; see
-    // `coverage_exponent` in `text_pipeline.rs`.
+    // `coverage_exponent` in `aimer_text_pipeline`.
     @location(5) coverage_exponent: f32,
 };
 
@@ -172,7 +172,7 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
         // light. Coverage is a geometric fraction, not a light ratio: blended
         // linearly it makes antialiased edges lighter than the rasterizer
         // meant, which robs small text of stroke weight. The exponent restores
-        // it — see `coverage_exponent` in `text_pipeline.rs`. The non-sRGB path
+        // it — see `coverage_exponent` in `aimer_text_pipeline`. The non-sRGB path
         // below already blends in sRGB space and must stay untouched.
         let corrected = select(
             pow(coverage, in.coverage_exponent),

@@ -112,8 +112,6 @@ impl Widget for I18nExample {
     }
 }
 
-impl aimer::PortableWidget for I18nExample {}
-
 /// Builds the localization example without starting an application.
 pub fn i18n_example() -> impl Widget {
     I18nExample::new()

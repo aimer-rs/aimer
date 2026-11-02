@@ -5,7 +5,6 @@ use aimer_attribute::CacheBounds;
 use aimer_events::element::ElementEvent;
 use aimer_events::pointer::PointerSource;
 use aimer_events::window::request_animation_frame;
-use aimer_macro::PortableWidget;
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::*;
 use aimer_widget::{
@@ -48,20 +47,12 @@ pub type SharedPointerState = Rc<Cell<PointerState>>;
 ///                                .on_hover_enter(|| println!("entered"))
 ///                                .child(Text::new("Hover me"));
 /// ```
-#[derive(PortableWidget)]
-#[portable_widget(id = "aimer_input::MouseRegion", schema_only)]
 pub struct MouseRegion<W = RequiredChild> {
-    #[portable_callback(async)]
     pub on_hover_enter: VoidCallback,
-    #[portable_callback(async)]
     pub on_hover_exit: VoidCallback,
-    #[portable_skip]
     pub cursor: Option<winit::window::CursorIcon>,
-    #[portable_skip]
     pub current_state: SharedPointerState,
-    #[portable_skip]
     pub cached_bounds: CacheBounds,
-    #[portable_child(discriminator = 0)]
     pub child: W,
 }
 
@@ -523,8 +514,6 @@ mod tests {
             panic!("not needed for builder tests")
         }
     }
-
-    impl aimer_widget::PortableWidget for TestWidget {}
 
     impl VisitorElement for TestElement {
         fn debug_name(&self) -> &'static str {

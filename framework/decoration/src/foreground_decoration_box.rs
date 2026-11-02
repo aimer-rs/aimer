@@ -10,7 +10,7 @@ use aimer_cupid::draw_cmd_v2::Rect;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutElement,
-    PortableWidget, Rebuildable, RequiredChild, VisitorElement, Widget,
+    Rebuildable, RequiredChild, VisitorElement, Widget,
 };
 
 /// Paints one decoration over its child while preserving its layout and interaction.
@@ -29,7 +29,7 @@ use aimer_widget::{
 /// The decoration is painted by its own retained render node, positioned after
 /// the child's subtree, so changing it re-records only that node. Layered
 /// decorations compose through the same collections [`DecorationBox`](crate::DecorationBox)
-/// accepts. Custom decoration widgets do not support portable lowering.
+/// accepts.
 ///
 /// # Examples
 ///
@@ -95,8 +95,6 @@ impl<D: Decoration> ForegroundDecorationBox<D> {
         self.child(child).boxed()
     }
 }
-
-impl<D: Decoration + 'static, W: Widget> PortableWidget for ForegroundDecorationBox<D, W> {}
 
 impl<D: Decoration + 'static, W: Widget> Widget for ForegroundDecorationBox<D, W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

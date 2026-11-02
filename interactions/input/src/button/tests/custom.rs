@@ -262,19 +262,3 @@ async fn builder_observes_disabled_and_configuration_updates() {
     assert_eq!(snapshots.borrow().last(), Some(&(true, false, false)));
 }
 
-#[cfg(feature = "portable-guest")]
-#[test]
-fn portable_button_rejects_custom_appearance_instead_of_dropping_it() {
-    let source = portable_source(3);
-    let mut ctx = portable_context();
-    let error = Button::new().decoration(Surface(Color::BLUE)).child(PortableChild)
-        .to_portable_node(&mut ctx, source).unwrap_err();
-    assert!(matches!(error, PortableBuildError::UnsupportedProperty {
-        widget: "Button", property: "decoration", ..
-    }));
-    let error = Button::new().build(|_| PortableChild)
-        .to_portable_node(&mut ctx, source).unwrap_err();
-    assert!(matches!(error, PortableBuildError::UnsupportedProperty {
-        widget: "Button", property: "build", ..
-    }));
-}

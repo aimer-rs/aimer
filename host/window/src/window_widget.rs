@@ -4,9 +4,7 @@ use std::rc::Rc;
 use aimer_container::ZeroSizedBox;
 use aimer_widget::base::BuildContext;
 use aimer_widget::components::context::InheritedStates;
-use aimer_widget::{
-    AnyElement, PortableWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
-};
+use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
 
 use crate::content::WindowContent;
 use crate::new_window::{ContentBuilder, RequiredBuilder, inherited_from};
@@ -176,8 +174,6 @@ impl Widget for Window<ContentBuilder> {
             .boxed()
     }
 }
-
-impl PortableWidget for Window<ContentBuilder> {}
 
 /// The widget behind [`Window`]: what is mounted in the tree.
 struct WindowHost(Window<ContentBuilder>);

@@ -83,8 +83,6 @@ impl Widget for Bar {
     }
 }
 
-impl aimer_widget::PortableWidget for Bar {}
-
 /// The page with its flag held by the bar alone.
 struct IsolatedScene {
     filter: bool,
@@ -114,8 +112,6 @@ impl Widget for IsolatedScene {
         .to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for IsolatedScene {}
 
 fn headless<W: Widget + 'static>(widget: W) -> HeadlessAimerApp<ModalHost<W>> {
     let mut app = AimerApp::start_headless_with(
@@ -293,8 +289,6 @@ impl Widget for ScrollBar {
     }
 }
 
-impl aimer_widget::PortableWidget for ScrollBar {}
-
 struct HostState {
     show: bool,
     controller: ScrollController,
@@ -359,8 +353,6 @@ impl Widget for Host {
             .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Host {}
 
 fn wheel(app: &mut HeadlessAimerApp<ModalHost<Host>>, delta: f64) {
     app.send_window_event(WindowEvent::CursorMoved {

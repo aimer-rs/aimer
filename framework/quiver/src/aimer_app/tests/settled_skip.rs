@@ -26,8 +26,6 @@ impl Widget for CountingRow {
     }
 }
 
-impl aimer_widget::PortableWidget for CountingRow {}
-
 struct CountingRowElement {
     updates: Rc<Cell<usize>>,
     index: usize,
@@ -103,8 +101,6 @@ impl Widget for CountingList {
             .to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for CountingList {}
 
 struct Scene {
     app: HeadlessAimerApp<aimer_modal::ModalHost<CountingList>>,

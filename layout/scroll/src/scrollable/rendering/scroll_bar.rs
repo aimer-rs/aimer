@@ -12,11 +12,9 @@ use aimer_input::gesture::GestureEvent;
 use aimer_input::gesture::gesture_detector::GestureDetector;
 use aimer_input::mouse_region::MouseRegion;
 use aimer_widget::base::{BuildContext, Color, Colors};
-use aimer_widget::portable::__anteros::{WidgetDocumentView, WidgetNodeView};
-use aimer_widget::portable::PortableMaterializeError;
 use aimer_widget::{
-    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,
-    StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateUpdater,
+    StatefulElement, StatefulWidget, VisitorElement, Widget,
 };
 
 use crate::ScrollAxis;
@@ -31,18 +29,12 @@ use crate::scrollable::controller::{DragMode, ScrollState};
 
 /// Controls whether a scroll bar overlays the content or occupies layout
 /// space beside it.
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, aimer_macro::PortableValue)]
-#[portable_value(
-    id = "aimer.value:aimer_scroll::scrollable::ScrollBarPlacement",
-    max_encoded_bytes = 16
-)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScrollBarPlacement {
     /// Draws the scroll bar over the content at the viewport edge.
     #[default]
-    #[portable_value(tag = 0)]
     Floating,
     /// Reserves the scroll bar's width or height outside the content viewport.
-    #[portable_value(tag = 1)]
     Inline,
 }
 
@@ -111,38 +103,14 @@ pub struct ScrollButton {
     pub active_color: Colors,
 }
 
-#[derive(Clone, Default, aimer_macro::PortableWidget)]
-#[portable_widget(
-    id = "aimer_scroll::scrollable::ScrollBar",
-    materializer = materialize_portable_scroll_bar
-)]
+#[derive(Clone, Default)]
 pub struct ScrollBar {
-    #[portable_skip]
     pub track: ScrollTrack,
-    #[portable_skip]
     pub thumb: ScrollThumb,
-    #[portable_skip]
     pub up_button: Option<ScrollButton>,
-    #[portable_skip]
     pub down_button: Option<ScrollButton>,
-    #[portable_skip]
     ctrl: Option<Rc<ScrollState>>,
-    #[portable_skip]
     axis: ScrollAxis,
-}
-
-fn materialize_portable_scroll_bar(
-    _document: &WidgetDocumentView<'_>,
-    _node: WidgetNodeView<'_>,
-    children: Vec<AnyWidget>,
-) -> Result<AnyWidget, PortableMaterializeError> {
-    if !children.is_empty() {
-        return Err(PortableMaterializeError::InvalidChildCount {
-            expected: 0,
-            actual: children.len(),
-        });
-    }
-    Ok(ScrollBar::default().boxed())
 }
 
 impl ScrollBar {
@@ -425,8 +393,6 @@ impl Widget for RawScrollBar {
         Element::boxed(self)
     }
 }
-
-impl aimer_widget::PortableWidget for RawScrollBar {}
 
 impl EventElement for RawScrollBar {}
 impl Rebuildable for RawScrollBar {}

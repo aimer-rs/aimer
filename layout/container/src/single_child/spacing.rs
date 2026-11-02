@@ -1,7 +1,7 @@
 use aimer_attribute::BoxConstraint;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::{ResolvedSize, Size};
-use aimer_macro::{EventElement, PortableWidget, Rebuildable};
+use aimer_macro::{EventElement, Rebuildable};
 use aimer_style::{LayoutSpacing, Spacing};
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
@@ -26,12 +26,8 @@ use aimer_widget::{
 ///     .child(ZeroSizedBox);
 /// let _erased = widget.boxed();
 /// ```
-#[derive(PortableWidget)]
-#[portable_widget(id = "aimer_container::single_child::Padding")]
 pub struct Padding<W = RequiredChild> {
-    #[portable_optional]
     padding: LayoutSpacing,
-    #[portable_child]
     child: W,
 }
 
@@ -98,12 +94,8 @@ impl Padding {
 ///     .child(ZeroSizedBox);
 /// let _erased = widget.boxed();
 /// ```
-#[derive(PortableWidget)]
-#[portable_widget(id = "aimer_container::single_child::Margin")]
 pub struct Margin<W = RequiredChild> {
-    #[portable_optional]
     margin: LayoutSpacing,
-    #[portable_child]
     child: W,
 }
 
@@ -459,7 +451,7 @@ mod tests {
 
     use aimer_attribute::size::ResolvedSize;
     use aimer_widget::base::WindowHandle;
-    use aimer_widget::{EventElement, PortableWidget, Rebuildable};
+    use aimer_widget::{EventElement, Rebuildable};
 
     use super::*;
 
@@ -496,7 +488,6 @@ mod tests {
 
     impl EventElement for Probe {}
     impl Rebuildable for Probe {}
-    impl PortableWidget for Probe {}
 
     impl VisitorElement for Probe {
         fn debug_name(&self) -> &'static str {
@@ -686,31 +677,3 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use super::*;
-    use aimer_widget::portable::PortableWidgetSchema;
-
-    #[test]
-    fn spacing_schemas_have_one_optional_property_and_one_required_child() {
-        let padding = <Padding<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-        assert_eq!(padding.children().minimum(), 1);
-        assert_eq!(padding.children().maximum(), 1);
-        assert_eq!(padding.properties().len(), 1);
-        assert_eq!(
-            padding.properties()[0].canonical_name(),
-            "aimer.property:aimer_container::single_child::Padding:padding"
-        );
-        assert!(padding.properties()[0].is_optional());
-
-        let margin = <Margin<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-        assert_eq!(margin.children().minimum(), 1);
-        assert_eq!(margin.children().maximum(), 1);
-        assert_eq!(margin.properties().len(), 1);
-        assert_eq!(
-            margin.properties()[0].canonical_name(),
-            "aimer.property:aimer_container::single_child::Margin:margin"
-        );
-        assert!(margin.properties()[0].is_optional());
-    }
-}

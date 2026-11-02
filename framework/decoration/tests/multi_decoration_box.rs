@@ -267,26 +267,3 @@ async fn multi_decoration_preserves_child_events_and_focus() {
     assert!(focus.has_focus());
 }
 
-#[cfg(feature = "portable-guest")]
-#[test]
-fn multi_decoration_reports_unsupported_portable_lowering() {
-    use aimer_widget::PortableWidget;
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableBuildError, PortableLimits, PortableWidgetLimits,
-        SourceFingerprint, StableId128,
-    };
-    let mut ctx = PortableBuildContext::new(
-        7,
-        11,
-        PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-        PortableLimits::new(8, 16, 64, 128, 1_024),
-    )
-    .unwrap();
-    let source = SourceFingerprint::new(StableId128::from_path("test", "multi-decoration-box"));
-    let result = MultiDecorationBox::new()
-        .child(ZeroSizedBox)
-        .to_portable_node(&mut ctx, source);
-    assert!(matches!(result, Err(PortableBuildError::UnsupportedWidget {
-        widget: "MultiDecorationBox", source: actual,
-    }) if actual == source));
-}

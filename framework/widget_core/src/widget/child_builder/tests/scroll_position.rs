@@ -43,7 +43,6 @@ impl Widget for ScrollPage {
         }.boxed()
     }
 }
-impl crate::PortableWidget for ScrollPage {}
 
 struct ScrollPageElement { children: [AnyElement; 2] }
 impl VisitorElement for ScrollPageElement {

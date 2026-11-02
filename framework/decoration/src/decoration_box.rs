@@ -25,7 +25,7 @@ use aimer_canvas::Canvas;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutElement,
-    PortableWidget, Rebuildable, RequiredChild, VisitorElement, Widget,
+    Rebuildable, RequiredChild, VisitorElement, Widget,
 };
 
 /// Paints one child's background while preserving its layout and interaction.
@@ -35,7 +35,6 @@ use aimer_widget::{
 /// `aimer_container::SizedBox` for layout. All decoration commands paint before
 /// the child; the wrapper never consumes pointer or scroll events, even with
 /// an opaque background.
-/// Custom decoration widgets do not support portable lowering.
 ///
 /// # Examples
 ///
@@ -101,8 +100,6 @@ impl<D: Decoration> DecorationBox<D> {
         self.child(child).boxed()
     }
 }
-
-impl<D: Decoration + 'static, W: Widget> PortableWidget for DecorationBox<D, W> {}
 
 impl<D: Decoration + 'static, W: Widget> Widget for DecorationBox<D, W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

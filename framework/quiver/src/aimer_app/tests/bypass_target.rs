@@ -205,8 +205,6 @@ impl Widget for BarScene {
     }
 }
 
-impl aimer_widget::PortableWidget for BarScene {}
-
 #[test]
 fn a_glass_bar_over_a_page_never_blanks_the_page() {
     let _serial = VIRTUALIZED_RENDER_TEST_LOCK

@@ -15,8 +15,8 @@ use aimer_container::SizedBox;
 use aimer_space::Stack;
 use aimer_widget::base::{BuildContext, ResolvedSize};
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, Key, PortableWidget, RequiredChild, State, StateUpdater,
-    StatefulElement, StatefulWidget, Widget,
+    AnyElement, AnyWidget, ChildBuilder, Key, RequiredChild, State, StateUpdater, StatefulElement,
+    StatefulWidget, Widget,
 };
 
 /// How a page grows out of one tagged item: shared by the router transition and
@@ -306,8 +306,6 @@ impl<W> ContainerTransform<W> {
         }
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for ContainerTransform<W> {}
 
 impl<W: Widget + 'static> Widget for ContainerTransform<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

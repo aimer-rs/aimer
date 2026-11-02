@@ -505,10 +505,7 @@ impl ModalController {
 ///
 /// `AimerApp` installs this host automatically. It remains public for embedded
 /// render roots and tests that construct widget trees without `AimerApp`.
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_modal::ModalHost", schema_only)]
 pub struct ModalHost<W = RequiredChild> {
-    #[portable_child]
     child: W,
 }
 

@@ -60,8 +60,6 @@ impl Widget for WidthProbe {
     }
 }
 
-impl aimer_widget::PortableWidget for WidthProbe {}
-
 fn context(canvas: &aimer_canvas::InnerCanvas) -> (tokio::runtime::Runtime, BuildContext<'_>) {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

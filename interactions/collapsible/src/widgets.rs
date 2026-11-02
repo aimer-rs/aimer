@@ -14,8 +14,8 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::{BuildContext, ResolvedSize, Vec2d};
 use aimer_widget::{
     AnyElement, AnyWidget, ChildBuilder, Drawable, Element, EventElement, EventResult,
-    EventTreeRole, LayoutElement, PortableWidget, Rebuildable, RequiredChild, State, StateUpdater,
-    StatefulElement, StatefulWidget, VisitorElement, Widget,
+    EventTreeRole, LayoutElement, Rebuildable, RequiredChild, State, StateUpdater, StatefulElement,
+    StatefulWidget, VisitorElement, Widget,
 };
 
 use crate::key_relay::KeyRelay;
@@ -99,8 +99,6 @@ impl<T: Widget + 'static> Widget for AnimatedCollapse<T> {
         "AnimatedCollapse"
     }
 }
-
-impl<T: Widget + 'static> PortableWidget for AnimatedCollapse<T> {}
 
 struct AnimatedCollapseElement {
     child: AnyElement,
@@ -450,8 +448,6 @@ impl<W: Widget> Widget for ListHeader<W> {
     }
 }
 
-impl<W: Widget> PortableWidget for ListHeader<W> {}
-
 /// The body slot of a [`CollapsibleList`].
 ///
 /// The body is mounted lazily on the first expansion. After mounting, its
@@ -509,8 +505,6 @@ impl<W: Widget> Widget for ListBody<W> {
         "ListBody"
     }
 }
-
-impl<W: Widget> PortableWidget for ListBody<W> {}
 
 /// A stateful list whose header remains visible while its body can be toggled
 /// with an animated vertical reveal.
@@ -724,8 +718,6 @@ impl<H: Widget + 'static, B: Widget + 'static> Widget for CollapsibleList<H, B> 
         "CollapsibleList"
     }
 }
-
-impl<H: Widget + 'static, B: Widget + 'static> PortableWidget for CollapsibleList<H, B> {}
 
 impl<H: Widget + 'static, B: Widget + 'static> State<CollapsibleList<H, B>>
     for CollapsibleListState<H, B>

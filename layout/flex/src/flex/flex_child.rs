@@ -31,14 +31,11 @@ use aimer_widget::{
 /// let row = Row::new().children(vec![Expanded::new().child(SizedBox::new()),
 ///                                    Expanded::new().flex(2.0).child(SizedBox::new()),]);
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_flex::flex::Expanded")]
 pub struct Expanded<W = RequiredChild> {
     /// The flex factor: the child's share of the free main-axis space is
     /// `flex / sum_of_all_flex_factors`. Defaults to `1.0`.
     flex: f32,
     /// The widget that expands to fill the assigned space.
-    #[portable_child]
     child: W,
 }
 

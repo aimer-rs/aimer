@@ -33,7 +33,6 @@ use crate::{AnyElement, AnyWidget, Drawable, Element, RequiredChild, Widget};
 /// use aimer_widget_core::Semantics;
 ///
 /// struct Icon;
-/// # impl aimer_widget_core::PortableWidget for Icon {}
 /// # impl aimer_widget_core::Widget for Icon {
 /// #     fn to_element(self, _ctx: &aimer_widget_core::base::BuildContext) -> aimer_widget_core::AnyElement {
 /// #         unreachable!("this example only builds the widget")
@@ -159,8 +158,6 @@ impl<W: Widget + 'static> Widget for Semantics<W> {
         "Semantics"
     }
 }
-
-impl<W> crate::PortableWidget for Semantics<W> {}
 
 struct RawSemantics {
     spec: Spec,

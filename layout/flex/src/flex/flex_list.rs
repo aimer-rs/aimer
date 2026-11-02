@@ -288,34 +288,20 @@ impl<T> FlexList<T> {
 /// [sparse-children contract](crate::flex::children_source) for the limits: a row
 /// scrolled a long way out of view is eventually dropped, and one that has no
 /// element cannot receive a broadcast.
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_flex::flex::ListFlex", schema_only, manual_lowering)]
 pub struct ListFlex<T, F> {
-    #[portable_skip]
     direction: FlexDirection,
-    #[portable_skip]
     vertical_alignment: BoxAlignment,
-    #[portable_skip]
     horizontal_alignment: BoxAlignment,
-    #[portable_skip]
     justify_content: Option<JustifyContent>,
-    #[portable_skip]
     gaps: LayoutSpacing,
-    #[portable_skip]
     overflow: OverflowBehavior,
-    #[portable_skip]
     item_extent: Option<Dimension>,
     /// Identity of each datum, when the caller supplied one — see
     /// [`FlexList::key`].
-    #[portable_skip]
     keyed: Option<KeyMapper<T>>,
     /// Shared so [`Widget::to_element`], which only borrows `self`, can hand the
     /// data to a source that outlives the call.
-    // The builder maps each datum to a portable child during the handwritten
-    // lowering below; the derive supplies the collection child cardinality.
-    #[portable_children]
     items: Rc<Vec<T>>,
-    #[portable_skip]
     builder: Rc<F>,
 }
 
@@ -425,43 +411,6 @@ where
     }
 }
 
-impl<T, W, F> aimer_widget::PortableWidget for ListFlex<T, F>
-where
-    T: 'static,
-    W: Widget + 'static,
-    F: Fn(&T) -> W + 'static,
-{
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<aimer_widget::portable::PortableNodeId, aimer_widget::portable::PortableBuildError>
-    {
-        let children = self
-            .items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| {
-                <W as aimer_widget::PortableWidget>::to_portable_node(
-                    (self.builder)(item),
-                    ctx,
-                    source.child(index as u64),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let schema = <Self as aimer_widget::portable::PortableWidgetSchema>::SCHEMA;
-        ctx.push_node(
-            schema.widget().id(),
-            schema.widget().min_version(),
-            None,
-            source,
-            &[],
-            &children,
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     //! Tests for the data-driven flex containers built in
@@ -532,8 +481,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for Counting {}
-
     /// A hundred-thousand-row column whose extent is declared rather than
     /// measured.
     fn declared_column(counters: &Counters) -> impl Widget + use<> {
@@ -600,8 +547,6 @@ mod tests {
             LeafElement { height: self.0 }.boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for Leaf {}
 
     struct LeafElement {
         height: f32,
@@ -691,8 +636,6 @@ mod tests {
             element.boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for StatefulRow {}
 
     /// Everything a stateful row publishes about itself, by datum.
     #[derive(Clone, Default)]

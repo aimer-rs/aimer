@@ -21,8 +21,6 @@ impl Widget for PointerMoveProbe {
     }
 }
 
-impl aimer::PortableWidget for PointerMoveProbe {}
-
 impl VisitorElement for PointerMoveProbe {
     fn debug_name(&self) -> &'static str {
         "PointerMoveProbe"

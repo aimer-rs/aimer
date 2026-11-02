@@ -98,8 +98,6 @@ impl Widget for StaticProbeWidget {
     }
 }
 
-impl aimer::PortableWidget for StaticProbeWidget {}
-
 struct StaticProbeElement {
     index: usize,
 }
@@ -166,8 +164,6 @@ impl Widget for DynamicProbeWidget {
         .boxed()
     }
 }
-
-impl aimer::PortableWidget for DynamicProbeWidget {}
 
 struct DynamicProbeElement {
     index: usize,

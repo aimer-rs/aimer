@@ -16,13 +16,11 @@ pub use control::{
     TimelineFrame, TweenAnimation,
 };
 pub use primitives::{
-    AnimInstant, Animatable, AnimatableExt, AnyCurve, AnyMotion, Curve, CurveDescriptor, Motion,
-    MotionDescriptor, MotionState, Ramp, Spring, Tween, curves, motions,
+    AnimInstant, Animatable, AnimatableExt, AnyCurve, AnyMotion, Curve, Motion,
+    MotionState, Ramp, Spring, Tween, curves, motions,
 };
 // Widget layer
 pub use widgets::AnimatedBuilder;
-#[doc(hidden)]
-pub use widgets::animated_builder::ensure_portable_native_registrations;
 pub use widgets::{
     Animated, AnimatedPaint, AnimatedSwitcher, AnimationEffect, ContainerTransformFrame,
     ContainerTransformSpec, ElementBounds, ExpandSpec, FadeTransition, StageSpans,

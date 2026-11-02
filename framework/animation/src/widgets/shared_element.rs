@@ -14,7 +14,7 @@ use aimer_canvas::Canvas;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, Key, LayoutElement,
-    PortableWidget, Rebuildable, RequiredChild, RetainedNodeHandle, VisitorElement, Widget,
+    Rebuildable, RequiredChild, RetainedNodeHandle, VisitorElement, Widget,
 };
 
 use super::container_transform::ElementBounds;
@@ -241,15 +241,11 @@ impl<W> SharedElement<W> {
 #[doc(hidden)]
 pub struct Repeated(SharedContent);
 
-impl PortableWidget for Repeated {}
-
 impl Widget for Repeated {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         self.0.build().to_element(ctx)
     }
 }
-
-impl<W: Widget> PortableWidget for SharedElement<W> {}
 
 impl<W: Widget> Widget for SharedElement<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
@@ -457,8 +453,6 @@ mod tests {
             LeafElement.boxed()
         }
     }
-
-    impl PortableWidget for Leaf {}
 
     struct LeafElement;
 

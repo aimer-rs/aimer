@@ -133,12 +133,6 @@ impl FontFamily {
     pub const fn raw(self) -> u64 {
         self.0
     }
-
-    /// Reconstructs a family handle received from a portable style codec.
-    #[doc(hidden)]
-    pub const fn from_raw(raw: u64) -> Self {
-        Self(raw)
-    }
 }
 
 impl Default for FontFamily {

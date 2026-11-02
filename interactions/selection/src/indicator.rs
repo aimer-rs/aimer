@@ -11,7 +11,7 @@ use aimer_cupid::utilities::{Color as V2Color, Mat3, Rect};
 use aimer_style::ThemeTokens;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
-    AnyElement, Drawable, Element, EventElement, EventTreeRole, LayoutElement, PortableWidget, Rebuildable,
+    AnyElement, Drawable, Element, EventElement, EventTreeRole, LayoutElement, Rebuildable,
     VisitorElement, Widget,
 };
 
@@ -133,8 +133,6 @@ impl Indicator {
         }
     }
 }
-
-impl PortableWidget for Indicator {}
 
 impl Widget for Indicator {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {

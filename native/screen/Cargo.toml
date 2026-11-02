@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
-
 [dependencies]
 aimer_tls.workspace = true
 aimer_widget.workspace = true

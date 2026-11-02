@@ -18,9 +18,6 @@
 //! ready-made bar built on it. Both can be dragged: the indicator follows the
 //! pointer, held lifted, for as long as it is down, and lands on the nearest
 //! slot when let go.
-//!
-//! Portable lowering is intentionally unsupported. These native widgets use the
-//! default [`aimer_widget::PortableWidget`] diagnostic until a schema is added.
 
 mod controller;
 mod layer;

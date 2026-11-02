@@ -5,8 +5,6 @@ pub use aimer_element::*;
 
 pub mod diagnostics;
 pub mod repaint_boundary;
-#[doc(hidden)]
-pub mod portable;
 pub mod reconcile;
 mod semantic_annotation;
 // #[doc(hidden)]
@@ -36,5 +34,5 @@ pub use crate::widget::stateful::{
     State, StateReadGuard, StateUpdater, StatefulElement, StatefulWidget,
 };
 pub use crate::widget::stateless::{NamedWidget, StatelessElement, StatelessWidget};
-pub use crate::widget::{AnyWidget, DynWidget, PortableWidget, Widget};
-pub use aimer_macro::{PortableValue, PortableWidget, main, widget};
+pub use crate::widget::{AnyWidget, DynWidget, Widget};
+pub use aimer_macro::{main, widget};

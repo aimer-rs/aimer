@@ -58,8 +58,6 @@ impl Widget for Counted {
     }
 }
 
-impl aimer_widget::PortableWidget for Counted {}
-
 fn start(builds: Rc<Cell<usize>>, calls: Rc<Cell<usize>>) -> HeadlessAimerApp<impl Widget + 'static> {
     let retained = ChildBuilder::from_widget(Counted { builds });
     let animated = AnimatedBuilder::new(looping(), move |progress| {
@@ -173,8 +171,6 @@ impl Widget for Switch {
         StatefulElement::new_with_name(self, ctx, "Switch", None).0.boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Switch {}
 
 #[test]
 fn a_retained_child_still_rebuilds_when_its_own_state_changes_during_the_animation() {

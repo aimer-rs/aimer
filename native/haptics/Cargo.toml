@@ -4,10 +4,6 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
-[dependencies]
-aimer_anteros.workspace = true
-aimer_macro.workspace = true
-
 [target.'cfg(target_os = "ios")'.dependencies]
 aimer_time.workspace = true
 objc2.workspace = true

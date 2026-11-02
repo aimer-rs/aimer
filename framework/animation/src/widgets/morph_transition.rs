@@ -141,26 +141,17 @@ impl MorphLook {
 ///                                                                        .direction(1.0, 0.0)
 ///                                                                        .child_key("profile-card");
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_animation::MorphTransition", schema_only)]
 pub struct MorphTransition<T: Widget + 'static> {
     /// The morphing content, kept as a builder because a cross-fade places the
     /// same content again on every frame of the transition.
-    #[portable_child]
     pub child: ChildBuilder,
-    #[portable_skip]
     pub duration: Duration,
-    #[portable_skip]
     pub curve: AnyCurve,
-    #[portable_skip]
     look: MorphLook,
-    #[portable_skip]
     transition_key: Option<Key>,
-    #[portable_skip]
     widget_key: Option<Key>,
     /// Records which child type completed this transition without storing it,
     /// so one `State` impl stays paired with one child type.
-    #[portable_skip]
     marker: PhantomData<T>,
 }
 
@@ -421,8 +412,6 @@ impl Widget for MorphTransitionFrame {
         .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for MorphTransitionFrame {}
 
 /// The current morph animation state.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -710,8 +699,6 @@ mod tests {
             panic!("not needed for state lifecycle tests")
         }
     }
-
-    impl aimer_widget::PortableWidget for TestWidget {}
 
     fn state(key: &'static str) -> MorphTransitionState<TestWidget> {
         MorphTransition::new(Duration::from_millis(100), curves::LINEAR, TestWidget(key))

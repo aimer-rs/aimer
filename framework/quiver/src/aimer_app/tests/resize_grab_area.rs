@@ -63,8 +63,6 @@ impl Widget for Layout {
     }
 }
 
-impl aimer_widget::PortableWidget for Layout {}
-
 /// Moves the pointer to `x`, `y` from far away, and reports the last zone.
 fn zone_at(x: f64, y: f64) -> Direction {
     zone_at_scale(x, y, 1.0)
@@ -244,8 +242,6 @@ impl Widget for ZoneScreen {
     }
 }
 
-impl aimer_widget::PortableWidget for ZoneScreen {}
-
 fn move_to<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, x: f64, y: f64) {
     app.send_window_event(WindowEvent::CursorMoved {
         device_id: DeviceId::dummy(),
@@ -387,8 +383,6 @@ impl Widget for ClaimingPane {
     }
 }
 
-impl aimer_widget::PortableWidget for ClaimingPane {}
-
 #[test]
 fn the_outer_band_is_grabbed_even_when_the_neighbouring_pane_claims_the_pointer() {
     let _serial = VIRTUALIZED_RENDER_TEST_LOCK
@@ -465,8 +459,6 @@ impl Widget for HoverPanel {
             .to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for HoverPanel {}
 
 #[test]
 fn a_row_stops_being_hovered_when_the_pointer_slides_into_the_resize_band() {
@@ -594,8 +586,6 @@ impl Widget for ClickPanel {
             .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for ClickPanel {}
 
 #[test]
 fn hover_keeps_following_the_pointer_after_a_click_that_rebuilds_the_panel() {

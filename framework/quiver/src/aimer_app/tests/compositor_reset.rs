@@ -25,8 +25,6 @@ impl Widget for Probe {
     }
 }
 
-impl aimer_widget::PortableWidget for Probe {}
-
 struct ProbeElement {
     mode: Rc<Cell<Mode>>,
 }

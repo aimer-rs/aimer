@@ -26,7 +26,6 @@ impl Widget for CapturedShowcase {
         .boxed()
     }
 }
-impl aimer::PortableWidget for CapturedShowcase {}
 
 struct CapturedShowcaseElement {
     child: AnyElement,

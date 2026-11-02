@@ -242,11 +242,6 @@ impl<T: Widget + 'static> Widget for AnimatedPaint<T> {
     }
 }
 
-// The portable interface cannot represent an arbitrary native closure. The
-// default PortableWidget implementation therefore reports the existing
-// unsupported-widget diagnostic when this wrapper is lowered in a guest.
-impl<T: Widget + 'static> aimer_widget::PortableWidget for AnimatedPaint<T> {}
-
 /// Retained implementation behind [`AnimatedPaint`].
 struct AnimatedPaintElement {
     child: AnyElement,
@@ -472,8 +467,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for StableLeaf {}
-
     struct StableElement;
 
     impl Drawable for StableElement {
@@ -509,8 +502,6 @@ mod tests {
             StableElement.boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for CountingWidget {}
 
     fn controller() -> AnimationController {
         let controller = AnimationController::with_millis(100, curves::LINEAR);
@@ -600,34 +591,6 @@ mod tests {
         element.update(&context);
 
         assert_eq!(test_frame_requester::count(), 1);
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn portable_lowering_reports_the_native_only_widget() {
-        use aimer_widget::PortableWidget;
-        use aimer_widget::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-            StableId128,
-        };
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-            PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap();
-        let result = AnimatedPaint::new(
-            AnimationController::with_millis(100, curves::LINEAR),
-            StableLeaf,
-        )
-        .to_portable_node(
-            &mut context,
-            SourceFingerprint::new(StableId128::from_bytes([9; 16])),
-        );
-
-        assert!(result.is_err());
     }
 
     /// A retained tree whose root holds the element's child, kept alive so a

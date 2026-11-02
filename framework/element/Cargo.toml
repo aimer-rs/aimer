@@ -5,7 +5,6 @@ edition = "2024"
 resolver = "3"
 
 [features]
-portable-guest = []
 # Keep the allocation-free draw traversal counter available to release
 # acceptance probes without paying for it in ordinary release applications.
 frame-stats = []
@@ -37,5 +36,3 @@ tokio = {workspace = true, features = ["rt-multi-thread", "macros"]}
 objc2.workspace = true
 objc2-ui-kit = { workspace = true, features = ["UIView"] }
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }

@@ -26,8 +26,8 @@ use aimer_style::{LayoutSpacing, Spacing, TextStyle, ThemeTokens, apply_state_la
 use aimer_text::Text;
 use aimer_widget::base::{BuildContext, Vec2d};
 use aimer_widget::{
-    AnyElement, AnyWidget, FocusBehavior, FocusNode, Focusable, PortableWidget, State,
-    StateUpdater, StatefulElement, StatefulWidget, Widget,
+    AnyElement, AnyWidget, FocusBehavior, FocusNode, Focusable, State, StateUpdater,
+    StatefulElement, StatefulWidget, Widget,
 };
 
 use crate::binary::ChangeCallback;
@@ -518,7 +518,7 @@ impl<T: Clone + PartialEq + 'static> State<PopupPanel<T>> for PanelState<T> {
             )
             .child(
                 Column::new()
-                    
+
                     .children(children),
             );
         Focusable::new()
@@ -574,7 +574,7 @@ impl<T: Clone + PartialEq + 'static> PanelState<T> {
         let options = model.options();
         let positions: Vec<usize> = (0..model.len()).collect();
         let list = Column::new()
-            
+
             .list(positions)
             .item_extent(row_height)
             .builder(move |&position| row(&model, &options, &tokens, row_height, position));
@@ -673,8 +673,6 @@ impl<T: Clone + PartialEq + 'static> Widget for PopupPanel<T> {
         "SelectionPopup"
     }
 }
-
-impl<T: 'static> PortableWidget for PopupPanel<T> {}
 
 #[cfg(test)]
 mod tests {

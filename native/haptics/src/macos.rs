@@ -52,9 +52,6 @@ fn perform(pattern: NSHapticFeedbackPattern) {
     );
 }
 
-/// Whether this backend can produce feedback at all.
-pub(crate) const SUPPORTED: bool = true;
-
 /// The trackpad has no warm-up latency to hide.
 pub(crate) fn prepare_impact(_style: ImpactStyle) {}
 

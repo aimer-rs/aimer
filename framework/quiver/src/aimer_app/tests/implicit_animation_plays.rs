@@ -79,8 +79,6 @@ impl Widget for Root {
     }
 }
 
-impl aimer_widget::PortableWidget for Root {}
-
 #[test]
 fn an_implicit_animation_moves_through_its_in_between_values() {
     let _serial = VIRTUALIZED_RENDER_TEST_LOCK

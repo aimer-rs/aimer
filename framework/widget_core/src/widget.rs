@@ -10,36 +10,6 @@ pub(crate) use aimer_element::state_slots;
 pub mod stateful;
 pub mod stateless;
 
-/// Provides the guest-side lowering capability for a [`Widget`].
-///
-/// `Widget` remains a supertrait during the Phase 15 migration so existing
-/// builder APIs that return `impl Widget` continue to expose this capability.
-/// Implementations are explicit: handwritten widgets can retain the default
-/// unsupported-widget lowering, while `#[derive(PortableWidget)]` emits the
-/// reflected guest lowering for schema-declared properties, callbacks, and
-/// children.
-#[doc(hidden)]
-pub trait PortableWidget {
-    /// Consumes this widget and appends its portable Widget IR node.
-    ///
-    /// The `Self: Widget` bound is intentional while `Widget` retains this
-    /// trait as a supertrait. It lets the default diagnostic reuse the widget's
-    /// public debug name without changing the existing builder return types.
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut crate::portable::PortableBuildContext,
-        source: crate::portable::SourceFingerprint,
-    ) -> Result<crate::portable::PortableNodeId, crate::portable::PortableBuildError>
-    where
-        Self: Sized + Widget,
-    {
-        let widget = Widget::debug_name(&self);
-        drop(self);
-        Err(ctx.unsupported_widget(widget, source))
-    }
-}
-
 /// A configuration value that produces exactly one element.
 ///
 /// # Consuming conversion
@@ -56,12 +26,10 @@ pub trait PortableWidget {
 ///
 /// ```
 /// use aimer_widget_core::base::BuildContext;
-/// use aimer_widget_core::{AnyElement, PortableWidget, Widget};
+/// use aimer_widget_core::{AnyElement, Widget};
 ///
 /// // Deliberately not `Clone`: nothing copies a widget.
 /// struct Label(String);
-///
-/// impl PortableWidget for Label {}
 ///
 /// impl Widget for Label {
 ///     fn to_element(self, ctx: &BuildContext) -> AnyElement {
@@ -73,7 +41,7 @@ pub trait PortableWidget {
 /// let widget = Label(String::from("Aimer")).boxed();
 /// assert!(widget.is_inline());
 /// ```
-pub trait Widget: PortableWidget {
+pub trait Widget {
     fn key(&self) -> Option<crate::key::Key> {
         None
     }
@@ -135,11 +103,6 @@ pub trait Widget: PortableWidget {
     }
 }
 
-
-/// Lowering of a zero-argument function pointer is not supported in a portable
-/// guest; the default unsupported-widget diagnostic applies.
-impl<T: Widget + 'static> PortableWidget for fn() -> T{}
-
 /// A function pointer that returns a widget is itself a widget.
 ///
 /// Converting it calls the pointer once and converts the widget it returns, so
@@ -184,11 +147,6 @@ impl<T: Widget + 'static> Widget for fn() -> T {
         (self)().to_element(ctx)
     }
 }
-
-
-/// Lowering of a context-taking function pointer is not supported in a portable
-/// guest; the default unsupported-widget diagnostic applies.
-impl<T: Widget + 'static> PortableWidget for fn(&BuildContext) -> T{}
 
 /// A function pointer that builds a widget from the [`BuildContext`] is itself a
 /// widget.
@@ -253,16 +211,7 @@ pub trait DynWidget: 'static {
     /// The pointee is left uninitialized and must never be read or dropped
     /// again. The only caller is [`AnyWidget::into_element`], which marks the
     /// storage vacant before this runs.
-    #[cfg(not(aimer_portable_guest))]
     unsafe fn to_element_in_place(&mut self, ctx: &BuildContext) -> AnyElement;
-
-    /// Moves the widget out of `self` and converts it to portable Widget IR.
-    #[cfg(feature = "portable-guest")]
-    unsafe fn to_portable_node_in_place(
-        &mut self,
-        ctx: &mut crate::portable::PortableBuildContext,
-        source: crate::portable::SourceFingerprint,
-    ) -> Result<crate::portable::PortableNodeId, crate::portable::PortableBuildError>;
 
     /// Forwards [`Widget::key`].
     ///
@@ -279,7 +228,6 @@ pub trait DynWidget: 'static {
 }
 
 impl<W: Widget + 'static> DynWidget for W {
-    #[cfg(not(aimer_portable_guest))]
     #[inline]
     unsafe fn to_element_in_place(&mut self, ctx: &BuildContext) -> AnyElement {
         // SAFETY: The caller marked the storage vacant, so this bit copy is the
@@ -288,19 +236,6 @@ impl<W: Widget + 'static> DynWidget for W {
         // uninitialized bytes left behind.
         let widget = unsafe { std::ptr::read(self as *mut W) };
         widget.to_element(ctx)
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[inline]
-    unsafe fn to_portable_node_in_place(
-        &mut self,
-        ctx: &mut crate::portable::PortableBuildContext,
-        source: crate::portable::SourceFingerprint,
-    ) -> Result<crate::portable::PortableNodeId, crate::portable::PortableBuildError> {
-        // SAFETY: The erased owner marks this storage vacant before invoking
-        // the method, exactly as on the native consuming conversion path.
-        let widget = unsafe { std::ptr::read(self as *mut W) };
-        PortableWidget::to_portable_node(widget, ctx, source)
     }
 
     #[inline]
@@ -348,11 +283,9 @@ unsafe impl<W: DynWidget> aimer_rubick::ErasedFrom<W> for dyn DynWidget {
 ///
 /// ```
 /// use aimer_widget_core::base::BuildContext;
-/// use aimer_widget_core::{AnyElement, PortableWidget, Widget};
+/// use aimer_widget_core::{AnyElement, Widget};
 ///
 /// struct Badge;
-///
-/// impl PortableWidget for Badge {}
 ///
 /// impl Widget for Badge {
 ///     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
@@ -415,28 +348,9 @@ impl AnyWidget {
         // runs and releases the pooled block afterwards, on both the normal and
         // the unwinding path. The closure moves the widget out exactly once and
         // never drops it in place, which is the contract `take` requires.
-        #[cfg(not(aimer_portable_guest))]
         return unsafe { self.0.take(|widget| (*widget).to_element_in_place(ctx)) };
-
-        #[cfg(aimer_portable_guest)]
-        {
-            let _ = ctx;
-            panic!("native element conversion is unavailable in a portable guest")
-        }
     }
 
-    /// Consumes this erased handle and appends its portable Widget IR node.
-    #[cfg(feature = "portable-guest")]
-    #[inline]
-    pub fn into_portable_node(
-        self,
-        ctx: &mut crate::portable::PortableBuildContext,
-        source: crate::portable::SourceFingerprint,
-    ) -> Result<crate::portable::PortableNodeId, crate::portable::PortableBuildError> {
-        // SAFETY: `take` vacates the erased storage before the concrete widget
-        // is moved out, and releases it on both success and error paths.
-        unsafe { self.0.take(|widget| (*widget).to_portable_node_in_place(ctx, source)) }
-    }
 }
 
 impl Deref for AnyWidget {
@@ -452,18 +366,6 @@ impl AsRef<dyn DynWidget> for AnyWidget {
     #[inline]
     fn as_ref(&self) -> &(dyn DynWidget + 'static) {
         &*self.0
-    }
-}
-
-impl PortableWidget for AnyWidget {
-    #[cfg(feature = "portable-guest")]
-    #[inline]
-    fn to_portable_node(
-        self,
-        ctx: &mut crate::portable::PortableBuildContext,
-        source: crate::portable::SourceFingerprint,
-    ) -> Result<crate::portable::PortableNodeId, crate::portable::PortableBuildError> {
-        self.into_portable_node(ctx, source)
     }
 }
 
@@ -541,13 +443,6 @@ mod tests {
         assert!(rebox.is_inline(), "boxing a handle returns it unchanged");
     }
 
-    #[test]
-    fn every_widget_is_a_portable_capability() {
-        fn requires_portable_widget<T: Widget + PortableWidget>() {}
-
-        requires_portable_widget::<StorageWidget<0>>();
-    }
-
     struct StorageWidget<const N: usize>([u8; N]);
 
     impl<const N: usize> Widget for StorageWidget<N> {
@@ -559,8 +454,6 @@ mod tests {
             "StorageWidget"
         }
     }
-
-    impl<const N: usize> PortableWidget for StorageWidget<N> {}
 
     #[test]
     fn erased_widgets_select_inline_or_heap_storage_and_dispatch_after_moves() {
@@ -648,8 +541,6 @@ mod tests {
         }
     }
 
-    impl<const N: usize> PortableWidget for DroppingWidget<N> {}
-
     #[test]
     fn erased_widgets_drop_inline_and_heap_values_exactly_once() {
         let drops = Rc::new(Cell::new(0));
@@ -731,8 +622,6 @@ mod tests {
         }
     }
 
-    impl PortableWidget for Moved {}
-
     /// A widget too wide for inline storage, so its payload is pooled.
     struct Wide {
         recorder: DropRecorder,
@@ -749,8 +638,6 @@ mod tests {
         }
     }
 
-    impl PortableWidget for Wide {}
-
     /// A widget whose conversion fails *after* the move has happened, which is
     /// the only window in which the value is owned by neither its storage nor
     /// its element.
@@ -765,9 +652,6 @@ mod tests {
             panic!("exercise an unwind out of to_element");
         }
     }
-
-    #[cfg(panic = "unwind")]
-    impl PortableWidget for Failing {}
 
     /// Address of the payload behind an erased widget.
     fn payload_address(widget: &AnyWidget) -> *const u8 {

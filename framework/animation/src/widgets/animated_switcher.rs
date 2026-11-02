@@ -152,18 +152,6 @@ impl<T: Widget + 'static> Widget for AnimatedSwitcher<T> {
     }
 }
 
-impl<T: Widget + 'static> aimer_widget::PortableWidget for AnimatedSwitcher<T> {
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<aimer_widget::portable::PortableNodeId, aimer_widget::portable::PortableBuildError>
-    {
-        self.child.into_portable_node(ctx, source.child(0))
-    }
-}
-
 #[doc(hidden)]
 pub struct AnimatedSwitcherState<T: Widget + 'static> {
     current_child: ChildBuilder,
@@ -270,8 +258,6 @@ fn keyed_child_element(child: ChildBuilder, key: Option<Key>, ctx: &BuildContext
         None => child,
     }
 }
-
-impl aimer_widget::PortableWidget for AnimatedSwitcherFrame {}
 
 struct AnimatedSwitcherElement {
     current_child: AnyElement,
@@ -437,8 +423,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for TestWidget {}
-
     fn state(key: &'static str) -> AnimatedSwitcherState<TestWidget> {
         AnimatedSwitcher::new(Duration::from_millis(100), curves::LINEAR, TestWidget(key))
             .create_state()
@@ -506,61 +490,6 @@ mod tests {
         assert!(!current.out_controller.is_animating());
     }
 
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn portable_lowering_is_transparent_to_the_current_child() {
-        use aimer_widget::portable::__anteros::{Version, WIDGET_TEXT, WidgetDocumentView};
-        use aimer_widget::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-            StableId128,
-        };
-        use aimer_widget::{ErrorWidget, PortableWidget};
-
-        struct PortableLeaf;
-
-        impl Widget for PortableLeaf {
-            fn to_element(self, ctx: &BuildContext) -> AnyElement {
-                ErrorWidget::new("portable leaf").to_element(ctx)
-            }
-        }
-
-        impl PortableWidget for PortableLeaf {
-            fn to_portable_node(
-                self,
-                ctx: &mut PortableBuildContext,
-                source: SourceFingerprint,
-            ) -> Result<
-                aimer_widget::portable::PortableNodeId,
-                aimer_widget::portable::PortableBuildError,
-            > {
-                ctx.push_node(WIDGET_TEXT, Version::new(1, 0), None, source, &[], &[])
-            }
-        }
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-            PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap();
-        let root = AnimatedSwitcher::new(Duration::from_millis(100), curves::LINEAR, PortableLeaf)
-            .to_portable_node(
-                &mut context,
-                SourceFingerprint::new(StableId128::from_bytes([9; 16])),
-            )
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-
-        assert_eq!(
-            view.node(view.root_node()).unwrap().widget_type(),
-            WIDGET_TEXT
-        );
-        assert_eq!(view.node_count(), 1);
-    }
-
     // ─── Both children are *built* again on every frame of a transition ────
     //
     // A cross-fade paints two subtrees, and the switcher rebuilds itself on
@@ -600,8 +529,6 @@ mod tests {
                 "Probe"
             }
         }
-
-        impl aimer_widget::PortableWidget for Probe {}
 
         fn context() -> BuildContext<'static> {
             let canvas = {
@@ -818,8 +745,6 @@ mod tests {
                 "RecordingPage"
             }
         }
-
-        impl aimer_widget::PortableWidget for RecordingPage {}
 
         fn route_label(route: usize) -> &'static str {
             if route == 0 { "home" } else { "docs" }

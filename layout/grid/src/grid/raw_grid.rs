@@ -11,22 +11,14 @@ use aimer_widget::{
 
 use super::implementation::{GridAlignment, GridOverflow};
 
-#[derive(Clone, Copy, Debug, PartialEq, aimer_macro::PortableValue)]
-#[portable_value(id = "aimer.value:aimer_grid::grid::GridTrack", max_encoded_bytes = 32)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GridTrack {
-    #[portable_value(tag = 0)]
     Px(f32),
-    #[portable_value(tag = 1)]
     Fr(f32),
-    #[portable_value(tag = 2)]
     Auto,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, aimer_macro::PortableValue)]
-#[portable_value(
-    id = "aimer.value:aimer_grid::grid::GridPlacement",
-    max_encoded_bytes = 128
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GridPlacement {
     pub row: Option<usize>,
     pub column: Option<usize>,

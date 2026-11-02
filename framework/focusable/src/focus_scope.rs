@@ -49,7 +49,6 @@ use aimer_widget_core::{AnyElement, AnyWidget, Drawable, Element, RequiredChild,
 /// use aimer_focusable::FocusScope;
 ///
 /// struct Dialog;
-/// # impl aimer_widget_core::PortableWidget for Dialog {}
 /// # impl aimer_widget_core::Widget for Dialog {
 /// #     fn to_element(self, _ctx: &aimer_widget_core::base::BuildContext) -> aimer_widget_core::AnyElement {
 /// #         unreachable!("this example only builds the widget")
@@ -62,12 +61,8 @@ use aimer_widget_core::{AnyElement, AnyWidget, Drawable, Element, RequiredChild,
 /// // The same region, not confining anything.
 /// let inline = FocusScope::new().traps(false).child(Dialog);
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_widget::FocusScope")]
 pub struct FocusScope<W = RequiredChild> {
-    #[portable_child]
     child: W,
-    #[portable_optional]
     traps: bool,
 }
 
@@ -245,25 +240,3 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use super::FocusScope;
-    use aimer_widget_core::portable::PortableWidgetSchema;
-    use aimer_widget_core::RequiredChild;
-
-    #[test]
-    fn focus_scope_schema_exposes_its_trap_property_and_required_child() {
-        let schema = <FocusScope<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-
-        assert_eq!(
-            schema.widget().canonical_name(),
-            "aimer.widget:aimer_widget::FocusScope"
-        );
-        assert_eq!(schema.properties().len(), 1);
-        assert_eq!(
-            schema.properties()[0].canonical_name(),
-            "aimer.property:aimer_widget::FocusScope:traps"
-        );
-        assert_eq!(schema.children(), aimer_anteros::ChildCardinality::exactly(1));
-    }
-}

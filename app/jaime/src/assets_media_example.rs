@@ -217,8 +217,6 @@ impl Widget for AssetsMediaExample {
     }
 }
 
-impl aimer::PortableWidget for AssetsMediaExample {}
-
 /// Builds the assets/media showcase without starting an application.
 pub fn assets_media_example() -> impl Widget {
     AssetsMediaExample::new()

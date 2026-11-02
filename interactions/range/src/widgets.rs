@@ -13,8 +13,8 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, ChildBuilder, Drawable, Element, EventElement, EventResult, EventTreeRole,
-    FocusNode, LayoutElement, PointerKey, PortableWidget, Rebuildable, State, StateUpdater,
-    StatefulElement, StatefulWidget, VisitorElement, Widget,
+    FocusNode, LayoutElement, PointerKey, Rebuildable, State, StateUpdater, StatefulElement,
+    StatefulWidget, VisitorElement, Widget,
 };
 
 use super::visuals::{SliderTrack, SliderVisualState};
@@ -327,8 +327,6 @@ impl<T: RangeValue> Widget for Slider<T> {
     }
 }
 
-impl<T: RangeValue> PortableWidget for Slider<T> {}
-
 struct SliderSurface<T: RangeValue> {
     model: Slider<T>,
     runtime: Rc<SliderRuntime<T>>,
@@ -372,8 +370,6 @@ impl<T: RangeValue> Widget for SliderSurface<T> {
         "RawSlider"
     }
 }
-
-impl<T: RangeValue> PortableWidget for SliderSurface<T> {}
 
 #[derive(Clone, Copy, Default)]
 struct SliderVisualGeometry {
@@ -875,7 +871,6 @@ impl<T: RangeValue> Drawable for RawSlider<T> {
 }
 
 impl<T: RangeValue> Rebuildable for RawSlider<T> {}
-impl<T: RangeValue> PortableWidget for RawSlider<T> {}
 
 impl<T: RangeValue> Widget for RawSlider<T> {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
@@ -1046,8 +1041,6 @@ impl<T: RangeValue> Widget for RangeSlider<T> {
     }
 }
 
-impl<T: RangeValue> PortableWidget for RangeSlider<T> {}
-
 struct RangeSliderSurface<T: RangeValue> {
     model: RangeSlider<T>,
     runtime: Rc<RangeSliderRuntime<T>>,
@@ -1099,8 +1092,6 @@ impl<T: RangeValue> Widget for RangeSliderSurface<T> {
         "RawRangeSlider"
     }
 }
-
-impl<T: RangeValue> PortableWidget for RangeSliderSurface<T> {}
 
 struct RawRangeSlider<T: RangeValue> {
     model: RangeSlider<T>,
@@ -1543,7 +1534,6 @@ impl<T: RangeValue> Drawable for RawRangeSlider<T> {
 }
 
 impl<T: RangeValue> Rebuildable for RawRangeSlider<T> {}
-impl<T: RangeValue> PortableWidget for RawRangeSlider<T> {}
 
 impl<T: RangeValue> Widget for RawRangeSlider<T> {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {

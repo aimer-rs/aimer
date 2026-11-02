@@ -1,11 +1,11 @@
 use winit::dpi::{LogicalSize, PhysicalSize};
 
-#[cfg(all(target_os = "ios", not(aimer_portable_guest)))]
+#[cfg(target_os = "ios")]
 pub(super) fn inner_size(window: &winit::window::Window) -> PhysicalSize<u32> {
     drawable_size(local_view_metrics(window), || window.outer_size())
 }
 
-#[cfg(all(target_os = "ios", not(aimer_portable_guest)))]
+#[cfg(target_os = "ios")]
 fn local_view_metrics(window: &winit::window::Window) -> Option<(LogicalSize<f64>, f64)> {
     use objc2::MainThreadMarker;
     use objc2_ui_kit::UIView;

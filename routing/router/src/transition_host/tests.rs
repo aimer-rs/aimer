@@ -204,12 +204,11 @@ mod swipe_host {
     }
 
     use aimer_attribute::Vec2d;
-    use aimer_widget::{Drawable, EventElement, LayoutElement, PortableWidget, Rebuildable, VisitorElement};
+    use aimer_widget::{Drawable, EventElement, LayoutElement, Rebuildable, VisitorElement};
 
     /// A page 200 wide that has been presented `offset` further along, as a page is
     /// that is sliding away, and then `shift` more, as the page it uncovers is.
     struct Sliding { offset: Rc<Cell<f32>>, shift: f32 }
-    impl PortableWidget for Sliding {}
     impl Widget for Sliding {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
@@ -345,7 +344,9 @@ mod swipe_touch {
     use aimer_attribute::Vec2d;
     use aimer_events::element::{ElementEvent, ScrollDeltaKind, TouchPhase};
     use aimer_events::pointer::{PointerButton, PointerInfo, PointerSource};
-    use aimer_widget::{Drawable, EventDispatcher, EventElement, LayoutElement, PortableWidget, Rebuildable, VisitorElement};
+    use aimer_widget::{
+        Drawable, EventDispatcher, EventElement, LayoutElement, Rebuildable, VisitorElement,
+    };
 
     use super::*;
     use crate::SwipeBack;
@@ -355,7 +356,6 @@ mod swipe_touch {
 
     /// A page that records what reaches it, 200 wide.
     struct Probe(Log);
-    impl PortableWidget for Probe {}
     impl Widget for Probe {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
@@ -387,7 +387,6 @@ mod swipe_touch {
     /// A page that uses every scroll it is given, as a horizontal scroller that can
     /// still move does.
     struct Scroller(Log);
-    impl PortableWidget for Scroller {}
     impl Widget for Scroller {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
@@ -410,7 +409,6 @@ mod swipe_touch {
     /// it used, so that it cannot fall through to a scroller behind it. It does not
     /// redraw: nothing moved.
     struct Occluder(Log);
-    impl PortableWidget for Occluder {}
     impl Widget for Occluder {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
@@ -431,7 +429,6 @@ mod swipe_touch {
     /// A page that scrolls once and then has nothing to scroll: a list that reached
     /// its end.
     struct UsesOnce(Log, Cell<bool>);
-    impl PortableWidget for UsesOnce {}
     impl Widget for UsesOnce {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
@@ -458,7 +455,6 @@ mod swipe_touch {
     /// touch is taken from it. `consume_moves` makes it a draggable that claims the
     /// pointer when it moves.
     struct Pressable { log: Log, consume_moves: bool }
-    impl PortableWidget for Pressable {}
     impl Widget for Pressable {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }

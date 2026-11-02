@@ -5,8 +5,6 @@ edition = "2024"
 
 [features]
 bundled-fonts = ["aimer_cupid/bundled-fonts"]
-portable-guest = ["aimer_widget/portable-guest"]
-
 [dependencies]
 aimer_tls.workspace = true
 aimer_utils.workspace = true

@@ -52,8 +52,6 @@ impl Widget for Leaf {
     }
 }
 
-impl crate::widget::PortableWidget for Leaf {}
-
 /// A stateful owner whose `build` retains one leaf per key in `keys`.
 struct Owner {
     keys: Vec<&'static str>,
@@ -115,8 +113,6 @@ impl Widget for Owner {
     }
 }
 
-impl crate::widget::PortableWidget for Owner {}
-
 /// Holds several children, so one build can retain more than one slot.
 struct Column {
     leaves: Vec<AnyWidget>,
@@ -138,8 +134,6 @@ impl Widget for Column {
         .boxed()
     }
 }
-
-impl crate::widget::PortableWidget for Column {}
 
 impl VisitorElement for ColumnElement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
@@ -424,8 +418,6 @@ mod retain_slots_profile {
             StatefulElement::from_widget(self, ctx, "Wide", None)
         }
     }
-
-    impl crate::widget::PortableWidget for Wide {}
 
     fn update_cost(size: usize, retained: bool) -> (Duration, usize) {
         let ctx = context();

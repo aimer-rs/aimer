@@ -106,8 +106,6 @@ impl Widget for Scene {
     }
 }
 
-impl aimer_widget::PortableWidget for Scene {}
-
 /// The element boundaries a frame entered, and the full render-tree syncs it
 /// needed, for each frame of the fade a state change starts.
 fn fade_frames(rows: usize, glass: bool) -> (Vec<u64>, u64) {

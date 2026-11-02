@@ -7,55 +7,55 @@ use std::path::PathBuf;
 const SHADERS: &[(&str, &str)] = &[
     (
         "rect",
-        include_str!("../../cupid_gpu/shaders/wgsl/rect.wgsl"),
+        include_str!("../../../cupid_gpu/shaders/wgsl/rect.wgsl"),
     ),
     (
         "image",
         concat!(
-            include_str!("../../cupid_gpu/shaders/wgsl/color.wgsl"),
-            include_str!("../../cupid_gpu/shaders/wgsl/image.wgsl")
+            include_str!("../../../cupid_gpu/shaders/wgsl/color.wgsl"),
+            include_str!("../../../cupid_gpu/shaders/wgsl/image.wgsl")
         ),
     ),
     (
         "image.android",
         concat!(
-            include_str!("../../cupid_gpu/shaders/wgsl/android_color.wgsl"),
-            include_str!("../../cupid_gpu/shaders/wgsl/image.wgsl")
+            include_str!("../../../cupid_gpu/shaders/wgsl/android_color.wgsl"),
+            include_str!("../../../cupid_gpu/shaders/wgsl/image.wgsl")
         ),
     ),
     (
         "text",
-        include_str!("../../cupid_gpu/shaders/wgsl/text.wgsl"),
+        include_str!("../../../cupid_gpu/shaders/wgsl/text.wgsl"),
     ),
     (
         "text_color",
-        include_str!("../../cupid_gpu/shaders/wgsl/text_color.wgsl"),
+        include_str!("../../../cupid_gpu/shaders/wgsl/text_color.wgsl"),
     ),
     (
         "text_decoration",
-        include_str!("../../cupid_gpu/shaders/wgsl/text_decoration.wgsl"),
+        include_str!("../../../cupid_gpu/shaders/wgsl/text_decoration.wgsl"),
     ),
     (
         "svg",
         concat!(
-            include_str!("../../cupid_gpu/shaders/wgsl/color.wgsl"),
-            include_str!("../../cupid_gpu/shaders/wgsl/svg.wgsl")
+            include_str!("../../../cupid_gpu/shaders/wgsl/color.wgsl"),
+            include_str!("../../../cupid_gpu/shaders/wgsl/svg.wgsl")
         ),
     ),
     (
         "svg.android",
         concat!(
-            include_str!("../../cupid_gpu/shaders/wgsl/android_color.wgsl"),
-            include_str!("../../cupid_gpu/shaders/wgsl/svg.wgsl")
+            include_str!("../../../cupid_gpu/shaders/wgsl/android_color.wgsl"),
+            include_str!("../../../cupid_gpu/shaders/wgsl/svg.wgsl")
         ),
     ),
     (
         "frame_composite",
-        include_str!("../../cupid_gpu/shaders/wgsl/frame_composite.wgsl"),
+        include_str!("../../../cupid_gpu/shaders/wgsl/frame_composite.wgsl"),
     ),
     (
         "material",
-        include_str!("../../cupid_gpu/shaders/wgsl/material.wgsl"),
+        include_str!("../../../cupid_gpu/shaders/wgsl/material.wgsl"),
     ),
 ];
 

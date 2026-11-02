@@ -106,22 +106,13 @@ impl DragStartMode {
 /// ```
 ///
 /// [`DragTarget`]: crate::DragTarget
-#[derive(aimer_widget::PortableWidget)]
-#[portable_widget(id = "aimer_dnd::Draggable", schema_only)]
 pub struct Draggable<W = RequiredChild> {
-    #[portable_child]
     child: W,
-    #[portable_skip]
     payload: Option<Rc<dyn Fn() -> DragPayload>>,
-    #[portable_skip]
     feedback: Option<Rc<dyn Fn() -> AnyWidget>>,
-    #[portable_skip]
     child_when_dragging: Option<AnyWidget>,
-    #[portable_skip]
     start_mode: Option<DragStartMode>,
-    #[portable_skip]
     axis: DragAxis,
-    #[portable_skip]
     on_drag_completed: Option<Rc<dyn Fn(bool)>>,
 }
 
@@ -791,14 +782,4 @@ mod tests {
         fresh();
     }
 
-    #[test]
-    fn draggable_publishes_a_derived_required_child_schema() {
-        use aimer_widget::portable::__anteros::ChildCardinality;
-        use aimer_widget::portable::PortableWidgetSchema;
-
-        assert_eq!(
-            <Draggable<ZeroSizedBox> as PortableWidgetSchema>::SCHEMA.children(),
-            ChildCardinality::exactly(1)
-        );
-    }
 }

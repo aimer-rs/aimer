@@ -7,8 +7,7 @@ use aimer_input::mouse_region::MouseRegion;
 use aimer_style::{LayoutSpacing, Spacing};
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, FocusNode, PortableWidget, State, StateUpdater, StatefulElement,
-    StatefulWidget, Widget,
+    AnyElement, AnyWidget, FocusNode, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
 };
 
 use crate::binary::ChangeCallback;
@@ -406,8 +405,6 @@ impl<T: Clone + PartialEq + 'static> Widget for RadioGroup<T> {
         "RadioGroup"
     }
 }
-
-impl<T: 'static> PortableWidget for RadioGroup<T> {}
 
 #[cfg(test)]
 mod tests {

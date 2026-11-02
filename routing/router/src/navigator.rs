@@ -7,7 +7,7 @@ use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,
     StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
 };
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 use crate::outlet::RouteChildContext;
@@ -22,11 +22,11 @@ use crate::swipe_back::SwipeLink;
 use crate::transition_host::{NavigationPages, NavigationRequest, SwipeDrive, SwipeSetup};
 use crate::{SwipeBack, SwipeBackArea, TransitionChoice};
 
-#[cfg(any(test, all(target_arch = "wasm32", not(aimer_portable_guest))))]
+#[cfg(any(test, target_arch = "wasm32"))]
 mod history;
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 use history::{browser_current_path, browser_current_position, browser_position, browser_push_state, history_action};
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 pub(crate) use history::browser_replace_state;
 
 /// Maximum number of redirect hops resolved before the navigator bails out.
@@ -80,7 +80,7 @@ impl<R: Route + Router> Navigator<R> {
     /// initial route remains the bottom of the in-memory stack.
     pub fn new(initial_route: R, routes: fn(R) -> AnyWidget) -> Self {
         // On WASM, try to restore the initial route from the browser URL
-        #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+        #[cfg(target_arch = "wasm32")]
         let initial_route = {
             browser_current_path()
                 .and_then(|path| R::parse(&path))
@@ -108,45 +108,6 @@ impl<R: Route + Router> Navigator<R> {
     pub fn transition(mut self, transition: impl NavigationTransition<R>) -> Self {
         self.transition = Some(Rc::new(transition));
         self
-    }
-}
-
-impl<R: Route + Router> aimer_widget::PortableWidget for Navigator<R> {
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<aimer_widget::portable::PortableNodeId, aimer_widget::portable::PortableBuildError>
-    {
-        let initial_route = self.initial_route;
-        let slot = ctx.slot_for(None, source);
-        // Callbacks run between portable builds. Keep the controller's route
-        // stack in generation-local retained storage so a rebuild observes the
-        // route pushed by the callback instead of recreating the initial route.
-        ctx.with_animation_state(
-            slot,
-            || {
-                Rc::new(RefCell::new(PortableNavigatorState {
-                    initial_route: initial_route.clone(),
-                    history: vec![initial_route.clone()],
-                }))
-            },
-            |state, ctx| {
-                let controller = portable_navigator_controller(state.clone());
-                let current_route = controller.current_route();
-                ctx.with_state(controller, |ctx| {
-                    let build_context = ctx.build_context();
-                    let effective = resolve_redirect_chain(
-                        current_route,
-                        |route| route.redirect(&build_context),
-                        MAX_REDIRECT_HOPS,
-                    );
-                    let route_widget = Router::build(&effective, &build_context);
-                    route_widget.into_portable_node(ctx, source)
-                })
-            },
-        )
     }
 }
 
@@ -181,14 +142,14 @@ where
     /// Keeps this navigator opening the links the platform hands the app.
     link_guard: Option<LinkGuard>,
     action: NavigationAction,
-    #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+    #[cfg(target_arch = "wasm32")]
     browser_position: Option<u64>,
 }
 
 impl<R: Route> NavigatorState<R> {
     pub fn push(&self, route: R) {
         self.updater.set_state(|state| {
-            #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+            #[cfg(target_arch = "wasm32")]
             {
                 let position = state.browser_position.unwrap_or(0).saturating_add(1);
                 browser_push_state(&route.format(), position);
@@ -204,7 +165,7 @@ impl<R: Route> NavigatorState<R> {
             if state.history.len() > 1 {
                 state.history.pop();
                 state.action = NavigationAction::Pop;
-                #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+                #[cfg(target_arch = "wasm32")]
                 if let Some(prev) = state.history.last() {
                     browser_replace_state(&prev.format());
                 }
@@ -223,7 +184,7 @@ impl<R: Route> NavigatorState<R> {
     /// that going back from a link lands somewhere sensible.
     fn open_link(&self, route: R) {
         self.updater.set_state(|state| {
-            #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+            #[cfg(target_arch = "wasm32")]
             browser_replace_state(&route.format());
             state.history.clear();
             if route.format() != state.initial_route.format() {
@@ -284,13 +245,13 @@ impl<R: Route> NavigatorState<R> {
             state.history.clear();
             state.history.push(state.initial_route.clone());
             state.action = NavigationAction::Clear;
-            #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+            #[cfg(target_arch = "wasm32")]
             browser_replace_state(&state.initial_route.format());
         });
     }
 
     pub fn set_route(&self, route: R) {
-        #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+        #[cfg(target_arch = "wasm32")]
         browser_replace_state(&route.format());
         self.updater.set_state(|state| {
             state.history.clear();
@@ -330,7 +291,7 @@ impl<R: Route + Router> State<Navigator<R>> for NavigatorState<R> {
         self.back_guard = Some(back::register(NavigatorBack { updater }));
         self.link_guard = Some(link::register(NavigatorLink { updater }));
 
-        #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+        #[cfg(target_arch = "wasm32")]
         {
             let updater_clone = updater;
             let closure = Closure::wrap(Box::new(move |event: web_sys::PopStateEvent| {
@@ -377,7 +338,7 @@ impl<R: Route + Router> State<Navigator<R>> for NavigatorState<R> {
         });
 
         // Keep the browser address bar in sync with the final, post-redirect route.
-        #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+        #[cfg(target_arch = "wasm32")]
         if effective.format() != top.format() {
             browser_replace_state(&effective.format());
         }
@@ -777,7 +738,7 @@ impl<R: Route + Router> StatefulWidget for Navigator<R> {
             back_guard: None,
             link_guard: None,
             action: NavigationAction::Push,
-            #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+            #[cfg(target_arch = "wasm32")]
             browser_position: browser_current_position(),
         }
     }
@@ -842,84 +803,6 @@ fn navigator_controller<R: Route>(
             true
         }),
         set_route_fn: Rc::new(move |route| updater.read(|state| state.set_route(route))),
-    }
-}
-
-#[cfg(feature = "portable-guest")]
-struct PortableNavigatorState<R> {
-    initial_route: R,
-    history: Vec<R>,
-}
-
-#[cfg(feature = "portable-guest")]
-fn portable_navigator_controller<R: Route>(
-    state: Rc<RefCell<PortableNavigatorState<R>>>,
-) -> NavigatorController<R> {
-    NavigatorController {
-        push_fn: {
-            let state = state.clone();
-            Rc::new(move |route| state.borrow_mut().history.push(route))
-        },
-        pop_fn: {
-            let state = state.clone();
-            Rc::new(move || {
-                let mut state = state.borrow_mut();
-                if state.history.len() > 1 {
-                    state.history.pop();
-                }
-            })
-        },
-        can_pop_fn: {
-            let state = state.clone();
-            Rc::new(move || state.borrow().history.len() > 1)
-        },
-        history_len_fn: {
-            let state = state.clone();
-            Rc::new(move || state.borrow().history.len())
-        },
-        routes_fn: {
-            let state = state.clone();
-            Rc::new(move || state.borrow().history.clone())
-        },
-        contains_route_fn: {
-            let state = state.clone();
-            Rc::new(move |route| {
-                let route = route.format();
-                state
-                    .borrow()
-                    .history
-                    .iter()
-                    .any(|candidate| candidate.format() == route)
-            })
-        },
-        current_route_fn: {
-            let state = state.clone();
-            Rc::new(move || {
-                state
-                    .borrow()
-                    .history
-                    .last()
-                    .expect("History should not be empty")
-                    .clone()
-            })
-        },
-        clear_fn: {
-            let state = state.clone();
-            Rc::new(move || {
-                let mut state = state.borrow_mut();
-                let initial_route = state.initial_route.clone();
-                state.history.clear();
-                state.history.push(initial_route);
-            })
-        },
-        // Guests present their own immediate swaps and have no finger to follow.
-        begin_swipe_back_fn: Rc::new(|| None),
-        open_url_fn: Rc::new(|_| false),
-        set_route_fn: Rc::new(move |route| {
-            let mut state = state.borrow_mut();
-            state.history.clear();
-            state.history.push(route);
-        }),
     }
 }
 

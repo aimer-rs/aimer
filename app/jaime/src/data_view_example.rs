@@ -202,8 +202,6 @@ impl Widget for DataViewExample {
     }
 }
 
-impl aimer::PortableWidget for DataViewExample {}
-
 /// Builds the data-view example without starting an application.
 pub fn data_view_example() -> impl Widget {
     DataViewExample::new()

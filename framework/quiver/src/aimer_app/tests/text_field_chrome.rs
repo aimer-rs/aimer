@@ -250,7 +250,6 @@ impl Widget for Rebuilding {
             .boxed()
     }
 }
-impl aimer_widget::PortableWidget for Rebuilding {}
 
 #[test]
 fn a_builder_keeps_hearing_about_the_field_after_its_parent_rebuilds() {

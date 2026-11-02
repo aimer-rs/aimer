@@ -92,9 +92,6 @@ fn with_impact_generator(style: ImpactStyle, f: impl FnOnce(&UIImpactFeedbackGen
     });
 }
 
-/// Whether this backend can produce feedback at all.
-pub(crate) const SUPPORTED: bool = true;
-
 pub(crate) fn prepare_impact(style: ImpactStyle) {
     with_impact_generator(style, |generator| generator.prepare());
 }

@@ -6,7 +6,7 @@ use aimer_canvas::Canvas;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutElement,
-    PortableWidget, Rebuildable, VisitorElement, Widget,
+    Rebuildable, VisitorElement, Widget,
 };
 
 /// Application code that draws into the box of a [`CustomPaint`].
@@ -150,8 +150,6 @@ impl<P> CustomPaint<P> {
         self
     }
 }
-
-impl<P: CanvasPainter> PortableWidget for CustomPaint<P> {}
 
 impl<P: CanvasPainter> Widget for CustomPaint<P> {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {

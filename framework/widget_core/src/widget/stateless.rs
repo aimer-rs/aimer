@@ -66,41 +66,9 @@ pub trait StatelessWidget {
 /// identity in the retained tree. It does not change layout, drawing, events,
 /// or child identity. If the produced element already reports the requested
 /// name, no extra wrapper is created.
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(
-    manual_lowering,
-    materializer = materialize_named_widget
-)]
 pub struct NamedWidget {
-    #[portable_child]
     inner: AnyWidget,
-    #[portable_skip]
     name: &'static str,
-}
-
-/// Materializes the portable form of [`NamedWidget`] as its child.
-///
-/// The debug name is intentionally not part of the portable schema. Returning
-/// the already materialized child keeps layout, events, and reconciliation
-/// behavior bounded and transparent rather than inventing a name that could be
-/// wrong for the source wrapper.
-fn materialize_named_widget(
-    _document: &crate::portable::__anteros::WidgetDocumentView<'_>,
-    _node: crate::portable::__anteros::WidgetNodeView<'_>,
-    mut children: Vec<AnyWidget>,
-) -> Result<AnyWidget, crate::portable::PortableMaterializeError> {
-    if children.len() != 1 {
-        return Err(crate::portable::PortableMaterializeError::InvalidChildCount {
-            expected: 1,
-            actual: children.len(),
-        });
-    }
-    children
-        .pop()
-        .ok_or(crate::portable::PortableMaterializeError::InvalidChildCount {
-            expected: 1,
-            actual: 0,
-        })
 }
 
 impl NamedWidget {
@@ -127,17 +95,6 @@ impl Widget for NamedWidget {
 
     fn debug_name(&self) -> &'static str {
         self.name
-    }
-}
-
-impl crate::widget::PortableWidget for NamedWidget {
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut crate::portable::PortableBuildContext,
-        source: crate::portable::SourceFingerprint,
-    ) -> Result<crate::portable::PortableNodeId, crate::portable::PortableBuildError> {
-        self.inner.into_portable_node(ctx, source)
     }
 }
 
@@ -462,13 +419,7 @@ impl VisitorElement for StatelessElement {
 
 #[cfg(test)]
 mod tests {
-    use aimer_anteros::{ModelLimits, Version, WidgetDocument, WidgetNode, WidgetSchemaId};
-
     use super::*;
-    use crate::portable::{
-        PortableNativeWidget, PortableWidgetSchema, linked_portable_native_widget_registrations,
-    };
-    use crate::PortableWidget;
 
     #[cfg(not(target_arch = "wasm32"))]
     fn dummy_async_handle() -> tokio::runtime::Handle {
@@ -1012,69 +963,4 @@ mod tests {
         assert_eq!(builds_with_consumer.get(), 2);
     }
 
-    #[test]
-    fn named_widget_materializes_a_single_child_as_a_transparent_wrapper() {
-        const LIMITS: ModelLimits = ModelLimits::new(1_024, 4, 8, 8).max_widget_depth(2);
-        let nodes = [WidgetNode::new(WidgetSchemaId::new(1), Version::new(1, 0))];
-        let image = WidgetDocument::new(0, 0, 0, &nodes, &[], &[])
-            .encode(LIMITS)
-            .unwrap();
-        let document = aimer_anteros::WidgetDocumentView::decode(&image, LIMITS).unwrap();
-        let node = document.node(0).unwrap();
-        let materialized = <NamedWidget as PortableNativeWidget>::materialize_widget(
-            &document,
-            node,
-            vec![crate::ErrorWidget::new("child").boxed()],
-        )
-        .unwrap();
-
-        assert_eq!(Widget::debug_name(&materialized), "ErrorWidget");
-        let widget_type = <NamedWidget as PortableWidgetSchema>::SCHEMA.widget().id();
-        assert!(linked_portable_native_widget_registrations()
-            .iter()
-            .any(|registration| registration.widget_type() == widget_type));
-        assert!(matches!(
-            <NamedWidget as PortableNativeWidget>::materialize_widget(
-                &document,
-                document.node(0).unwrap(),
-                vec![],
-            ),
-            Err(crate::portable::PortableMaterializeError::InvalidChildCount {
-                expected: 1,
-                actual: 0,
-            }),
-        ));
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn named_widget_guest_lowering_is_transparent_to_its_inner_widget() {
-        use crate::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-            StableId128,
-        };
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-            PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap();
-        let root = NamedWidget::new(crate::ErrorWidget::new("child").boxed(), "NamedWidgetName")
-            .to_portable_node(
-                &mut context,
-                SourceFingerprint::new(StableId128::from_bytes([1; 16])),
-            )
-            .unwrap();
-        let graph = context.finish_graph(root).unwrap();
-
-        assert_eq!(graph.node_count(), 1);
-        assert_eq!(
-            graph.node(root).unwrap().widget_type(),
-            <crate::ErrorWidget as PortableWidgetSchema>::SCHEMA
-                .widget()
-                .id(),
-        );
-    }
 }

@@ -12,10 +12,6 @@ use aimer_events::window::request_animation_frame;
 use aimer_utils::callback::{Callback, CallbackExecutor};
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
-use aimer_widget::portable::__anteros::{PropertyId, WidgetDocumentView, WidgetNodeView};
-use aimer_widget::portable::{
-    PortableMaterializeError, optional_materialized_property, required_materialized_property,
-};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventResult, LayoutElement, PointerKey,
     Rebuildable, VisitorElement, Widget,
@@ -84,23 +80,15 @@ struct CallbackRule {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(aimer_widget::PortableWidget)]
-#[portable_widget(id = "aimer_svg::Svg", materializer = materialize_portable_svg)]
 pub struct Svg {
-    #[portable_skip]
     document: SvgDocument,
     source: String,
     width: Option<Dimension>,
     height: Option<Dimension>,
-    #[portable_skip]
     styles: Vec<StyleRule>,
-    #[portable_skip]
     hover_styles: Vec<StyleRule>,
-    #[portable_skip]
     pressed_styles: Vec<StyleRule>,
-    #[portable_skip]
     callbacks: Vec<CallbackRule>,
-    #[portable_skip]
     paint_bounded: bool,
 }
 
@@ -272,42 +260,6 @@ impl Svg {
     }
 }
 
-const PROPERTY_SVG_SOURCE: PropertyId =
-    PropertyId::from_canonical_name("aimer.property:aimer_svg::Svg:source");
-const PROPERTY_SVG_WIDTH: PropertyId =
-    PropertyId::from_canonical_name("aimer.property:aimer_svg::Svg:width");
-const PROPERTY_SVG_HEIGHT: PropertyId =
-    PropertyId::from_canonical_name("aimer.property:aimer_svg::Svg:height");
-
-fn materialize_portable_svg(
-    document: &WidgetDocumentView<'_>,
-    node: WidgetNodeView<'_>,
-    children: Vec<AnyWidget>,
-) -> Result<AnyWidget, PortableMaterializeError> {
-    if !children.is_empty() {
-        return Err(PortableMaterializeError::InvalidChildCount {
-            expected: 0,
-            actual: children.len(),
-        });
-    }
-    let source = required_materialized_property::<String>(document, &node, PROPERTY_SVG_SOURCE)?;
-    let svg_document = SvgDocument::from_svg(source).map_err(|_| {
-        PortableMaterializeError::InvalidPropertyValue {
-            property: PROPERTY_SVG_SOURCE,
-        }
-    })?;
-    let width = optional_materialized_property::<Dimension>(document, &node, PROPERTY_SVG_WIDTH)?;
-    let height = optional_materialized_property::<Dimension>(document, &node, PROPERTY_SVG_HEIGHT)?;
-    let mut widget = Svg::new(svg_document);
-    if let Some(width) = width {
-        widget = widget.width(width);
-    }
-    if let Some(height) = height {
-        widget = widget.height(height);
-    }
-    Ok(widget.boxed())
-}
-
 impl Widget for Svg {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         let paint_bounded = self.paint_bounded
@@ -358,24 +310,15 @@ impl Widget for Svg {
 ///                                            SvgStyle::new().fill(SvgColor::rgba8(0, 128, 255,
 ///                                                                                 255)));
 /// ```
-#[derive(aimer_widget::PortableWidget)]
-#[portable_widget(id = "aimer_svg::SvgAsset", schema_only)]
 pub struct SvgAsset {
-    #[portable_skip]
     key: Arc<str>,
     width: Option<Dimension>,
     height: Option<Dimension>,
-    #[portable_skip]
     styles: Vec<StyleRule>,
-    #[portable_skip]
     hover_styles: Vec<StyleRule>,
-    #[portable_skip]
     pressed_styles: Vec<StyleRule>,
-    #[portable_skip]
     callbacks: Vec<CallbackRule>,
-    #[portable_skip]
     loading_widget: Option<AnyWidget>,
-    #[portable_skip]
     error_widget: Option<AnyWidget>,
 }
 

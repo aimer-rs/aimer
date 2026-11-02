@@ -3,7 +3,7 @@
 use crate::decoration_box::{ChildMask, decoration_element_with};
 use crate::{BoxDecoration, Decoration};
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, AnyWidget, PortableWidget, RequiredChild, Widget};
+use aimer_widget::{AnyElement, AnyWidget, RequiredChild, Widget};
 
 /// Shows one decoration only where its child has coverage.
 ///
@@ -37,8 +37,6 @@ use aimer_widget::{AnyElement, AnyWidget, PortableWidget, RequiredChild, Widget}
 ///     .decoration(BackdropFilter::new().blur_radius(10.0).brightness(1.5))
 ///     .child(SizedBox::new().width(160).height(48));
 /// ```
-///
-/// Custom decoration widgets do not support portable lowering.
 ///
 /// # Examples
 ///
@@ -104,8 +102,6 @@ impl<D: Decoration> MaskedDecorationBox<D> {
         self.child(child).boxed()
     }
 }
-
-impl<D: Decoration + 'static, W: Widget> PortableWidget for MaskedDecorationBox<D, W> {}
 
 impl<D: Decoration + 'static, W: Widget> Widget for MaskedDecorationBox<D, W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

@@ -11,13 +11,11 @@ keywords = ["gui", "rust"]
 categories = ["development-tools", "gui"]
 
 [dependencies]
-aimer_anteros.workspace = true
 aimer_attribute.workspace = true
 aimer_events.workspace = true
 aimer_rubick.workspace = true
 aimer_venus.workspace = true
 aimer_widget.workspace = true
-aimer_wasm_guest = { workspace = true, optional = true }
 aimer_color.workspace = true
 aimer_container.workspace = true
 aimer_decoration.workspace = true
@@ -127,34 +125,6 @@ raster-thread = ["aimer_quiver/raster-thread"]
 
 # Collect the per-frame build / encode / present breakdown.
 frame-stats = ["aimer_quiver/frame-stats"]
-# Present the native Quiver window through Cupid's direct Metal backend.
-# Compile ordinary widgets through the hidden portable guest conversion path.
-# Generated shadow applications enable this feature; native applications do not.
-portable-guest = [
-    "dep:aimer_wasm_guest",
-    "aimer_widget/portable-guest",
-    "aimer_animation/portable-guest",
-    "aimer_provider/portable-guest",
-    "aimer_style/portable-guest",
-    "aimer_container/portable-guest",
-    "aimer_decoration/portable-guest",
-    "aimer_flex/portable-guest",
-    "aimer_grid/portable-guest",
-    "aimer_scroll/portable-guest",
-    "aimer_space/portable-guest",
-    "aimer_input/portable-guest",
-    "aimer_text/portable-guest",
-    "aimer_router/portable-guest",
-    "aimer_assets/portable-guest",
-    "aimer_svg/portable-guest",
-    "aimer_markdown/portable-guest",
-    "aimer_modal/portable-guest",
-    "aimer_dnd/portable-guest",
-    "aimer_ctxmenu/portable-guest",
-]
-# Compile the native development host with the authenticated reload listener.
-# The CLI enables this only for `aimer +nightly run -Z hot-reload`.
-wasm-hot-reload = ["aimer_quiver/wasm-hot-reload", "aimer_macro/hot-reload"]
 # Highlight fenced code blocks with the tree-sitter backed `arborium` instead
 # of the lightweight `synoptic` default. Better highlighting, heavier build.
 markdown-arborium = ["aimer_markdown/arborium"]
@@ -164,8 +134,6 @@ markdown-syntect = ["aimer_markdown/syntect"]
 
 # Every user-facing feature at once, for apps that want the whole framework.
 # Left out on purpose:
-# * hot reload (`wasm-hot-reload`) and `portable-guest`, which only the CLI's
-#   development host and generated shadow applications enable;
 # * `venus-debug`, `force-scalar` and `frame-stats`, which are diagnostics and
 #   benchmark controls (`force-scalar` slows the flex path on purpose);
 # * `markdown-arborium`: with `markdown-syntect` on, syntect is the highlighter
@@ -231,6 +199,14 @@ members = [
     "services/passkey",
     # graphic
     "graphic/cupid",
+    "graphic/primitives",
+    "graphic/scene",
+    "graphic/pipelines/core",
+    "graphic/pipelines/rect",
+    "graphic/pipelines/image",
+    "graphic/pipelines/svg",
+    "graphic/pipelines/text",
+    "graphic/pipelines/material",
     "graphic/vectors/svg",
     "graphic/vectors/font",
     "graphic/cupid_gpu",
@@ -246,7 +222,6 @@ members = [
     # framework
     "framework/quiver",
     "framework/element",
-    "framework/portable",
     "framework/widget_core",
     "framework/async_builder",
     "framework/focusable",
@@ -286,18 +261,13 @@ members = [
     "routing/router",
     "routing/navigation",
     # host
-    "host/anteros",
     "host/frame_stats",
     "host/platform",
-    "host/hot_reload",
     "host/window",
     # app
     "app/jaime",
     # experiments
     "experiments/laboratory",
-    "experiments/reload_protocol",
-    "experiments/reload_server",
-    "experiments/wasm_guest",
     "experiments/polymorphism"
 ]
 
@@ -308,6 +278,14 @@ aimer_cupid = { path = "graphic/cupid", default-features = false, features = [
     "native",
 ] }
 aimer_simd = { path = "cores/simd" }
+aimer_primitives = { path = "graphic/primitives" }
+aimer_scene = { path = "graphic/scene" }
+aimer_pipeline_core = { path = "graphic/pipelines/core" }
+aimer_rect_pipeline = { path = "graphic/pipelines/rect" }
+aimer_image_pipeline = { path = "graphic/pipelines/image" }
+aimer_svg_pipeline = { path = "graphic/pipelines/svg" }
+aimer_text_pipeline = { path = "graphic/pipelines/text" }
+aimer_material_pipeline = { path = "graphic/pipelines/material" }
 aimer_cupid_svg = { path = "graphic/vectors/svg" }
 aimer_cupid_font = { path = "graphic/vectors/font" }
 aimer_cupid_gpu = { path = "graphic/cupid_gpu" }
@@ -324,7 +302,6 @@ aimer_quiver = { path = "framework/quiver", default-features = false }
 aimer_frame_stats = { path = "host/frame_stats" }
 aimer_platform = { path = "host/platform" }
 aimer_render = { path = "graphic/render", default-features = false }
-aimer_hot_reload = { path = "host/hot_reload" }
 aimer_window = { path = "host/window" }
 aimer_canvas = { path = "graphic/canvas" }
 aimer_animation = { path = "framework/animation" }
@@ -336,7 +313,6 @@ aimer_grid = { path = "layout/grid" }
 aimer_scroll = { path = "layout/scroll" }
 aimer_space = { path = "layout/space" }
 aimer_widget = { path = "framework/widget" }
-aimer_portable = { path = "framework/portable" }
 aimer_widget_core = { path = "framework/widget_core" }
 aimer_async_builder = { path = "framework/async_builder" }
 aimer_focusable = { path = "framework/focusable" }
@@ -383,10 +359,6 @@ aimer_haptics = { path = "native/haptics" }
 aimer_device = { path = "native/device" }
 aimer_screen = { path = "native/screen" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
-aimer_anteros = { path = "host/anteros" }
-aimer_reload_protocol = { path = "experiments/reload_protocol" }
-aimer_reload_server = { path = "experiments/reload_server" }
-aimer_wasm_guest = { path = "experiments/wasm_guest" }
 
 # Generic Dependencies
 
@@ -456,12 +428,6 @@ unicode-bidi = "0.3.18"
 unicode-linebreak = "0.1.5"
 unicode-segmentation = "1.13.3"
 
-# Hot Reload - Experimental Feature
-
-linkme = "0.3.35"
-wasmi = { version = "1.1.0", default-features = false, features = ["std"] }
-wasmparser = { version = "0.239.0", default-features = false }
-
 # Web Deps
 
 wasm-bindgen = "0.2.126"
@@ -525,8 +491,6 @@ arboard = "3.6.1"
 thiserror = "2.0.18"
 toml = "1.1.2+spec-1.1.0"
 tempfile = "3.27.0"
-sha2 = "0.11.0"
-hex = "0.4.3"
 ring = "0.17.14"
 subtle = "2.6.1"
 zeroize = "1.8.2"
@@ -575,9 +539,3 @@ opt-level = 3
 
 [profile.dev.package.miniz_oxide]
 opt-level = 3
-
-
-[lints.rust]
-unexpected_cfgs = { level = "allow", check-cfg = ['cfg(aimer_portable_guest)'] }
-[workspace.lints.rust]
-unexpected_cfgs = { level = "allow", check-cfg = ['cfg(aimer_portable_guest)'] }

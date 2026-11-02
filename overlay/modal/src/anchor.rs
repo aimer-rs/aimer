@@ -104,12 +104,8 @@ impl AnchorHandle {
 ///
 /// assert_eq!(trigger.handle_value(), handle);
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_modal::Anchor", schema_only)]
 pub struct Anchor<W = RequiredChild> {
-    #[portable_child]
     child: W,
-    #[portable_skip]
     handle: AnchorHandle,
 }
 

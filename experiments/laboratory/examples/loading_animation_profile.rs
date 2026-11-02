@@ -167,8 +167,6 @@ impl Widget for StatePage {
     }
 }
 
-impl aimer::PortableWidget for StatePage {}
-
 fn main() {
     // `LOADING_STATE_FRAMES=<n>` calls `set_state` before each of `n` frames of
     // the page above, flat out, so a sampler can attach.

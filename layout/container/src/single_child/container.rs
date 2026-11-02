@@ -19,9 +19,6 @@ pub use decoration::RetainedBoxDecoration;
 
 const LOCAL_V2_CONTAINER_EXTENT_LIMIT: f32 = 1_000_000.0;
 
-#[cfg(feature = "portable-guest")]
-use aimer_widget::portable::{PortableBuildContext, PortableBuildError, SourceFingerprint};
-
 /// A decorated single-child layout box with optional size, spacing, and color.
 ///
 /// Width and height default to [`Dimension::Auto`] and resolve within the
@@ -131,7 +128,7 @@ impl<D: Decoration + 'static> Container<RequiredChild, D> {
     ///
     /// The decoration paints over the box inside the margin, including padding.
     /// Its content insets reduce child layout; its optional clip confines child
-    /// painting. Custom decorations do not support portable lowering.
+    /// painting.
     ///
     /// # Examples
     ///
@@ -161,8 +158,7 @@ impl<D: Decoration + 'static> Container<RequiredChild, D> {
     /// Supplies decoration for retained native interaction state.
     ///
     /// The source must publish revisions and notify tree geometry changes as
-    /// required by [`RetainedBoxDecoration`]. This internal integration does
-    /// not support portable lowering.
+    /// required by [`RetainedBoxDecoration`].
     #[doc(hidden)]
     #[inline]
     pub fn retained_box_decoration(self, source: Rc<dyn RetainedBoxDecoration>) -> Container {
@@ -251,8 +247,6 @@ impl<W: Widget, D: Decoration + 'static> Widget for Container<W, D> {
         .boxed()
     }
 }
-
-mod portable;
 
 /// #### Low level container element.
 ///

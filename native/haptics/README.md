@@ -1,15 +1,11 @@
 # aimer_haptics
 
-Haptic feedback for Aimer, in two layers that share one crate.
+Haptic feedback for Aimer.
 
 - **[`Haptics`]** — a `cfg`-free function-style API for widgets
   (`impact`, `selection`, `notification`, `prepare_impact`, `play_pattern`).
   Every call is safe on every target and does nothing where there is no
   hardware or no backend, so call sites never need a platform guard.
-- **[`HapticFeedback`] / [`HapticKind`]** — the portable capability contract
-  shared by native builds and interpreted guests, with
-  [`NativeHapticsProvider`] as the permanent-host implementation. It answers
-  `Unsupported` on targets without a backend instead of pretending.
 
 ## Platforms
 

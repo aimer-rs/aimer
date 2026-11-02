@@ -22,7 +22,6 @@ struct Captured<W> {
     child: W,
     capture: Rc<RefCell<Capture>>,
 }
-impl<W: Widget> aimer::PortableWidget for Captured<W> {}
 impl<W: Widget> Widget for Captured<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         CapturedElement { child: self.child.to_element(ctx), capture: self.capture }.boxed()

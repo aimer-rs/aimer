@@ -4,8 +4,8 @@ use aimer_canvas::{Canvas, MaterialDrawRequest, MaterialKind};
 use aimer_decoration::{AnyDecor, BorderRadius, Decoration};
 use aimer_widget::base::{BuildContext, Color, ResolvedSize, Size, Vec2d};
 use aimer_widget::{
-    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, PortableWidget,
-    Rebuildable, RequiredChild, VisitorElement, Widget,
+    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable,
+    RequiredChild, VisitorElement, Widget,
 };
 
 /// The policy used by a material when deciding whether it may animate.
@@ -52,7 +52,7 @@ pub struct GlassMaterial {
 impl GlassMaterial {
     /// The default backdrop blur radius in logical pixels.
     pub const DEFAULT_BLUR_RADIUS: f32 = 16.0;
-    /// The largest blur radius accepted by the portable material contract.
+    /// The largest blur radius accepted by the material contract.
     pub const MAX_BLUR_RADIUS: f32 = 96.0;
     /// The largest corner radius accepted before it is resolved against bounds.
     pub const MAX_CORNER_RADIUS: f32 = 1_024.0;
@@ -66,9 +66,9 @@ impl GlassMaterial {
     pub const MAX_EDGE_LIGHTING: f32 = 1.0;
     /// The largest normalized surface highlight strength.
     pub const MAX_SPECULAR_HIGHLIGHT: f32 = 1.0;
-    /// The minimum number of samples in the portable quality policy.
+    /// The minimum number of samples in the quality policy.
     pub const MIN_QUALITY: u8 = 1;
-    /// The maximum number of samples in the portable quality policy.
+    /// The maximum number of samples in the quality policy.
     pub const MAX_QUALITY: u8 = 4;
 
     /// Creates the restrained default translucent surface.
@@ -654,8 +654,6 @@ impl Default for Glass {
         Self::new()
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for Glass<W> {}
 
 impl<W: Widget + 'static> Widget for Glass<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

@@ -320,15 +320,7 @@ fn retained_layer_dimensions(rect: Rect, max_dimension: u32) -> Option<(u32, u32
         .then_some((width as u32, height as u32))
 }
 
-pub struct SvgRenderItem {
-    pub scene: Arc<SvgScene>,
-    pub destination: Rect,
-    pub overrides: Arc<[SvgNodeStyleOverride]>,
-    pub world_transform: Mat3,
-    pub clip_rect: [f32; 4],
-    pub clip_border_radius: [f32; 4],
-    pub opacity: f32,
-}
+pub use aimer_svg_pipeline::SvgRenderItem;
 
 fn resolve_svg_item(
     scene: Arc<SvgScene>,

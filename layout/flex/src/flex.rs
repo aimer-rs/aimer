@@ -307,8 +307,6 @@ mod lazy_tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for DispatchProbeWidget {}
-
     struct TransparentDispatchWrapper {
         child: AnyElement,
     }
@@ -982,29 +980,10 @@ mod wrap_retained_tests;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_widget::base::BuildContext;
-#[cfg(feature = "portable-guest")]
-use aimer_widget::portable::{PortableBuildContext, PortableBuildError, PortableEncodeProperty};
-use aimer_widget::portable::{
-    PortableMaterializeError, PortableMaterializeProperty, PortableProperty,
-    PortablePropertyConversion, PortablePropertyReflection,
-};
 pub use flex_child::Expanded;
 pub use flex_list::{FlexList, ListFlex};
 pub use layout_transition::{FlexGeometrySnapshot, FlexItemGeometry, FlexSnapshotError};
 
-#[cfg(test)]
-mod portable_materializer_tests {
-    use aimer_widget::portable::PortableNativeWidget;
-
-    use super::Expanded;
-
-    #[test]
-    fn expanded_exposes_a_native_materializer_for_hot_reload_hosts() {
-        fn assert_materializer<T: PortableNativeWidget>() {}
-
-        assert_materializer::<Expanded>();
-    }
-}
 pub use raw_flex::Flex;
 pub use row_column::{Column, Row};
 
@@ -1061,248 +1040,12 @@ pub enum OverflowBehavior {
     Visible,
 }
 
-impl PortableProperty for BoxAlignment {
-    const REFLECTION: PortablePropertyReflection = PortablePropertyReflection::new(
-        aimer_widget::portable::__anteros::PropertyValueKind::I64,
-        PortablePropertyConversion::SignedInteger {
-            minimum: 0,
-            maximum: 2,
-        },
-    );
-}
 
-impl PortableProperty for JustifyContent {
-    const REFLECTION: PortablePropertyReflection = PortablePropertyReflection::new(
-        aimer_widget::portable::__anteros::PropertyValueKind::I64,
-        PortablePropertyConversion::SignedInteger {
-            minimum: 0,
-            maximum: 5,
-        },
-    );
-}
 
-impl PortableProperty for OverflowBehavior {
-    const REFLECTION: PortablePropertyReflection = PortablePropertyReflection::new(
-        aimer_widget::portable::__anteros::PropertyValueKind::I64,
-        PortablePropertyConversion::SignedInteger {
-            minimum: 0,
-            maximum: 2,
-        },
-    );
-}
 
-#[cfg(feature = "portable-guest")]
-impl PortableEncodeProperty for BoxAlignment {
-    #[inline]
-    fn encode_property(
-        self,
-        _context: &mut PortableBuildContext,
-    ) -> Result<aimer_widget::portable::__anteros::PropertyValue, PortableBuildError> {
-        Ok(aimer_widget::portable::__anteros::PropertyValue::I64(
-            match self {
-                Self::Start => 0,
-                Self::Center => 1,
-                Self::End => 2,
-            },
-        ))
-    }
-}
 
-#[cfg(feature = "portable-guest")]
-impl PortableEncodeProperty for JustifyContent {
-    #[inline]
-    fn encode_property(
-        self,
-        _context: &mut PortableBuildContext,
-    ) -> Result<aimer_widget::portable::__anteros::PropertyValue, PortableBuildError> {
-        Ok(aimer_widget::portable::__anteros::PropertyValue::I64(
-            match self {
-                Self::Start => 0,
-                Self::Center => 1,
-                Self::End => 2,
-                Self::SpaceBetween => 3,
-                Self::SpaceAround => 4,
-                Self::SpaceEvenly => 5,
-            },
-        ))
-    }
-}
 
-#[cfg(feature = "portable-guest")]
-impl PortableEncodeProperty for OverflowBehavior {
-    #[inline]
-    fn encode_property(
-        self,
-        _context: &mut PortableBuildContext,
-    ) -> Result<aimer_widget::portable::__anteros::PropertyValue, PortableBuildError> {
-        Ok(aimer_widget::portable::__anteros::PropertyValue::I64(
-            match self {
-                Self::Hidden => 0,
-                Self::Wrap => 1,
-                Self::Visible => 2,
-            },
-        ))
-    }
-}
 
-impl PortableMaterializeProperty for BoxAlignment {
-    fn from_awir(
-        _document: &aimer_widget::portable::__anteros::WidgetDocumentView<'_>,
-        property: aimer_widget::portable::__anteros::PropertyId,
-        value: aimer_widget::portable::__anteros::PropertyValue,
-    ) -> Result<Self, PortableMaterializeError> {
-        match value {
-            aimer_widget::portable::__anteros::PropertyValue::I64(0) => Ok(Self::Start),
-            aimer_widget::portable::__anteros::PropertyValue::I64(1) => Ok(Self::Center),
-            aimer_widget::portable::__anteros::PropertyValue::I64(2) => Ok(Self::End),
-            aimer_widget::portable::__anteros::PropertyValue::I64(_) => {
-                Err(PortableMaterializeError::InvalidPropertyValue { property })
-            }
-            _ => Err(PortableMaterializeError::InvalidPropertyType { property }),
-        }
-    }
-}
 
-impl PortableMaterializeProperty for JustifyContent {
-    fn from_awir(
-        _document: &aimer_widget::portable::__anteros::WidgetDocumentView<'_>,
-        property: aimer_widget::portable::__anteros::PropertyId,
-        value: aimer_widget::portable::__anteros::PropertyValue,
-    ) -> Result<Self, PortableMaterializeError> {
-        match value {
-            aimer_widget::portable::__anteros::PropertyValue::I64(0) => Ok(Self::Start),
-            aimer_widget::portable::__anteros::PropertyValue::I64(1) => Ok(Self::Center),
-            aimer_widget::portable::__anteros::PropertyValue::I64(2) => Ok(Self::End),
-            aimer_widget::portable::__anteros::PropertyValue::I64(3) => Ok(Self::SpaceBetween),
-            aimer_widget::portable::__anteros::PropertyValue::I64(4) => Ok(Self::SpaceAround),
-            aimer_widget::portable::__anteros::PropertyValue::I64(5) => Ok(Self::SpaceEvenly),
-            aimer_widget::portable::__anteros::PropertyValue::I64(_) => {
-                Err(PortableMaterializeError::InvalidPropertyValue { property })
-            }
-            _ => Err(PortableMaterializeError::InvalidPropertyType { property }),
-        }
-    }
-}
 
-impl PortableMaterializeProperty for OverflowBehavior {
-    fn from_awir(
-        _document: &aimer_widget::portable::__anteros::WidgetDocumentView<'_>,
-        property: aimer_widget::portable::__anteros::PropertyId,
-        value: aimer_widget::portable::__anteros::PropertyValue,
-    ) -> Result<Self, PortableMaterializeError> {
-        match value {
-            aimer_widget::portable::__anteros::PropertyValue::I64(0) => Ok(Self::Hidden),
-            aimer_widget::portable::__anteros::PropertyValue::I64(1) => Ok(Self::Wrap),
-            aimer_widget::portable::__anteros::PropertyValue::I64(2) => Ok(Self::Visible),
-            aimer_widget::portable::__anteros::PropertyValue::I64(_) => {
-                Err(PortableMaterializeError::InvalidPropertyValue { property })
-            }
-            _ => Err(PortableMaterializeError::InvalidPropertyType { property }),
-        }
-    }
-}
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_layout_tests {
-    use aimer_widget::base::BuildContext;
-    use aimer_widget::portable::__anteros::{
-        PropertyValue, Version, WIDGET_SIZED_BOX, WidgetDocumentView,
-    };
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableLimits, PortableWidgetLimits, PortableWidgetSchema,
-        SourceFingerprint, StableId128,
-    };
-    use aimer_widget::{AnyElement, ErrorWidget, PortableWidget, Widget};
-
-    use super::{Expanded, Flex, FlexDirection, ListFlex};
-
-    struct Leaf;
-
-    impl Widget for Leaf {
-        fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            ErrorWidget::new("portable leaf").to_element(ctx)
-        }
-    }
-
-    impl PortableWidget for Leaf {
-        fn to_portable_node(
-            self,
-            ctx: &mut PortableBuildContext,
-            source: SourceFingerprint,
-        ) -> Result<
-            aimer_widget::portable::PortableNodeId,
-            aimer_widget::portable::PortableBuildError,
-        > {
-            ctx.push_node(WIDGET_SIZED_BOX, Version::new(1, 0), None, source, &[], &[])
-        }
-    }
-
-    fn context() -> PortableBuildContext {
-        PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(32, 32, 32, 32, 1_024, 8_192),
-            PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap()
-    }
-
-    fn source() -> SourceFingerprint {
-        SourceFingerprint::new(StableId128::from_bytes([0x21; 16]))
-    }
-
-    fn assert_lowered<W>(widget: W, expected_children: usize, expected_properties: usize)
-    where
-        W: Widget + PortableWidget + PortableWidgetSchema,
-    {
-        let mut ctx = context();
-        let root = widget.to_portable_node(&mut ctx, source()).unwrap();
-        let document = ctx.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        assert_eq!(node.widget_type(), W::SCHEMA.widget().id());
-        assert_eq!(node.properties().count(), expected_properties);
-        assert_eq!(node.children().count(), expected_children);
-    }
-
-    #[test]
-    fn expanded_lowers_flex_property_and_required_child() {
-        let mut ctx = context();
-        let root = Expanded::new()
-            .flex(2.5)
-            .child(Leaf)
-            .to_portable_node(&mut ctx, source())
-            .unwrap();
-        let document = ctx.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        assert_eq!(
-            node.widget_type(),
-            <Expanded<Leaf> as PortableWidgetSchema>::SCHEMA
-                .widget()
-                .id()
-        );
-        assert_eq!(
-            node.properties().next().unwrap().value(),
-            PropertyValue::F64(2.5)
-        );
-        assert_eq!(node.children().count(), 1);
-    }
-
-    #[test]
-    fn flex_lowers_collection_children_without_native_construction() {
-        assert_lowered(
-            Flex::new().direction(FlexDirection::Row).children([Leaf]),
-            1,
-            0,
-        );
-    }
-
-    #[test]
-    fn list_flex_lowers_data_builder_children() {
-        let list: ListFlex<u8, _> = super::Column::new().list([1_u8, 2]).builder(|_| Leaf);
-        assert_lowered(list, 2, 0);
-    }
-}

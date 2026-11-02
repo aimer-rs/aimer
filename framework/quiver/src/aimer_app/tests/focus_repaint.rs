@@ -74,7 +74,6 @@ impl Widget for Boxes {
             .boxed()
     }
 }
-impl aimer_widget::PortableWidget for Boxes {}
 
 fn containers<W: Widget + 'static>(
     element: &dyn Element,

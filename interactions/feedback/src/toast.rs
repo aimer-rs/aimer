@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, PortableWidget, Widget};
+use aimer_widget::{AnyElement, Widget};
 
 use super::clock::Clock;
 use super::overlay::{
@@ -208,8 +208,6 @@ impl Widget for Toast {
         "Toast"
     }
 }
-
-impl PortableWidget for Toast {}
 
 /// Compatibility name for the canonical [`Toast`] state model.
 pub type Snackbar = Toast;

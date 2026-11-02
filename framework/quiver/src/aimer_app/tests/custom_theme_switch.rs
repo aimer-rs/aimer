@@ -95,8 +95,6 @@ impl Widget for Row_ {
     }
 }
 
-impl aimer_widget::PortableWidget for Row_ {}
-
 struct Section {
     seen: Seen,
 }
@@ -137,8 +135,6 @@ impl Widget for Section {
         .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Section {}
 
 struct ShellState {
     split: bool,
@@ -196,8 +192,6 @@ impl Widget for Shell {
             .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Shell {}
 
 fn run_for<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, millis: u64) {
     let end = aimer_time::Instant::now() + Duration::from_millis(millis);

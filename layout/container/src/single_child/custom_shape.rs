@@ -10,8 +10,8 @@ use aimer_shape::{
 };
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, Drawable, Element, LayoutElement, PortableWidget,
-    RequiredChild, VisitorElement, Widget,
+    AnyElement, AnyWidget, ChildBuilder, Drawable, Element, LayoutElement, RequiredChild,
+    VisitorElement, Widget,
 };
 
 /// A renderer-neutral shape background that retains one child subtree.
@@ -170,8 +170,6 @@ impl<W: Widget + 'static> Widget for CustomShape<W> {
         .boxed()
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for CustomShape<W> {}
 
 #[derive(EventElement, Rebuildable)]
 struct RawCustomShape {

@@ -4,18 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-portable-guest = [
-    "dep:aimer_anteros",
-    "aimer_style/portable-guest",
-    "aimer_widget/portable-guest",
-]
 # Keeps the release benchmark able to compare the optimized kernel with the
 # compiler-optimized scalar implementation on the same workload.
 force-scalar = []
 
 [dependencies]
 aimer_time.workspace = true
-aimer_anteros = { workspace = true, optional = true }
 aimer_attribute.workspace = true
 aimer_animation.workspace = true
 aimer_cupid.workspace = true

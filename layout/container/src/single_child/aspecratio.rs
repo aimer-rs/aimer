@@ -1,20 +1,14 @@
 use aimer_attribute::size::ResolvedSize;
 use aimer_attribute::{BoxConstraint, Size};
-use aimer_macro::{EventElement, PortableValue, PortableWidget, Rebuildable};
+use aimer_macro::{EventElement, Rebuildable};
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, LayoutElement, RequiredChild, VisitorElement, Widget,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PortableValue)]
-#[portable_value(
-    id = "aimer.value:aimer_container::single_child::RatioOption",
-    max_encoded_bytes = 16
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RatioOption {
-    #[portable_value(tag = 0)]
     Width,
-    #[portable_value(tag = 1)]
     Height,
 }
 
@@ -30,14 +24,9 @@ impl Default for RatioOption {
 ///
 /// Attach a child with [`AspectRatio::child`] to retain its concrete type, or
 /// with [`AspectRatio::box_child`] when branches need a shared erased type.
-#[derive(PortableWidget)]
-#[portable_widget(id = "aimer_container::single_child::AspectRatio")]
 pub struct AspectRatio<W = RequiredChild> {
-    #[portable_optional]
     pub aspect_ratio: f32,
-    #[portable_optional]
     ratio_option: RatioOption,
-    #[portable_child]
     pub child: W,
 }
 
@@ -326,36 +315,3 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use super::{AspectRatio, RatioOption};
-    use aimer_widget::RequiredChild;
-    use aimer_widget::portable::{PortableValue, PortableWidgetSchema};
-
-    #[test]
-    fn aspect_ratio_schema_reflects_both_layout_controls() {
-        let schema = <AspectRatio<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-
-        assert_eq!(
-            schema.widget().canonical_name(),
-            "aimer.widget:aimer_container::single_child::AspectRatio"
-        );
-        assert_eq!(schema.properties().len(), 2);
-        assert_eq!(
-            schema.properties()[0].canonical_name(),
-            "aimer.property:aimer_container::single_child::AspectRatio:aspect_ratio"
-        );
-        assert_eq!(
-            schema.properties()[1].canonical_name(),
-            "aimer.property:aimer_container::single_child::AspectRatio:ratio_option"
-        );
-        assert_eq!(
-            schema.children(),
-            aimer_anteros::ChildCardinality::exactly(1)
-        );
-        assert_eq!(
-            <RatioOption as PortableValue>::SCHEMA.canonical_name(),
-            "aimer.value:aimer_container::single_child::RatioOption"
-        );
-    }
-}

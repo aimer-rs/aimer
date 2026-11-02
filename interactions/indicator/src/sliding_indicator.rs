@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use aimer_space::Stack;
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, AnyWidget, Element, PortableWidget, RequiredChild, Widget};
+use aimer_widget::{AnyElement, AnyWidget, Element, RequiredChild, Widget};
 
 use crate::controller::IndicatorController;
 use crate::layer::IndicatorLayerWidget;
@@ -179,8 +179,6 @@ impl<W: Widget + 'static> Widget for SlidingIndicator<W> {
         }
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for SlidingIndicator<W> {}
 
 #[cfg(test)]
 mod tests {

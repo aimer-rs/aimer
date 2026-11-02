@@ -70,7 +70,6 @@ arborium = { workspace = true, features = [
 
 [features]
 default = []
-portable-guest = ["aimer_widget/portable-guest", "aimer_style/portable-guest"]
 # Opt into the tree-sitter backed `arborium` highlighter. It understands code
 # far better than the default regex based `synoptic` backend, at the cost of
 # pulling in a tree-sitter grammar per language and a much heavier build.
@@ -88,5 +87,3 @@ aimer_cupid.workspace = true
 tokio.workspace = true
 winit.workspace = true
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }

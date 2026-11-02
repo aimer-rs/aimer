@@ -107,10 +107,6 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
         AimerNativePlatformEvent::RenderWorkerReady => {}
         // Answered by the multi-window host, which owns the windows they name.
         AimerNativePlatformEvent::WindowFrameReady(_) | AimerNativePlatformEvent::WindowRequests => {}
-        AimerNativePlatformEvent::HotReloadCallbackReady => {
-            crate::aimer_app::callback_ready_delivered();
-            app.request_full_redraw();
-        }
     }
 }
 

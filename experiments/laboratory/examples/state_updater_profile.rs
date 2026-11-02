@@ -135,8 +135,6 @@ impl StatefulWidget for ProfileWidget {
     }
 }
 
-impl aimer::PortableWidget for ProfileWidget {}
-
 impl Widget for ProfileWidget {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         StatefulElement::new_with_name(self, ctx, "StateUpdaterProfile", None)

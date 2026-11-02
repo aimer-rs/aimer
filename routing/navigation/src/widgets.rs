@@ -24,8 +24,8 @@ use aimer_text::Text;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, ChildBuilder, Drawable, Element, ErrorWidget, EventElement, EventResult,
-    Focusable, LayoutElement, PortableWidget, Rebuildable, RequiredChild, State, StateUpdater,
-    StatefulElement, StatefulWidget, VisitorElement, Widget,
+    Focusable, LayoutElement, Rebuildable, RequiredChild, State, StateUpdater, StatefulElement,
+    StatefulWidget, VisitorElement, Widget,
 };
 use std::rc::Rc;
 
@@ -400,8 +400,6 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for TabBarWidget<K> {
     }
 }
 
-impl<K: Clone + PartialEq + ToString + 'static> PortableWidget for TabBarWidget<K> {}
-
 impl<K: Clone + PartialEq + ToString + 'static> State<TabBarWidget<K>> for TabBarWidgetState<K> {
     fn init_state(&mut self, updater: StateUpdater<Self>)
     where
@@ -595,8 +593,6 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for NavigationMenuWidget<
         "NavigationMenuWidget"
     }
 }
-
-impl<K: Clone + PartialEq + ToString + 'static> PortableWidget for NavigationMenuWidget<K> {}
 
 impl<K: Clone + PartialEq + ToString + 'static> State<NavigationMenuWidget<K>>
     for NavigationMenuWidgetState<K>
@@ -858,8 +854,6 @@ impl<R: Route> Widget for RouteTabBarWidget<R> {
         "RouteTabBarWidget"
     }
 }
-
-impl<R: Route> PortableWidget for RouteTabBarWidget<R> {}
 
 impl<R: Route> State<RouteTabBarWidget<R>> for RouteTabBarWidgetState<R> {
     fn init_state(&mut self, updater: StateUpdater<Self>)
@@ -1211,8 +1205,6 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for TabViewWidget<K> {
     }
 }
 
-impl<K: Clone + PartialEq + ToString + 'static> PortableWidget for TabViewWidget<K> {}
-
 impl<K: Clone + PartialEq + ToString + 'static> State<TabViewWidget<K>> for TabViewWidgetState<K> {
     fn init_state(&mut self, updater: StateUpdater<Self>)
     where
@@ -1432,8 +1424,6 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for BreadcrumbsWidget<K> 
         "BreadcrumbsWidget"
     }
 }
-
-impl<K: Clone + PartialEq + ToString + 'static> PortableWidget for BreadcrumbsWidget<K> {}
 
 impl<K: Clone + PartialEq + ToString + 'static> State<BreadcrumbsWidget<K>>
     for BreadcrumbsWidgetState<K>
@@ -1737,8 +1727,6 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for StepperWidget<K> {
     }
 }
 
-impl<K: Clone + PartialEq + ToString + 'static> PortableWidget for StepperWidget<K> {}
-
 impl<K: Clone + PartialEq + ToString + 'static> State<StepperWidget<K>> for StepperWidgetState<K> {
     fn init_state(&mut self, updater: StateUpdater<Self>)
     where
@@ -1928,8 +1916,6 @@ impl NavigationKeyRelay {
         }
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for NavigationKeyRelay<W> {}
 
 impl<W: Widget + 'static> Widget for NavigationKeyRelay<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

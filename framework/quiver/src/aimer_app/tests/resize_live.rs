@@ -59,8 +59,6 @@ impl Widget for Layout {
     }
 }
 
-impl aimer_widget::PortableWidget for Layout {}
-
 fn find<'a>(element: &'a dyn Element, name: &str) -> Option<&'a dyn Element> {
     if element.debug_name() == name {
         return Some(element);

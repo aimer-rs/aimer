@@ -16,8 +16,7 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventResult, FocusNode, LayoutElement, PointerKey,
-    PortableWidget, Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget,
-    VisitorElement, Widget,
+    Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
 };
 
 use super::{
@@ -239,7 +238,6 @@ impl Widget for CalendarView {
         "CalendarView"
     }
 }
-impl PortableWidget for CalendarView {}
 
 struct CalendarSurface {
     runtime: Rc<CalendarRuntime>,
@@ -264,7 +262,6 @@ impl Widget for CalendarSurface {
         "RawCalendar"
     }
 }
-impl PortableWidget for CalendarSurface {}
 
 struct RawCalendar {
     runtime: Rc<CalendarRuntime>,
@@ -487,7 +484,6 @@ impl Drawable for RawCalendar {
     }
 }
 impl Rebuildable for RawCalendar {}
-impl PortableWidget for RawCalendar {}
 impl Widget for RawCalendar {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         Element::boxed(self)
@@ -644,7 +640,6 @@ impl Widget for DatePickerView {
         "DatePickerView"
     }
 }
-impl PortableWidget for DatePickerView {}
 
 struct DatePickerSurface {
     runtime: Rc<DatePickerRuntime>,
@@ -679,7 +674,6 @@ impl Widget for DatePickerSurface {
         "RawDatePicker"
     }
 }
-impl PortableWidget for DatePickerSurface {}
 
 struct RawDatePicker {
     runtime: Rc<DatePickerRuntime>,
@@ -1014,7 +1008,6 @@ impl Drawable for RawDatePicker {
     }
 }
 impl Rebuildable for RawDatePicker {}
-impl PortableWidget for RawDatePicker {}
 impl Widget for RawDatePicker {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         Element::boxed(self)
@@ -1189,8 +1182,6 @@ impl Widget for DateTimePickerView {
     }
 }
 
-impl PortableWidget for DateTimePickerView {}
-
 struct DateTimePickerSurface {
     runtime: Rc<DateTimePickerRuntime>,
     width: f32,
@@ -1227,8 +1218,6 @@ impl Widget for DateTimePickerSurface {
         "RawDateTimePicker"
     }
 }
-
-impl PortableWidget for DateTimePickerSurface {}
 
 struct RawDateTimePicker {
     runtime: Rc<DateTimePickerRuntime>,
@@ -1889,7 +1878,6 @@ impl Drawable for RawDateTimePicker {
 }
 
 impl Rebuildable for RawDateTimePicker {}
-impl PortableWidget for RawDateTimePicker {}
 
 impl Widget for RawDateTimePicker {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {

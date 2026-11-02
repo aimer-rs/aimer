@@ -205,8 +205,6 @@ impl DefaultCaret {
     }
 }
 
-impl aimer_widget::PortableWidget for DefaultCaret {}
-
 impl Widget for DefaultCaret {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         DefaultCaretWidget {
@@ -225,8 +223,6 @@ struct DefaultCaretWidget {
     context: CaretContext,
     color: Rc<Cell<Color>>,
 }
-
-impl aimer_widget::PortableWidget for DefaultCaretWidget {}
 
 impl Widget for DefaultCaretWidget {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
@@ -294,8 +290,6 @@ struct DefaultCaretPaint {
     context: CaretContext,
     color: Rc<Cell<Color>>,
 }
-
-impl aimer_widget::PortableWidget for DefaultCaretPaint {}
 
 impl Widget for DefaultCaretPaint {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {

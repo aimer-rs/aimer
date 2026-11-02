@@ -109,8 +109,6 @@ impl Widget for ProbeWidget {
     }
 }
 
-impl aimer_widget::PortableWidget for ProbeWidget {}
-
 fn open(
     probe: &Rc<Probe>,
     size: PhysicalSize<u32>,
@@ -312,8 +310,6 @@ impl Widget for NestedProbes {
             .to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for NestedProbes {}
 
 fn open_nested(
     size: PhysicalSize<u32>,

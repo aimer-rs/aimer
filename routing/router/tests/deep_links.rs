@@ -1,8 +1,10 @@
 use aimer_events::link::deliver_link;
 use aimer_router::*;
 use aimer_widget::base::{BuildContext, ResolvedSize, WindowHandle};
-use aimer_widget::{AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement,
-    PortableWidget, Rebuildable, VisitorElement, Widget};
+use aimer_widget::{
+    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable,
+    VisitorElement, Widget,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 enum Screen { Home, Topic(u32), Settings }
@@ -31,7 +33,6 @@ impl Router for Screen {
 }
 
 struct Leaf(Screen);
-impl PortableWidget for Leaf {}
 impl Widget for Leaf {
     fn to_element(self, _: &BuildContext) -> AnyElement { Element::boxed(self) }
 }

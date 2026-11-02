@@ -9,9 +9,6 @@ aimer_tls.workspace = true
 winit.workspace = true
 aimer_attribute.workspace = true
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
-
 [target.'cfg(target_os = "android")'.dependencies]
 jni.workspace = true
 ndk-context.workspace = true

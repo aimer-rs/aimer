@@ -689,8 +689,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for Counting {}
-
     fn source(built: &Rc<Cell<usize>>) -> WindowedChildren<u32, impl Fn(&u32) -> Counting + use<>> {
         sized_source(100_000, built)
     }

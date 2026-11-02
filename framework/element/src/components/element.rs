@@ -10,7 +10,7 @@ use aimer_cupid::damage_region::{DamageRect, DamageSet};
 use aimer_cupid::draw_cmd_v2::{RenderNodeId, RenderPaintSource, RenderTree};
 use aimer_cupid::utilities::{IdBuildHasher, Rect};
 use aimer_events::element::{ElementEvent, KeyAction, NamedKey};
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+#[cfg(not(target_arch = "wasm32"))]
 use aimer_events::window::request_animation_frame;
 use aimer_focus::{FocusCandidate, FocusCandidates, FocusManager, FocusNode, FocusTrapId};
 use aimer_rubick::{ErasedFrom, UiAllocator};
@@ -18,7 +18,7 @@ use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
 use crate::base::*;
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+#[cfg(not(target_arch = "wasm32"))]
 use crate::components::drawable::CompositorTransform;
 use crate::components::drawable::{CompositorAnimationDecision, CompositorAnimationFrame};
 use crate::components::event_element::{
@@ -34,9 +34,9 @@ use crate::element_invalidation::{
 use crate::pointer_claim;
 use crate::{Drawable, Key};
 
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+#[cfg(not(target_arch = "wasm32"))]
 mod animation_only;
-#[cfg(any(target_arch = "wasm32", feature = "portable-guest"))]
+#[cfg(target_arch = "wasm32")]
 #[path = "element/animation_only_stub.rs"]
 mod animation_only;
 mod compositor_applied;
@@ -2045,7 +2045,7 @@ pub fn rebuild_invalidation_generation() -> u64 {
 pub fn advance_rebuild_invalidation_generation() {
     invalidate_dirty_paths();
     advance_tracked_rebuild_invalidation_generation();
-    // Async and portable-state producers do not have an element-owned dirty
+    // Async state producers do not have an element-owned dirty
     // path to record. Retained paint therefore cannot identify a smaller
     // footprint safely; invalidate it conservatively and repaint the target.
     mark_paint_invalidations_unknown();

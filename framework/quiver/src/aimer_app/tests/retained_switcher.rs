@@ -42,7 +42,6 @@ impl Widget for ReadyImage {
         .boxed()
     }
 }
-impl aimer_widget::PortableWidget for ReadyImage {}
 
 struct ImagePage {
     updater: Rc<Cell<Option<StateUpdater<ImagePageState>>>>,
@@ -98,7 +97,6 @@ impl Widget for ImagePage {
             .boxed()
     }
 }
-impl aimer_widget::PortableWidget for ImagePage {}
 
 struct SwitchDuringDraw {
     updater: Rc<Cell<Option<StateUpdater<ImagePageState>>>>,
@@ -127,7 +125,6 @@ impl Widget for SwitchDuringDraw {
         .boxed()
     }
 }
-impl aimer_widget::PortableWidget for SwitchDuringDraw {}
 
 impl VisitorElement for SwitchDuringDrawElement {
     fn debug_name(&self) -> &'static str {

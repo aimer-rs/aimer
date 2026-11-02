@@ -11,9 +11,6 @@
 //! Semantic snapshots, available from each control's `semantics()`, are
 //! independent of `aimer_accessibility`; that crate may adapt
 //! [`SelectionSemantics`] when it is present.
-//!
-//! Portable lowering is intentionally unsupported. Native widgets use the
-//! default [`aimer_widget::PortableWidget`] diagnostic until a schema is added.
 
 mod autocomplete;
 mod binary;

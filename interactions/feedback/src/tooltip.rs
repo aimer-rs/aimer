@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use aimer_text::Text;
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, PortableWidget, Widget};
+use aimer_widget::{AnyElement, Widget};
 
 use super::clock::Clock;
 use super::overlay::{
@@ -161,8 +161,6 @@ impl Widget for Tooltip {
         "Tooltip"
     }
 }
-
-impl PortableWidget for Tooltip {}
 
 /// The observable transition produced by [`TooltipController::pump`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

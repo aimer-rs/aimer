@@ -1,0 +1,12 @@
+[package]
+name = "aimer_pipeline_core"
+version = "0.1.0"
+edition = "2024"
+description = "Types shared by the Cupid render pipeline crates"
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+bytemuck.workspace = true
+
+[dev-dependencies]
+aimer_time.workspace = true

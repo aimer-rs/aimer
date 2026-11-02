@@ -57,8 +57,6 @@ impl Widget for Subject {
     }
 }
 
-impl crate::widget::PortableWidget for Subject {}
-
 /// A stateful parent that retains one child and publishes a [`Published`].
 struct Host {
     child: ChildBuilder,
@@ -114,8 +112,6 @@ impl Widget for Row {
         .boxed()
     }
 }
-
-impl crate::widget::PortableWidget for Row {}
 
 impl VisitorElement for RowElement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
@@ -231,8 +227,6 @@ impl Widget for Touched {
         .boxed()
     }
 }
-
-impl crate::widget::PortableWidget for Touched {}
 
 impl VisitorElement for TouchedElement {
     fn debug_name(&self) -> &'static str {
@@ -458,8 +452,6 @@ impl Widget for ClosureChild {
     }
 }
 
-impl crate::widget::PortableWidget for ClosureChild {}
-
 /// New content a host re-places while adopting live state.
 ///
 /// A fresh host is built with its own retained child. When reconciliation then
@@ -475,8 +467,6 @@ impl Widget for Other {
         StatefulElement::from_widget(self.0, ctx, "Other", None)
     }
 }
-
-impl crate::widget::PortableWidget for Other {}
 
 #[tokio::test]
 async fn content_placed_while_adopting_live_state_is_rebuilt() {

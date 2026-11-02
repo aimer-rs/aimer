@@ -1,9 +1,7 @@
 use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
-use aimer_widget::{
-    AnyElement, PortableWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
-};
+use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
 
 use crate::binary::{Binary, ChangeCallback, VisualBuilder};
 use crate::common::{Common, common_setters};
@@ -135,4 +133,3 @@ impl<T: Clone + 'static> Widget for Radio<T> {
     }
 }
 
-impl<T: 'static> PortableWidget for Radio<T> {}

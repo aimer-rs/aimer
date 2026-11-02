@@ -21,7 +21,6 @@ impl Widget for Page {
             .to_element(ctx)
     }
 }
-impl aimer::PortableWidget for Page {}
 
 #[test]
 #[ignore = "diagnostic harness: prints which pages keep walking the tree and asserts nothing"]

@@ -80,18 +80,6 @@ pub const REST_DISPLACEMENT: f32 = 1.0e-3;
 /// count as having arrived.
 pub const REST_VELOCITY: f32 = 1.0e-2;
 
-/// A serializable description of a standard motion: a tag plus its parameters.
-///
-/// The tags are part of the portable widget format and never change.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MotionDescriptor {
-    /// Identifies the motion: `0` is a spring, `1` a ramp.
-    pub tag: i64,
-    /// The motion's parameters. A spring stores `(stiffness, damping_ratio)`; a
-    /// ramp stores `(seconds, 0)`.
-    pub params: [f64; 2],
-}
-
 /// Moves a scalar toward a target.
 ///
 /// Implement [`step`](Self::step) for a custom motion. It must be *frame-rate
@@ -116,16 +104,6 @@ pub trait Motion: Send + Sync + 'static {
     fn is_settled(&self, state: MotionState, target: f32) -> bool {
         (state.value - target).abs() <= REST_DISPLACEMENT
             && state.velocity.abs() <= REST_VELOCITY
-    }
-
-    /// Describes this motion for a portable guest, or `None` if it cannot be
-    /// described.
-    ///
-    /// Only the standard motions can be serialized into a portable widget
-    /// document. A custom motion keeps the default `None`: it works natively,
-    /// and lowering it to a guest reports an error.
-    fn descriptor(&self) -> Option<MotionDescriptor> {
-        None
     }
 
     /// Whether the motion's parameters are usable, such as a finite, positive

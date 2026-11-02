@@ -107,8 +107,6 @@ impl Widget for ElementPassthrough {
     }
 }
 
-impl aimer_widget::PortableWidget for ElementPassthrough {}
-
 impl Widget for Parent {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let provide = self.provide;
@@ -123,8 +121,6 @@ impl Widget for Parent {
         }
     }
 }
-
-impl aimer_widget::PortableWidget for Parent {}
 
 struct Harness {
     app: HeadlessAimerApp<aimer_modal::ModalHost<Parent>>,
@@ -360,8 +356,6 @@ impl Widget for Opener {
     }
 }
 
-impl aimer_widget::PortableWidget for Opener {}
-
 /// Puts a marker provider in scope around `Opener`.
 struct Scoped(Opener);
 
@@ -370,8 +364,6 @@ impl Widget for Scoped {
         ctx.with_state(Marker(3), |ctx| self.0.to_element(ctx))
     }
 }
-
-impl aimer_widget::PortableWidget for Scoped {}
 
 #[test]
 fn new_window_inherits_only_when_asked() {

@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use aimer_attribute::{ResolvedSize, Size, Vec2d};
 use aimer_events::element::{ElementEvent, KeyAction, NamedKey};
-use aimer_macro::PortableWidget;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventResult, FocusNode, LayoutElement, PointerKey,
@@ -60,13 +59,9 @@ const DEFAULT_SELECTION_COLOR: Color = Color::Rgba(51, 153, 255, 96);
 ///     .child(Text::new("Selectable"))
 /// # }
 /// ```
-#[derive(PortableWidget)]
-#[portable_widget(id = "aimer_text::SelectionArea")]
 pub struct SelectionArea<W = RequiredChild> {
     selection_color: Color,
-    #[portable_skip]
     focus_selection: bool,
-    #[portable_child]
     child: W,
 }
 
@@ -753,62 +748,4 @@ mod tests {
         assert_eq!(slot.selected_range(), Some(0..1));
     }
 
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn selection_area_publishes_its_derived_property_and_required_child() {
-        use aimer_anteros::ChildCardinality;
-        use aimer_widget::RequiredChild;
-        use aimer_widget::portable::PortableWidgetSchema;
-
-        let schema = <super::SelectionArea<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-
-        assert_eq!(
-            schema.widget().canonical_name(),
-            "aimer.widget:aimer_text::SelectionArea"
-        );
-        assert_eq!(
-            schema
-                .properties()
-                .iter()
-                .map(|property| property.canonical_name())
-                .collect::<Vec<_>>(),
-            vec!["aimer.property:aimer_text::SelectionArea:selection_color"]
-        );
-        assert_eq!(schema.children(), ChildCardinality::exactly(1));
-        assert!(schema.callbacks().is_empty());
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn selection_area_lowering_retains_color_and_lowers_its_child() {
-        use aimer_anteros::WidgetDocumentView;
-        use aimer_widget::PortableWidget;
-        use aimer_widget::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, PortableWidgetSchema,
-            SourceFingerprint, StableId128,
-        };
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 4_096),
-            PortableLimits::new(8, 16, 64, 128, 4_096),
-        )
-        .unwrap();
-        let source = SourceFingerprint::new(StableId128::from_bytes([5; 16]));
-        let root = super::SelectionArea::new()
-            .selection_color(Color::Rgba(1, 2, 3, 4))
-            .child(crate::Text::new("selectable"))
-            .to_portable_node(&mut context, source)
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        let schema = <super::SelectionArea<crate::Text> as PortableWidgetSchema>::SCHEMA;
-
-        assert_eq!(node.widget_type(), schema.widget().id());
-        assert_eq!(node.properties().count(), 1);
-        assert_eq!(node.children().collect::<Vec<_>>(), vec![0]);
-    }
 }

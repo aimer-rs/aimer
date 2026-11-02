@@ -13,8 +13,7 @@ use aimer_style::{FontWeight, LayoutSpacing, TextStyle};
 use aimer_text::Text;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
-    AnyElement, AnyWidget, PortableWidget, State, StateUpdater, StatefulElement, StatefulWidget,
-    Widget,
+    AnyElement, AnyWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
 };
 
 mod chrome;
@@ -662,8 +661,6 @@ impl Widget for TabBar {
         StatefulElement::new_with_name(self, ctx, "TabBar", None).0.boxed()
     }
 }
-
-impl PortableWidget for TabBar {}
 
 #[cfg(test)]
 mod tests {

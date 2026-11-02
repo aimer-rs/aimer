@@ -56,8 +56,6 @@ impl Widget for Canvas {
     }
 }
 
-impl aimer_widget::PortableWidget for Canvas {}
-
 fn start() -> (HeadlessAimerApp<impl Widget + 'static>, Rc<Seen>) {
     let seen = Rc::new(Seen::default());
     let mut app = AimerApp::start_headless_with(

@@ -10,8 +10,7 @@ use aimer_cupid::material::{MaterialKind, MaterialRequest};
 use aimer_decoration::{BoxDecoration, Decoration, DecorationBox, LightEdge, MultiDecorationBox};
 use aimer_widget::base::{BuildContext, WindowHandle};
 use aimer_widget::{
-    AnyElement, Drawable, Element, EventElement, LayoutElement, PortableWidget, Rebuildable,
-    VisitorElement, Widget,
+    AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement, Widget,
 };
 
 fn context(inner: &InnerCanvas, scale: f32) -> BuildContext<'_> {
@@ -267,7 +266,6 @@ async fn light_edge_auto_color_keeps_sibling_surfaces_independent() {
 }
 
 struct BackgroundProbe(Rc<Cell<Color>>);
-impl PortableWidget for BackgroundProbe {}
 impl Widget for BackgroundProbe {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         Element::boxed(self)

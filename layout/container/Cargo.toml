@@ -4,19 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-portable-guest = [
-    "aimer_widget/portable-guest",
-    "aimer_style/portable-guest",
-    "aimer_decoration/portable-guest",
-    "aimer_text/portable-guest",
-    "dep:aimer_anteros",
-]
-
 
 [dependencies]
 aimer_tls.workspace = true
 aimer_decoration.workspace = true
-aimer_anteros = { workspace = true, optional = true }
 aimer_widget.workspace = true
 aimer_attribute.workspace = true
 aimer_macro.workspace = true

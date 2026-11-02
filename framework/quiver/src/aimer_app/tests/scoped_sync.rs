@@ -88,8 +88,6 @@ impl Widget for StatefulBox {
     }
 }
 
-impl aimer_widget::PortableWidget for StatefulBox {}
-
 struct Page {
     updaters: Updaters,
 }
@@ -127,8 +125,6 @@ impl Widget for Page {
         Column::new().children(rows).to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for Page {}
 
 /// One application showing the page.
 struct Scene {
@@ -348,8 +344,6 @@ impl Widget for PressableBox {
             .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for PressableBox {}
 
 /// Presses after each of three rebuilds, plus how the path index was kept.
 fn presses_after_rebuilds(index_patching: bool) -> (Vec<usize>, (u64, u64)) {

@@ -3,9 +3,6 @@
 
 use crate::{HapticPattern, ImpactStyle, NotificationStyle};
 
-/// Whether this backend can produce feedback at all.
-pub(crate) const SUPPORTED: bool = false;
-
 pub(crate) fn prepare_impact(_style: ImpactStyle) {}
 
 pub(crate) fn impact(_style: ImpactStyle) {}

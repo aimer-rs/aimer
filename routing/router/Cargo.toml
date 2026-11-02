@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-portable-guest = ["aimer_widget/portable-guest", "aimer_animation/portable-guest", "aimer_space/portable-guest", "aimer_container/portable-guest", "aimer_decoration/portable-guest"]
-
 [dependencies]
 aimer_time.workspace = true
 aimer_tls.workspace = true
@@ -32,5 +30,3 @@ web-sys = { version = "0.3", features = ["Window", "History", "Location", "Event
 tokio.workspace = true
 aimer_macro.workspace = true
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }

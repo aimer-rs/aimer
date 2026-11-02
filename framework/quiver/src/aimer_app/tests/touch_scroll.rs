@@ -77,8 +77,6 @@ impl Widget for Rows {
     }
 }
 
-impl aimer_widget::PortableWidget for Rows {}
-
 fn start() -> (HeadlessAimerApp<impl Widget + 'static>, Rc<Shown>) {
     let shown = Rc::new(Shown::default());
     let mut app = AimerApp::start_headless_with(
@@ -264,8 +262,6 @@ impl Widget for KindRows {
             .to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for KindRows {}
 
 /// The scroll offset after a finger pressed near the bottom of a row flicks up
 /// with a 30px first sample, which stays inside that row (y 300..360).

@@ -11,7 +11,7 @@ use aimer_events::element::NamedKey;
 use aimer_flex::Row;
 use aimer_selection::{Checkbox, CheckboxValue, Radio, SemanticRole, Switch};
 use aimer_text::Text;
-use aimer_widget::{LayoutElement, PortableWidget, State, StatefulWidget, Widget};
+use aimer_widget::{LayoutElement, State, StatefulWidget, Widget};
 use support::{Driver, context};
 
 fn counter() -> (Rc<Cell<u32>>, Rc<Cell<u32>>) {
@@ -26,14 +26,6 @@ async fn toggle_controls_are_named_widgets() {
     assert_eq!(Checkbox::new().to_element(&ctx).debug_name(), "Checkbox");
     assert_eq!(Switch::new().to_element(&ctx).debug_name(), "Switch");
     assert_eq!(Radio::new(1).to_element(&ctx).debug_name(), "Radio");
-}
-
-#[tokio::test]
-async fn toggle_controls_use_the_default_portable_contract() {
-    fn assert_portable<T: PortableWidget>() {}
-    assert_portable::<Checkbox>();
-    assert_portable::<Switch>();
-    assert_portable::<Radio<&'static str>>();
 }
 
 #[tokio::test]

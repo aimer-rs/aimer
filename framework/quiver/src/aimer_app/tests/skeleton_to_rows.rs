@@ -48,8 +48,6 @@ impl Widget for SkeletonRow {
     }
 }
 
-impl aimer_widget::PortableWidget for SkeletonRow {}
-
 struct ButtonRow {
     index: usize,
 }
@@ -90,8 +88,6 @@ impl Widget for ButtonRow {
         .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for ButtonRow {}
 
 struct ShellState {
     loaded: bool,
@@ -152,8 +148,6 @@ impl Widget for Shell {
             .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Shell {}
 
 fn run_for<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, millis: u64) {
     let end = aimer_time::Instant::now() + Duration::from_millis(millis);

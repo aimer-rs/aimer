@@ -529,30 +529,6 @@ async fn decoration_box_scale_changes_refresh_its_local_paint() {
     assert!(!element.local_v2_paint_needs_recording(&ctx));
 }
 
-#[cfg(feature = "portable-guest")]
-#[test]
-fn decoration_box_reports_unsupported_portable_lowering() {
-    use aimer_widget::PortableWidget;
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableBuildError, PortableLimits, PortableWidgetLimits,
-        SourceFingerprint, StableId128,
-    };
-    let mut ctx = PortableBuildContext::new(
-        7,
-        11,
-        PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-        PortableLimits::new(8, 16, 64, 128, 1_024),
-    )
-    .unwrap();
-    let source = SourceFingerprint::new(StableId128::from_path("test", "decoration-box"));
-    let result = DecorationBox::new()
-        .child(ZeroSizedBox)
-        .to_portable_node(&mut ctx, source);
-    assert!(matches!(result, Err(PortableBuildError::UnsupportedWidget {
-        widget: "DecorationBox", source: actual,
-    }) if actual == source));
-}
-
 #[tokio::test]
 async fn decoration_box_constraint_changes_refresh_its_local_paint() {
     let mut ctx = context(1.0);

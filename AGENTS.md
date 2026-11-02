@@ -115,7 +115,6 @@ Prioritize making quick/high-impact wins iteratively and making changes accordin
   requirements, and a useful example when appropriate. Follow Rust standard-library style, but keep documentation
   proportional to the API.
 - Each crate has their own README.md and include it with `#![doc = include_str!("../README.md")]` at their `src/lib.rs`
-- no need to care about the `aimer_portable_guest` or hot-reload ralated feature because it just experiments.
 
 
 For structs that implement `Widget`:
@@ -164,7 +163,6 @@ Example:
 /// use aimer_widget::FocusScope;
 ///
 /// struct Dialog;
-/// # impl aimer_widget::PortableWidget for Dialog {}
 /// # impl aimer_widget::Widget for Dialog {
 /// #     fn to_element(self, _ctx: &aimer_widget::base::BuildContext) -> aimer_widget::AnyElement {
 /// #         unreachable!("this example only builds the widget")

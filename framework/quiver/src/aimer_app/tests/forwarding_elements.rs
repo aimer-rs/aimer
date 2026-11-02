@@ -28,8 +28,6 @@ impl<W: Widget> Widget for Report<W> {
     }
 }
 
-impl<W: Widget> aimer_widget::PortableWidget for Report<W> {}
-
 fn forwards_marks_only(inner: impl Widget + 'static) -> bool {
     let _serial = VIRTUALIZED_RENDER_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let forwards = Rc::new(Cell::new(None));

@@ -90,18 +90,10 @@ type DropHandler = Rc<dyn Fn(Vec<PathBuf>)>;
 ///         Container::new().child(ZeroSizedBox)
 ///     });
 /// ```
-#[derive(aimer_widget::PortableWidget)]
-#[portable_widget(id = "aimer_dnd::DropZone", schema_only)]
 pub struct DropZone<C = RequiredChild> {
-    #[portable_skip]
     extensions: Option<Rc<[String]>>,
-    #[portable_skip]
     on_drop: Option<DropHandler>,
-    // The child is rebuilt from live hover state, so it has no single static
-    // portable child node. Keep the callback on the native path.
-    #[portable_skip]
     child: Option<TargetChild>,
-    #[portable_skip]
     _child: PhantomData<C>,
 }
 
@@ -320,8 +312,6 @@ impl Widget for DropZoneGate {
         "DropZoneGate"
     }
 }
-
-impl aimer_widget::PortableWidget for DropZoneGate {}
 
 struct RawDropZone {
     child: AnyElement,
@@ -604,14 +594,4 @@ mod tests {
         assert_eq!(&*extensions, ["png".to_owned(), "jpg".to_owned()]);
     }
 
-    #[test]
-    fn completed_drop_zone_publishes_a_derived_schema() {
-        use aimer_widget::portable::__anteros::ChildCardinality;
-        use aimer_widget::portable::PortableWidgetSchema;
-
-        assert_eq!(
-            <DropZone<HasChild> as PortableWidgetSchema>::SCHEMA.children(),
-            ChildCardinality::none()
-        );
-    }
 }

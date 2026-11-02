@@ -179,8 +179,6 @@ impl Widget for StyleTokensExample {
     }
 }
 
-impl aimer::PortableWidget for StyleTokensExample {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

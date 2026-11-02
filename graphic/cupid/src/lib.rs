@@ -8,21 +8,36 @@ mod backend_tests {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     mod vulkan;
 }
-pub mod compositor;
-pub mod custom_pipeline;
+// Material tests that render through `Renderer` and read pixels back. They
+// live here because the material crate cannot depend on the renderer.
+#[cfg(all(
+    test,
+    feature = "native",
+    not(feature = "wgpu"),
+    any(target_os = "macos", target_os = "ios")
+))]
+mod material_pixel_tests {
+    mod blur_reduction;
+    mod gradient;
+    mod light_edge;
+}
+// The scene model lives in `aimer_scene`; these paths keep resolving.
+pub use aimer_scene::compositor;
+pub use aimer_pipeline_core::custom_pipeline;
 #[doc(hidden)]
-pub mod damage_region;
-pub mod draw_cmd;
-pub mod draw_cmd_v2;
+pub use aimer_scene::damage_region;
+pub use aimer_scene::{draw_cmd, draw_cmd_v2};
 // Font parsing, shaping and rasterization live in `aimer_cupid_font`.
 pub use aimer_cupid_font::font;
-pub mod frame;
+pub use aimer_scene::frame;
 #[cfg(feature = "wgpu")]
 pub mod gpu_context;
 mod persistent_target;
-pub mod utilities;
+// Shared value types live in `aimer_primitives`; the path stays so
+// `aimer_cupid::utilities` and `crate::utilities` keep resolving.
+pub use aimer_primitives as utilities;
 #[doc(hidden)]
-pub mod v2_frame_adapter;
+pub use aimer_scene::v2_frame_adapter;
 
 pub mod canvas;
 mod lru_map;
@@ -73,13 +88,13 @@ pub use renderer::{Renderer, RendererImpl};
 /// Hidden cargo-fuzz entry point for the checked font reader.
 #[doc(hidden)]
 pub fn fuzz_aimer_font_directory(data: &[u8]) {
-    crate::pipeline::text_pipeline::aimer_font::fuzz_directory(data);
+    aimer_cupid_font::aimer_font::fuzz_directory(data);
 }
 
 /// Hidden cargo-fuzz entry point for glyph and outline decoding.
 #[doc(hidden)]
 pub fn fuzz_aimer_font_outlines(data: &[u8]) {
-    crate::pipeline::text_pipeline::aimer_font::fuzz_outlines(data);
+    aimer_cupid_font::aimer_font::fuzz_outlines(data);
 }
 
 #[cfg(all(test, feature = "wgpu"))]

@@ -126,8 +126,6 @@ impl Widget for Screen {
     }
 }
 
-impl aimer_widget::PortableWidget for Screen {}
-
 fn start() -> (HeadlessAimerApp<impl Widget + 'static>, Rc<Counters>) {
     let counters = Rc::new(Counters {
         builds: Cell::new(0),

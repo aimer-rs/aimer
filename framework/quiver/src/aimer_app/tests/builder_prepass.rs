@@ -278,8 +278,6 @@ mod moved_state {
         }
     }
 
-    impl aimer_widget::PortableWidget for Tagged {}
-
     fn find_element<'a>(element: &'a dyn Element, name: &str) -> Option<&'a dyn Element> {
         if element.debug_name() == name {
             return Some(element);

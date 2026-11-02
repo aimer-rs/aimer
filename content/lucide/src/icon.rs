@@ -3,7 +3,7 @@
 use aimer_attribute::dimension::Dimension;
 use aimer_svg::{Svg, SvgColor, SvgDocument, SvgStyle};
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, PortableWidget, Widget};
+use aimer_widget::{AnyElement, Widget};
 
 /// The placeholder an [`Icon`] carries until it is given an icon.
 ///
@@ -235,8 +235,6 @@ impl<D> Icon<D> {
         self
     }
 }
-
-impl PortableWidget for Icon<SvgDocument> {}
 
 impl Widget for Icon<SvgDocument> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

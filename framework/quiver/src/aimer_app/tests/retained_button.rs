@@ -19,7 +19,6 @@ impl Widget for ButtonRows {
             .to_element(ctx)
     }
 }
-impl aimer_widget::PortableWidget for ButtonRows {}
 
 fn decoration_nodes<W: Widget + 'static>(
     root: &dyn Element,

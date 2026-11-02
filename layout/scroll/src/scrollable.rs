@@ -37,35 +37,6 @@ pub use controller::{DragMode, ScrollController};
 pub use overscroll_source::{OverscrollSource, OverscrollSources};
 pub use scroll_behavior::{ScrollAxis, ScrollBehavior};
 
-/// Bounded, versioned configuration preserved when a Scrollable crosses the
-/// portable guest/host boundary.
-#[derive(Clone, Copy, Debug, PartialEq, aimer_macro::PortableValue)]
-#[portable_value(
-    id = "aimer.value:aimer_scroll::scrollable::ScrollPortableConfig",
-    max_encoded_bytes = 128
-)]
-pub struct ScrollPortableConfig {
-    /// The axis on which content may overflow.
-    pub axis: ScrollAxis,
-    /// Whether the vertical scrollbar is enabled.
-    pub vertical_scroll_bar: bool,
-    /// Whether the horizontal scrollbar is enabled.
-    pub horizontal_scroll_bar: bool,
-    /// Whether scrollbars overlay the content or reserve layout space.
-    pub scroll_bar_placement: ScrollBarPlacement,
-}
-
-impl Default for ScrollPortableConfig {
-    fn default() -> Self {
-        Self {
-            axis: ScrollAxis::Vertical,
-            vertical_scroll_bar: true,
-            horizontal_scroll_bar: true,
-            scroll_bar_placement: ScrollBarPlacement::Floating,
-        }
-    }
-}
-
 #[inline]
 fn resolved_parent_extent(min: f32, max: f32, parent: f32) -> f32 {
     let extent = if max.is_finite() && max < f32::MAX {
@@ -109,54 +80,36 @@ fn resolved_parent_extent(min: f32, max: f32, parent: f32) -> f32 {
 ///                                 .child(Column::new().children([SizedBox::new().height(200),
 ///                                                                SizedBox::new().height(200)]));
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(
-    id = "aimer_scroll::scrollable::Scrollable",
-    schema_only,
-    manual_lowering
-)]
 pub struct Scrollable<W = RequiredChild> {
     /// The scrolling content, kept as a builder because the viewport rebuilds
     /// itself on every offset change and needs the same content each time.
-    #[portable_child]
     pub child: ChildBuilder,
-    #[portable_skip]
     pub scroll_behavior: ScrollBehavior,
     /// Logical pixels one arrow-key press scrolls. Defaults to
     /// [`KEYBOARD_SCROLL_STEP`](constants::KEYBOARD_SCROLL_STEP).
-    #[portable_skip]
     pub key_scroll_strength: f32,
-    #[portable_skip]
     pub axis: ScrollAxis,
     /// Whether enabled scrollbars float over the content or reserve layout
     /// space beside it. Defaults to [`ScrollBarPlacement::Floating`].
-    #[portable_skip]
     pub scroll_bar_placement: ScrollBarPlacement,
-    #[portable_skip]
     pub vertical_scroll_bar: Option<ScrollBar>,
-    #[portable_skip]
     pub horizontal_scroll_bar: Option<ScrollBar>,
-    config: ScrollPortableConfig,
     /// Identity used by live-state reconciliation and, after [`Scrollable::key`]
     /// is called, by `PageStorage`-style teardown persistence.
     ///
     /// A default scrollable does not read or write offset storage; rebuilds and
     /// resizes still preserve its live position through reconciliation.
-    #[portable_skip]
     pub key: Key,
-    #[portable_skip]
     remember_scroll_offset: bool,
     /// Optional app-held [`ScrollController`] for programmatic control. When
     /// `Some`, the app can read the live position and drive it with
     /// [`ScrollController::jump_to`] / [`ScrollController::animate_to`]; the
     /// controller shares this scrollable's state and survives rebuilds. `None`
     /// keeps the zero-cost default (internally managed) behavior.
-    #[portable_skip]
     pub controller: Option<ScrollController>,
     /// Which input devices may rubber-band a bouncy edge on the web target.
     /// Defaults to [`OverscrollSources::WEB_DEFAULT`] and is ignored
     /// everywhere else. See [`Scrollable::web_overscroll`].
-    #[portable_skip]
     pub web_overscroll: OverscrollSources,
     /// Records which child type completed the builder without storing it.
     ///
@@ -164,26 +117,8 @@ pub struct Scrollable<W = RequiredChild> {
     /// has to survive so that a viewport without content stays
     /// `Scrollable<RequiredChild>` — a type that is deliberately not a
     /// [`Widget`].
-    #[portable_skip]
     marker: PhantomData<W>,
 }
-
-#[cfg(any(
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "windows",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "illumos",
-))]
-#[aimer_widget::portable::__linkme::distributed_slice(
-    aimer_widget::portable::materializer::PORTABLE_NATIVE_WIDGET_SCHEMAS
-)]
-#[linkme(crate = aimer_widget::portable::__linkme)]
-#[allow(non_upper_case_globals)]
-static __AIMER_PORTABLE_NATIVE_SCHEMA_FOR_SCROLLABLE:
-    aimer_widget::portable::__anteros::PortableWidgetSchemaMetadata<'static> =
-    <Scrollable as aimer_widget::portable::PortableWidgetSchema>::SCHEMA;
 
 impl Default for Scrollable {
     fn default() -> Self {
@@ -213,7 +148,6 @@ impl Scrollable {
             key_scroll_strength: constants::KEYBOARD_SCROLL_STEP,
             controller: None,
             web_overscroll: OverscrollSources::WEB_DEFAULT,
-            config: ScrollPortableConfig::default(),
             marker: PhantomData,
         }
     }
@@ -240,7 +174,6 @@ impl Scrollable {
             controller: None,
             key_scroll_strength: constants::KEYBOARD_SCROLL_STEP,
             web_overscroll: OverscrollSources::WEB_DEFAULT,
-            config: ScrollPortableConfig::default(),
             marker: PhantomData,
         }
     }
@@ -262,7 +195,6 @@ impl Scrollable {
     #[inline]
     pub fn axis(mut self, axis: ScrollAxis) -> Self {
         self.axis = axis;
-        self.config.axis = axis;
         self
     }
 
@@ -271,7 +203,6 @@ impl Scrollable {
     #[inline]
     pub fn scroll_bar_placement(mut self, placement: ScrollBarPlacement) -> Self {
         self.scroll_bar_placement = placement;
-        self.config.scroll_bar_placement = placement;
         self
     }
 
@@ -281,7 +212,6 @@ impl Scrollable {
     /// controls presentation and does not change [`Scrollable::axis`].
     #[inline]
     pub fn vertical_scroll_bar(mut self, scroll_bar: Option<ScrollBar>) -> Self {
-        self.config.vertical_scroll_bar = scroll_bar.is_some();
         self.vertical_scroll_bar = scroll_bar;
         self
     }
@@ -292,7 +222,6 @@ impl Scrollable {
     /// controls presentation and does not change [`Scrollable::axis`].
     #[inline]
     pub fn horizontal_scroll_bar(mut self, scroll_bar: Option<ScrollBar>) -> Self {
-        self.config.horizontal_scroll_bar = scroll_bar.is_some();
         self.horizontal_scroll_bar = scroll_bar;
         self
     }
@@ -382,7 +311,6 @@ impl Scrollable {
             vertical_scroll_bar: self.vertical_scroll_bar.clone(),
             horizontal_scroll_bar: self.horizontal_scroll_bar.clone(),
             web_overscroll: self.web_overscroll,
-            config: self.config,
             marker: PhantomData,
         }
     }
@@ -452,46 +380,6 @@ impl<W: Widget + 'static> Widget for Scrollable<W> {
         StatefulElement::new_with_name(self, ctx, "Scrollable", None)
             .0
             .boxed()
-    }
-}
-
-impl<W: Widget + 'static> aimer_widget::PortableWidget for Scrollable<W> {
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<aimer_widget::portable::PortableNodeId, aimer_widget::portable::PortableBuildError>
-    {
-        let property_id = aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_scroll::scrollable::Scrollable:config",
-        );
-        let config = ctx.encode_property_named(
-            property_id,
-            "aimer.property:aimer_scroll::scrollable::Scrollable:config",
-            source.child(aimer_widget::portable::__anteros::stable_schema_hash64(
-                "aimer.source:aimer_scroll::scrollable::Scrollable:config",
-            )),
-            self.config,
-        )?;
-        let child = self.child.into_portable_node(
-            ctx,
-            source.child(aimer_widget::portable::__anteros::stable_schema_hash64(
-                "aimer.source:aimer_scroll::scrollable::Scrollable:child",
-            )),
-        )?;
-        let schema = <Self as aimer_widget::portable::PortableWidgetSchema>::SCHEMA;
-        ctx.push_node(
-            schema.widget().id(),
-            schema.widget().min_version(),
-            None,
-            source,
-            &[aimer_widget::portable::__anteros::WidgetProperty::new(
-                property_id,
-                config,
-            )],
-            &[child],
-        )
     }
 }
 
@@ -816,8 +704,6 @@ impl Widget for ScrollableFrame {
     }
 }
 
-impl aimer_widget::PortableWidget for ScrollableFrame {}
-
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -872,7 +758,7 @@ mod tests {
             ScrollBarPlacement::Floating
         );
         assert_eq!(
-            scrollable.config.scroll_bar_placement,
+            scrollable.scroll_bar_placement,
             ScrollBarPlacement::Floating
         );
     }
@@ -965,8 +851,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for Probe {}
-
     struct ConstraintProbe {
         max_width: Rc<Cell<f32>>,
     }
@@ -981,8 +865,6 @@ mod tests {
             "ConstraintProbe"
         }
     }
-
-    impl aimer_widget::PortableWidget for ConstraintProbe {}
 
     fn context() -> BuildContext<'static> {
         let canvas = {
@@ -1194,90 +1076,3 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_layout_tests {
-    use aimer_widget::base::BuildContext;
-    use aimer_widget::portable::__anteros::{Version, WIDGET_SIZED_BOX, WidgetDocumentView};
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableLimits, PortableWidgetLimits, PortableWidgetSchema,
-        SourceFingerprint, StableId128,
-    };
-    use aimer_widget::{AnyElement, ErrorWidget, PortableWidget, Widget};
-
-    use super::{ScrollBar, Scrollable};
-
-    struct Leaf;
-
-    impl Widget for Leaf {
-        fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            ErrorWidget::new("portable leaf").to_element(ctx)
-        }
-    }
-
-    impl PortableWidget for Leaf {
-        fn to_portable_node(
-            self,
-            ctx: &mut PortableBuildContext,
-            source: SourceFingerprint,
-        ) -> Result<
-            aimer_widget::portable::PortableNodeId,
-            aimer_widget::portable::PortableBuildError,
-        > {
-            ctx.push_node(WIDGET_SIZED_BOX, Version::new(1, 0), None, source, &[], &[])
-        }
-    }
-
-    fn context() -> PortableBuildContext {
-        PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(32, 32, 32, 32, 1_024, 8_192).with_max_blob_bytes(64),
-            PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap()
-    }
-
-    fn source() -> SourceFingerprint {
-        SourceFingerprint::new(StableId128::from_bytes([0x23; 16]))
-    }
-
-    #[test]
-    fn scrollable_lowers_its_retained_child() {
-        let mut ctx = context();
-        let root = Scrollable::new()
-            .vertical_scroll_bar(None)
-            .horizontal_scroll_bar(None)
-            .child(Leaf)
-            .to_portable_node(&mut ctx, source())
-            .unwrap();
-        let document = ctx.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        assert_eq!(
-            node.widget_type(),
-            <Scrollable<Leaf> as PortableWidgetSchema>::SCHEMA
-                .widget()
-                .id()
-        );
-        assert_eq!(node.children().collect::<Vec<_>>(), vec![0]);
-    }
-
-    #[test]
-    fn scrollbar_lowers_as_a_leaf_portable_widget() {
-        let mut ctx = context();
-        let root = ScrollBar::default()
-            .to_portable_node(&mut ctx, source())
-            .unwrap();
-        let document = ctx.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        assert_eq!(
-            node.widget_type(),
-            <ScrollBar as PortableWidgetSchema>::SCHEMA.widget().id()
-        );
-        assert_eq!(node.properties().count(), 0);
-        assert_eq!(node.children().count(), 0);
-    }
-}

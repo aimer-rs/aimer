@@ -94,14 +94,10 @@ fn image_paint_geometry(
 ///                                           .height(180.0)
 ///                                           .fit(BoxFit::Cover);
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_assets::Image", schema_only)]
 pub struct Image {
-    #[portable_skip]
     pub path: PathBuf,
     pub width: Dimension,
     pub height: Dimension,
-    #[portable_skip]
     pub fit: BoxFit,
     pub scale: f32,
 }

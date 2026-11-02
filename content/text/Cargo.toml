@@ -9,15 +9,8 @@ apple-core-text = [
     "aimer_cupid/apple-core-text",
     "aimer_canvas/apple-core-text",
 ]
-portable-guest = [
-    "dep:aimer_anteros",
-    "aimer_style/portable-guest",
-    "aimer_widget/portable-guest",
-]
-
 [dependencies]
 aimer_time.workspace = true
-aimer_anteros = { workspace = true, optional = true }
 aimer_accessibility.workspace = true
 aimer_canvas.workspace = true
 aimer_cupid.workspace = true

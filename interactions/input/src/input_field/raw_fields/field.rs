@@ -312,8 +312,6 @@ impl Widget for RawTextFieldWidget {
     }
 }
 
-impl aimer_widget::PortableWidget for RawTextFieldWidget {}
-
 /// What a pending context-menu request is anchored to.
 ///
 /// A right-click pins the menu to the click, the way every desktop menu does.

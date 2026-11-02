@@ -167,7 +167,6 @@ pub fn restore_thread_redraw_requester(previous: Option<Rc<dyn Fn()>>) {
 }
 
 /// The requester installed for this thread, if any.
-#[cfg(not(aimer_portable_guest))]
 fn thread_redraw_requester() -> Option<Rc<dyn Fn()>> {
     THREAD_REDRAW_REQUESTER.with(|slot| slot.borrow().clone())
 }
@@ -513,33 +512,6 @@ where
     let _ = REDRAW_REQUESTER.set(Box::new(requester));
 }
 
-/// Request the next frame render.
-///
-/// Prefers the installed event-loop-driven requester (safe to call from within
-/// the draw cycle); falls back to `Window::request_redraw()` when none was
-/// installed.
-///
-/// On iOS, `request_redraw()` issued from inside the draw cycle (or from a
-/// `user_event` that arrives immediately after) is silently coalesced by the
-/// system — the next `RedrawRequested` is never delivered and animations stop
-/// after a single step.
-///
-/// Instead, the frame loop is driven by a Swift `CADisplayLink` synced to the
-/// display (up to 120 Hz on ProMotion). Requesting a frame simply raises the
-/// [`FRAME_REQUESTED`] flag and unpauses the link; the next vsync tick then
-/// delivers a `FrameReady` (see `aimer_ios_frame_tick` in `aimer_quiver`) that
-/// renders directly on iOS, avoiding a second UIKit draw callback. The link pauses
-/// itself once a tick observes no pending request, so the app stays idle when
-/// nothing is animating.
-#[cfg(aimer_portable_guest)]
-pub fn request_animation_frame() {
-    // Portable guests do not own a browser or native event loop. The reload
-    // host polls the guest scheduler at its safe point, so forwarding this
-    // request into winit would pull the browser event-loop ABI into the
-    // capability-only module.
-}
-
-#[cfg(not(aimer_portable_guest))]
 pub fn request_animation_frame() {
     // An application without a platform window schedules its own frames, and
     // says so per thread, so its request never reaches the display link or a
@@ -566,7 +538,6 @@ pub fn request_animation_frame() {
 
 /// Inner implementation — actual redraw request (platform-independent).
 #[cfg_attr(target_os = "ios", allow(dead_code))]
-#[cfg(not(aimer_portable_guest))]
 fn request_animation_frame_inner() {
     if let Some(requester) = REDRAW_REQUESTER.get() {
         requester();
@@ -577,7 +548,7 @@ fn request_animation_frame_inner() {
     }
 }
 
-#[cfg(all(test, not(aimer_portable_guest)))]
+#[cfg(test)]
 mod scroll_request_tests {
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -647,7 +618,7 @@ mod scroll_request_tests {
     }
 }
 
-#[cfg(all(test, not(aimer_portable_guest)))]
+#[cfg(test)]
 mod window_scope_tests {
     use std::cell::Cell;
 

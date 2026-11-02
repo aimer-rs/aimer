@@ -3,9 +3,6 @@ name = "aimer_clipboard"
 version = "0.1.0"
 edition = "2024"
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
-
 [dependencies]
 aimer_tls.workspace = true
 winit.workspace = true

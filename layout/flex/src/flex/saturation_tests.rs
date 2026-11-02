@@ -24,8 +24,6 @@ impl Widget for Huge {
     }
 }
 
-impl aimer_widget::PortableWidget for Huge {}
-
 struct HugeElement {
     width: f32,
     height: f32,

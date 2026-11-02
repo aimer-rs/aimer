@@ -5,8 +5,6 @@ edition = "2024"
 description = "A widget that hands a box of the layout to application painting code"
 
 [features]
-portable-guest = ["aimer_widget/portable-guest"]
-
 [dependencies]
 aimer_attribute.workspace = true
 aimer_canvas.workspace = true

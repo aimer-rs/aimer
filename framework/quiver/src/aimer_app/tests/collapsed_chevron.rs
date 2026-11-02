@@ -60,8 +60,6 @@ impl Widget for Section {
     }
 }
 
-impl aimer_widget::PortableWidget for Section {}
-
 struct ScreenState {
     rebuilds: u32,
     animate: bool,
@@ -127,8 +125,6 @@ impl Widget for Screen {
             .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Screen {}
 
 fn run_for<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, millis: u64) {
     let end = aimer_time::Instant::now() + Duration::from_millis(millis);

@@ -98,8 +98,6 @@ impl Shared {
             active_touch_id: None,
             venus: self.venus.clone(),
             file_drag: crate::handler::file_drag::FileDrag::new(),
-            #[cfg(feature = "wasm-hot-reload")]
-            live_reload: None,
         }
     }
 }

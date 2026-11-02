@@ -23,8 +23,6 @@ impl Widget for Fixed {
     }
 }
 
-impl aimer_widget::PortableWidget for Fixed {}
-
 struct FixedElement {
     size: Fixed,
 }
@@ -129,8 +127,6 @@ impl Widget for Counted {
         CountedElement { measured: self.0 }.boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Counted {}
 
 struct CountedElement {
     measured: Rc<Cell<usize>>,

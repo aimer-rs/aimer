@@ -38,17 +38,6 @@ pub use crate::timeout::TimeoutError;
 pub use crate::venus::{Venus, spawn_local};
 pub use crate::yielding::{YieldNow, yield_if_over_budget, yield_now};
 
-/// Installs the logical time associated with one portable guest build.
-///
-/// This is a no-op for native and ordinary browser builds. Keeping the symbol
-/// available in every build configuration lets generated guest code share its
-/// build-context implementation with the host crate graph.
-#[doc(hidden)]
-#[inline]
-pub fn set_portable_frame_time(frame: u64) {
-    budget::set_portable_frame_time(frame);
-}
-
 #[cfg(test)]
 mod frame_overhead {
     //! What the scheduler itself costs a frame that has nothing to do.

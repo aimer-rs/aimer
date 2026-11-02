@@ -18,7 +18,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use aimer_container::Container;
-use aimer_macro::PortableWidget;
 use aimer_rubick::{ShareRef, Shared};
 use aimer_scroll::{ScrollAxis, Scrollable};
 use aimer_style::LayoutSpacing;
@@ -64,7 +63,6 @@ fn parse_document(source: ShareRef<str>) -> Shared<Result<Document, MarkdownErro
     DOCUMENT_CACHE.with(|cache| cache.borrow_mut().parse(source))
 }
 
-#[cfg(not(aimer_portable_guest))]
 fn open_web_link_with<E>(
     target: &str,
     opener: impl FnOnce(&str) -> Result<(), E>,
@@ -75,15 +73,11 @@ fn open_web_link_with<E>(
     Some(opener(target))
 }
 
-#[cfg(not(aimer_portable_guest))]
 fn open_web_link(target: Rc<str>) {
     if let Some(Err(error)) = open_web_link_with(&target, webbrowser::open) {
         eprintln!("Failed to open Markdown link '{target}': {error}");
     }
 }
-
-#[cfg(aimer_portable_guest)]
-fn open_web_link(_target: Rc<str>) {}
 
 /// A scrollable Markdown document rendered with native Aimer widgets.
 ///
@@ -94,75 +88,19 @@ fn open_web_link(_target: Rc<str>) {}
 /// a language name. The internal viewport follows normal [`Scrollable`]
 /// reconciliation by default; use [`MarkdownViewer::key`] when it needs an
 /// application-defined identity.
-#[derive(Clone, PortableWidget)]
-#[portable_widget(
-    id = "aimer_markdown::MarkdownViewer",
-    materializer = materialize_markdown_viewer,
-)]
+#[derive(Clone)]
 pub struct MarkdownViewer {
-    #[portable_skip]
     source: Option<Shared<str>>,
-    #[portable_skip]
     theme: MarkdownTheme,
-    #[portable_skip]
     link_handler: Option<LinkHandler>,
-    #[portable_skip]
     image_resolver: ImageResolver,
-    #[portable_skip]
     custom_blocks: Vec<(BlockRule, CustomBlockBuilder)>,
-    #[portable_skip]
     custom_inlines: Vec<(InlineRule, CustomInlineBuilder)>,
-    #[portable_skip]
     typed_custom_blocks: Vec<(BlockRule, custom::TypedCustomBlockBuilder)>,
-    #[portable_skip]
     typed_custom_inlines: Vec<(InlineRule, custom::TypedCustomInlineBuilder)>,
-    #[portable_optional]
     padding: LayoutSpacing,
     scrollable: bool,
-    #[portable_skip]
     key: Option<Key>,
-}
-
-fn materialize_markdown_viewer(
-    document: &aimer_widget::portable::__anteros::WidgetDocumentView<'_>,
-    node: aimer_widget::portable::__anteros::WidgetNodeView<'_>,
-    children: Vec<AnyWidget>,
-) -> Result<AnyWidget, aimer_widget::portable::PortableMaterializeError> {
-    if !children.is_empty() {
-        return Err(
-            aimer_widget::portable::PortableMaterializeError::InvalidChildCount {
-                expected: 0,
-                actual: children.len(),
-            },
-        );
-    }
-    let source = aimer_widget::portable::optional_materialized_property::<String>(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_markdown::MarkdownViewer:source",
-        ),
-    )?
-    .unwrap_or_default();
-    let padding = aimer_widget::portable::optional_materialized_property::<LayoutSpacing>(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_markdown::MarkdownViewer:padding",
-        ),
-    )?;
-    let scrollable = aimer_widget::portable::required_materialized_property::<bool>(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_markdown::MarkdownViewer:scrollable",
-        ),
-    )?;
-    let mut viewer = MarkdownViewer::new().source(source).scrollable(scrollable);
-    if let Some(padding) = padding {
-        viewer = viewer.padding(padding);
-    }
-    Ok(viewer.boxed())
 }
 
 impl Default for MarkdownViewer {
@@ -199,12 +137,6 @@ impl MarkdownViewer {
 
     /// Sets the Markdown source rendered by this viewer.
     pub fn markdown(mut self, source: impl Into<Shared<str>>) -> Self {
-        self.source = Some(source.into());
-        self
-    }
-
-    #[inline]
-    fn source(mut self, source: impl Into<Shared<str>>) -> Self {
         self.source = Some(source.into());
         self
     }
@@ -536,30 +468,4 @@ mod tests {
             .typed_inline::<Mention>();
     }
 
-    #[test]
-    fn viewer_portable_schema_retains_source_and_layout_configuration() {
-        use aimer_widget::portable::{PortableNativeWidget, PortableWidgetSchema};
-
-        fn assert_native_materializer<T: PortableNativeWidget>() {}
-        assert_native_materializer::<MarkdownViewer>();
-
-        let schema = <MarkdownViewer as PortableWidgetSchema>::SCHEMA;
-        let properties = schema.properties();
-
-        assert_eq!(properties.len(), 2);
-        assert_eq!(
-            properties
-                .iter()
-                .map(|property| property.canonical_name())
-                .collect::<Vec<_>>(),
-            vec![
-                "aimer.property:aimer_markdown::MarkdownViewer:padding",
-                "aimer.property:aimer_markdown::MarkdownViewer:scrollable",
-            ]
-        );
-        assert_eq!(
-            schema.widget().canonical_name(),
-            "aimer.widget:aimer_markdown::MarkdownViewer"
-        );
-    }
 }

@@ -76,4 +76,3 @@ impl Widget for StorageExample {
     }
 }
 
-impl aimer::PortableWidget for StorageExample {}

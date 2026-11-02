@@ -46,8 +46,6 @@ impl Widget for Screen {
     }
 }
 
-impl aimer_widget::PortableWidget for Screen {}
-
 fn panel() -> impl Widget {
     aimer_container::Container::new()
         .width(Dimension::Px(160.0))

@@ -58,7 +58,6 @@ impl Widget for PageWidget {
     }
     fn debug_name(&self) -> &'static str { "PageWidget" }
 }
-impl crate::PortableWidget for PageWidget {}
 
 #[tokio::test]
 async fn a_descendants_redraw_does_not_invalidate_the_retained_child_it_sits_in() {

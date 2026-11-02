@@ -56,8 +56,6 @@ impl Widget for StableLeaf {
     }
 }
 
-impl aimer_widget::PortableWidget for StableLeaf {}
-
 struct StableElement(f32);
 
 impl Drawable for StableElement {
@@ -94,8 +92,6 @@ impl Widget for UnknownLeaf {
         UnknownElement.boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for UnknownLeaf {}
 
 struct UnknownElement;
 

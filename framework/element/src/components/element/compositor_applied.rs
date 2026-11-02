@@ -16,10 +16,7 @@ aimer_tls::thread_local! {
 }
 
 /// Records that `element` may now have a compositor animation on its node.
-#[cfg_attr(
-    any(target_arch = "wasm32", feature = "portable-guest"),
-    allow(dead_code)
-)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) fn note_compositor_animation_applied(element: ElementId) {
     APPLIED.with(|applied| {
         applied.borrow_mut().insert(element);
@@ -27,10 +24,7 @@ pub(crate) fn note_compositor_animation_applied(element: ElementId) {
 }
 
 /// Whether `element` may have a compositor animation to clear.
-#[cfg_attr(
-    any(target_arch = "wasm32", feature = "portable-guest"),
-    allow(dead_code)
-)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #[inline]
 pub(crate) fn compositor_animation_may_be_applied(element: ElementId) -> bool {
     APPLIED.with(|applied| {
@@ -40,10 +34,7 @@ pub(crate) fn compositor_animation_may_be_applied(element: ElementId) -> bool {
 }
 
 /// Records that `element`'s node was reset, so there is nothing left to clear.
-#[cfg_attr(
-    any(target_arch = "wasm32", feature = "portable-guest"),
-    allow(dead_code)
-)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) fn note_compositor_animation_cleared(element: ElementId) {
     APPLIED.with(|applied| {
         applied.borrow_mut().remove(&element);

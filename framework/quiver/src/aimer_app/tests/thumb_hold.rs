@@ -31,8 +31,6 @@ impl Widget for Tall {
     }
 }
 
-impl aimer_widget::PortableWidget for Tall {}
-
 fn touch<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, phase: TouchPhase, x: f64, y: f64) {
     app.send_window_event(WindowEvent::Touch(Touch {
         device_id: DeviceId::dummy(),

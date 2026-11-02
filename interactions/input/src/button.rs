@@ -19,9 +19,6 @@ use aimer_widget::{
     Semantics, StatefulWidget, Widget,
 };
 
-#[cfg(feature = "portable-guest")]
-use aimer_widget::portable::{PortableBuildContext, PortableBuildError, SourceFingerprint};
-
 use crate::callback::VoidCallback;
 use crate::gesture::GestureEvent;
 use crate::gesture::gesture_detector::{GestureDetector, GestureDetectorBehavior};
@@ -58,52 +55,28 @@ const PRESSED_DARKEN: f32 = 0.15;
 ///                           .child(Text::new("Save"));
 /// ```
 #[allow(dead_code)]
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(
-    id = "aimer_input::Button",
-    version = "1.0",
-    schema_only,
-    validate = validate_portable_button
-)]
 pub struct Button<W = RequiredChild> {
-    #[portable_callback(async)]
     pub on_press: VoidCallback,
-    #[portable_callback(async)]
     pub on_long_press: VoidCallback,
-    #[portable_callback(async)]
     pub on_double_press: VoidCallback,
-    #[portable_callback(async)]
     pub on_right_press: VoidCallback,
-    #[portable_optional]
     pub decoration: BoxDecoration,
-    #[portable_skip]
     no_decor: bool,
-    #[portable_skip]
     // Normal, hover, press and disabled overrides, respectively.
     custom_decorations: [Option<Rc<dyn Decoration>>; 4],
-    #[portable_skip]
     visual_builder: Option<visual::VisualBuilder>,
-    #[portable_skip]
     pub hover_decoration: Option<BoxDecoration>,
-    #[portable_skip]
     pub press_decoration: Option<BoxDecoration>,
-    #[portable_skip]
     pub disable_decoration: Option<BoxDecoration>,
-    #[portable_skip]
     pub is_disabled: bool,
-    /// The subtree consumed by either native state creation or portable lowering.
-    // Keep the legacy child slot stable: the handwritten lowering used zero
-    // rather than the field-name discriminator used by new derived widgets.
-    #[portable_child(discriminator = 0)]
+    /// The subtree consumed by native state creation.
     child: Option<AnyWidget>,
-    #[portable_skip]
     widget_key: Option<Key>,
     /// Records which child type completed the builder without storing it.
     ///
     /// The child itself is erased into [`AnyWidget`], but the parameter has to
     /// survive so that a button without a child stays
     /// `Button<RequiredChild>` — a type that is deliberately not a [`Widget`].
-    #[portable_skip]
     marker: PhantomData<W>,
 }
 
@@ -233,8 +206,6 @@ impl<W> Button<W> {
     /// This overrides decoration settings regardless of builder order. The
     /// child, gesture callbacks, and visuals supplied by [`Button::build`] are
     /// preserved. Hover and press do not rebuild the child.
-    /// Requires native rendering; portable lowering reports an unsupported
-    /// property.
     ///
     /// ```
     /// use aimer_input::button::Button;
@@ -289,8 +260,6 @@ impl<W> Button<W> {
     /// Accepts any [`Decoration`], including `LightEdge`, without requiring
     /// `Clone`. A [`BoxDecoration`] retains automatic hover lightening and
     /// press darkening. Other decorations keep their own appearance.
-    /// Custom decorations require native rendering; portable lowering reports
-    /// an unsupported property.
     #[inline]
     pub fn decoration<D: Decoration + 'static>(mut self, decoration: D) -> Self {
         let (decoration, custom) = decoration::split(decoration);
@@ -396,8 +365,6 @@ impl<W> Button<W> {
     /// The closure runs initially, on configuration updates and when hover or
     /// press changes. Only its visual subtree rebuilds; input wrappers remain
     /// mounted. Use [`ChildBuilder`] to retain state-independent subtrees.
-    /// This builder requires native rendering; portable lowering reports an
-    /// unsupported property.
     ///
     /// ```
     /// use aimer_input::button::Button;
@@ -456,65 +423,6 @@ impl<W: Widget + 'static> Widget for Button<W> {
             .0
             .boxed()
     }
-}
-
-#[cfg(feature = "portable-guest")]
-fn validate_portable_button<W>(
-    button: &Button<W>,
-    _ctx: &PortableBuildContext,
-    source: SourceFingerprint,
-) -> Result<(), PortableBuildError> {
-    if button.visual_builder.is_some() {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Button",
-            property: "build",
-            source,
-        });
-    }
-    if button.no_decor {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Button",
-            property: "no_decor",
-            source,
-        });
-    }
-    if button.custom_decorations.iter().any(Option::is_some) {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Button",
-            property: "decoration",
-            source,
-        });
-    }
-    if button.is_disabled {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Button",
-            property: "disabled",
-            source,
-        });
-    }
-    if button.hover_decoration.is_some() {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Button",
-            property: "hover_decoration",
-            source,
-        });
-    }
-    if button.press_decoration.is_some() {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Button",
-            property: "press_decoration",
-            source,
-        });
-    }
-    if button.disable_decoration.is_some() {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Button",
-            property: "disable_decoration",
-            source,
-        });
-    }
-
-    Ok(())
 }
 
 impl<W: Widget + 'static> State<Button<W>> for ButtonState<W> {

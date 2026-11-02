@@ -87,26 +87,16 @@ use aimer_widget_core::{AnyElement, AnyWidget, RequiredChild, Widget};
 /// // from anywhere, later
 /// node.request_focus();
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_widget::Focusable", schema_only)]
 pub struct Focusable<W = RequiredChild> {
-    #[portable_skip]
     node: Option<FocusNode>,
-    #[portable_callback(async)]
     on_focus: VoidCallback,
-    #[portable_callback(async)]
     on_focus_lost: VoidCallback,
-    #[portable_skip]
     on_focus_change: FocusCallback,
-    #[portable_skip]
     behavior: FocusBehavior,
-    #[portable_skip]
     gate: FocusGate,
     /// The subtree inside the region, kept as a builder because the region is
     /// rebuilt whenever focus moves and needs the same child each time.
-    #[portable_child]
     child: ChildBuilder,
-    #[portable_skip]
     widget_key: Option<Key>,
     /// Records which child type completed the builder without storing it.
     ///
@@ -114,7 +104,6 @@ pub struct Focusable<W = RequiredChild> {
     /// to survive so that a region without a child stays
     /// `Focusable<RequiredChild>` — a type that is deliberately not a
     /// [`Widget`] — and so that one state type belongs to one child type.
-    #[portable_skip]
     marker: PhantomData<W>,
 }
 
@@ -373,8 +362,6 @@ impl Widget for FocusTarget {
         "Focusable"
     }
 }
-
-impl aimer_widget_core::widget::PortableWidget for FocusTarget {}
 
 /// The element that carries the focus node.
 ///
@@ -730,8 +717,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget_core::widget::PortableWidget for Boxed {}
-
     /// A child nobody counts.
     fn child() -> Boxed {
         Boxed {
@@ -891,8 +876,6 @@ mod tests {
             "Recording"
         }
     }
-
-    impl aimer_widget_core::widget::PortableWidget for Recording {}
 
     /// A recording child that only the events it saw are read back from.
     fn recording(seen: &Rc<RefCell<Vec<&'static str>>>) -> Recording {
@@ -1519,22 +1502,3 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use super::Focusable;
-    use aimer_widget_core::portable::PortableWidgetSchema;
-    use aimer_widget_core::RequiredChild;
-
-    #[test]
-    fn focusable_schema_keeps_callbacks_and_its_retained_child() {
-        let schema = <Focusable<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-
-        assert_eq!(
-            schema.widget().canonical_name(),
-            "aimer.widget:aimer_widget::Focusable"
-        );
-        assert_eq!(schema.properties().len(), 0);
-        assert_eq!(schema.callbacks().len(), 2);
-        assert_eq!(schema.children(), aimer_anteros::ChildCardinality::exactly(1));
-    }
-}

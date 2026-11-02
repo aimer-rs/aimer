@@ -3,8 +3,8 @@ use std::cell::Cell;
 use aimer_decoration::{AnyDecor, BorderRadius, Decoration};
 use aimer_widget::base::{BuildContext, Color, ResolvedSize, Size, Vec2d};
 use aimer_widget::{
-    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, PortableWidget,
-    Rebuildable, RequiredChild, VisitorElement, Widget,
+    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable,
+    RequiredChild, VisitorElement, Widget,
 };
 
 use aimer_canvas::MaterialKind;
@@ -729,8 +729,6 @@ impl Default for Liquid {
         Self::new()
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for Liquid<W> {}
 
 impl<W: Widget + 'static> Widget for Liquid<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

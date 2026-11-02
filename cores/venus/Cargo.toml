@@ -15,7 +15,6 @@ categories = ["asynchronous", "gui"]
 venus-debug = []
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }
 
 # Venus sits underneath the widget tree, so it depends on nothing from the
 # framework. A monotonic clock is the only thing it cannot implement itself:

@@ -955,8 +955,6 @@ impl<T: aimer_widget::Widget + 'static> aimer_widget::Widget for AnimatedLayout<
     }
 }
 
-impl<T: aimer_widget::Widget> aimer_widget::PortableWidget for AnimatedLayout<T> {}
-
 struct AnimatedLayoutElement {
     child: aimer_widget::AnyElement,
     transition: std::cell::RefCell<LayoutTransition>,

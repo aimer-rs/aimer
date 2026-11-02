@@ -1,14 +1,8 @@
 use aimer_animation::Animatable;
 use aimer_color::prelude::Color;
-use aimer_provider::{
-    PortableProviderCodec, PortableProviderCodecError, ProviderContext, Snapshot,
-};
+use aimer_provider::{ProviderContext, Snapshot};
 use aimer_widget::Brightness;
 use aimer_widget::base::BuildContext;
-use aimer_widget::portable::__anteros::{
-    THEME_DATA_VALUE_MAXIMUM_ENCODED_BYTES, THEME_DATA_VALUE_NAME, THEME_DATA_VALUE_VERSION,
-    ValueSchemaMetadata, Version,
-};
 use std::any::type_name;
 
 /// Semantic colors used by themed widgets.
@@ -139,8 +133,8 @@ impl ThemeData {
     ///
     /// The returned value is independent and may be supplied to a separate
     /// [`crate::AnimatedTheme`] when a widget family needs semantic styling.
-    /// Keeping this bridge additive preserves the existing six-color portable
-    /// `ThemeData` codec while allowing token themes to evolve independently.
+    /// Keeping this bridge additive preserves the existing six-color `ThemeData`
+    /// while allowing token themes to evolve independently.
     #[inline]
     pub fn tokens(&self) -> crate::ThemeTokens {
         crate::ThemeTokens::from_core_colors(
@@ -152,72 +146,6 @@ impl ThemeData {
             self.on_surface_color,
         )
     }
-
-    /// Returns the built-in bounded codec used to carry `ThemeData` through a
-    /// portable provider node.
-    ///
-    /// The wire order is the six public fields, each as RGBA bytes. The exact
-    /// length and version are checked on decode so malformed guest payloads are
-    /// rejected before native materialization.
-    pub fn portable_codec() -> PortableProviderCodec<Self> {
-        PortableProviderCodec::new(
-            ValueSchemaMetadata::from_canonical_name(
-                THEME_DATA_VALUE_NAME,
-                THEME_DATA_VALUE_VERSION,
-                THEME_DATA_VALUE_MAXIMUM_ENCODED_BYTES,
-            ),
-            encode_theme_data,
-            decode_theme_data,
-        )
-    }
-}
-
-fn encode_theme_data(theme: &ThemeData) -> Result<Vec<u8>, PortableProviderCodecError> {
-    let mut bytes = Vec::with_capacity(THEME_DATA_VALUE_MAXIMUM_ENCODED_BYTES as usize);
-    for color in [
-        theme.primary_color,
-        theme.on_primary_color,
-        theme.background_color,
-        theme.on_background_color,
-        theme.surface_color,
-        theme.on_surface_color,
-    ] {
-        let (red, green, blue, alpha) = color.to_rgba();
-        bytes.extend_from_slice(&[red, green, blue, alpha]);
-    }
-    Ok(bytes)
-}
-
-fn decode_theme_data(
-    bytes: &[u8],
-    version: Version,
-) -> Result<ThemeData, PortableProviderCodecError> {
-    if version != THEME_DATA_VALUE_VERSION {
-        return Err(PortableProviderCodecError::new(format!(
-            "unsupported ThemeData codec version {}.{}",
-            version.major(),
-            version.minor(),
-        )));
-    }
-    if bytes.len() != THEME_DATA_VALUE_MAXIMUM_ENCODED_BYTES as usize {
-        return Err(PortableProviderCodecError::new(format!(
-            "ThemeData payload must be exactly {} bytes, got {}",
-            THEME_DATA_VALUE_MAXIMUM_ENCODED_BYTES,
-            bytes.len(),
-        )));
-    }
-    let mut colors = [Color::Transparent; 6];
-    for (color, bytes) in colors.iter_mut().zip(bytes.chunks_exact(4)) {
-        *color = Color::Rgba(bytes[0], bytes[1], bytes[2], bytes[3]);
-    }
-    Ok(ThemeData {
-        primary_color: colors[0],
-        on_primary_color: colors[1],
-        background_color: colors[2],
-        on_background_color: colors[3],
-        surface_color: colors[4],
-        on_surface_color: colors[5],
-    })
 }
 
 impl Animatable for ThemeData {
@@ -262,17 +190,6 @@ impl Default for ThemeData {
 /// }
 /// ```
 pub trait Theme: Animatable + Clone + PartialEq + Sized + 'static {
-    /// Returns the explicit codec used when this theme crosses a portable
-    /// provider boundary.
-    ///
-    /// Derived or custom themes return `None` until their owner supplies a
-    /// stable versioned codec. Native themes remain fully supported without
-    /// one; a portable build reports the missing contract at the source site.
-    #[inline]
-    fn portable_codec() -> Option<PortableProviderCodec<Self>> {
-        None
-    }
-
     /// Returns the current theme and subscribes the building widget to theme
     /// changes.
     ///
@@ -333,11 +250,7 @@ pub trait Theme: Animatable + Clone + PartialEq + Sized + 'static {
     }
 }
 
-impl Theme for ThemeData {
-    fn portable_codec() -> Option<PortableProviderCodec<Self>> {
-        Some(Self::portable_codec())
-    }
-}
+impl Theme for ThemeData {}
 
 #[cfg(test)]
 mod tests {
@@ -403,21 +316,6 @@ mod tests {
         assert_eq!(tokens.colors.on_surface, value.on_surface_color);
         assert_eq!(tokens.control.focus_ring.ring_color, value.primary_color);
         assert!(tokens.is_finite());
-    }
-
-    #[test]
-    fn theme_data_portable_codec_rejects_wrong_version_and_length() {
-        let codec = ThemeData::portable_codec();
-        let wrong_version = codec.decode(&[0; 24], Version::new(2, 0));
-        let wrong_length = codec.decode(&[0; 23], THEME_DATA_VALUE_VERSION);
-
-        assert!(wrong_version.is_err());
-        assert!(wrong_length.is_err());
-    }
-
-    #[test]
-    fn derived_custom_theme_requires_an_explicit_portable_codec() {
-        assert!(<DirectTheme as Theme>::portable_codec().is_none());
     }
 
     #[test]

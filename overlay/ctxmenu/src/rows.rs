@@ -18,7 +18,7 @@ use std::sync::Arc;
 use aimer_attribute::{Bounds, ResolvedSize, Vec2d};
 use aimer_cupid::canvas::TextMetrics;
 use aimer_events::element::ElementEvent;
-use aimer_macro::{PortableWidget, Rebuildable};
+use aimer_macro::{Rebuildable};
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::{BuildContext, WindowHandle};
 use aimer_widget::{
@@ -28,7 +28,6 @@ use aimer_widget::{
 
 use crate::dismiss::ContextMenuDismiss;
 use crate::item::ContextMenuItem;
-use crate::portable::PortableMenuItems;
 use crate::shape::ContextMenuShape;
 use crate::style::ContextMenuStyle;
 
@@ -49,71 +48,13 @@ use crate::style::ContextMenuStyle;
 ///
 /// assert_eq!(rows.len(), 2);
 /// ```
-#[derive(PortableWidget)]
-#[portable_widget(
-    id = "aimer_ctxmenu::ContextMenuRows",
-    materializer = materialize_portable_context_menu_rows
-)]
 pub struct ContextMenuRows {
-    items: PortableMenuItems,
+    items: Vec<ContextMenuItem>,
     shape: ContextMenuShape,
     style: ContextMenuStyle,
-    #[portable_skip]
     on_select: Option<Rc<dyn Fn(usize)>>,
-    #[portable_skip]
     dismiss: ContextMenuDismiss,
     dismiss_on_select: bool,
-}
-
-fn materialize_portable_context_menu_rows(
-    document: &aimer_widget::portable::__anteros::WidgetDocumentView<'_>,
-    node: aimer_widget::portable::__anteros::WidgetNodeView<'_>,
-    children: Vec<aimer_widget::AnyWidget>,
-) -> Result<aimer_widget::AnyWidget, aimer_widget::portable::PortableMaterializeError> {
-    if !children.is_empty() {
-        return Err(
-            aimer_widget::portable::PortableMaterializeError::InvalidChildCount {
-                expected: 0,
-                actual: children.len(),
-            },
-        );
-    }
-
-    let shape: ContextMenuShape = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenuRows:shape",
-        ),
-    )?;
-    let style: ContextMenuStyle = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenuRows:style",
-        ),
-    )?;
-    let items: PortableMenuItems = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenuRows:items",
-        ),
-    )?;
-    let dismiss_on_select: bool = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenuRows:dismiss_on_select",
-        ),
-    )?;
-
-    Ok(ContextMenuRows::new()
-        .shape(shape)
-        .style(style)
-        .items(items.into_vec())
-        .dismiss_on_select(dismiss_on_select)
-        .boxed())
 }
 
 impl Default for ContextMenuRows {
@@ -128,7 +69,7 @@ impl ContextMenuRows {
     #[inline]
     pub fn new() -> Self {
         Self {
-            items: PortableMenuItems::default(),
+            items: Vec::new(),
             shape: ContextMenuShape::default(),
             style: ContextMenuStyle::default(),
             on_select: None,
@@ -157,7 +98,7 @@ impl ContextMenuRows {
     /// Sets the rows, in the order they are drawn.
     #[inline]
     pub fn items(mut self, items: Vec<ContextMenuItem>) -> Self {
-        self.items = PortableMenuItems::new(items);
+        self.items = items;
         self
     }
 
@@ -207,7 +148,7 @@ impl ContextMenuRows {
 
 impl Widget for ContextMenuRows {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        let items = self.items.into_vec();
+        let items = self.items;
         let style = Rc::new(self.style);
         let paint_state = Rc::new(ContextMenuRowPaintState::default());
         let row_count = items.len();
@@ -1034,101 +975,5 @@ mod tests {
         assert_eq!(chosen.get(), Some(1));
     }
 
-    #[test]
-    fn context_menu_rows_publishes_a_derived_leaf_schema() {
-        use aimer_widget::portable::__anteros::ChildCardinality;
-        use aimer_widget::portable::PortableWidgetSchema;
-
-        assert_eq!(
-            <ContextMenuRows as PortableWidgetSchema>::SCHEMA.children(),
-            ChildCardinality::none()
-        );
-    }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use aimer_container::ZeroSizedBox;
-    use aimer_widget::portable::{
-        __anteros::WidgetDocumentView, PortableBuildContext, PortableLimits, PortableNativeWidget,
-        PortableWidgetLimits, PortableWidgetSchema, SourceFingerprint, StableId128,
-        linked_portable_native_widget_registrations,
-    };
-    use aimer_widget::{PortableWidget, Widget};
-
-    use super::{ContextMenuItem, ContextMenuRows, ContextMenuShape, ContextMenuStyle};
-
-    fn source(value: u8) -> SourceFingerprint {
-        SourceFingerprint::new(StableId128::from_bytes([value; 16]))
-    }
-
-    fn context() -> PortableBuildContext {
-        PortableBuildContext::new(
-            7,
-            11,
-            PortableWidgetLimits::new(16, 32, 16, 16, 2_048, 16_384).with_max_blob_bytes(8_192),
-            PortableLimits::new(16, 512, 2_048, 8_192, 16_384),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn rows_lower_round_trip_and_register_a_checked_host_materializer() {
-        let mut context = context();
-        let root = ContextMenuRows::new()
-            .shape(ContextMenuShape::List)
-            .style(ContextMenuStyle::list().row_height(31.0))
-            .items(vec![
-                ContextMenuItem::new("Copy"),
-                ContextMenuItem::new("Paste").enabled(false),
-            ])
-            .dismiss_on_select(false)
-            .to_portable_node(&mut context, source(1))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-
-        assert_eq!(node.children().count(), 0);
-        assert_eq!(node.properties().count(), 4);
-        let materialized =
-            <ContextMenuRows as PortableNativeWidget>::materialize_widget(&view, node, Vec::new())
-                .unwrap();
-        assert_eq!(materialized.debug_name(), "ContextMenuRows");
-
-        let schema = <ContextMenuRows as PortableWidgetSchema>::SCHEMA;
-        assert!(
-            linked_portable_native_widget_registrations()
-                .iter()
-                .any(|registration| registration
-                    .supports(schema.widget().id(), schema.widget().min_version()))
-        );
-    }
-
-    #[test]
-    fn rows_materialization_rejects_unexpected_children_before_construction() {
-        let mut context = context();
-        let root = ContextMenuRows::new()
-            .to_portable_node(&mut context, source(2))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-
-        assert!(matches!(
-            <ContextMenuRows as PortableNativeWidget>::materialize_widget(
-                &view,
-                node,
-                vec![ZeroSizedBox.boxed()],
-            ),
-            Err(
-                aimer_widget::portable::PortableMaterializeError::InvalidChildCount {
-                    expected: 0,
-                    actual: 1,
-                }
-            )
-        ));
-    }
-}

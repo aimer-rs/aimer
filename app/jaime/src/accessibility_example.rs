@@ -65,8 +65,6 @@ impl Widget for AccessibilityExample {
     }
 }
 
-impl aimer::PortableWidget for AccessibilityExample {}
-
 /// Builds the accessibility semantics showcase without starting an app.
 pub fn accessibility_example() -> impl Widget {
     AccessibilityExample

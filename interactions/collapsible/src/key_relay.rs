@@ -4,7 +4,7 @@ use aimer_events::element::{ElementEvent, KeyAction, NamedKey};
 use aimer_widget::base::{BuildContext, ResolvedSize, Size, Vec2d};
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventResult, EventTreeRole, LayoutElement,
-    PortableWidget, Rebuildable, RequiredChild, VisitorElement, Widget,
+    Rebuildable, RequiredChild, VisitorElement, Widget,
 };
 
 /// A small focused-key seam used by [`crate::CollapsibleList`].
@@ -36,8 +36,6 @@ impl KeyRelay {
         }
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for KeyRelay<W> {}
 
 impl<W: Widget + 'static> Widget for KeyRelay<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

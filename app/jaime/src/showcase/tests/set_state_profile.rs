@@ -49,7 +49,6 @@ pub(super) struct Captured {
     pub(super) labels: Rc<Labels>,
 }
 
-impl aimer::PortableWidget for Captured {}
 impl Widget for Captured {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         CapturedElement {

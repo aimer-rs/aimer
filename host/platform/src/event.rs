@@ -46,11 +46,6 @@ pub enum AimerNativePlatformEvent {
     FrameReady,
     /// A bounded render completion or initialization result is ready for the UI.
     RenderWorkerReady,
-    /// A live-reload native callback is waiting at the host safe point.
-    ///
-    /// This has its own coalescing slot so an animation frame already waiting
-    /// in the event loop cannot hide the callback's redraw request.
-    HotReloadCallbackReady,
     /// An editing shortcut the macOS menu bar claimed before the window could
     /// see it, handed back to the widget tree. See [`crate::menu`].
     MenuShortcut(crate::menu::MenuShortcut),

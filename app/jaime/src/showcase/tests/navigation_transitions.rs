@@ -62,7 +62,6 @@ struct Captured {
     snapshot: Rc<RefCell<Snapshot>>,
     duration: std::time::Duration,
 }
-impl aimer::PortableWidget for Captured {}
 impl Widget for Captured {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         CapturedElement {

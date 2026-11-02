@@ -1,6 +1,4 @@
 use std::cell::Cell;
-#[cfg(feature = "wasm-hot-reload")]
-use std::net::SocketAddr;
 use std::rc::Rc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -28,10 +26,6 @@ use winit::platform::android::activity::AndroidApp;
 
 use crate::handler::event_handler::{HeadlessEventAction, WindowEventHandler};
 use crate::handler::{AimerApplicationHandler, StartupHook, WindowRenderTree};
-#[cfg(feature = "wasm-hot-reload")]
-use crate::hot_reload::{LiveReloadConfig, LiveReloadHost};
-#[cfg(feature = "wasm-hot-reload")]
-use crate::reload_protocol::SessionCredentials;
 use crate::render_ctx::AimerRenderContext;
 
 static APP_STARTED: AtomicBool = AtomicBool::new(false);
@@ -150,13 +144,6 @@ pub(crate) fn observe_frame_request(slot: &Cell<Option<FrameRequestKind>>) {
 /// event loop can deliver them.
 static FRAME_READY_PENDING: AtomicU8 = AtomicU8::new(0);
 
-/// Whether a live-reload native callback wake is waiting in the event loop.
-///
-/// Callback delivery and animation polling both end in a redraw, but they are
-/// distinct wake sources: a pending animation request must not suppress the
-/// wake that makes a freshly queued callback visible.
-static CALLBACK_READY_PENDING: AtomicBool = AtomicBool::new(false);
-
 pub(crate) fn try_begin_frame_ready_request(pending: &AtomicU8, kind: FrameRequestKind) -> bool {
     let requested = kind.encode();
     loop {
@@ -217,24 +204,10 @@ fn request_direct_frame(
     true
 }
 
-fn try_begin_callback_ready_request(pending: &AtomicBool) -> bool {
-    pending
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_ok()
-}
-
-fn complete_callback_ready_request(pending: &AtomicBool) {
-    pending.store(false, Ordering::Release);
-}
-
 pub(crate) fn frame_ready_delivered() -> FrameRequestKind {
     let kind = complete_frame_ready_request(&FRAME_READY_PENDING);
     crate::frame_stats::record_display_tick();
     kind
-}
-
-pub(crate) fn callback_ready_delivered() {
-    complete_callback_ready_request(&CALLBACK_READY_PENDING);
 }
 
 /// Asks the platform for the frame that continues whatever is unfinished.
@@ -284,27 +257,6 @@ fn request_frame_ready() {
             }
         },
     );
-}
-
-/// Wakes the event loop for a native callback queued by a hot-reloaded tree.
-///
-/// This deliberately does not share [`FRAME_READY_PENDING`]. An animation can
-/// already have a frame queued when a button callback arrives; sharing that
-/// flag made the callback wait for the animation wake to be delivered before
-/// the host safe point could process it.
-#[cfg(feature = "wasm-hot-reload")]
-fn request_callback_ready() {
-    if !try_begin_callback_ready_request(&CALLBACK_READY_PENDING) {
-        return;
-    }
-    let sent = EVENT_PROXY.get().is_some_and(|proxy| {
-        proxy
-            .send_event(AimerNativePlatformEvent::HotReloadCallbackReady)
-            .is_ok()
-    });
-    if !sent {
-        complete_callback_ready_request(&CALLBACK_READY_PENDING);
-    }
 }
 
 #[cfg(target_os = "ios")]
@@ -758,33 +710,6 @@ pub struct AimerApp<W = ()> {
     startup_hooks: Vec<StartupHook>,
     window_attr: WindowAttr,
     exit_policy: crate::ExitPolicy,
-    #[cfg(feature = "wasm-hot-reload")]
-    live_reload: Option<LiveReloadLaunch>,
-}
-
-#[cfg(feature = "wasm-hot-reload")]
-struct LiveReloadLaunch {
-    address: SocketAddr,
-    credentials: SessionCredentials,
-    config: LiveReloadConfig,
-}
-
-#[cfg(feature = "wasm-hot-reload")]
-fn reload_listener_readiness_line(
-    session_id: [u8; 16],
-    address: SocketAddr,
-    process_id: u32,
-) -> String {
-    use std::fmt::Write;
-
-    let mut encoded_session = String::with_capacity(32);
-    for byte in session_id {
-        write!(&mut encoded_session, "{byte:02x}").expect("writing to a string cannot fail");
-    }
-    format!(
-        "AIMER_RELOAD_LISTENER_READY session={encoded_session} port={} pid={process_id} protocol=1.0",
-        address.port(),
-    )
 }
 
 /// The setup the framework itself needs before a native window appears.
@@ -869,7 +794,6 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
         antialiasing: AntiAlias,
         startup_hooks: Vec<StartupHook>,
         ui_memory_limit: usize,
-        #[cfg(feature = "wasm-hot-reload")] live_reload: Option<LiveReloadLaunch>,
     ) -> HeadlessAimerApp<W> {
         let scale_factor = if options.scale_factor.is_finite() && options.scale_factor > 0.0 {
             options.scale_factor
@@ -900,22 +824,6 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
 
         let window = WindowHandle::headless(options.size, scale_factor);
         let frame_request_reason = Rc::new(Cell::new(None));
-        #[cfg(feature = "wasm-hot-reload")]
-        let live_reload = live_reload.map(|launch| {
-            let wake_window = window.clone();
-            let wake_reason = frame_request_reason.clone();
-            LiveReloadHost::bind(
-                launch.address,
-                launch.credentials,
-                launch.config,
-                Rc::clone(venus.scheduler()),
-                move || {
-                    wake_reason.set(Some(FrameRequestKind::Full));
-                    wake_window.request_redraw();
-                },
-            )
-            .expect("failed to start configured live reload listener")
-        });
         // The thread-wide requester below answers for the application created
         // last. Registering the window as well is what lets every entry point
         // make *this* window the active one, so two applications on one thread
@@ -972,8 +880,6 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
                 active_touch_id: None,
                 venus,
                 file_drag: crate::handler::file_drag::FileDrag::new(),
-                #[cfg(feature = "wasm-hot-reload")]
-                live_reload,
             },
             canvas: aimer_canvas::InnerCanvas::new(),
             window: window.clone(),
@@ -1285,104 +1191,10 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
         }
     }
 
-    /// Returns the debug listener endpoint selected for this application.
-    #[cfg(feature = "wasm-hot-reload")]
-    #[inline]
-    pub fn live_reload_addr(&self) -> Option<SocketAddr> {
-        self.app
-            .live_reload
-            .as_ref()
-            .map(LiveReloadHost::local_addr)
-    }
-
-    /// Returns the interpreted generation visible to this application.
-    #[cfg(feature = "wasm-hot-reload")]
-    #[inline]
-    pub fn live_reload_generation(&self) -> Option<aimer_anteros::GenerationId> {
-        self.app
-            .live_reload
-            .as_ref()
-            .and_then(LiveReloadHost::active_generation)
-    }
-
-    /// Returns the bounded diagnostic currently shown by the host reload
-    /// overlay, if the latest candidate was rejected or a guest callback
-    /// failed.
-    #[cfg(feature = "wasm-hot-reload")]
-    #[inline]
-    pub fn live_reload_diagnostic(&self) -> Option<&str> {
-        self.app
-            .live_reload
-            .as_ref()
-            .and_then(LiveReloadHost::reload_diagnostic)
-    }
-
-    /// Exports the active interpreted state for development diagnostics.
-    #[cfg(feature = "wasm-hot-reload")]
-    #[inline]
-    pub fn live_reload_state(&mut self) -> Result<Option<Vec<u8>>, aimer_anteros::RuntimeError> {
-        match self.app.live_reload.as_mut() {
-            Some(host) => host.export_active_state(),
-            None => Ok(None),
-        }
-    }
-
     /// Returns the active root's framework debug name.
     #[inline]
     pub fn active_root_name(&self) -> Option<&'static str> {
         self.app.active_root().map(|root| root.debug_name())
-    }
-
-    #[cfg(all(test, feature = "wasm-hot-reload"))]
-    pub(crate) fn active_element_bounds(
-        &self,
-        name: &str,
-    ) -> Option<(
-        aimer_attribute::position::Vec2d,
-        aimer_attribute::position::Vec2d,
-    )> {
-        fn find(
-            element: &dyn aimer_widget::Element,
-            name: &str,
-        ) -> Option<(
-            aimer_attribute::position::Vec2d,
-            aimer_attribute::position::Vec2d,
-        )> {
-            if element.debug_name() == name {
-                return element.pos_start_end();
-            }
-            let mut bounds = None;
-            element.event_children(&mut |child| {
-                if bounds.is_none() {
-                    bounds = find(child, name);
-                }
-            });
-            bounds
-        }
-
-        self.app
-            .active_root()
-            .and_then(|root| find(root.as_ref(), name))
-    }
-
-    #[cfg(all(test, feature = "wasm-hot-reload"))]
-    pub(crate) fn active_contains_element(&self, name: &str) -> bool {
-        fn contains(element: &dyn aimer_widget::Element, name: &str) -> bool {
-            if element.debug_name() == name {
-                return true;
-            }
-            let mut found = false;
-            element.event_children(&mut |child| {
-                if !found {
-                    found = contains(child, name);
-                }
-            });
-            found
-        }
-
-        self.app
-            .active_root()
-            .is_some_and(|root| contains(root.as_ref(), name))
     }
 
     /// The UI-thread runtime this application's frames are scheduled by.
@@ -1432,15 +1244,6 @@ impl AimerApp {
     /// Creates an application builder using lightweight analytic antialiasing.
     #[inline]
     pub fn new() -> Self {
-        #[cfg(feature = "wasm-hot-reload")]
-        let live_reload =
-            crate::hot_reload::take_hot_reload_config().map(|(address, credentials, config)| {
-                LiveReloadLaunch {
-                    address,
-                    credentials,
-                    config,
-                }
-            });
         Self {
             child: (),
             antialiasing: AntiAlias::default(),
@@ -1449,8 +1252,6 @@ impl AimerApp {
             startup_hooks: Vec::new(),
             window_attr: WindowAttr::new(),
             exit_policy: crate::ExitPolicy::default(),
-            #[cfg(feature = "wasm-hot-reload")]
-            live_reload,
         }
     }
 
@@ -1502,27 +1303,6 @@ impl AimerApp {
         self
     }
 
-    /// Enables the debug-only authenticated in-process reload listener.
-    ///
-    /// `config` carries explicit interpreter and resource ceilings. The child
-    /// remains the native placeholder until the first authenticated module is
-    /// committed at an application frame safe point.
-    #[cfg(feature = "wasm-hot-reload")]
-    #[inline]
-    pub fn hot_reload(
-        mut self,
-        address: SocketAddr,
-        credentials: SessionCredentials,
-        config: LiveReloadConfig,
-    ) -> Self {
-        self.live_reload = Some(LiveReloadLaunch {
-            address,
-            credentials,
-            config,
-        });
-        self
-    }
-
     /// Registers a callback to run when the native event loop first resumes.
     ///
     /// Setup callbacks run once, in registration order, before Aimer creates
@@ -1554,8 +1334,6 @@ impl AimerApp {
             startup_hooks: self.startup_hooks,
             window_attr: self.window_attr,
             exit_policy: self.exit_policy,
-            #[cfg(feature = "wasm-hot-reload")]
-            live_reload: self.live_reload,
         }
     }
 
@@ -1628,8 +1406,6 @@ impl<W: Widget + 'static> AimerApp<W> {
             self.window_attr,
             self.ui_memory_limit,
             self.exit_policy,
-            #[cfg(feature = "wasm-hot-reload")]
-            self.live_reload,
         );
     }
 
@@ -1645,8 +1421,6 @@ impl<W: Widget + 'static> AimerApp<W> {
             self.window_attr,
             self.ui_memory_limit,
             self.exit_policy,
-            #[cfg(feature = "wasm-hot-reload")]
-            self.live_reload,
         );
     }
 
@@ -1664,8 +1438,6 @@ impl<W: Widget + 'static> AimerApp<W> {
             self.antialiasing,
             self.startup_hooks,
             self.ui_memory_limit,
-            #[cfg(feature = "wasm-hot-reload")]
-            self.live_reload,
         )
     }
 }
@@ -1678,7 +1450,6 @@ fn start_event_loop(
     window_attr: WindowAttr,
     ui_memory_limit: usize,
     exit_policy: crate::ExitPolicy,
-    #[cfg(feature = "wasm-hot-reload")] live_reload: Option<LiveReloadLaunch>,
 ) {
     if APP_STARTED.swap(true, Ordering::SeqCst) {
         return;
@@ -1771,25 +1542,6 @@ fn start_event_loop(
     // and anything else it requests turns the frame into a full one.
     venus.set_notifier(|| with_frame_request_kind(FrameRequestKind::Scoped, request_frame_ready));
 
-    #[cfg(feature = "wasm-hot-reload")]
-    let live_reload = live_reload.map(|launch| {
-        let session_id = *launch.credentials.session_id();
-        let host = LiveReloadHost::bind_with_callback_wake(
-            launch.address,
-            launch.credentials,
-            launch.config,
-            Rc::clone(venus.scheduler()),
-            request_frame_ready,
-            request_callback_ready,
-        )
-        .expect("failed to start configured live reload listener");
-        println!(
-            "{}",
-            reload_listener_readiness_line(session_id, host.local_addr(), std::process::id())
-        );
-        host
-    });
-
     // Every task Venus polls is polled inside the async runtime, so a future
     // that builds its resources on the first poll — a request, a timer, a file
     // read — finds a runtime there instead of panicking. The driver itself
@@ -1816,10 +1568,6 @@ fn start_event_loop(
             };
             #[allow(unused_mut)]
             let mut main = shared.window_app(window_attr, widget.boxed());
-            #[cfg(feature = "wasm-hot-reload")]
-            {
-                main.live_reload = live_reload;
-            }
             let mut host =
                 crate::desktop_host::DesktopHost::new(shared, main, exit_policy, startup_hooks);
 
@@ -1874,8 +1622,6 @@ fn start_event_loop(
                 active_touch_id: None,
                 venus,
                 file_drag: crate::handler::file_drag::FileDrag::new(),
-                #[cfg(feature = "wasm-hot-reload")]
-                live_reload,
             };
 
             let previous_redraw_observer = aimer_events::window::set_thread_redraw_observer({
@@ -2066,8 +1812,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for RetainedTextInputWidget {}
-
     struct MixedPacketWidget {
         paints: Rc<Cell<usize>>,
     }
@@ -2081,8 +1825,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for MixedPacketWidget {}
 
     struct HeadlessVirtualizedWidget {
         controller: ScrollController,
@@ -2114,8 +1856,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for HeadlessVirtualizedWidget {}
-
     struct HeadlessVerticalRowsWidget {
         item_count: u32,
         paints: Rc<Cell<usize>>,
@@ -2136,8 +1876,6 @@ mod tests {
             element.boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for HeadlessVerticalRowsWidget {}
 
     struct HeadlessVerticalRowsStateWidget {
         item_count: u32,
@@ -2189,8 +1927,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for HeadlessVirtualizedRow {}
 
     struct HeadlessVirtualizedRowElement {
         row_index: u32,
@@ -2269,8 +2005,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for HeadlessHorizontalVirtualizedWidget {}
-
     struct HeadlessHorizontalRowsWidget {
         item_count: u32,
         paints: Rc<Cell<usize>>,
@@ -2291,8 +2025,6 @@ mod tests {
             element.boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for HeadlessHorizontalRowsWidget {}
 
     struct HeadlessHorizontalRowsStateWidget {
         item_count: u32,
@@ -2345,8 +2077,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for HeadlessHorizontalVirtualizedItem {}
-
     struct HeadlessHorizontalStatefulVirtualizedWidget {
         controller: ScrollController,
         paints: Rc<Cell<usize>>,
@@ -2381,8 +2111,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for HeadlessHorizontalStatefulVirtualizedWidget {}
-
     struct HeadlessHorizontalStatefulItemWidget {
         row_index: u32,
         paints: Rc<Cell<usize>>,
@@ -2403,8 +2131,6 @@ mod tests {
             element.boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for HeadlessHorizontalStatefulItemWidget {}
 
     struct HeadlessHorizontalItemStateWidget {
         row_index: u32,
@@ -2457,8 +2183,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for HeadlessHorizontalItemPaintWidget {}
 
     fn paint_horizontal_item(ctx: &BuildContext, paints: &Cell<usize>, color: Color, height: f32) {
         paints.set(paints.get() + 1);
@@ -3334,8 +3058,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for LegacyModalWidget {}
-
     struct LegacyModalElement;
 
     impl Drawable for LegacyModalElement {
@@ -3427,8 +3149,6 @@ mod tests {
                 .to_element(ctx)
             }
         }
-
-        impl aimer_widget::PortableWidget for Page {}
 
         let mut app = AimerApp::start_headless_with(
             Page,
@@ -3654,7 +3374,6 @@ mod tests {
                     .boxed()
             }
         }
-        impl aimer_widget::PortableWidget for SwitchPage {}
 
         let mut app = AimerApp::start_headless_with(
             SwitchPage { morph },
@@ -3727,7 +3446,6 @@ mod tests {
                     .to_element(ctx)
             }
         }
-        impl aimer_widget::PortableWidget for Page {}
 
         let mut app = AimerApp::start_headless_with(
             Page,
@@ -3772,7 +3490,6 @@ mod tests {
                     .to_element(ctx)
             }
         }
-        impl aimer_widget::PortableWidget for Page {}
 
         let _serial = VIRTUALIZED_RENDER_TEST_LOCK
             .lock()
@@ -5778,19 +5495,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "wasm-hot-reload")]
-    #[test]
-    fn reload_listener_readiness_is_canonical_and_secret_free() {
-        let line =
-            reload_listener_readiness_line([0x11; 16], "127.0.0.1:37654".parse().unwrap(), 4242);
-
-        assert_eq!(
-            line,
-            "AIMER_RELOAD_LISTENER_READY session=11111111111111111111111111111111 port=37654 pid=4242 protocol=1.0"
-        );
-        assert!(!line.contains("token"));
-    }
-
     #[test]
     fn pending_frame_ready_requests_are_coalesced_until_delivery() {
         let pending = AtomicU8::new(0);
@@ -5866,24 +5570,6 @@ mod tests {
     }
 
     #[test]
-    fn callback_ready_requests_are_independent_of_animation_frame_requests() {
-        let frame_pending = AtomicU8::new(0);
-        let callback_pending = AtomicBool::new(false);
-
-        assert!(try_begin_frame_ready_request(
-            &frame_pending,
-            FrameRequestKind::Full
-        ));
-        assert!(try_begin_callback_ready_request(&callback_pending));
-        assert!(!try_begin_callback_ready_request(&callback_pending));
-
-        complete_frame_ready_request(&frame_pending);
-        complete_callback_ready_request(&callback_pending);
-
-        assert!(try_begin_callback_ready_request(&callback_pending));
-    }
-
-    #[test]
     fn app_builder_defaults_to_analytic_antialiasing() {
         let app = AimerApp::new().child(RedrawWidget);
 
@@ -5924,8 +5610,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for RecordingWidget {}
 
     struct RecordingElement {
         cancels: Arc<AtomicUsize>,
@@ -5970,8 +5654,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for ObservingWidget {}
 
     struct ObservingElement {
         source: Rc<Cell<i32>>,
@@ -6169,8 +5851,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for OrderedWidget {}
-
     struct OrderedElement {
         order: Rc<RefCell<Vec<&'static str>>>,
     }
@@ -6206,8 +5886,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for PreeditWidget {}
 
     struct PreeditElement {
         preedits: RecordedPreedits,
@@ -6483,8 +6161,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for CapturingWidget {}
-
     struct CapturingElement {
         events: Arc<AtomicUsize>,
     }
@@ -6578,8 +6254,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for ScrollRecordingWidget {}
 
     struct ScrollRecordingElement {
         events: Arc<Mutex<Vec<(Vec2d, ScrollDeltaKind, TouchPhase)>>>,
@@ -6780,8 +6454,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for CursorWidget {}
-
     struct CursorElement;
 
     impl Drawable for CursorElement {
@@ -6923,8 +6595,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for NoopScrollWidget {}
 
     struct NoopScrollElement {
         draws: Arc<AtomicUsize>,
@@ -7127,8 +6797,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for AnimatingWidget {}
-
     struct AnimatingElement {
         frames: Arc<AtomicUsize>,
     }
@@ -7248,8 +6916,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for RedrawWidget {}
-
     struct RedrawElement;
 
     impl Drawable for RedrawElement {
@@ -7281,8 +6947,6 @@ mod tests {
             element
         }
     }
-
-    impl aimer_widget::PortableWidget for UiMemoryProbeWidget {}
 
     struct UiMemoryProbeElement([u64; 4]);
 

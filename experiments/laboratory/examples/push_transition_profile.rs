@@ -39,7 +39,7 @@ use aimer::router::{
 use aimer::style::LayoutSpacing;
 use aimer::{
     AimerApp, AnyElement, AnyWidget, BuildContext, Color, Column, Container, HeadlessOptions,
-    PortableWidget, Scrollable, Text, Widget,
+    Scrollable, Text, Widget,
 };
 
 const FRAME_WIDTH: u32 = 800;
@@ -96,8 +96,6 @@ fn routes(route: AppRoute) -> AnyWidget {
 struct Page {
     route: AppRoute,
 }
-
-impl PortableWidget for Page {}
 
 impl Widget for Page {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

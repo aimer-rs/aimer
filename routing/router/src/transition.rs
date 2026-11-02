@@ -26,7 +26,7 @@
 //! The first page and zero-duration effects appear immediately. Navigating
 //! during an animation snaps it to completion and starts the latest change,
 //! retaining at most two pages. Only the incoming page receives input and
-//! focus. Portable guests keep immediate swaps.
+//! focus.
 //!
 //! # Swipe back, system back and links
 //!

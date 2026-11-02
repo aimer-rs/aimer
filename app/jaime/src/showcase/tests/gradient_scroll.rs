@@ -8,7 +8,6 @@ use aimer::quiver::winit::event::{DeviceId, MouseScrollDelta, TouchPhase, Window
 use aimer_cupid::draw_cmd_v2::RenderOp;
 
 struct Page;
-impl aimer::PortableWidget for Page {}
 impl Widget for Page {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let example = EXAMPLES

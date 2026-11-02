@@ -4,66 +4,7 @@
 use std::cell::Cell;
 use std::time::Duration;
 
-#[cfg(aimer_portable_guest)]
-use std::ops::{Add, Sub};
-
-#[cfg(aimer_portable_guest)]
-aimer_tls::thread_local! {
-    static PORTABLE_FRAME_TIME_NANOS: Cell<u64> = const { Cell::new(1_000_000_000) };
-}
-
-#[cfg(not(aimer_portable_guest))]
 use aimer_time::Instant;
-
-#[cfg(aimer_portable_guest)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Instant(u64);
-
-#[cfg(aimer_portable_guest)]
-impl Instant {
-    fn now() -> Self {
-        Self(PORTABLE_FRAME_TIME_NANOS.with(Cell::get))
-    }
-
-    fn elapsed(self) -> Duration {
-        Self::now() - self
-    }
-}
-
-#[cfg(aimer_portable_guest)]
-impl Add<Duration> for Instant {
-    type Output = Self;
-
-    fn add(self, rhs: Duration) -> Self::Output {
-        Self(
-            self.0
-                .saturating_add(rhs.as_nanos().min(u64::MAX as u128) as u64),
-        )
-    }
-}
-
-#[cfg(aimer_portable_guest)]
-impl Sub for Instant {
-    type Output = Duration;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Duration::from_nanos(self.0.saturating_sub(rhs.0))
-    }
-}
-
-pub(crate) fn set_portable_frame_time(frame: u64) {
-    #[cfg(aimer_portable_guest)]
-    {
-        const CLOCK_ORIGIN_NANOS: u64 = 1_000_000_000;
-        const FRAME_NANOS: u64 = 16_000_000;
-        PORTABLE_FRAME_TIME_NANOS.with(|time| {
-            time.set(CLOCK_ORIGIN_NANOS.saturating_add(frame.saturating_mul(FRAME_NANOS)));
-        });
-    }
-
-    #[cfg(not(aimer_portable_guest))]
-    let _ = frame;
-}
 
 /// The smallest slice of frame time worth handing to an idle task.
 ///
@@ -424,7 +365,6 @@ mod tests {
         );
     }
 
-    // A platform that cannot answer must not be able to break the governor.
     #[test]
     fn an_unreportable_refresh_rate_leaves_the_frame_alone() {
         let mut governor = FrameGovernor::for_refresh_rate(120.0);

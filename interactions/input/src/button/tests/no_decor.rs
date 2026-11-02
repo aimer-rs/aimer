@@ -70,13 +70,3 @@ async fn no_decor_disabled_button_keeps_the_child_without_input_or_background() 
     assert_eq!(builds.get(), 1);
 }
 
-#[cfg(feature = "portable-guest")]
-#[test]
-fn portable_button_rejects_no_decor_instead_of_adding_a_decoration() {
-    let mut ctx = portable_context();
-    let error = Button::new().no_decor().child(PortableChild)
-        .to_portable_node(&mut ctx, portable_source(4)).unwrap_err();
-    assert!(matches!(error, PortableBuildError::UnsupportedProperty {
-        widget: "Button", property: "no_decor", ..
-    }));
-}

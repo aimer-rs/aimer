@@ -168,8 +168,6 @@ mod tests {
         }
     }
 
-    impl crate::widget::PortableWidget for EmptyWidget {}
-
     struct EmptyLeaf;
     impl VisitorElement for EmptyLeaf {
         fn debug_name(&self) -> &'static str {
@@ -206,8 +204,6 @@ mod tests {
             "ElementWidget"
         }
     }
-
-    impl crate::widget::PortableWidget for ElementWidget {}
 
     /// A minimal `StatefulWidget` for reconcile tests. The state struct
     /// holds a counter and a shared observer that records the most recent
@@ -1150,8 +1146,6 @@ mod tests {
         }
     }
 
-    impl crate::widget::PortableWidget for SwitcherMock {}
-
     /// Reads the active route key from context (like `Outlet` reading its
     /// `OutletSlot`) and builds the keyed switcher from it.
     struct OutletMock {
@@ -1172,8 +1166,6 @@ mod tests {
             "Outlet"
         }
     }
-
-    impl crate::widget::PortableWidget for OutletMock {}
 
     fn route_key(route: usize) -> &'static str {
         match route {

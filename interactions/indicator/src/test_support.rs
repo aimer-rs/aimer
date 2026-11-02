@@ -6,8 +6,7 @@ use aimer_attribute::BoxConstraint;
 use aimer_cupid::draw_cmd_v2::{Rect, RenderItem, RenderNodeId, RenderOp, RenderTree};
 use aimer_widget::base::{BuildContext, ResolvedSize, Vec2d, WindowHandle};
 use aimer_widget::{
-    AnyElement, Drawable, Element, EventElement, LayoutElement, PortableWidget, Rebuildable,
-    VisitorElement, Widget,
+    AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement, Widget,
 };
 
 pub(crate) const FRAME_SIZE: f32 = 400.0;
@@ -55,8 +54,6 @@ impl Widget for Slot {
         SlotElement.boxed()
     }
 }
-
-impl PortableWidget for Slot {}
 
 struct SlotElement;
 

@@ -60,26 +60,15 @@ use crate::{ModalAnimation, resolve_placement};
 ///
 /// handle.dismiss();
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_modal::Floating", schema_only)]
 pub struct Floating<W = RequiredChild> {
-    #[portable_child]
     child: W,
-    #[portable_skip]
     anchor: AnchorHandle,
-    #[portable_skip]
     placement: PlacementSpec,
-    #[portable_skip]
     barrier_color: Color,
-    #[portable_skip]
     animation: Option<ModalAnimation>,
-    #[portable_skip]
     barrier_dismissible: bool,
-    #[portable_skip]
     escape_dismissible: bool,
-    #[portable_skip]
     viewport_margin: f32,
-    #[portable_skip]
     respect_safe_area: bool,
 }
 

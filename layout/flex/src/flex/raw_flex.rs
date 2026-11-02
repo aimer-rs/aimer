@@ -30,23 +30,14 @@ use aimer_widget::{
 /// both axes, zero gaps, [`OverflowBehavior::Hidden`], and no children. Supply
 /// children with [`Flex::children`] or append to an existing erased collection
 /// with [`Flex::add_child`].
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_flex::flex::Flex", schema_only)]
 #[allow(dead_code)]
 pub struct Flex<W: Widget + 'static = AnyWidget> {
-    #[portable_skip]
     pub(crate) direction: FlexDirection,
-    #[portable_skip]
     pub(crate) vertical_alignment: BoxAlignment,
-    #[portable_skip]
     pub(crate) horizontal_alignment: BoxAlignment,
-    #[portable_skip]
     pub(crate) justify_content: Option<JustifyContent>,
-    #[portable_skip]
     pub(crate) gaps: LayoutSpacing,
-    #[portable_skip]
     pub(crate) overflow: OverflowBehavior,
-    #[portable_children]
     pub(crate) children: Vec<W>,
 }
 

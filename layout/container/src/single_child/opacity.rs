@@ -9,12 +9,8 @@ use aimer_widget::{
 ///
 /// Attach a child with [`Opacity::child`] to retain its concrete type, or with
 /// [`Opacity::box_child`] when branches need a shared erased type.
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_container::single_child::Opacity")]
 pub struct Opacity<W = RequiredChild> {
-    #[portable_child]
     child: W,
-    #[portable_optional]
     opacity: f32,
 }
 

@@ -8,7 +8,7 @@ use aimer_lucide::{Icon, Icons};
 use aimer_svg::{SvgDocument, SvgStyle};
 use aimer_widget::base::{BuildContext, WindowHandle};
 use aimer_widget::testing::{all_commands, record_retained_paint};
-use aimer_widget::{AnyElement, Drawable, LayoutElement, PortableWidget, Widget};
+use aimer_widget::{AnyElement, Drawable, LayoutElement, Widget};
 
 fn context() -> BuildContext<'static> {
     let canvas = {
@@ -60,13 +60,6 @@ fn overrides(element: &AnyElement, ctx: &BuildContext) -> Vec<(Option<Option<Svg
 }
 
 const BLUE: SvgColor = SvgColor::rgba8(0, 128, 255, 255);
-
-#[tokio::test]
-async fn an_icon_is_a_named_widget_with_the_default_portable_contract() {
-    fn assert_portable<T: PortableWidget>() {}
-    assert_portable::<Icon<SvgDocument>>();
-    assert_eq!(Widget::debug_name(&Icon::of(Icons::HOUSE)), "Icon");
-}
 
 #[tokio::test]
 async fn an_icon_without_a_size_uses_its_intrinsic_viewport() {

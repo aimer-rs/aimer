@@ -61,8 +61,6 @@ impl Widget for Swatch {
     }
 }
 
-impl aimer::PortableWidget for Swatch {}
-
 impl VisitorElement for Swatch {
     fn debug_name(&self) -> &'static str {
         "Swatch"
@@ -155,8 +153,6 @@ impl Widget for Page {
     }
 }
 
-impl aimer::PortableWidget for Page {}
-
 #[test]
 fn a_crossfade_between_unbounded_children_stays_on_the_retained_path() {
     let mut app = AimerApp::start_headless(Page);
@@ -220,8 +216,6 @@ impl Widget for ImplicitPage {
     }
 }
 
-impl aimer::PortableWidget for ImplicitPage {}
-
 #[test]
 fn an_implicit_animation_paints_its_rebuilt_child_on_the_retained_path() {
     let mut app = AimerApp::start_headless(ImplicitPage);
@@ -251,8 +245,6 @@ fn an_animated_layout_around_an_unbounded_child_stays_on_the_retained_path() {
                 .to_element(ctx)
         }
     }
-
-    impl aimer::PortableWidget for LayoutPage {}
 
     let mut app = AimerApp::start_headless(LayoutPage);
     render_staying_retained(&mut app, 8, "the layout transition");
@@ -307,8 +299,6 @@ impl Widget for MorphPage {
     }
 }
 
-impl aimer::PortableWidget for MorphPage {}
-
 #[test]
 fn a_morph_between_unbounded_children_stays_on_the_retained_path() {
     let mut app = AimerApp::start_headless(MorphPage);
@@ -342,8 +332,6 @@ fn an_animated_opacity_over_an_unbounded_child_stays_on_the_retained_path() {
         }
     }
 
-    impl aimer::PortableWidget for FadePage {}
-
     let mut app = AimerApp::start_headless(FadePage);
     render_staying_retained(&mut app, 8, "the animated opacity");
 }
@@ -356,8 +344,6 @@ impl Widget for Built {
         (self.0)(ctx)
     }
 }
-
-impl aimer::PortableWidget for Built {}
 
 /// A controller that is mid-run for the whole test.
 fn running_controller() -> AnimationController {

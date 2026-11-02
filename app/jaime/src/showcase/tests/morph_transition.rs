@@ -22,7 +22,6 @@ struct Snapshot {
 }
 
 struct Captured(Rc<RefCell<Snapshot>>);
-impl aimer::PortableWidget for Captured {}
 impl Widget for Captured {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let example = EXAMPLES

@@ -44,7 +44,6 @@ use crate::{AnyElement, AnyWidget, Drawable, RequiredChild, Widget};
 /// use aimer_widget_core::RepaintBoundary;
 ///
 /// # struct Panel;
-/// # impl aimer_widget_core::PortableWidget for Panel {}
 /// # impl aimer_widget_core::Widget for Panel {
 /// #     fn to_element(self, _ctx: &aimer_widget_core::base::BuildContext) -> aimer_widget_core::AnyElement {
 /// #         unreachable!("example only")
@@ -52,12 +51,8 @@ use crate::{AnyElement, AnyWidget, Drawable, RequiredChild, Widget};
 /// # }
 /// let panel = RepaintBoundary::new().child(Panel);
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_widget::RepaintBoundary", schema_only)]
 pub struct RepaintBoundary<W = RequiredChild> {
-    #[portable_child]
     child: ChildBuilder,
-    #[portable_skip]
     marker: PhantomData<W>,
 }
 
@@ -144,8 +139,6 @@ impl<W: Widget + 'static> State<RepaintBoundary<W>> for RepaintBoundaryState<W> 
 struct RepaintBoundaryTarget {
     child: AnyElement,
 }
-
-impl crate::widget::PortableWidget for RepaintBoundaryTarget {}
 
 impl Widget for RepaintBoundaryTarget {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
@@ -297,21 +290,7 @@ impl Drawable for RepaintBoundaryTarget {
 
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use super::RepaintBoundary;
-    use crate::portable::PortableWidgetSchema;
-    use crate::RequiredChild;
-
-    #[test]
-    fn repaint_boundary_schema_exposes_one_required_child() {
-        let schema = <RepaintBoundary<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-
-        assert_eq!(schema.children(), aimer_anteros::ChildCardinality::exactly(1));
-    }
-}
-
-#[cfg(all(test, not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -355,8 +334,6 @@ mod tests {
     struct ProbeElement {
         draws: Rc<Cell<usize>>,
     }
-
-    impl crate::widget::PortableWidget for ProbeWidget {}
 
     impl Widget for ProbeWidget {
         fn to_element(self, _ctx: &BuildContext) -> AnyElement {

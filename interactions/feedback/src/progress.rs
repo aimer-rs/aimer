@@ -5,7 +5,7 @@ use aimer_space::Stack;
 use aimer_style::TextStyle;
 use aimer_text::Text;
 use aimer_widget::base::{BuildContext, Color};
-use aimer_widget::{AnyElement, PortableWidget, Widget};
+use aimer_widget::{AnyElement, Widget};
 
 /// Motion preference consumed by feedback indicators.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -216,8 +216,6 @@ impl Widget for ProgressIndicator {
     }
 }
 
-impl PortableWidget for ProgressIndicator {}
-
 /// The error returned when configuring a spinner with an invalid period.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpinnerError {
@@ -341,8 +339,6 @@ impl Widget for Spinner {
         "Spinner"
     }
 }
-
-impl PortableWidget for Spinner {}
 
 fn validate_fraction(value: f32) -> Result<(), ProgressError> {
     if !value.is_finite() {

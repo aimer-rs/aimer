@@ -3,13 +3,6 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use aimer_rubick::ShareRef;
-use aimer_widget::portable::__anteros::{PropertyId, PropertyValue};
-#[cfg(feature = "portable-guest")]
-use aimer_widget::portable::{PortableBuildContext, PortableBuildError, PortableEncodeProperty};
-use aimer_widget::portable::{
-    PortableMaterializeError, PortableMaterializeProperty, PortableProperty,
-    PortablePropertyReflection,
-};
 
 /// A text payload that is either a `'static` literal or shared string data.
 ///
@@ -163,36 +156,6 @@ impl From<ShareRef<String>> for TextSource {
     #[inline]
     fn from(text: ShareRef<String>) -> Self {
         TextSource::from(text.project(String::as_str))
-    }
-}
-
-impl PortableProperty for TextSource {
-    const REFLECTION: PortablePropertyReflection = PortablePropertyReflection::string_ref();
-}
-
-impl PortableMaterializeProperty for TextSource {
-    fn from_awir(
-        document: &aimer_widget::portable::__anteros::WidgetDocumentView<'_>,
-        property: PropertyId,
-        value: PropertyValue,
-    ) -> Result<Self, PortableMaterializeError> {
-        let PropertyValue::StringRef(index) = value else {
-            return Err(PortableMaterializeError::InvalidPropertyType { property });
-        };
-        document
-            .string(index)
-            .map(|text| Self::from(text.to_owned()))
-            .ok_or(PortableMaterializeError::InvalidPropertyReference { property, index })
-    }
-}
-
-#[cfg(feature = "portable-guest")]
-impl PortableEncodeProperty for TextSource {
-    fn encode_property(
-        self,
-        context: &mut PortableBuildContext,
-    ) -> Result<PropertyValue, PortableBuildError> {
-        context.push_string(self.as_str())
     }
 }
 

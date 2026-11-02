@@ -700,8 +700,6 @@ mod tests {
 
     impl Rebuildable for RefiningPaintChild {}
 
-    impl aimer_widget::PortableWidget for RefiningPaintChild {}
-
     impl aimer_widget::Widget for RefiningPaintChild {
         fn to_element(self, _ctx: &BuildContext) -> AnyElement {
             aimer_widget::Element::boxed(self)

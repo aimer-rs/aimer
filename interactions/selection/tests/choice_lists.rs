@@ -11,7 +11,7 @@ use aimer_flex::Column;
 use aimer_selection::{
     Autocomplete, ChoiceOption, OptionError, RadioGroup, Select, SemanticRole,
 };
-use aimer_widget::{LayoutElement, PortableWidget, Widget};
+use aimer_widget::{LayoutElement, Widget};
 use support::{Driver, context};
 
 fn plans() -> Vec<ChoiceOption<&'static str>> {
@@ -29,22 +29,6 @@ fn height_in_column(ctx: &aimer_widget::base::BuildContext, widget: impl Widget 
         .to_element(ctx)
         .layout(ctx)
         .height
-}
-
-#[tokio::test]
-async fn list_controls_are_named_widgets_with_the_default_portable_contract() {
-    fn assert_portable<T: PortableWidget>() {}
-    assert_portable::<RadioGroup<i32>>();
-    assert_portable::<Select<i32>>();
-    assert_portable::<Autocomplete<&'static str>>();
-
-    let ctx = context();
-    assert_eq!(RadioGroup::<i32>::new().to_element(&ctx).debug_name(), "RadioGroup");
-    assert_eq!(Select::<i32>::new().to_element(&ctx).debug_name(), "Select");
-    assert_eq!(
-        Autocomplete::<i32>::new().to_element(&ctx).debug_name(),
-        "Autocomplete"
-    );
 }
 
 #[test]

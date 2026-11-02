@@ -377,8 +377,6 @@ mod tests {
 
     struct ProbeCaret(Rc<Cell<(f32, f32)>>);
 
-    impl aimer_widget::PortableWidget for ProbeCaret {}
-
     impl Widget for ProbeCaret {
         fn to_element(self, _ctx: &BuildContext) -> AnyElement {
             ProbeCaretElement(self.0).boxed()

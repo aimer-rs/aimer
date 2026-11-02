@@ -30,7 +30,6 @@ mod foreground_decoration_box;
 mod masked_decoration_box;
 mod multi_decoration_box;
 mod opacity_mask_box;
-mod portable;
 
 pub use border::{BorderSlice, BorderStyle, BoxBorder, BoxOutline, Stroke};
 pub use box_decoration::BoxDecoration;

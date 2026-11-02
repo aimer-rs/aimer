@@ -1,8 +1,8 @@
 //! The standard curves.
 
-use super::{AnyCurve, Curve, CurveDescriptor};
+use super::{AnyCurve, Curve};
 
-/// A standard curve, as the handle stores it and the portable format names it.
+/// A standard curve, as the handle stores it.
 ///
 /// This is private: the public surface is the curve types below. It exists so
 /// that holding a standard curve takes no allocation and evaluating it takes no
@@ -25,55 +25,7 @@ pub(super) enum Standard {
     FastOutLinearIn,
 }
 
-/// The portable tag of a cubic Bézier.
-pub(super) const BEZIER_TAG: i64 = 4;
-
 impl Standard {
-    /// The tag the portable widget format uses. These never change.
-    pub(super) const fn tag(self) -> i64 {
-        match self {
-            Self::Linear => 0,
-            Self::EaseIn => 1,
-            Self::EaseOut => 2,
-            Self::EaseInOut => 3,
-            // 4 is the cubic Bézier.
-            Self::Decelerate => 5,
-            Self::BounceOut => 6,
-            Self::BounceIn => 7,
-            Self::BounceInOut => 8,
-            Self::ElasticIn => 9,
-            Self::ElasticOut => 10,
-            Self::ElasticInOut => 11,
-            Self::FastOutSlowIn => 12,
-            Self::LinearOutSlowIn => 13,
-            Self::FastOutLinearIn => 14,
-        }
-    }
-
-    pub(super) const fn from_tag(tag: i64) -> Option<Self> {
-        Some(match tag {
-            0 => Self::Linear,
-            1 => Self::EaseIn,
-            2 => Self::EaseOut,
-            3 => Self::EaseInOut,
-            5 => Self::Decelerate,
-            6 => Self::BounceOut,
-            7 => Self::BounceIn,
-            8 => Self::BounceInOut,
-            9 => Self::ElasticIn,
-            10 => Self::ElasticOut,
-            11 => Self::ElasticInOut,
-            12 => Self::FastOutSlowIn,
-            13 => Self::LinearOutSlowIn,
-            14 => Self::FastOutLinearIn,
-            _ => return None,
-        })
-    }
-
-    pub(super) const fn descriptor(self) -> CurveDescriptor {
-        CurveDescriptor { tag: self.tag(), control_points: None }
-    }
-
     /// Evaluates the curve at `t`, clamped to `0.0..=1.0`.
     pub(super) fn eval(self, t: f32) -> f32 {
         let t = t.clamp(0.0, 1.0);
@@ -134,10 +86,6 @@ macro_rules! standard_curves {
         impl Curve for $name {
             fn transform(&self, t: f32) -> f32 {
                 Standard::$variant.eval(t)
-            }
-
-            fn descriptor(&self) -> Option<CurveDescriptor> {
-                Some(Standard::$variant.descriptor())
             }
 
             fn into_any(self) -> AnyCurve {
@@ -206,18 +154,11 @@ pub const fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32) -> CubicBezier {
 }
 
 impl CubicBezier {
-    pub(super) fn control_points(self) -> [f64; 4] {
-        [self.x1 as f64, self.y1 as f64, self.x2 as f64, self.y2 as f64]
-    }
 }
 
 impl Curve for CubicBezier {
     fn transform(&self, t: f32) -> f32 {
         cubic_bezier_y_for_x(t.clamp(0.0, 1.0), self.x1, self.y1, self.x2, self.y2)
-    }
-
-    fn descriptor(&self) -> Option<CurveDescriptor> {
-        Some(CurveDescriptor { tag: BEZIER_TAG, control_points: Some(self.control_points()) })
     }
 
     fn is_valid(&self) -> bool {

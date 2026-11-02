@@ -23,8 +23,7 @@ pub enum TextTransform {
 ///
 /// `Normal` uses the font's natural metrics. `Px` is an absolute logical
 /// pixel line box, while `Factor` multiplies the resolved font size. Numeric
-/// values must be finite; zero and negative resolved line boxes are invalid
-/// during portable lowering.
+/// values must be finite; zero and negative resolved line boxes are invalid.
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub enum LineHeight {
     /// Uses the natural ascent, descent, and font line gap.
@@ -55,8 +54,7 @@ impl LineHeight {
 /// A single glyph shadow painted behind a text run.
 ///
 /// Text shadows affect painting only; their offset and blur do not change the
-/// measured advance of the text. Values are logical pixels and are validated
-/// when a style crosses the portable encoding seam.
+/// measured advance of the text. Values are logical pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextShadow {
     /// Horizontal shadow offset in logical pixels.
@@ -143,17 +141,6 @@ impl TextDecorationLine {
 
     pub const fn bits(self) -> u8 {
         self.0
-    }
-
-    /// Reconstructs a decoration bit-set when all bits belong to the stable
-    /// portable line vocabulary.
-    #[doc(hidden)]
-    pub const fn from_bits(bits: u8) -> Option<Self> {
-        if bits & !0x0F == 0 {
-            Some(Self(bits))
-        } else {
-            None
-        }
     }
 
     /// True when every line in `other` is present in `self`.

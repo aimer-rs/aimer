@@ -25,7 +25,7 @@ native = [
 ]
 # Keep the WGPU adapter optional so a WGPU-only build can disable default
 # features and omit the native API dependency set.
-wgpu = ["dep:wgpu", "dep:winit", "dep:aimer_wgpu"]
+wgpu = ["dep:wgpu", "dep:winit", "dep:aimer_wgpu", "aimer_rect_pipeline/wgpu", "aimer_image_pipeline/wgpu", "aimer_svg_pipeline/wgpu", "aimer_text_pipeline/wgpu", "aimer_material_pipeline/wgpu"]
 frame-stats = ["aimer_metal?/frame-stats"]
 # Keep optional checked-in fallback faces out of native downstream binaries
 # unless an application explicitly opts into deterministic bundled rendering.
@@ -100,11 +100,16 @@ required-features = ["opengl-demo"]
 
 [dependencies]
 aimer_time.workspace = true
-aimer_tls.workspace = true
 aimer_utils = { workspace = true, features = ["time-cost"] }
-aimer_rubick.workspace = true
-aimer_color.workspace = true
 aimer_shape.workspace = true
+aimer_primitives.workspace = true
+aimer_scene.workspace = true
+aimer_pipeline_core.workspace = true
+aimer_rect_pipeline.workspace = true
+aimer_image_pipeline.workspace = true
+aimer_svg_pipeline.workspace = true
+aimer_text_pipeline.workspace = true
+aimer_material_pipeline.workspace = true
 aimer_cupid_svg.workspace = true
 aimer_cupid_font.workspace = true
 aimer_cupid_gpu.workspace = true
@@ -138,9 +143,9 @@ image = { workspace = true, default-features = false, features = [
     "tiff",
 ] }
 hashbrown.workspace = true
-smallvec.workspace = true
 
 [dev-dependencies]
+aimer_material_pipeline = { workspace = true, features = ["test-support"] }
 aimer_cupid_font = { workspace = true, features = ["test-counters"] }
 
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]

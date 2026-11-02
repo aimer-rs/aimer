@@ -1,9 +1,6 @@
 extern crate self as aimer;
 
 pub use aimer_accessibility as accessibility;
-pub use aimer_anteros as anteros;
-#[cfg(target_arch = "wasm32")]
-pub use aimer_anteros::WasmCapabilityTransport;
 pub use aimer_assets::img_widget::image_widget::Image;
 pub use aimer_assets::img_widget::source::ImageSource;
 pub use aimer_assets::{
@@ -45,12 +42,11 @@ pub use aimer_focus::{
 };
 pub use aimer_form as form;
 pub use aimer_haptics as haptics;
-pub use aimer_haptics::{HapticFeedback, HapticKind};
 pub use aimer_i18n as i18n;
 pub use aimer_indicator as indicator;
 pub use aimer_input as input;
 pub use aimer_macro::{
-    PortableValue, Router, StatefulWidget, StatelessWidget, Theme, assets, capability, declare_assets, key, main,
+    Router, StatefulWidget, StatelessWidget, Theme, assets, declare_assets, key, main,
 };
 #[cfg(feature = "markdown")]
 pub use aimer_markdown::{
@@ -85,11 +81,8 @@ pub mod modal {
 pub use aimer_provider::{
     NotifierProvider, Provider, ProviderContext, ProviderHandle, StoreProvider,
 };
-#[cfg(not(aimer_portable_guest))]
 pub use aimer_quiver as quiver;
-#[cfg(not(aimer_portable_guest))]
 pub use aimer_quiver::frame_stats;
-#[cfg(not(aimer_portable_guest))]
 pub use aimer_quiver::{
     self, AimerApp, ExitPolicy, FIRST_FRAME_RENDERED_EVENT, HeadlessAimerApp, HeadlessOptions,
     NewWindow, RenderMode, Window, WindowAttr, WindowId, set_first_frame_rendered_callback,
@@ -124,9 +117,6 @@ pub use aimer_text::{
 };
 pub use aimer_venus as venus;
 pub use aimer_venus::{TaskScope, Venus, yield_if_over_budget, yield_now};
-#[cfg(feature = "portable-guest")]
-#[doc(hidden)]
-pub use aimer_wasm_guest;
 pub use aimer_widget::base::BuildContext;
 pub use aimer_widget::{self, Key, State, StatefulWidget, StatelessWidget, Widget, *};
 
@@ -165,8 +155,7 @@ mod public_api_tests {
 // Macro re-export
 pub mod macros {
     pub use aimer_macro::{
-        PortableValue, Router, StatefulWidget, StatelessWidget, Theme, assets, capability, declare_assets,
-        key, main, widget,
+        Router, StatefulWidget, StatelessWidget, Theme, assets, declare_assets, key, main, widget,
     };
 }
 
@@ -391,31 +380,6 @@ mod tests {
                 );
             }
             assert_any_widget(AnimatedTheme::new().box_child(ZeroSizedBox));
-        }
-    }
-
-    mod capability_macro {
-        use aimer::anteros::CapabilityResult;
-        use aimer::capability;
-
-        #[capability(name = "haptics", id = "com.example.haptics", abi = 1, since = "1.0.0")]
-        trait Haptics {
-            fn trigger(&self, kind: u32) -> CapabilityResult<bool>;
-        }
-
-        struct NativeHaptics;
-
-        impl Haptics for NativeHaptics {
-            fn trigger(&self, kind: u32) -> CapabilityResult<bool> {
-                Ok(kind == 7)
-            }
-        }
-
-        #[test]
-        fn umbrella_capability_macro_preserves_the_native_provider_api() {
-            assert!(NativeHaptics.trigger(7).unwrap());
-            assert_eq!(HapticsCapability::CANONICAL_ID, "com.example.haptics");
-            assert_eq!(HapticsCapability::ABI_MAJOR, 1);
         }
     }
 
@@ -974,8 +938,6 @@ mod tests {
             }
         }
 
-        impl aimer::PortableWidget for PositionProbe {}
-
         impl Drawable for PositionProbeElement {
             fn update(&self, ctx: &BuildContext) {
                 self.observed.set(ctx.canvas.get_transform_translation());
@@ -1201,8 +1163,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for SizeProbe {}
-
         impl Drawable for SizeProbeElement {
             fn update(&self, ctx: &BuildContext) {
                 self.observed.set(ctx.parent_size);
@@ -1416,8 +1376,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 .boxed()
             }
         }
-
-        impl aimer::PortableWidget for Probe {}
 
         #[test]
         fn a_resize_rebuilds_only_the_widgets_that_read_the_window() {
@@ -1981,8 +1939,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for SideBarLike {}
-
         impl StatefulWidget for SideBarLike {
             type State = SideBarLikeState;
 
@@ -2188,8 +2144,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for Probe {}
-
         /// Announces the appearance the system switched to, the way the platform does.
         fn switch_system_to<W: Widget + 'static>(
             app: &mut HeadlessAimerApp<W>,
@@ -2254,8 +2208,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 "ThemeSwitch"
             }
         }
-
-        impl aimer::PortableWidget for ThemeSwitch {}
 
         /// Flips the application's mode, the way pressing its button does.
         fn set_mode(mode: ThemeMode) {
@@ -2694,8 +2646,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for TestRoute {}
-
         // ---------------------------------------------------------------------------
         // The shell: `website/src/components/app_shell.rs`.
         // ---------------------------------------------------------------------------
@@ -2744,8 +2694,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for AppShell {}
-
         /// The themed frame around the `Outlet`: it reads the theme, so every tick of
         /// the transition rebuilds it and the route below.
         struct ThemedFrame;
@@ -2782,8 +2730,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 "ThemedFrame"
             }
         }
-
-        impl aimer::PortableWidget for ThemedFrame {}
 
         // ---------------------------------------------------------------------------
         // The pages: `website/src/screen/*`.
@@ -2830,8 +2776,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 "BlogListPage"
             }
         }
-
-        impl aimer::PortableWidget for BlogListPage {}
 
         fn blog_list_content(snapshot: &AsyncSnapshot<u32, String>) -> AnyWidget {
             match snapshot {
@@ -2883,8 +2827,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for LearnPage {}
-
         fn learn_content(snapshot: &AsyncSnapshot<u32, String>) -> AnyWidget {
             match snapshot {
                 AsyncSnapshot::Waiting => Marker::new("learn-waiting", 40).boxed(),
@@ -2921,8 +2863,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 "Marker"
             }
         }
-
-        impl aimer::PortableWidget for Marker {}
 
         struct MarkerElement {
             label: &'static str,
@@ -3181,8 +3121,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for HomeRoute {}
-
         // ---------------------------------------------------------------------------
         // The shell: `website/src/components/app_shell.rs`.
         // ---------------------------------------------------------------------------
@@ -3231,8 +3169,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for AppShell {}
-
         /// The themed frame around the `Outlet`: a *stateless* widget that reads the
         /// theme, so every tick of the transition rebuilds it and everything below.
         struct ThemedFrame;
@@ -3269,8 +3205,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 "ThemedFrame"
             }
         }
-
-        impl aimer::PortableWidget for ThemedFrame {}
 
         // ---------------------------------------------------------------------------
         // The page: `website/src/screen/home_screen.rs`.
@@ -3319,8 +3253,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 "HomePage"
             }
         }
-
-        impl aimer::PortableWidget for HomePage {}
 
         // ---------------------------------------------------------------------------
         // The section: `website/src/components/same_looking.rs`.
@@ -3394,8 +3326,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             }
         }
 
-        impl aimer::PortableWidget for SelectionSection {}
-
         // ---------------------------------------------------------------------------
         // A leaf that records the index it was painted with.
         // ---------------------------------------------------------------------------
@@ -3423,8 +3353,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 "Marker"
             }
         }
-
-        impl aimer::PortableWidget for Marker {}
 
         struct MarkerElement {
             index: usize,
@@ -3669,10 +3597,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
     // The deprecated attribute stays covered until it is removed.
     #[allow(deprecated)]
     mod widget_attribute {
-        use aimer::portable::{
-            AimerReflectionType, DecodeError, Decoder, EncodeError, Encoder, FieldDescriptor,
-            FieldKind, PortableApply, PortableEncode, StableId128, TypeSchema,
-        };
         use aimer::*;
 
         #[widget(Stateless)]
@@ -3704,41 +3628,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
         struct TupleAttributeStatefulState(i32);
 
-        const TUPLE_STATE_FIELDS: &[FieldDescriptor] =
-            &[FieldDescriptor::new("value", "i32", FieldKind::Retained)];
-        const TUPLE_STATE_SCHEMA: TypeSchema = TypeSchema::new(
-            "TupleAttributeStatefulState",
-            StableId128::from_path("aimer.type.v1", "tests::TupleAttributeStatefulState"),
-            TUPLE_STATE_FIELDS,
-        );
-
-        impl AimerReflectionType for TupleAttributeStatefulState {
-            const TYPE_ID: StableId128 =
-                StableId128::from_path("aimer.type.v1", "tests::TupleAttributeStatefulState");
-
-            fn schema() -> &'static TypeSchema {
-                &TUPLE_STATE_SCHEMA
-            }
-        }
-
-        impl PortableEncode for TupleAttributeStatefulState {
-            fn encode(&self, encoder: &mut Encoder<'_>) -> Result<(), EncodeError> {
-                encoder.field(&TUPLE_STATE_FIELDS[0], |encoder| self.0.encode(encoder))
-            }
-        }
-
-        impl PortableApply for TupleAttributeStatefulState {
-            type Retained = i32;
-
-            fn decode_retained(decoder: &mut Decoder<'_>) -> Result<Self::Retained, DecodeError> {
-                Ok(decoder.field(&TUPLE_STATE_FIELDS[0])?.unwrap())
-            }
-
-            fn apply_retained(&mut self, retained: Self::Retained) {
-                self.0 = retained;
-            }
-        }
-
         impl StatefulWidget for TupleAttributeStateful {
             type State = TupleAttributeStatefulState;
 
@@ -3762,41 +3651,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         }
 
         struct EnumAttributeStatefulState(i32);
-
-        const ENUM_STATE_FIELDS: &[FieldDescriptor] =
-            &[FieldDescriptor::new("value", "i32", FieldKind::Retained)];
-        const ENUM_STATE_SCHEMA: TypeSchema = TypeSchema::new(
-            "EnumAttributeStatefulState",
-            StableId128::from_path("aimer.type.v1", "tests::EnumAttributeStatefulState"),
-            ENUM_STATE_FIELDS,
-        );
-
-        impl AimerReflectionType for EnumAttributeStatefulState {
-            const TYPE_ID: StableId128 =
-                StableId128::from_path("aimer.type.v1", "tests::EnumAttributeStatefulState");
-
-            fn schema() -> &'static TypeSchema {
-                &ENUM_STATE_SCHEMA
-            }
-        }
-
-        impl PortableEncode for EnumAttributeStatefulState {
-            fn encode(&self, encoder: &mut Encoder<'_>) -> Result<(), EncodeError> {
-                encoder.field(&ENUM_STATE_FIELDS[0], |encoder| self.0.encode(encoder))
-            }
-        }
-
-        impl PortableApply for EnumAttributeStatefulState {
-            type Retained = i32;
-
-            fn decode_retained(decoder: &mut Decoder<'_>) -> Result<Self::Retained, DecodeError> {
-                Ok(decoder.field(&ENUM_STATE_FIELDS[0])?.unwrap())
-            }
-
-            fn apply_retained(&mut self, retained: Self::Retained) {
-                self.0 = retained;
-            }
-        }
 
         impl StatefulWidget for EnumAttributeStateful {
             type State = EnumAttributeStatefulState;
@@ -3841,55 +3695,8 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         //! generated code against the real traits, which is the only way to catch a
         //! path that resolves inside the macro crate but not at the call site.
 
-        use aimer::portable::{
-            AimerReflectionType, DecodeError, Decoder, EncodeError, Encoder, FieldDescriptor,
-            FieldKind, PortableApply, PortableEncode, StableId128, TypeSchema,
-        };
         use aimer::router::Route;
         use aimer::*;
-
-        macro_rules! impl_portable_i32_state {
-            ($fields:ident, $schema:ident, $state:ty, $field:tt) => {
-                const $fields: &[FieldDescriptor] =
-                    &[FieldDescriptor::new("value", "i32", FieldKind::Retained)];
-                const $schema: TypeSchema = TypeSchema::new(
-                    stringify!($state),
-                    StableId128::from_path("aimer.type.v1", concat!("tests::", stringify!($state))),
-                    $fields,
-                );
-
-                impl AimerReflectionType for $state {
-                    const TYPE_ID: StableId128 = StableId128::from_path(
-                        "aimer.type.v1",
-                        concat!("tests::", stringify!($state)),
-                    );
-
-                    fn schema() -> &'static TypeSchema {
-                        &$schema
-                    }
-                }
-
-                impl PortableEncode for $state {
-                    fn encode(&self, encoder: &mut Encoder<'_>) -> Result<(), EncodeError> {
-                        encoder.field(&$fields[0], |encoder| self.$field.encode(encoder))
-                    }
-                }
-
-                impl PortableApply for $state {
-                    type Retained = i32;
-
-                    fn decode_retained(
-                        decoder: &mut Decoder<'_>,
-                    ) -> Result<Self::Retained, DecodeError> {
-                        Ok(decoder.field(&$fields[0])?.unwrap())
-                    }
-
-                    fn apply_retained(&mut self, retained: Self::Retained) {
-                        self.$field = retained;
-                    }
-                }
-            };
-        }
 
         #[derive(Clone, StatelessWidget)]
         struct Greeting {
@@ -3921,14 +3728,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         struct CounterState {
             count: i32,
         }
-
-        impl_portable_i32_state!(
-            COUNTER_STATE_FIELDS,
-            COUNTER_STATE_SCHEMA,
-            CounterState,
-            count
-        );
-
         impl StatefulWidget for Counter {
             type State = CounterState;
 
@@ -3975,14 +3774,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         struct TupleStateful(i32);
 
         struct TupleStatefulState(i32);
-
-        impl_portable_i32_state!(
-            TUPLE_STATEFUL_STATE_FIELDS,
-            TUPLE_STATEFUL_STATE_SCHEMA,
-            TupleStatefulState,
-            0
-        );
-
         impl StatefulWidget for TupleStateful {
             type State = TupleStatefulState;
 
@@ -4006,14 +3797,6 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         }
 
         struct EnumStatefulState(i32);
-
-        impl_portable_i32_state!(
-            ENUM_STATEFUL_STATE_FIELDS,
-            ENUM_STATEFUL_STATE_SCHEMA,
-            EnumStatefulState,
-            0
-        );
-
         impl StatefulWidget for EnumStateful {
             type State = EnumStatefulState;
 

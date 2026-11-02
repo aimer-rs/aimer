@@ -45,11 +45,11 @@ mod linux_device;
 mod linux_parse;
 #[cfg(target_os = "macos")]
 mod macos_device;
-#[cfg(any(all(target_arch = "wasm32", not(aimer_portable_guest)), test))]
+#[cfg(any(target_arch = "wasm32", test))]
 mod user_agent;
 #[cfg(any(target_os = "android", target_os = "windows", test))]
 mod virtualization;
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 mod web_device;
 #[cfg(target_os = "windows")]
 mod windows_device;
@@ -62,19 +62,10 @@ use ios_device as platform;
 use linux_device as platform;
 #[cfg(target_os = "macos")]
 use macos_device as platform;
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 use web_device as platform;
 #[cfg(target_os = "windows")]
 use windows_device as platform;
-
-#[cfg(all(target_arch = "wasm32", aimer_portable_guest))]
-mod platform {
-    use super::{DeviceInfoError, Queried};
-
-    pub(super) fn query() -> Result<Queried, DeviceInfoError> {
-        Err(DeviceInfoError::Unsupported)
-    }
-}
 
 pub use info::{
     AndroidDetails, DeviceInfo, DeviceKind, IosDetails, LinuxDetails, MacOsDetails, Platform,

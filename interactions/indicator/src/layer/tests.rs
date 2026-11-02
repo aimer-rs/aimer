@@ -171,8 +171,6 @@ impl Widget for Shadowed {
     }
 }
 
-impl PortableWidget for Shadowed {}
-
 struct ShadowedElement;
 
 impl Drawable for ShadowedElement {

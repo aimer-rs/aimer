@@ -62,8 +62,6 @@ impl Widget for CountedLeaf {
     }
 }
 
-impl crate::widget::PortableWidget for CountedLeaf {}
-
 impl Drop for CountedLeafElement {
     fn drop(&mut self) {
         self.counts.leaf_drops.set(self.counts.leaf_drops.get() + 1);
@@ -103,8 +101,6 @@ impl Widget for Group {
         .boxed()
     }
 }
-
-impl crate::widget::PortableWidget for Group {}
 
 impl VisitorElement for GroupElement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
@@ -301,8 +297,6 @@ impl Widget for Nested {
     }
 }
 
-impl crate::widget::PortableWidget for Nested {}
-
 struct NestingParent {
     nested: Rc<NestedCounts>,
     updater: NestedUpdater,
@@ -490,8 +484,6 @@ mod rebuild_scope_profile {
             StatefulElement::from_widget(self, ctx, "Inner", None)
         }
     }
-
-    impl crate::widget::PortableWidget for Inner {}
 
     /// A clean outer stateful holding `size` leaves next to one small dirty
     /// stateful child.

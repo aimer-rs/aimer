@@ -74,7 +74,7 @@ enum KeyInner {
     /// the `key!` macro to generate a key that can keep the state across
     /// the builds
     Static(&'static str),
-    /// Fixed-width equality identity used by portable retained trees.
+    /// A fixed-width equality identity, such as a hash or UUID.
     Fixed([u8; 16]),
     /// An integer, compared by value whatever its width.
     Number(Number),
@@ -212,7 +212,7 @@ impl Key {
     /// Creates an allocation-free equality key from a fixed 128-bit value.
     ///
     /// This constructor is intended for stable identities that already use a
-    /// canonical fixed-width representation, such as portable widget IR keys.
+    /// canonical fixed-width representation, such as hashes or UUIDs.
     /// Two fixed keys compare equal exactly when all sixteen bytes match. A
     /// fixed key never compares equal to a textual, static, or object key.
     #[inline]

@@ -480,12 +480,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use aimer_decoration::Decoration;
-use aimer_macro::PortableWidget;
 use aimer_style::{BoxDecoration, LayoutSpacing, TextAlign, TextStyle};
 use aimer_venus::{ScopeId, TaskScope, Venus};
 use aimer_widget::base::{BuildContext, Color, Colors};
-#[cfg(feature = "portable-guest")]
-use aimer_widget::portable::{PortableBuildContext, PortableBuildError, SourceFingerprint};
 use aimer_widget::{
     AnyElement, AnyWidget, ChildBuilder, FocusBehavior, FocusNode, Focusable, Key, State,
     StateUpdater, StatefulElement, StatefulWidget, Widget,
@@ -557,7 +554,7 @@ use crate::input_field::raw_fields::{
 ///   It does not style a custom caret. Defaults to a default `Colors`
 ///   implementation.
 ///
-/// * `caret` - A non-portable factory for a retained custom caret. The factory
+/// * `caret` - A factory for a retained custom caret. The factory
 ///   receives live geometry, focus, composition, and blink state through
 ///   `CaretContext`.
 ///
@@ -595,43 +592,18 @@ use crate::input_field::raw_fields::{
 ///                             .max_length(Some(200))
 ///                             .on_changed(|text| println!("changed to {text}"));
 /// ```
-#[derive(PortableWidget)]
-#[portable_widget(
-    id = "aimer_input::TextField",
-    validate = validate_portable_text_field
-)]
 pub struct TextField {
-    // Controllers, native text styles, and payload-bearing callbacks do not
-    // have a portable wire contract yet. Keep them in the native state path
-    // while deriving the bounded scalar and decoration properties below.
-    #[portable_skip]
     controller: TextEditingController,
-    #[portable_skip]
     pub input_type: InputType,
-    #[portable_skip]
     pub prompt: Arc<str>,
-    #[portable_skip]
     pub hint: Arc<str>,
-    #[portable_skip]
     pub hint_style: TextStyle,
-    #[portable_skip]
     pub text_style: TextStyle,
-    #[portable_skip]
     pub prompt_style: TextStyle,
-    #[portable_skip]
     pub text_align: TextAlign,
-    #[portable_skip]
     focus_node: Option<FocusNode>,
     pub auto_focus: bool,
-    #[portable_skip]
     pub max_length: Option<usize>,
-    /// The fixed-width guest descriptor for [`Self::max_length`].
-    ///
-    /// `usize` is deliberately not put on the wire: its width differs between
-    /// targets. The descriptor is kept in sync by the builder and is checked by
-    /// the guest validator before lowering, so a direct mutation of the public
-    /// native field cannot silently become an unbounded or stale value.
-    max_length_wire: Option<u32>,
     pub enable: bool,
     pub decoration: BoxDecoration,
     pub hover_decoration: Option<BoxDecoration>,
@@ -640,29 +612,19 @@ pub struct TextField {
     /// Decorations that are not a [`BoxDecoration`], in normal, hover, focus,
     /// disabled order. A slot filled here takes precedence over the matching
     /// public field above.
-    #[portable_skip]
     custom_decorations: [Option<Rc<dyn Decoration>>; 4],
     /// The caller-built frame; see [`TextField::builder`].
-    #[portable_skip]
     visual_builder: Option<VisualBuilder>,
     pub selection_color: Color,
-    #[portable_skip]
     pub cursor_color: Colors,
-    #[portable_skip]
     pub caret_builder: Option<CaretBuilder>,
-    #[portable_skip]
     pub on_changed: TextFieldCallback,
-    #[portable_skip]
     pub on_submitted: TextFieldCallback,
-    #[portable_skip]
     pub on_focus: TextFieldCallback,
-    #[portable_skip]
     pub on_blur: TextFieldCallback,
     pub read_only: bool,
-    #[portable_skip]
     key_filter: Option<KeyFilter>,
     pub padding: LayoutSpacing,
-    #[portable_skip]
     widget_key: Option<Key>,
 }
 
@@ -685,36 +647,6 @@ impl Widget for TextField {
             .0
             .boxed()
     }
-}
-
-#[cfg(feature = "portable-guest")]
-fn validate_portable_text_field(
-    field: &TextField,
-    _ctx: &PortableBuildContext,
-    source: SourceFingerprint,
-) -> Result<(), PortableBuildError> {
-    let expected = match field.max_length {
-        None => None,
-        Some(value) => Some(
-            u32::try_from(value)
-                .map_err(|_| PortableBuildError::InvalidPropertyValue { rust_type: "usize" })?,
-        ),
-    };
-    if field.max_length_wire != expected {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "TextField",
-            property: "max_length",
-            source,
-        });
-    }
-    if let Some(property) = field.native_only_property() {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "TextField",
-            property,
-            source,
-        });
-    }
-    Ok(())
 }
 
 /// The mounted state shared by [`TextField`] and [`TextArea`](crate::TextArea).
@@ -926,7 +858,6 @@ impl TextField {
             focus_node: None,
             auto_focus: false,
             max_length: None,
-            max_length_wire: None,
             enable: true,
             decoration: BoxDecoration {
                 background_color: Cell::new(Some(Colors::White.into())),
@@ -996,18 +927,6 @@ impl TextField {
             padding: self.padding,
             chrome: self.chrome(),
             visual: None,
-        }
-    }
-
-    /// Names the first property set that has no portable wire form.
-    #[cfg(feature = "portable-guest")]
-    pub(crate) fn native_only_property(&self) -> Option<&'static str> {
-        if self.visual_builder.is_some() {
-            Some("builder")
-        } else if self.custom_decorations.iter().any(Option::is_some) {
-            Some("decoration")
-        } else {
-            None
         }
     }
 
@@ -1145,16 +1064,6 @@ impl TextField {
     #[inline]
     pub fn max_length(mut self, max_length: Option<usize>) -> Self {
         self.max_length = max_length;
-        self.max_length_wire = max_length.map(|value| u32::try_from(value).unwrap_or(u32::MAX));
-        self
-    }
-
-    /// Applies the bounded guest descriptor while materializing a fresh field.
-    #[doc(hidden)]
-    #[inline]
-    fn max_length_wire(mut self, max_length: u32) -> Self {
-        self.max_length = Some(max_length as usize);
-        self.max_length_wire = Some(max_length);
         self
     }
 
@@ -1173,8 +1082,7 @@ impl TextField {
     /// [`BoxDecoration`] is painted by the field together with its text and
     /// keeps its border, outline and shadow geometry. Any other decoration is
     /// painted behind the field instead, and the field's own `padding` still
-    /// insets the text inside it. Custom decorations require native rendering;
-    /// portable lowering reports an unsupported property.
+    /// insets the text inside it.
     ///
     /// A [`builder`](Self::builder) overrides every decoration.
     #[inline]
@@ -1243,8 +1151,7 @@ impl TextField {
     /// focused and unfocused states would mount it again. Only the editing
     /// surface takes focus on a press; give the chrome a
     /// [`focus_node`](Self::focus_node) handle if a press elsewhere in it should
-    /// focus the field. A builder requires native rendering; portable lowering
-    /// reports an unsupported property.
+    /// focus the field.
     ///
     /// ```
     /// use aimer_input::input::TextField;

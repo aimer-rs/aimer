@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-portable-guest = ["aimer_widget/portable-guest"]
-
 [dependencies]
 aimer_time.workspace = true
 aimer_tls.workspace = true

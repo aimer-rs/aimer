@@ -4,8 +4,8 @@ use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_events::element::{ElementEvent, KeyAction, NamedKey};
 use aimer_widget::base::{BuildContext, Vec2d};
 use aimer_widget::{
-    AnyElement, Drawable, Element, EventElement, EventResult, LayoutElement, PortableWidget,
-    Rebuildable, RequiredChild, VisitorElement, Widget,
+    AnyElement, Drawable, Element, EventElement, EventResult, LayoutElement, Rebuildable,
+    RequiredChild, VisitorElement, Widget,
 };
 
 /// A platform-neutral key used by the choice controls.
@@ -93,8 +93,6 @@ impl KeyRelay {
         }
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for KeyRelay<W> {}
 
 impl<W: Widget + 'static> Widget for KeyRelay<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

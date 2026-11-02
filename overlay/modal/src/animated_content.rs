@@ -57,13 +57,13 @@ impl Drawable for AnimatedOverlayContent {
     }
 
     fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
-        #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             true
         }
         // These targets do not run the retained compositor animation hook, so
         // keep the subtree together for the live canvas transform fallback.
-        #[cfg(any(target_arch = "wasm32", feature = "portable-guest"))]
+        #[cfg(target_arch = "wasm32")]
         {
             false
         }

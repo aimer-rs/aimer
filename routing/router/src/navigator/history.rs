@@ -12,18 +12,18 @@ fn parse_position(state: &str) -> Option<u64> {
     state.strip_prefix("aimer_router:v1:")?.parse().ok()
 }
 
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 pub(super) fn browser_position(state: &wasm_bindgen::JsValue) -> Option<u64> {
     state.as_string().as_deref().and_then(parse_position)
 }
 
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 pub(super) fn browser_current_position() -> Option<u64> {
     let state = web_sys::window()?.history().ok()?.state().ok()?;
     browser_position(&state)
 }
 
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 pub(super) fn browser_push_state(path: &str, position: u64) {
     if let Some(history) = web_sys::window().and_then(|window| window.history().ok()) {
         let state = wasm_bindgen::JsValue::from_str(&format!("aimer_router:v1:{position}"));
@@ -31,7 +31,7 @@ pub(super) fn browser_push_state(path: &str, position: u64) {
     }
 }
 
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 pub(crate) fn browser_replace_state(path: &str) {
     if let Some(history) = web_sys::window().and_then(|window| window.history().ok()) {
         // Redirects and shell updates must preserve the entry's direction marker.
@@ -40,7 +40,7 @@ pub(crate) fn browser_replace_state(path: &str) {
     }
 }
 
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 pub(super) fn browser_current_path() -> Option<String> {
     let location = web_sys::window()?.location();
     let mut path = location.pathname().ok()?;

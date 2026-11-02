@@ -17,8 +17,6 @@ impl Widget for LegacyPainter {
     }
 }
 
-impl aimer::PortableWidget for LegacyPainter {}
-
 impl VisitorElement for LegacyPainter {
     fn debug_name(&self) -> &'static str {
         "LegacyPainter"

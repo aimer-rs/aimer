@@ -3,7 +3,7 @@
 use crate::decoration_box::{ChildMask, decoration_element_with};
 use crate::{BoxDecoration, Decoration};
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, AnyWidget, PortableWidget, RequiredChild, Widget};
+use aimer_widget::{AnyElement, AnyWidget, RequiredChild, Widget};
 
 /// Draws its child through the alpha of one decoration.
 ///
@@ -27,8 +27,6 @@ use aimer_widget::{AnyElement, AnyWidget, PortableWidget, RequiredChild, Widget}
 /// The decoration and the child are rendered into two offscreen targets the size
 /// of the box and composited, so the box costs memory and a pass for each. Keep it
 /// to the list, image or panel that needs the fade rather than a whole page.
-///
-/// Custom decoration widgets do not support portable lowering.
 ///
 /// # Examples
 ///
@@ -93,8 +91,6 @@ impl<D: Decoration> OpacityMaskBox<D> {
         self.child(child).boxed()
     }
 }
-
-impl<D: Decoration + 'static, W: Widget> PortableWidget for OpacityMaskBox<D, W> {}
 
 impl<D: Decoration + 'static, W: Widget> Widget for OpacityMaskBox<D, W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

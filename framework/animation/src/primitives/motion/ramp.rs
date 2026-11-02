@@ -2,10 +2,7 @@
 
 use std::time::Duration;
 
-use super::{AnyMotion, Motion, MotionDescriptor, MotionState};
-
-/// The descriptor tag of a ramp.
-pub(super) const RAMP_TAG: i64 = 1;
+use super::{AnyMotion, Motion, MotionState};
 
 /// A motion at constant speed: it covers one unit of distance in a set time.
 ///
@@ -43,13 +40,6 @@ impl Ramp {
         self.duration
     }
 
-    /// Rebuilds a ramp from its [`MotionDescriptor`] parameters, or `None` if
-    /// they are not usable.
-    pub(super) fn from_params(params: [f64; 2]) -> Option<Self> {
-        let seconds = params[0];
-        (seconds.is_finite() && (0.0..=Duration::MAX.as_secs_f64()).contains(&seconds))
-            .then(|| ramp(Duration::from_secs_f64(seconds)))
-    }
 }
 
 impl Motion for Ramp {
@@ -78,13 +68,6 @@ impl Motion for Ramp {
             value: state.value + direction * pace * dt,
             velocity: direction * pace,
         }
-    }
-
-    fn descriptor(&self) -> Option<MotionDescriptor> {
-        Some(MotionDescriptor {
-            tag: RAMP_TAG,
-            params: [self.duration.as_secs_f64(), 0.0],
-        })
     }
 
     fn into_any(self) -> AnyMotion {
@@ -177,13 +160,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn it_describes_itself_for_a_portable_guest() {
-        let fade = ramp_ms(250);
-        let descriptor = fade.descriptor().expect("a ramp is describable");
-        assert_eq!(descriptor.tag, RAMP_TAG);
-        assert_eq!(Ramp::from_params(descriptor.params), Some(fade));
-        assert_eq!(Ramp::from_params([f64::NAN, 0.0]), None);
-        assert_eq!(Ramp::from_params([-1.0, 0.0]), None);
-    }
 }

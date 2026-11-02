@@ -10,8 +10,6 @@ use aimer_widget::{
 /// or by instantiating the unit struct directly. It is useful as an empty
 /// placeholder where a valid [`Widget`] or element is required, and its layout
 /// size remains the default zero size.
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_container::single_child::ZeroSizedBox")]
 pub struct ZeroSizedBox;
 
 impl ZeroSizedBox {

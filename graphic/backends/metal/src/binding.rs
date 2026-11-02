@@ -109,20 +109,20 @@ mod tests {
 
     /// Every `(group, binding)` pair the six pipelines actually declare, as
     /// `(pipeline, group, bindings-in-that-group)`. Kept in sync with the
-    /// `*_generic` constructors in `src/pipeline/`.
+    /// `*_generic` constructors in the `graphic/pipelines/*` crates and `graphic/cupid/src/pipeline/`.
     const REAL_BINDINGS: &[(&str, u32, &[u32])] = &[
-        // rect_pipeline.rs: one group, one uniform.
+        // aimer_rect_pipeline: one group, one uniform.
         ("rect", 0, &[0]),
-        // image_pipeline.rs: uniform group plus a texture/sampler group.
+        // aimer_image_pipeline: uniform group plus a texture/sampler group.
         ("image", 0, &[0]),
         ("image", 1, &[0, 1]),
-        // text_pipeline.rs: one group holding uniform, atlas and sampler.
+        // aimer_text_pipeline: one group holding uniform, atlas and sampler.
         ("text", 0, &[0, 1, 2]),
-        // material/render.rs: dynamic uniform, capture, sampler and blur texture.
+        // aimer_material_pipeline (render.rs): dynamic uniform, capture, sampler and blur texture.
         ("material", 0, &[0, 1, 2, 3]),
         // frame_composite.rs: one texture only.
         ("frame_composite", 0, &[0]),
-        // svg_pipeline.rs builds a pipeline layout with no bind groups.
+        // aimer_svg_pipeline builds a pipeline layout with no bind groups.
         ("svg", 0, &[]),
     ];
 

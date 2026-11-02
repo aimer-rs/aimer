@@ -131,23 +131,6 @@ impl OutletSlot {
 /// programming error, mirroring `NavigatorController::of`.
 pub struct Outlet;
 
-impl aimer_widget::PortableWidget for Outlet {
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<aimer_widget::portable::PortableNodeId, aimer_widget::portable::PortableBuildError>
-    {
-        let build_context = ctx.build_context();
-        let Some(slot) = build_context.get_state::<OutletSlot>() else {
-            return Err(ctx.unsupported_widget("Outlet", source));
-        };
-        let child = slot.build_child(&build_context);
-        child.into_portable_node(ctx, source)
-    }
-}
-
 impl Widget for Outlet {
     /// # Panics
     ///

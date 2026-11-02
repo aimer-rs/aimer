@@ -1,9 +1,7 @@
 use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
-use aimer_widget::{
-    AnyElement, PortableWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
-};
+use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
 
 use crate::binary::ChangeCallback;
 use crate::combo::{Combo, ComboConfig, TriggerBuilder};
@@ -210,4 +208,3 @@ impl<T: Clone + PartialEq + 'static> Widget for Select<T> {
     }
 }
 
-impl<T: 'static> PortableWidget for Select<T> {}

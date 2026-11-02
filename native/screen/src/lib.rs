@@ -80,7 +80,7 @@ mod orientation;
 mod reserved_region;
 mod screen_inbox;
 mod screen_state;
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 mod web_screen;
 mod wire;
 
@@ -88,15 +88,11 @@ mod wire;
 use android_screen as platform;
 #[cfg(target_os = "ios")]
 use ios_screen as platform;
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 use web_screen as platform;
 
-/// Desktop computers do not rotate, and a portable guest cannot ask.
-#[cfg(not(any(
-    target_os = "android",
-    target_os = "ios",
-    all(target_arch = "wasm32", not(aimer_portable_guest))
-)))]
+/// Desktop computers do not rotate.
+#[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
 mod platform {
     pub(super) fn device_orientation() -> Option<crate::DeviceOrientation> {
         None

@@ -16,13 +16,9 @@ pub type Alignment = TextAlign;
 ///
 /// Attach a child with [`Align::child`] to retain its concrete type, or with
 /// [`Align::box_child`] when branches need a shared erased type.
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_space::space::Align", schema_only)]
 pub struct Align<W = RequiredChild> {
-    #[portable_child]
     child: W,
     layer: u32,
-    #[portable_skip]
     alignment: Alignment,
 }
 

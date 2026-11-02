@@ -3,11 +3,8 @@ pub mod selectable_text;
 
 use std::cell::Cell;
 
-use aimer_macro::PortableWidget;
 use aimer_style::{LineHeight, TextAlign, TextOverflow, TextShadow, TextStyle, TextTransform};
 use aimer_widget::base::BuildContext;
-#[cfg(feature = "portable-guest")]
-use aimer_widget::portable::{PortableBuildContext, PortableBuildError, SourceFingerprint};
 use aimer_widget::{AnyElement, Element, LayoutCache, Widget};
 
 use crate::selection::selectable::SelectionScope;
@@ -43,21 +40,11 @@ const DEFAULT_SELECTION_COLOR: aimer_widget::base::Color =
 ///                 .wrapped();
 /// ```
 #[allow(dead_code)]
-#[derive(PortableWidget)]
-#[portable_widget(
-    id = "aimer_text::Text",
-    validate = validate_portable_text,
-    materializer = materialize_portable_text
-)]
 pub struct Text {
     text: TextSource,
-    #[portable_optional]
     text_align: TextAlign,
-    #[portable_optional]
     text_style: TextStyle,
-    #[portable_optional]
     line_height: LineHeight,
-    #[portable_optional]
     text_indent: f32,
 }
 
@@ -178,82 +165,6 @@ impl Text {
     }
 }
 
-#[cfg(feature = "portable-guest")]
-fn validate_portable_text(
-    text: &Text,
-    ctx: &PortableBuildContext,
-    source: SourceFingerprint,
-) -> Result<(), PortableBuildError> {
-    let _ = (text, ctx, source);
-    Ok(())
-}
-
-fn materialize_portable_text(
-    document: &aimer_widget::portable::__anteros::WidgetDocumentView<'_>,
-    node: aimer_widget::portable::__anteros::WidgetNodeView<'_>,
-    children: Vec<aimer_widget::AnyWidget>,
-) -> Result<aimer_widget::AnyWidget, aimer_widget::portable::PortableMaterializeError> {
-    if !children.is_empty() {
-        return Err(
-            aimer_widget::portable::PortableMaterializeError::InvalidChildCount {
-                expected: 0,
-                actual: children.len(),
-            },
-        );
-    }
-    let property = aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-        "aimer.property:aimer_text::Text:text",
-    );
-    let text: TextSource =
-        aimer_widget::portable::required_materialized_property(document, &node, property)?;
-    let alignment_property = aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-        "aimer.property:aimer_text::Text:text_align",
-    );
-    let alignment = aimer_widget::portable::optional_materialized_property::<TextAlign>(
-        document,
-        &node,
-        alignment_property,
-    )?;
-    let style_property = aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-        "aimer.property:aimer_text::Text:text_style",
-    );
-    let style = aimer_widget::portable::optional_materialized_property::<TextStyle>(
-        document,
-        &node,
-        style_property,
-    )?;
-    let line_height_property = aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-        "aimer.property:aimer_text::Text:line_height",
-    );
-    let line_height = aimer_widget::portable::optional_materialized_property::<LineHeight>(
-        document,
-        &node,
-        line_height_property,
-    )?;
-    let text_indent_property = aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-        "aimer.property:aimer_text::Text:text_indent",
-    );
-    let text_indent = aimer_widget::portable::optional_materialized_property::<f32>(
-        document,
-        &node,
-        text_indent_property,
-    )?;
-    let mut widget = Text::new(text);
-    if let Some(alignment) = alignment {
-        widget = widget.text_align(alignment);
-    }
-    if let Some(style) = style {
-        widget = widget.text_style(style);
-    }
-    if let Some(line_height) = line_height {
-        widget = widget.line_height(line_height);
-    }
-    if let Some(text_indent) = text_indent {
-        widget = widget.text_indent(text_indent);
-    }
-    Ok(widget.boxed())
-}
-
 impl Widget for Text {
     /// Emits the paragraph-backed selectable element inside a
     /// [`SelectionArea`](crate::SelectionArea) and the plain fast path
@@ -292,31 +203,11 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    #[cfg(feature = "portable-guest")]
-    use aimer_anteros::{
-        PROPERTY_TEXT_ALIGN, PROPERTY_TEXT_CONTENT, PROPERTY_TEXT_INDENT,
-        PROPERTY_TEXT_LINE_HEIGHT, PROPERTY_TEXT_STYLE, PropertyValue, Version, WIDGET_TEXT,
-        WidgetDocumentView, WidgetProperty,
-    };
     use aimer_attribute::{ResolvedSize, Vec2d};
     use aimer_canvas::{FrameCanvas, InnerCanvas};
-    #[cfg(feature = "portable-guest")]
-    use aimer_color::prelude::Colors;
     use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderPaintSource, RenderTree};
-    #[cfg(feature = "portable-guest")]
-    use aimer_style::{
-        FontFamily, FontStyle, FontWeight, TextAlign, TextDecoration, TextDecorationLine,
-        TextDecorationStyle, TextOverflow,
-    };
     use aimer_style::{LineHeight, TextAlign, TextStyle, TextTransform};
-    #[cfg(feature = "portable-guest")]
-    use aimer_widget::PortableWidget;
     use aimer_widget::base::{BuildContext, WindowHandle};
-    #[cfg(feature = "portable-guest")]
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableBuildError, PortableLimits, PortableWidgetLimits,
-        PortableWidgetResource, SourceFingerprint, StableId128,
-    };
     use aimer_widget::{Drawable, LayoutCache, LayoutElement, Rebuildable, Widget};
 
     use super::{RawTextWidget, Text};
@@ -371,193 +262,6 @@ mod tests {
             ),
             runtime.handle().clone(),
         )
-    }
-
-    #[cfg(feature = "portable-guest")]
-    fn portable_source(value: u8) -> SourceFingerprint {
-        SourceFingerprint::new(StableId128::from_bytes([value; 16]))
-    }
-
-    #[cfg(feature = "portable-guest")]
-    fn portable_limits() -> PortableWidgetLimits {
-        PortableWidgetLimits::new(4, 4, 4, 4, 64, 1_024).with_max_blob_bytes(128)
-    }
-
-    #[cfg(feature = "portable-guest")]
-    fn portable_context(limits: PortableWidgetLimits) -> PortableBuildContext {
-        PortableBuildContext::new(7, 11, limits, PortableLimits::new(4, 8, 64, 128, 1_024)).unwrap()
-    }
-
-    #[cfg(feature = "portable-guest")]
-    fn assert_exact_portable_text(text: Text, expected: &str) {
-        let mut ctx = portable_context(portable_limits());
-        let node = text.to_portable_node(&mut ctx, portable_source(1)).unwrap();
-        assert_eq!(node.index(), 0);
-        let document = ctx.finish_document(node).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-
-        assert_eq!(view.generation_id(), 7);
-        assert_eq!(view.document_revision(), 11);
-        assert_eq!(view.root_node(), 0);
-        assert_eq!(view.node_count(), 1);
-        assert_eq!(view.string(0), Some(expected));
-        let node = view.node(0).unwrap();
-        assert_eq!(node.widget_type(), WIDGET_TEXT);
-        assert_eq!(node.widget_schema(), Version::new(1, 0));
-        assert_eq!(node.children().count(), 0);
-        assert_eq!(
-            node.properties().collect::<Vec<_>>(),
-            vec![WidgetProperty::new(
-                PROPERTY_TEXT_CONTENT,
-                PropertyValue::StringRef(0),
-            )]
-        );
-    }
-
-    #[cfg(feature = "portable-guest")]
-    fn assert_limit(error: PortableBuildError, resource: PortableWidgetResource) {
-        match error {
-            PortableBuildError::LimitExceeded {
-                resource: actual, ..
-            } => {
-                assert_eq!(actual, resource)
-            }
-            PortableBuildError::PropertyEncoding { cause, .. } => assert_limit(*cause, resource),
-            other => panic!("expected {resource:?} limit, got {other:?}"),
-        }
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn static_and_owned_formatted_text_lower_to_exact_text_ir() {
-        assert_exact_portable_text(Text::new("static"), "static");
-        assert_exact_portable_text(Text::new(format!("formatted {}", 7)), "formatted 7");
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn text_lowering_enforces_string_property_and_key_limits() {
-        let mut ctx = portable_context(portable_limits().with_max_string_bytes(4));
-        assert_limit(
-            Text::new("12345")
-                .to_portable_node(&mut ctx, portable_source(1))
-                .unwrap_err(),
-            PortableWidgetResource::StringBytes,
-        );
-
-        let mut ctx = portable_context(portable_limits().with_max_properties(0));
-        assert_limit(
-            Text::new("text")
-                .to_portable_node(&mut ctx, portable_source(2))
-                .unwrap_err(),
-            PortableWidgetResource::Properties,
-        );
-
-        let mut ctx = portable_context(portable_limits().with_max_keys(0));
-        assert_limit(
-            Text::new("text")
-                .to_portable_node(&mut ctx, portable_source(3))
-                .unwrap_err(),
-            PortableWidgetResource::Keys,
-        );
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn text_alignment_lowers_as_an_optional_property() {
-        let mut context = portable_context(portable_limits());
-        let root = Text::new("text")
-            .text_align(TextAlign::MidCenter)
-            .to_portable_node(&mut context, portable_source(8))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        assert_eq!(
-            node.properties().collect::<Vec<_>>(),
-            vec![
-                WidgetProperty::new(PROPERTY_TEXT_CONTENT, PropertyValue::StringRef(0)),
-                WidgetProperty::new(PROPERTY_TEXT_ALIGN, PropertyValue::I64(3)).optional(),
-            ]
-        );
-        super::materialize_portable_text(&view, node, Vec::new()).unwrap();
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn text_paragraph_properties_lower_as_optional_values() {
-        let mut context = portable_context(portable_limits());
-        let root = Text::new("text")
-            .line_height(LineHeight::Px(24.0))
-            .text_indent(-8.0)
-            .to_portable_node(&mut context, portable_source(9))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        let properties = node.properties().collect::<Vec<_>>();
-
-        assert!(properties.iter().any(|property| {
-            property.property_id() == PROPERTY_TEXT_LINE_HEIGHT
-                && matches!(property.value(), PropertyValue::BlobRef(_))
-        }));
-        assert!(properties.iter().any(|property| {
-            property.property_id() == PROPERTY_TEXT_INDENT
-                && property.value() == PropertyValue::F64(-8.0)
-        }));
-        assert!(
-            !properties
-                .iter()
-                .any(|property| property.property_id() == PROPERTY_TEXT_STYLE)
-        );
-        assert!(
-            !properties
-                .iter()
-                .any(|property| property.property_id() == PROPERTY_TEXT_ALIGN)
-        );
-        super::materialize_portable_text(&view, node, Vec::new()).unwrap();
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn every_text_style_field_lowers_and_materializes() {
-        let style = TextStyle::new()
-            .font_size(24)
-            .font_family(FontFamily::MONOSPACE)
-            .font_style(FontStyle::ObliqueDeg(-7))
-            .font_weight(FontWeight::Value(650))
-            .color(Colors::White)
-            .background_color(Colors::Black.into())
-            .text_overflow(TextOverflow::Ellipsis)
-            .text_decoration(
-                TextDecoration::new()
-                    .line(TextDecorationLine::UNDERLINE | TextDecorationLine::ITALIC)
-                    .style(TextDecorationStyle::Wavy)
-                    .color(Colors::White)
-                    .thickness(1.25)
-                    .offset(-0.5),
-            );
-        let mut context = portable_context(portable_limits());
-        let root = Text::new("styled")
-            .text_style(style)
-            .to_portable_node(&mut context, portable_source(4))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(0).unwrap();
-
-        assert_eq!(
-            node.properties().collect::<Vec<_>>(),
-            vec![
-                WidgetProperty::new(PROPERTY_TEXT_CONTENT, PropertyValue::StringRef(0)),
-                WidgetProperty::new(PROPERTY_TEXT_STYLE, PropertyValue::BlobRef(0)).optional(),
-            ]
-        );
-        super::materialize_portable_text(&view, node, Vec::new()).unwrap();
     }
 
     #[test]

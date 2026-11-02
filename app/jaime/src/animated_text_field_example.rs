@@ -116,8 +116,6 @@ impl Widget for AnimatedTextFieldExample {
     }
 }
 
-impl aimer::PortableWidget for AnimatedTextFieldExample {}
-
 /// The theme colors a builder closure needs, copied out so the closure owns them.
 #[derive(Clone, Copy)]
 struct Palette {

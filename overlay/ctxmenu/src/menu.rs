@@ -3,15 +3,13 @@
 use std::rc::Rc;
 
 use aimer_attribute::{Bounds, Vec2d};
-use aimer_macro::PortableWidget;
 use aimer_modal::{AnchorHandle, Floating, ModalAnimation, ModalHandle};
 use aimer_widget::base::{BuildContext, Color};
-use aimer_widget::{AnyElement, AnyWidget, ChildBuilder, Widget};
+use aimer_widget::{AnyElement, ChildBuilder, Widget};
 
 use crate::dismiss::ContextMenuDismiss;
 use crate::item::ContextMenuItem;
 use crate::panel::RawContextMenuPanel;
-use crate::portable::PortableMenuItems;
 use crate::rows::ContextMenuRows;
 use crate::shape::ContextMenuShape;
 use crate::style::ContextMenuStyle;
@@ -73,91 +71,18 @@ use crate::style::ContextMenuStyle;
 ///     .child(SizedBox::new().width(220).height(120))
 ///     .show();
 /// ```
-#[derive(PortableWidget)]
-#[portable_widget(
-    id = "aimer_ctxmenu::ContextMenu",
-    materializer = materialize_portable_context_menu
-)]
 pub struct ContextMenu {
     shape: ContextMenuShape,
     style: ContextMenuStyle,
-    #[portable_skip]
     anchor: AnchorHandle,
-    items: PortableMenuItems,
-    #[portable_skip]
+    items: Vec<ContextMenuItem>,
     on_select: Option<Rc<dyn Fn(usize)>>,
-    #[portable_skip]
     dismiss: ContextMenuDismiss,
     dismiss_on_select: bool,
     barrier_color: Color,
-    #[portable_skip]
     animation: Option<ModalAnimation>,
-    /// Custom content, or `None` to build rows from the items. The row item
-    /// callbacks remain native-only; custom content is the portable child.
-    #[portable_child(optional)]
+    /// Custom content, or `None` to build rows from the items.
     child: Option<ChildBuilder>,
-}
-
-fn materialize_portable_context_menu(
-    document: &aimer_widget::portable::__anteros::WidgetDocumentView<'_>,
-    node: aimer_widget::portable::__anteros::WidgetNodeView<'_>,
-    mut children: Vec<AnyWidget>,
-) -> Result<AnyWidget, aimer_widget::portable::PortableMaterializeError> {
-    if children.len() > 1 {
-        return Err(
-            aimer_widget::portable::PortableMaterializeError::InvalidChildCount {
-                expected: 1,
-                actual: children.len(),
-            },
-        );
-    }
-
-    let shape: ContextMenuShape = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenu:shape",
-        ),
-    )?;
-    let style: ContextMenuStyle = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenu:style",
-        ),
-    )?;
-    let items: PortableMenuItems = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenu:items",
-        ),
-    )?;
-    let dismiss_on_select: bool = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenu:dismiss_on_select",
-        ),
-    )?;
-    let barrier_color: Color = aimer_widget::portable::required_materialized_property(
-        document,
-        &node,
-        aimer_widget::portable::__anteros::PropertyId::from_canonical_name(
-            "aimer.property:aimer_ctxmenu::ContextMenu:barrier_color",
-        ),
-    )?;
-
-    let mut widget = ContextMenu::new()
-        .shape(shape)
-        .style(style)
-        .items(items.into_vec())
-        .dismiss_on_select(dismiss_on_select)
-        .barrier_color(barrier_color);
-    if let Some(child) = children.pop() {
-        widget = widget.child(child);
-    }
-    Ok(widget.boxed())
 }
 
 impl Default for ContextMenu {
@@ -175,7 +100,7 @@ impl ContextMenu {
             shape: ContextMenuShape::default(),
             style: ContextMenuStyle::default(),
             anchor: AnchorHandle::new(),
-            items: PortableMenuItems::default(),
+            items: Vec::new(),
             on_select: None,
             dismiss: ContextMenuDismiss::new(),
             dismiss_on_select: true,
@@ -235,7 +160,7 @@ impl ContextMenu {
     /// Sets the verbs, in the order they are drawn.
     #[inline]
     pub fn items(mut self, items: Vec<ContextMenuItem>) -> Self {
-        self.items = PortableMenuItems::new(items);
+        self.items = items;
         self
     }
 
@@ -365,7 +290,7 @@ impl ContextMenu {
         let mut rows = ContextMenuRows::new()
             .shape(self.shape)
             .style(self.style.clone())
-            .items(self.items.clone().into_vec())
+            .items(self.items.clone())
             .dismiss_with(self.dismiss.clone())
             .dismiss_on_select(self.dismiss_on_select);
         if let Some(on_select) = &self.on_select {
@@ -528,103 +453,5 @@ mod tests {
         assert!(handle.dismiss());
     }
 
-    #[test]
-    fn context_menu_publishes_a_derived_optional_child_schema() {
-        use aimer_widget::portable::__anteros::ChildCardinality;
-        use aimer_widget::portable::PortableWidgetSchema;
-
-        assert_eq!(
-            <ContextMenu as PortableWidgetSchema>::SCHEMA.children(),
-            ChildCardinality::new(0, 1)
-        );
-    }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use aimer_container::ZeroSizedBox;
-    use aimer_widget::portable::{
-        __anteros::WidgetDocumentView, PortableBuildContext, PortableLimits, PortableNativeWidget,
-        PortableWidgetLimits, PortableWidgetSchema, SourceFingerprint, StableId128,
-        linked_portable_native_widget_registrations,
-    };
-    use aimer_widget::{PortableWidget, Widget};
-
-    use super::{ContextMenu, ContextMenuItem, ContextMenuShape, ContextMenuStyle};
-
-    fn source(value: u8) -> SourceFingerprint {
-        SourceFingerprint::new(StableId128::from_bytes([value; 16]))
-    }
-
-    fn context() -> PortableBuildContext {
-        PortableBuildContext::new(
-            7,
-            11,
-            PortableWidgetLimits::new(16, 32, 16, 16, 2_048, 16_384).with_max_blob_bytes(8_192),
-            PortableLimits::new(16, 512, 2_048, 8_192, 16_384),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn menu_lower_round_trips_style_items_policy_and_optional_child() {
-        let mut context = context();
-        let root = ContextMenu::new()
-            .shape(ContextMenuShape::List)
-            .style(ContextMenuStyle::list().row_height(32.0))
-            .items(vec![ContextMenuItem::new("Copy")])
-            .dismiss_on_select(false)
-            .barrier_color(aimer_widget::base::Color::Rgba(1, 2, 3, 4))
-            .child(ZeroSizedBox)
-            .to_portable_node(&mut context, source(3))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-
-        assert_eq!(node.children().count(), 1);
-        assert_eq!(node.properties().count(), 5);
-        let materialized = <ContextMenu as PortableNativeWidget>::materialize_widget(
-            &view,
-            node,
-            vec![ZeroSizedBox.boxed()],
-        )
-        .unwrap();
-        assert_eq!(materialized.debug_name(), "ContextMenu");
-
-        let schema = <ContextMenu as PortableWidgetSchema>::SCHEMA;
-        assert!(
-            linked_portable_native_widget_registrations()
-                .iter()
-                .any(|registration| registration
-                    .supports(schema.widget().id(), schema.widget().min_version()))
-        );
-    }
-
-    #[test]
-    fn menu_materialization_rejects_more_than_one_child() {
-        let mut context = context();
-        let root = ContextMenu::new()
-            .to_portable_node(&mut context, source(4))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-
-        assert!(matches!(
-            <ContextMenu as PortableNativeWidget>::materialize_widget(
-                &view,
-                node,
-                vec![ZeroSizedBox.boxed(), ZeroSizedBox.boxed()],
-            ),
-            Err(
-                aimer_widget::portable::PortableMaterializeError::InvalidChildCount {
-                    expected: 1,
-                    actual: 2,
-                }
-            )
-        ));
-    }
-}

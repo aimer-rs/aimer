@@ -61,7 +61,6 @@ impl Widget for Cards {
             .to_element(ctx)
     }
 }
-impl aimer_widget::PortableWidget for Cards {}
 
 fn decoration_nodes<W: Widget + 'static>(
     root: &dyn Element,
@@ -199,7 +198,6 @@ impl Widget for Padded {
             .to_element(ctx)
     }
 }
-impl aimer_widget::PortableWidget for Padded {}
 
 #[test]
 fn a_decorated_node_covers_what_it_paints() {

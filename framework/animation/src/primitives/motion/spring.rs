@@ -1,9 +1,6 @@
 //! The spring motion.
 
-use super::{AnyMotion, Motion, MotionDescriptor, MotionState};
-
-/// The descriptor tag of a spring.
-pub(super) const SPRING_TAG: i64 = 0;
+use super::{AnyMotion, Motion, MotionState};
 
 /// Damping ratios this close to `1.0` use the critically damped formula: the
 /// under- and over-damped ones divide by a term that vanishes there.
@@ -66,12 +63,6 @@ impl Spring {
         self.damping_ratio
     }
 
-    /// Rebuilds a spring from its [`MotionDescriptor`] parameters, or `None` if
-    /// they are not usable.
-    pub(super) fn from_params(params: [f64; 2]) -> Option<Self> {
-        let spring = spring(params[0] as f32, params[1] as f32);
-        spring.is_valid().then_some(spring)
-    }
 }
 
 impl Motion for Spring {
@@ -126,13 +117,6 @@ impl Motion for Spring {
         }
     }
 
-    fn descriptor(&self) -> Option<MotionDescriptor> {
-        Some(MotionDescriptor {
-            tag: SPRING_TAG,
-            params: [self.stiffness as f64, self.damping_ratio as f64],
-        })
-    }
-
     fn is_valid(&self) -> bool {
         self.stiffness.is_finite()
             && self.stiffness > 0.0
@@ -165,12 +149,9 @@ mod tests {
     }
 
     #[test]
-    fn presets_are_valid_and_describe_themselves() {
+    fn presets_are_valid() {
         for preset in [SMOOTH, BOUNCY, SNAPPY] {
             assert!(preset.is_valid());
-            let descriptor = preset.descriptor().expect("a spring is describable");
-            assert_eq!(descriptor.tag, SPRING_TAG);
-            assert_eq!(Spring::from_params(descriptor.params), Some(preset));
         }
     }
 

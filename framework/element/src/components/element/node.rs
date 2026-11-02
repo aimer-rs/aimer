@@ -6,7 +6,7 @@ pub(super) struct ElementNode<E> {
 }
 
 impl<E: Element + 'static> ElementNode<E> {
-    #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+    #[cfg(not(target_arch = "wasm32"))]
     fn clear_retained_compositor_animation(&self, render_context: Option<&V2RenderContext>) {
         // Almost no element ever has an animation to clear, so the question is
         // answered from a set that is empty unless something is animating.
@@ -55,7 +55,7 @@ impl<E: Element + 'static> ElementNode<E> {
 
     /// Walks the subtree of an element whose animation was already sampled this
     /// frame, so its controller is not ticked a second time.
-    #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+    #[cfg(not(target_arch = "wasm32"))]
     fn draw_sampled_frame(&self, ctx: &BuildContext, frame: CompositorAnimationFrame) {
         self.draw_local_v2_compatibility_live(ctx);
         if frame.active {
@@ -167,12 +167,12 @@ impl<E: Element + 'static> ElementNode<E> {
         let _invalidation_owner = DrawInvalidationOwnerGuard::enter(self.id.get());
         capture_rebuilt_root(self.id.get(), ctx);
 
-        #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+        #[cfg(not(target_arch = "wasm32"))]
         let retained_animation_candidate = render_context.as_ref().is_some_and(|scope| {
             scope.node_for_element(self.id.get()).is_some()
                 && self.element.can_paint_local_v2(ctx)
         });
-        #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+        #[cfg(not(target_arch = "wasm32"))]
         if retained_animation_candidate {
             match self.element.compositor_animation(ctx) {
                 CompositorAnimationDecision::Compositor(frame) => {
@@ -862,7 +862,7 @@ impl<E: Element + 'static> Drawable for ElementNode<E> {
 
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+#[cfg(not(target_arch = "wasm32"))]
 fn compositor_transform_matrix(
     transform: CompositorTransform,
     device_scale: f32,

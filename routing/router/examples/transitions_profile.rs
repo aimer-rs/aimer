@@ -9,8 +9,10 @@ use aimer_time::{Duration, Instant};
 use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
 use aimer_router::*;
 use aimer_widget::base::{BuildContext, ResolvedSize, WindowHandle};
-use aimer_widget::{AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement,
-    PortableWidget, Rebuildable, VisitorElement, Widget};
+use aimer_widget::{
+    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable,
+    VisitorElement, Widget,
+};
 
 aimer_tls::thread_local! {
     static ALLOCATIONS: Cell<Option<usize>> = const { Cell::new(None) };
@@ -55,7 +57,6 @@ impl Route for Page {
 impl Router for Page { fn build(&self, _: &BuildContext) -> AnyWidget { routes(self.clone()) } }
 struct Leaf;
 struct LeafElement;
-impl PortableWidget for Leaf {}
 impl Widget for Leaf {
     fn to_element(self, _: &BuildContext) -> AnyElement {
         BUILDS.set(BUILDS.get() + 1);

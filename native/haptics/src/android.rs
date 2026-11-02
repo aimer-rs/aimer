@@ -247,9 +247,6 @@ fn int_array<'local>(
     Ok(array)
 }
 
-/// Whether this backend can produce feedback at all.
-pub(crate) const SUPPORTED: bool = true;
-
 /// The vibration motor has no warm-up worth hiding.
 pub(crate) fn prepare_impact(_style: ImpactStyle) {}
 

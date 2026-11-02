@@ -30,8 +30,6 @@ impl Widget for BroadcastWidget {
     }
 }
 
-impl aimer_widget::PortableWidget for BroadcastWidget {}
-
 struct BroadcastElement {
     counts: Rc<BroadcastCounts>,
     children: Vec<AnyElement>,

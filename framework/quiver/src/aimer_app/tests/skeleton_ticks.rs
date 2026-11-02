@@ -44,8 +44,6 @@ impl Widget for SkeletonRow {
     }
 }
 
-impl aimer_widget::PortableWidget for SkeletonRow {}
-
 struct Screen;
 
 impl Widget for Screen {
@@ -80,8 +78,6 @@ impl Widget for Screen {
             .to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for Screen {}
 
 /// The distinct translucent fills the render tree holds for the pulsing bars.
 fn bar_fills<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Vec<String> {
@@ -122,8 +118,6 @@ impl Widget for LoneRow {
         SkeletonRow.to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for LoneRow {}
 
 #[test]
 fn a_placeholder_nested_below_its_builder_keeps_pulsing() {

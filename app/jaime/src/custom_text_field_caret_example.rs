@@ -87,8 +87,6 @@ impl Widget for CustomTextFieldCaretExample {
     }
 }
 
-impl aimer::PortableWidget for CustomTextFieldCaretExample {}
-
 struct ThemedCaret {
     context: CaretContext,
     color: Color,
@@ -100,8 +98,6 @@ impl ThemedCaret {
         Self { context, color }
     }
 }
-
-impl aimer::PortableWidget for ThemedCaret {}
 
 impl Widget for ThemedCaret {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {

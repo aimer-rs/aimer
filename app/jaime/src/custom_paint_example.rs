@@ -14,8 +14,6 @@ pub fn custom_paint_example() -> impl Widget {
 
 struct CustomPaintExample;
 
-impl aimer::PortableWidget for CustomPaintExample {}
-
 impl Widget for CustomPaintExample {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let theme = ThemeData::copied(ctx);

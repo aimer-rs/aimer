@@ -67,44 +67,10 @@ use crate::{AnyElement, AnyWidget};
 /// // it reports the name of the widget it was made from.
 /// assert_eq!(aimer_widget_core::Widget::debug_name(&child), "ErrorWidget");
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(
-    id = "aimer_widget::ChildBuilder",
-    manual_lowering,
-    materializer = materialize_child_builder
-)]
 pub struct ChildBuilder {
-    #[portable_skip]
     source: Source,
-    #[portable_skip]
     key: Option<Key>,
-    #[portable_skip]
     debug_name: &'static str,
-}
-
-/// Materializes the portable form of [`ChildBuilder`] as its child.
-///
-/// Guest lowering consumes the builder and emits the child directly. This
-/// host-side path handles a document that contains an explicit builder node
-/// without recreating a native retained-element owner or crossing a closure
-/// boundary into the host.
-fn materialize_child_builder(
-    _document: &crate::portable::__anteros::WidgetDocumentView<'_>,
-    _node: crate::portable::__anteros::WidgetNodeView<'_>,
-    mut children: Vec<AnyWidget>,
-) -> Result<AnyWidget, crate::portable::PortableMaterializeError> {
-    if children.len() != 1 {
-        return Err(crate::portable::PortableMaterializeError::InvalidChildCount {
-            expected: 1,
-            actual: children.len(),
-        });
-    }
-    children
-        .pop()
-        .ok_or(crate::portable::PortableMaterializeError::InvalidChildCount {
-            expected: 1,
-            actual: 0,
-        })
 }
 
 /// Where a [`ChildBuilder`] gets its subtree from.
@@ -310,34 +276,6 @@ impl ChildBuilder {
         }
     }
 
-    /// Consumes the stored child and lowers it into the portable Widget IR.
-    ///
-    /// A portable build is a one-shot description pass, so it may consume the
-    /// child widget instead of retaining a native element. Reusing a builder
-    /// that already has another owner, or one that has already produced a
-    /// native retained element, is rejected rather than crossing native state
-    /// into the guest document.
-    #[doc(hidden)]
-    #[cfg(feature = "portable-guest")]
-    pub fn into_portable_node(
-        self,
-        ctx: &mut crate::portable::PortableBuildContext,
-        source: crate::portable::SourceFingerprint,
-    ) -> Result<crate::portable::PortableNodeId, crate::portable::PortableBuildError> {
-        let Some(child) = self.source else {
-            return Err(ctx.unsupported_widget(self.debug_name, source));
-        };
-        let child = Rc::try_unwrap(child).map_err(|_| {
-            ctx.unsupported_widget("ChildBuilder", source)
-        })?;
-        let widget = match child.origin {
-            Origin::Every(build) => build(),
-            Origin::Once(widget) => widget.take().ok_or_else(|| {
-                ctx.unsupported_widget("ChildBuilder", source)
-            })?,
-        };
-        widget.into_portable_node(ctx, source)
-    }
 }
 
 /// Cloning shares the child instead of duplicating it, which is what lets a
@@ -367,17 +305,6 @@ impl Widget for ChildBuilder {
     #[inline]
     fn debug_name(&self) -> &'static str {
         self.debug_name
-    }
-}
-
-impl crate::widget::PortableWidget for ChildBuilder {
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut crate::portable::PortableBuildContext,
-        source: crate::portable::SourceFingerprint,
-    ) -> Result<crate::portable::PortableNodeId, crate::portable::PortableBuildError> {
-        self.into_portable_node(ctx, source)
     }
 }
 
@@ -764,7 +691,6 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    use aimer_anteros::{ModelLimits, Version, WidgetDocument, WidgetNode, WidgetSchemaId};
     use aimer_attribute::size::ResolvedSize;
 
     use super::*;
@@ -775,9 +701,6 @@ mod tests {
     mod retain_slots;
     use crate::base::WindowHandle;
     use crate::components::element::broadcast_event;
-    use crate::portable::{
-        PortableNativeWidget, PortableWidgetSchema, linked_portable_native_widget_registrations,
-    };
 
     struct Probe {
         builds: Rc<Cell<usize>>,
@@ -827,8 +750,6 @@ mod tests {
         }
     }
 
-    impl crate::widget::PortableWidget for Counting {}
-
     impl Widget for Probe {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
             self.builds.set(self.builds.get() + 1);
@@ -843,8 +764,6 @@ mod tests {
             "Probe"
         }
     }
-
-    impl crate::widget::PortableWidget for Probe {}
 
     fn context() -> BuildContext<'static> {
         let canvas = {
@@ -968,8 +887,6 @@ mod tests {
             }
         }
 
-        impl crate::widget::PortableWidget for ParentWidget {}
-
         let ctx = context();
         let placement = ChildBuilder::from_widget(ParentWidget).build(&ctx);
         let mut names = Vec::new();
@@ -1025,8 +942,6 @@ mod tests {
             Counter { events: Rc::new(Cell::new(0)) }.boxed()
         }
     }
-
-    impl crate::portable::PortableWidget for LeafWidget {}
 
     #[tokio::test]
     async fn placing_a_leaf_child_again_leaves_the_dirty_path_index_alone() {
@@ -1093,8 +1008,6 @@ mod tests {
             Wrapper { child, forwards: self.forwards }.boxed()
         }
     }
-
-    impl crate::portable::PortableWidget for WrapperWidget {}
 
     /// Places `widget` twice, as a parent that rebuilds itself does, and says
     /// whether the second placement left the dirty-path index usable.
@@ -1216,99 +1129,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn child_builder_materializes_a_single_child_without_retaining_host_state() {
-        const LIMITS: ModelLimits = ModelLimits::new(1_024, 4, 8, 8).max_widget_depth(2);
-        let nodes = [WidgetNode::new(WidgetSchemaId::new(1), Version::new(1, 0))];
-        let image = WidgetDocument::new(0, 0, 0, &nodes, &[], &[])
-            .encode(LIMITS)
-            .unwrap();
-        let document = aimer_anteros::WidgetDocumentView::decode(&image, LIMITS).unwrap();
-        let node = document.node(0).unwrap();
-        let materialized = <ChildBuilder as PortableNativeWidget>::materialize_widget(
-            &document,
-            node,
-            vec![ErrorWidget::new("child").boxed()],
-        )
-        .unwrap();
-
-        assert_eq!(Widget::debug_name(&materialized), "ErrorWidget");
-        let widget_type = <ChildBuilder as PortableWidgetSchema>::SCHEMA.widget().id();
-        assert!(linked_portable_native_widget_registrations()
-            .iter()
-            .any(|registration| registration.widget_type() == widget_type));
-        assert!(matches!(
-            <ChildBuilder as PortableNativeWidget>::materialize_widget(
-                &document,
-                document.node(0).unwrap(),
-                vec![],
-            ),
-            Err(crate::portable::PortableMaterializeError::InvalidChildCount {
-                expected: 1,
-                actual: 0,
-            }),
-        ));
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn child_builder_guest_lowering_consumes_only_a_unique_source() {
-        use crate::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-            StableId128,
-        };
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-            PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap();
-        let child = ChildBuilder::from_widget(ErrorWidget::new("child"));
-        let root = child
-            .into_portable_node(
-                &mut context,
-                SourceFingerprint::new(StableId128::from_bytes([2; 16])),
-            )
-            .unwrap();
-        let graph = context.finish_graph(root).unwrap();
-
-        assert_eq!(graph.node_count(), 1);
-        assert_eq!(
-            graph.node(root).unwrap().widget_type(),
-            <ErrorWidget as PortableWidgetSchema>::SCHEMA.widget().id(),
-        );
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn child_builder_guest_lowering_rejects_shared_native_ownership() {
-        use crate::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-            StableId128,
-        };
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-            PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap();
-        let child = ChildBuilder::from_widget(ErrorWidget::new("child"));
-        let _shared_owner = child.clone();
-        let result = child.into_portable_node(
-            &mut context,
-            SourceFingerprint::new(StableId128::from_bytes([3; 16])),
-        );
-
-        assert!(matches!(
-            result,
-            Err(crate::portable::PortableBuildError::UnsupportedWidget {
-                widget: "ChildBuilder",
-                ..
-            })
-        ));
-    }
 }

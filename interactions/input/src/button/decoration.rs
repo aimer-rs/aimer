@@ -1,6 +1,6 @@
 use super::*;
 
-// Preserve the existing public BoxDecoration fields and portable wire schema.
+// Preserve the existing public BoxDecoration fields.
 // Move their contents out without cloning shadows or allocating. Custom
 // decorations are erased once during configuration, never during painting.
 pub(super) fn split<D: Decoration + 'static>(

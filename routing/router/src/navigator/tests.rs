@@ -15,8 +15,6 @@ aimer_tls::thread_local! {
     static ROUTE_CONTEXT_MISSES: Cell<usize> = const { Cell::new(0) };
     static ROUTE_CONTEXT_NAVIGATOR: RefCell<Option<NavigatorController<TestRoute>>> =
         const { RefCell::new(None) };
-    #[cfg(feature = "portable-guest")]
-    static PORTABLE_ROUTE_BUILDS: RefCell<Vec<TestRoute>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,8 +45,6 @@ impl Widget for NavigatorLookupWidget {
         NavigatorLookupElement.boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for NavigatorLookupWidget {}
 
 struct NavigatorLookupElement;
 
@@ -84,8 +80,6 @@ impl Widget for RouteContextProbe {
     }
 }
 
-impl aimer_widget::PortableWidget for RouteContextProbe {}
-
 fn lookup_route_context(_: TestRoute) -> AnyWidget {
     RouteContextProbe.boxed()
 }
@@ -97,8 +91,6 @@ impl Widget for NavigatorControllerOperationsWidget {
         NavigatorControllerOperationsElement.boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for NavigatorControllerOperationsWidget {}
 
 struct NavigatorControllerOperationsElement;
 
@@ -158,138 +150,10 @@ fn lookup_controller_operations(_: TestRoute) -> AnyWidget {
     NavigatorControllerOperationsWidget.boxed()
 }
 
-#[cfg(not(feature = "portable-guest"))]
 impl Router for TestRoute {
     fn build(&self, _ctx: &BuildContext) -> AnyWidget {
         lookup_route(*self)
     }
-}
-
-#[cfg(feature = "portable-guest")]
-struct PortableRouteWidget;
-
-#[cfg(feature = "portable-guest")]
-impl aimer_widget::PortableWidget for PortableRouteWidget {
-    fn to_portable_node(
-        self,
-        ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<
-        aimer_widget::portable::PortableNodeId,
-        aimer_widget::portable::PortableBuildError,
-    > {
-        let navigator = NavigatorController::<TestRoute>::of(&ctx.build_context());
-        let event_kind = aimer_widget::portable::__anteros::EventId::new(1);
-        let callback_id = ctx.callback_id_for(None, source, event_kind);
-        let callback = aimer_widget::portable::PortableCallback::new(
-            event_kind,
-            aimer_widget::portable::__anteros::Version::new(1, 0),
-            callback_id,
-            move || {
-                navigator.push(TestRoute::Settings);
-                Ok(())
-            },
-        );
-        ctx.push_node_with_callbacks(
-            aimer_widget::portable::__anteros::WIDGET_TEXT,
-            aimer_widget::portable::__anteros::Version::new(1, 0),
-            None,
-            source,
-            &[],
-            vec![callback],
-            &[],
-        )
-    }
-}
-
-#[cfg(feature = "portable-guest")]
-impl Widget for PortableRouteWidget {
-    fn to_element(self, _ctx: &BuildContext) -> AnyElement {
-        panic!("portable route widget must not build natively")
-    }
-}
-
-#[cfg(feature = "portable-guest")]
-impl Router for TestRoute {
-    fn build(&self, _ctx: &BuildContext) -> AnyWidget {
-        PORTABLE_ROUTE_BUILDS.with(|routes| routes.borrow_mut().push(*self));
-        PortableRouteWidget.boxed()
-    }
-}
-
-#[cfg(feature = "portable-guest")]
-#[test]
-fn navigator_portable_lowering_uses_the_active_router_tree() {
-    use aimer_widget::PortableWidget as _;
-    use aimer_widget::portable::__anteros::{WIDGET_TEXT, WidgetDocumentView};
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-        StableId128,
-    };
-
-    let mut context = PortableBuildContext::new(
-        1,
-        1,
-        PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-        PortableLimits::new(8, 16, 64, 128, 1_024),
-    )
-    .unwrap();
-    let root = Navigator::new(TestRoute::Home, lookup_route)
-        .to_portable_node(
-            &mut context,
-            SourceFingerprint::new(StableId128::from_bytes([7; 16])),
-        )
-        .unwrap();
-    let document = context.finish_document(root).unwrap();
-    let bytes = document.encode().unwrap();
-    let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-
-    assert_eq!(
-        view.node(view.root_node()).unwrap().widget_type(),
-        WIDGET_TEXT
-    );
-}
-
-#[cfg(feature = "portable-guest")]
-#[test]
-fn navigator_portable_push_survives_the_rebuild_triggered_by_a_callback() {
-    use aimer_widget::PortableWidget as _;
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-        StableId128,
-    };
-
-    PORTABLE_ROUTE_BUILDS.with(|routes| routes.borrow_mut().clear());
-
-    let mut context = PortableBuildContext::new(
-        1,
-        1,
-        PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-        PortableLimits::new(8, 16, 64, 128, 1_024),
-    )
-    .unwrap();
-    let source = SourceFingerprint::new(StableId128::from_bytes([7; 16]));
-    let root = Navigator::new(TestRoute::Home, lookup_route)
-        .to_portable_node(&mut context, source)
-        .unwrap();
-    context.finish_document(root).unwrap();
-
-    let event_kind = aimer_widget::portable::__anteros::EventId::new(1);
-    let callback_id = context.callback_id_for(None, source, event_kind);
-    let callbacks = context.take_callback_registry();
-    callbacks.dispatch(callback_id, &mut context).unwrap();
-    assert!(context.take_rebuild_request());
-
-    let root = Navigator::new(TestRoute::Home, lookup_route)
-        .to_portable_node(&mut context, source)
-        .unwrap();
-    context.finish_document(root).unwrap();
-
-    assert_eq!(
-        PORTABLE_ROUTE_BUILDS.with(|routes| routes.borrow().clone()),
-        vec![TestRoute::Home, TestRoute::Settings],
-        "a callback-triggered portable rebuild must render the pushed route"
-    );
 }
 
 #[cfg(not(target_arch = "wasm32"))]

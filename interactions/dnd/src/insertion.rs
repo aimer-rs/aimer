@@ -265,28 +265,15 @@ impl Slots {
 /// // Moving a row that is already in the list: the slot still counts the row.
 /// let _index = slot_after_removal(0, 2);
 /// ```
-#[derive(aimer_widget::PortableWidget)]
-#[portable_widget(id = "aimer_dnd::InsertionList", schema_only)]
 pub struct InsertionList<T, C = RequiredChild> {
-    #[portable_skip]
     axis: ListAxis,
-    #[portable_skip]
     spacing: u32,
-    #[portable_skip]
     will_accept: Option<AcceptPredicate<T>>,
-    #[portable_skip]
     on_insert: Option<InsertHandler<T>>,
-    #[portable_skip]
     indicator: Option<IndicatorBuilder>,
-    #[portable_skip]
     frame: Option<FrameBuilder>,
-    // The items are rebuilt from live drag state, so they have no single static
-    // portable child node. Keep the callback on the native path.
-    #[portable_skip]
     items: Option<ItemsBuilder>,
-    #[portable_skip]
     _child: PhantomData<C>,
-    #[portable_skip]
     _payload: PhantomData<T>,
 }
 
@@ -666,8 +653,6 @@ impl<T: 'static> Widget for InsertionGate<T> {
     }
 }
 
-impl<T: 'static> aimer_widget::PortableWidget for InsertionGate<T> {}
-
 struct RawInsertionGate<T> {
     child: AnyElement,
     logic: Rc<InsertionLogic<T>>,
@@ -846,8 +831,6 @@ impl Widget for SlotProbe {
         "SlotProbe"
     }
 }
-
-impl aimer_widget::PortableWidget for SlotProbe {}
 
 struct RawSlotProbe {
     index: usize,
@@ -1100,14 +1083,4 @@ mod tests {
         assert_eq!(slots.slot_at(ListAxis::Vertical, at_y(500.0)), 1);
     }
 
-    #[test]
-    fn completed_insertion_list_publishes_a_derived_schema() {
-        use aimer_widget::portable::__anteros::ChildCardinality;
-        use aimer_widget::portable::PortableWidgetSchema;
-
-        assert_eq!(
-            <InsertionList<String, HasChild> as PortableWidgetSchema>::SCHEMA.children(),
-            ChildCardinality::none()
-        );
-    }
 }

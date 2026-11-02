@@ -5,8 +5,8 @@ use std::time::Duration;
 use aimer_router::*;
 use aimer_widget::base::{BuildContext, ResolvedSize, WindowHandle};
 use aimer_widget::{
-    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, PortableWidget,
-    Rebuildable, VisitorElement, Widget,
+    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable,
+    VisitorElement, Widget,
 };
 
 aimer_tls::thread_local! {
@@ -56,7 +56,6 @@ impl Router for Page {
 }
 
 struct Leaf(Page);
-impl PortableWidget for Leaf {}
 impl Widget for Leaf {
     fn to_element(self, _: &BuildContext) -> AnyElement {
         BUILDS.with(|log| log.borrow_mut().push(self.0));
@@ -834,7 +833,6 @@ fn a_page_with_no_effect_offers_no_gesture_but_still_answers_a_plain_back() {
 }
 
 struct Frame;
-impl PortableWidget for Frame {}
 impl Widget for Frame {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         FRAMES.set(FRAMES.get() + 1);
@@ -1045,7 +1043,6 @@ aimer_tls::thread_local! {
 /// The frame of a shell with a bar under the outlet, 40 high: the outlet is the
 /// top 100, the bar the bottom 40.
 struct BarFrame;
-impl PortableWidget for BarFrame {}
 impl Widget for BarFrame {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         BarFrameElement {
@@ -1084,7 +1081,6 @@ impl LayoutElement for BarFrameElement {
     }
 }
 struct TabBar;
-impl PortableWidget for TabBar {}
 impl Widget for TabBar {
     fn to_element(self, _: &BuildContext) -> AnyElement {
         Element::boxed(self)
@@ -1448,7 +1444,6 @@ impl EventElement for FocusedPage {
     }
 }
 struct FocusedWidget(Page);
-impl PortableWidget for FocusedWidget {}
 impl Widget for FocusedWidget {
     fn to_element(self, _: &BuildContext) -> AnyElement {
         let focus = aimer_widget::focus::FocusNode::new();

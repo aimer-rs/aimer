@@ -26,8 +26,8 @@ mod tests {
     use aimer_text::Text;
     use aimer_widget::base::{BuildContext, ResolvedSize, Vec2d, WindowHandle};
     use aimer_widget::{
-        AnyElement, Drawable, Element, EventElement, LayoutElement, PortableWidget, Rebuildable,
-        State, StatefulWidget, VisitorElement, Widget, broadcast_event,
+        AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,
+        StatefulWidget, VisitorElement, Widget, broadcast_event,
     };
 
     fn context() -> BuildContext<'static> {
@@ -47,8 +47,6 @@ mod tests {
         builds: Rc<Cell<usize>>,
     }
 
-    impl PortableWidget for Probe {}
-
     impl Widget for Probe {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
             self.builds.set(self.builds.get() + 1);
@@ -63,8 +61,6 @@ mod tests {
     struct EventProbe {
         events: Rc<Cell<usize>>,
     }
-
-    impl PortableWidget for EventProbe {}
 
     impl Widget for EventProbe {
         fn to_element(self, _ctx: &BuildContext) -> AnyElement {

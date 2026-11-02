@@ -341,8 +341,6 @@ pub(crate) struct NavigationFrame {
     swipe: Option<Rc<SwipeLink>>,
 }
 
-impl aimer_widget::PortableWidget for NavigationFrame {}
-
 impl Widget for NavigationFrame {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let outgoing = self.playback.as_ref().and_then(|playback| {
@@ -693,7 +691,6 @@ impl LayoutElement for NavigationFrameElement {
 }
 
 struct ScopedPage { widget: AnyWidget, context: RouteChildContext, key: Key }
-impl aimer_widget::PortableWidget for ScopedPage {}
 impl Widget for ScopedPage {
     fn key(&self) -> Option<Key> { Some(self.key.clone()) }
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

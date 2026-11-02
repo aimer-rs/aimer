@@ -2,8 +2,6 @@ use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_macro::{EventElement, Rebuildable};
 use aimer_widget::base::BuildContext;
-#[cfg(feature = "portable-guest")]
-use aimer_widget::portable::{PortableBuildContext, PortableBuildError, SourceFingerprint};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, LayoutElement, RequiredChild, VisitorElement, Widget,
 };
@@ -14,15 +12,8 @@ use aimer_widget::{
 /// Rendering scales about the center of the child's bounds and escapes all
 /// ancestor widget clips, including padding, rounded containers and viewports.
 /// Finish the builder with [`Scalable::child`] or [`Scalable::box_child`].
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(
-    id = "aimer_container::single_child::Scalable",
-    validate = validate_portable_scalable
-)]
 pub struct Scalable<W = RequiredChild> {
-    #[portable_optional]
     scale: f32,
-    #[portable_child]
     child: W,
 }
 
@@ -40,8 +31,7 @@ impl Scalable {
 
     /// Sets the positive render scale multiplier applied to the child.
     ///
-    /// Native construction normalizes non-finite and non-positive values to
-    /// `1.0`; portable lowering rejects them explicitly.
+    /// Construction normalizes non-finite and non-positive values to `1.0`.
     #[inline]
     pub fn scale(mut self, scale: f32) -> Self {
         self.scale = scale;
@@ -79,22 +69,6 @@ impl<W: Widget + 'static> Widget for Scalable<W> {
         }
         .boxed()
     }
-}
-
-#[cfg(feature = "portable-guest")]
-fn validate_portable_scalable<W>(
-    scalable: &Scalable<W>,
-    _ctx: &PortableBuildContext,
-    source: SourceFingerprint,
-) -> Result<(), PortableBuildError> {
-    if !scalable.scale.is_finite() || scalable.scale <= 0.0 {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Scalable",
-            property: "scale",
-            source,
-        });
-    }
-    Ok(())
 }
 
 #[inline]
@@ -272,134 +246,3 @@ impl VisitorElement for RawScalable {
 #[cfg(test)]
 mod tests;
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    use aimer_anteros::{PropertyValue, WidgetDocumentView, WidgetProperty};
-    use aimer_widget::base::BuildContext;
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableBuildError, PortableLimits, PortableWidgetLimits,
-        PortableWidgetResource, PortableWidgetSchema, SourceFingerprint, StableId128,
-    };
-    use aimer_widget::{
-        AnyElement, Drawable, Element, EventElement, LayoutElement, PortableWidget, Rebuildable,
-        RequiredChild, VisitorElement, Widget,
-    };
-
-    use super::Scalable;
-    use crate::ZeroSizedBox;
-
-    fn source(value: u8) -> SourceFingerprint {
-        SourceFingerprint::new(StableId128::from_bytes([value; 16]))
-    }
-
-    fn limits() -> PortableWidgetLimits {
-        PortableWidgetLimits::new(4, 4, 4, 4, 64, 2_048)
-    }
-
-    fn context(limits: PortableWidgetLimits) -> PortableBuildContext {
-        PortableBuildContext::new(3, 1, limits, PortableLimits::new(8, 16, 64, 128, 1_024)).unwrap()
-    }
-
-    struct ScaleProbe(Rc<Cell<f32>>);
-
-    impl Drawable for ScaleProbe {
-        fn update(&self, ctx: &BuildContext) {
-            self.0.set(ctx.scale);
-        }
-    }
-
-    impl EventElement for ScaleProbe {}
-    impl LayoutElement for ScaleProbe {}
-    impl Rebuildable for ScaleProbe {}
-    impl VisitorElement for ScaleProbe {
-        fn debug_name(&self) -> &'static str {
-            "ScaleProbe"
-        }
-    }
-
-    struct ScaleProbeWidget(Rc<Cell<f32>>);
-
-    impl PortableWidget for ScaleProbeWidget {}
-
-    impl Widget for ScaleProbeWidget {
-        fn to_element(self, _ctx: &BuildContext) -> AnyElement {
-            ScaleProbe(self.0).boxed()
-        }
-    }
-
-    #[test]
-    fn scalable_lowering_preserves_scale_and_required_child() {
-        let schema = <Scalable<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-        let scale_property = schema.properties()[0].id();
-        let mut context = context(limits());
-        let root = Scalable::new()
-            .scale(1.75)
-            .child(ZeroSizedBox::new())
-            .to_portable_node(&mut context, source(1))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-
-        assert_eq!(
-            schema.widget().canonical_name(),
-            "aimer.widget:aimer_container::single_child::Scalable"
-        );
-        assert_eq!(
-            schema.children(),
-            aimer_anteros::ChildCardinality::exactly(1)
-        );
-        assert_eq!(node.children().collect::<Vec<_>>(), vec![0]);
-        assert_eq!(
-            node.properties().collect::<Vec<_>>(),
-            vec![WidgetProperty::new(scale_property, PropertyValue::F64(1.75)).optional()],
-        );
-    }
-
-    #[test]
-    fn scalable_lowering_is_bounded_and_rejects_non_positive_scale() {
-        let mut bounded = context(limits().with_max_properties(0));
-        assert!(matches!(
-            Scalable::new()
-                .scale(2.0)
-                .child(ZeroSizedBox::new())
-                .to_portable_node(&mut bounded, source(2)),
-            Err(PortableBuildError::LimitExceeded {
-                resource: PortableWidgetResource::Properties,
-                max: 0,
-                actual: 1,
-            })
-        ));
-
-        let mut invalid = context(limits());
-        assert!(matches!(
-            Scalable::new()
-                .scale(0.0)
-                .child(ZeroSizedBox::new())
-                .to_portable_node(&mut invalid, source(3)),
-            Err(PortableBuildError::UnsupportedProperty {
-                widget: "Scalable",
-                property: "scale",
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn scalable_native_materialization_preserves_layout_scale() {
-        let observed = Rc::new(Cell::new(0.0));
-        let context = BuildContext::portable();
-        let element = Scalable::new()
-            .scale(1.5)
-            .child(ScaleProbeWidget(observed.clone()))
-            .to_element(&context);
-
-        element.update(&context);
-
-        assert_eq!(observed.get(), 1.0);
-    }
-}

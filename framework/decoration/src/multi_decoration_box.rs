@@ -6,7 +6,7 @@ use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::{Canvas, composite_background};
 use aimer_color::prelude::Color;
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, AnyWidget, PortableWidget, RequiredChild, Widget};
+use aimer_widget::{AnyElement, AnyWidget, RequiredChild, Widget};
 
 use crate::{BoxDecoration, Decoration};
 
@@ -25,7 +25,7 @@ use crate::{BoxDecoration, Decoration};
 /// Chained decorations retain their concrete types. Runtime collections are
 /// consumed once and retained; mixed collections can use `Box<dyn Decoration>`
 /// or `Rc<dyn Decoration>`. Neither form requires decorations to implement
-/// `Clone`. Custom decoration widgets do not support portable lowering.
+/// `Clone`.
 ///
 /// # Examples
 ///
@@ -198,8 +198,6 @@ impl<D: Decoration> MultiDecorationBox<D> {
         self.child(child).boxed()
     }
 }
-
-impl<D: Decoration + 'static, W: Widget> PortableWidget for MultiDecorationBox<D, W> {}
 
 impl<D: Decoration + 'static, W: Widget> Widget for MultiDecorationBox<D, W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {

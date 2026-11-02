@@ -8,122 +8,9 @@ use aimer_widget::{
 use std::any::type_name;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::error::Error;
-use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
-
-use aimer_widget::portable::__anteros::{ValueSchemaMetadata, Version};
-use aimer_widget::portable::PortableValue;
-
-/// The error returned by a portable provider value codec.
-///
-/// Provider codecs run in the guest build and must turn failures into a
-/// candidate diagnostic instead of panicking. The message is intentionally
-/// owned so a codec can report a validation detail without borrowing the value
-/// or its temporary input buffer.
-/// 
-#[derive(Debug)]
-pub struct PortableProviderCodecError(String);
-
-impl PortableProviderCodecError {
-    /// Creates a codec error with an actionable message.
-    #[inline]
-    pub fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
-    }
-}
-
-impl fmt::Display for PortableProviderCodecError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for PortableProviderCodecError {}
-
-/// A bounded, versioned codec for one provider value type.
-///
-/// The codec is a pair of function pointers rather than a captured closure.
-/// That keeps the contract deterministic and makes it explicit that provider
-/// values cross the guest boundary as bytes only. Native handles, `Rc`,
-/// `RefCell`, closures, and platform resources must remain host-owned.
-/// 
-#[derive(Clone, Copy)]
-pub struct PortableProviderCodec<T> {
-    schema: ValueSchemaMetadata<'static>,
-    encode: fn(&T) -> Result<Vec<u8>, PortableProviderCodecError>,
-    decode: fn(&[u8], Version) -> Result<T, PortableProviderCodecError>,
-}
-
-impl<T> PortableProviderCodec<T> {
-    /// Creates a provider codec with stable value metadata and explicit
-    /// encode/decode functions.
-    #[inline]
-    pub const fn new(
-        schema: ValueSchemaMetadata<'static>,
-        encode: fn(&T) -> Result<Vec<u8>, PortableProviderCodecError>,
-        decode: fn(&[u8], Version) -> Result<T, PortableProviderCodecError>,
-    ) -> Self {
-        Self {
-            schema,
-            encode,
-            decode,
-        }
-    }
-
-    /// Returns the stable identity, version, and byte ceiling for this codec.
-    #[inline]
-    pub const fn schema(&self) -> ValueSchemaMetadata<'static> {
-        self.schema
-    }
-
-    /// Encodes one provider snapshot using the codec's bounded contract.
-    #[inline]
-    pub fn encode(&self, value: &T) -> Result<Vec<u8>, PortableProviderCodecError> {
-        (self.encode)(value)
-    }
-
-    /// Decodes one validated provider snapshot.
-    #[inline]
-    pub fn decode(&self, bytes: &[u8], version: Version) -> Result<T, PortableProviderCodecError> {
-        (self.decode)(bytes, version)
-    }
-}
-
-impl<T: PortableValue> PortableProviderCodec<T> {
-    /// Creates a provider codec from a derived or handwritten PortableValue.
-    ///
-    /// The value's schema identity, version, limits, and four-byte wire header
-    /// are reused verbatim, so provider snapshots and reflected property blobs
-    /// cannot silently drift onto separate formats.
-    /// 
-    #[inline]
-    pub fn from_portable_value() -> Self {
-        PortableProviderCodec::new(
-            T::SCHEMA,
-            encode_portable_value::<T>,
-            decode_portable_value::<T>,
-        )
-    }
-}
-
-fn encode_portable_value<T: PortableValue>(
-    value: &T,
-) -> Result<Vec<u8>, PortableProviderCodecError> {
-    value
-        .encode_value()
-        .map_err(|error| PortableProviderCodecError::new(error.to_string()))
-}
-
-fn decode_portable_value<T: PortableValue>(
-    bytes: &[u8],
-    version: Version,
-) -> Result<T, PortableProviderCodecError> {
-    T::decode_value(bytes, version)
-        .map_err(|error| PortableProviderCodecError::new(error.to_string()))
-}
 
 struct Subscriber<T> {
     consumer: Weak<BuildConsumer>,
@@ -478,10 +365,6 @@ impl ProviderContext for BuildContext<'_> {
     fn try_watch<T: 'static>(&self) -> Option<Snapshot<T>> {
         let provided = self.get_state_untracked::<Provided<T>>()?;
         let Some(consumer) = self.current_build_consumer() else {
-            #[cfg(feature = "portable-guest")]
-            if self.is_portable() {
-                return Some(provided.0.read());
-            }
             panic!(
                 "watch::<{}>() must be called while building a widget",
                 type_name::<T>()
@@ -513,10 +396,6 @@ impl ProviderContext for BuildContext<'_> {
             )
         };
         let Some(consumer) = self.current_build_consumer() else {
-            #[cfg(feature = "portable-guest")]
-            if self.is_portable() {
-                return selector(&provided.0.read());
-            }
             panic!(
                 "select::<{}>() must be called while building a widget",
                 type_name::<T>()
@@ -552,40 +431,16 @@ impl ProviderContext for BuildContext<'_> {
     }
 }
 
-/// Installs a provider handle in the guest ambient context for one lowering
-/// operation.
-///
-/// This hidden bridge is used by reflected scopes such as `AnimatedTheme` that
-/// emit their own AWIR node instead of nesting a second provider node. Native
-/// subscriptions and handles remain outside the serialized document.
-#[doc(hidden)]
-#[cfg(feature = "portable-guest")]
-pub fn with_portable_provider<T: 'static, R>(
-    context: &mut aimer_widget::portable::PortableBuildContext,
-    handle: ProviderHandle<T>,
-    callback: impl FnOnce(&mut aimer_widget::portable::PortableBuildContext) -> R,
-) -> R {
-    context.with_state(Provided(handle), callback)
-}
-
 /// Provides one state value to a descendant widget subtree.
 ///
 /// Construct a provider with [`Provider::new`], configure its initializer with
 /// [`Provider::create`], and attach the subtree with [`Provider::child`].
 /// Descendants access the value through [`ProviderContext`] or
 /// [`ProviderHandle`].
-#[derive(aimer_widget::PortableWidget)]
-#[portable_widget(id = "aimer_provider::Provider", schema_only, manual_lowering)]
 pub struct Provider<T, W = RequiredChild> {
-    #[portable_skip]
     create: Option<Rc<dyn Fn() -> T>>,
-    #[portable_skip]
     handle: Option<ProviderHandle<T>>,
-    #[portable_skip]
-    portable_codec: Option<PortableProviderCodec<T>>,
-    #[portable_child]
     child: ChildBuilder,
-    #[portable_skip]
     marker: PhantomData<W>,
 }
 
@@ -599,7 +454,6 @@ impl<T> Provider<T> {
         Self {
             create: None,
             handle: None,
-            portable_codec: None,
             child: ChildBuilder::required(),
             marker: PhantomData,
         }
@@ -627,18 +481,6 @@ impl<T, W> Provider<T, W> {
         self
     }
 
-    /// Supplies the stable bounded codec used when this provider is lowered
-    /// into portable Widget IR.
-    ///
-    /// Providers without a codec remain valid native widgets, but a portable
-    /// guest build rejects them with a source-annotated diagnostic. This keeps
-    /// arbitrary Rust values and native-only resources out of the guest ABI.
-    #[inline]
-    pub fn portable_codec(mut self, codec: PortableProviderCodec<T>) -> Self {
-        self.portable_codec = Some(codec);
-        self
-    }
-
     /// Attaches the descendant widget subtree and produces a valid widget.
     ///
     /// The child is stored as a [`ChildBuilder`], so the provider can build the
@@ -649,7 +491,6 @@ impl<T, W> Provider<T, W> {
         Provider {
             create: self.create,
             handle: self.handle,
-            portable_codec: self.portable_codec,
             child: ChildBuilder::from_widget(child),
             marker: PhantomData,
         }
@@ -728,106 +569,6 @@ impl<T: 'static, W: Widget + 'static> Widget for Provider<T, W> {
     }
 }
 
-#[cfg(not(feature = "portable-guest"))]
-impl<T: 'static, W: Widget + 'static> aimer_widget::PortableWidget for Provider<T, W> {}
-
-#[cfg(feature = "portable-guest")]
-impl<T: 'static, W: Widget + 'static> aimer_widget::PortableWidget for Provider<T, W> {
-    fn to_portable_node(
-        self,
-        ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<aimer_widget::portable::PortableNodeId, aimer_widget::portable::PortableBuildError>
-    {
-        let Some(codec) = self.portable_codec else {
-            return Err(
-                aimer_widget::portable::PortableBuildError::ProviderEncoding {
-                    provider: type_name::<Provider<T, W>>(),
-                    value: type_name::<T>(),
-                    source,
-                    message: "no stable portable provider codec was registered".to_owned(),
-                },
-            );
-        };
-        let handle = match self.handle {
-            Some(handle) => handle,
-            None => {
-                let Some(create) = self.create.as_ref() else {
-                    return Err(
-                        aimer_widget::portable::PortableBuildError::ProviderEncoding {
-                            provider: type_name::<Provider<T, W>>(),
-                            value: type_name::<T>(),
-                            source,
-                            message: "Provider::create or Provider::handle is required".to_owned(),
-                        },
-                    );
-                };
-                ProviderHandle::new(create())
-            }
-        };
-        let snapshot = handle.read();
-        let bytes = codec.encode(&snapshot).map_err(|error| {
-            aimer_widget::portable::PortableBuildError::ProviderEncoding {
-                provider: type_name::<Provider<T, W>>(),
-                value: type_name::<T>(),
-                source,
-                message: error.to_string(),
-            }
-        })?;
-        if bytes.len() > codec.schema().maximum_encoded_bytes() as usize {
-            return Err(
-                aimer_widget::portable::PortableBuildError::ProviderEncoding {
-                    provider: type_name::<Provider<T, W>>(),
-                    value: type_name::<T>(),
-                    source,
-                    message: format!(
-                        "encoded snapshot is {} bytes, above the {} byte limit",
-                        bytes.len(),
-                        codec.schema().maximum_encoded_bytes(),
-                    ),
-                },
-            );
-        }
-        let value = ctx.push_owned_blob(bytes)?;
-        let child = ctx.with_state(Provided(handle), |ctx| {
-            self.child.into_portable_node(ctx, source.child(0))
-        })?;
-        let properties = [
-            aimer_widget::portable::__anteros::WidgetProperty::new(
-                aimer_widget::portable::__anteros::PROPERTY_PROVIDER_TYPE,
-                aimer_widget::portable::__anteros::PropertyValue::I64(
-                    codec.schema().id().value() as i64
-                ),
-            ),
-            aimer_widget::portable::__anteros::WidgetProperty::new(
-                aimer_widget::portable::__anteros::PROPERTY_PROVIDER_SCHEMA_VERSION,
-                aimer_widget::portable::__anteros::PropertyValue::I64(pack_version(
-                    codec.schema().version(),
-                )),
-            ),
-            aimer_widget::portable::__anteros::WidgetProperty::new(
-                aimer_widget::portable::__anteros::PROPERTY_PROVIDER_VALUE,
-                value,
-            ),
-        ];
-        let key = aimer_widget::Key::fixed(source.identity().to_bytes());
-        ctx.push_node(
-            aimer_widget::portable::__anteros::WIDGET_PROVIDER,
-            aimer_widget::portable::__anteros::BUILTIN_WIDGET_SCHEMA_VERSION,
-            Some(&key),
-            source,
-            &properties,
-            &[child],
-        )
-    }
-}
-
-#[cfg(feature = "portable-guest")]
-#[inline]
-const fn pack_version(version: Version) -> i64 {
-    (((version.major() as u64) << 32) | version.minor() as u64) as i64
-}
-
 struct ProviderScope<T> {
     handle: ProviderHandle<T>,
     child: ChildBuilder,
@@ -843,8 +584,6 @@ impl<T: 'static> Widget for ProviderScope<T> {
         .boxed()
     }
 }
-
-impl<T: 'static> aimer_widget::PortableWidget for ProviderScope<T> {}
 
 struct ProviderElement<T> {
     handle: ProviderHandle<T>,
@@ -952,19 +691,13 @@ impl<T: 'static> Rebuildable for ProviderElement<T> {
 ///
 /// Descendants read or watch `T` through [`ProviderContext`] and send `A`
 /// values with [`ProviderContext::dispatch`].
-#[derive(aimer_widget::PortableWidget)]
-#[portable_widget(id = "aimer_provider::StoreProvider", schema_only)]
 pub struct StoreProvider<T, A, W = RequiredChild> {
-    #[portable_skip]
     create: Option<Rc<dyn Fn() -> T>>,
-    #[portable_skip]
     reducer: Option<Rc<StoreReducer<T, A>>>,
     // Same shape as [`Provider`]: the child is erased into a [`ChildBuilder`],
     // `W` only marks whether one was attached, and the un-attached slot holds
     // the allocation-free [`ChildBuilder::required`] placeholder.
-    #[portable_child]
     child: ChildBuilder,
-    #[portable_skip]
     marker: PhantomData<W>,
 }
 
@@ -1120,8 +853,6 @@ impl<T: Clone + 'static, A: 'static> Widget for StoreScope<T, A> {
         .boxed()
     }
 }
-
-impl<T: Clone + 'static, A: 'static> aimer_widget::PortableWidget for StoreScope<T, A> {}
 
 struct StoreElement<T, A> {
     handle: ProviderHandle<T>,
@@ -1335,44 +1066,11 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for ReadingWidget {}
-
     struct LeafWidget;
 
     impl Widget for LeafWidget {
         fn to_element(self, _context: &BuildContext) -> AnyElement {
             Leaf.boxed()
-        }
-    }
-
-    impl aimer_widget::PortableWidget for LeafWidget {}
-
-    struct PortableLeaf;
-
-    impl Widget for PortableLeaf {
-        fn to_element(self, _context: &BuildContext) -> AnyElement {
-            Leaf.boxed()
-        }
-    }
-
-    impl aimer_widget::PortableWidget for PortableLeaf {
-        #[cfg(feature = "portable-guest")]
-        fn to_portable_node(
-            self,
-            context: &mut aimer_widget::portable::PortableBuildContext,
-            source: aimer_widget::portable::SourceFingerprint,
-        ) -> Result<
-            aimer_widget::portable::PortableNodeId,
-            aimer_widget::portable::PortableBuildError,
-        > {
-            context.push_node(
-                aimer_widget::portable::__anteros::WIDGET_SIZED_BOX,
-                aimer_widget::portable::__anteros::Version::new(1, 0),
-                None,
-                source,
-                &[],
-                &[],
-            )
         }
     }
 
@@ -1400,8 +1098,6 @@ mod tests {
             "ProbeWidget"
         }
     }
-
-    impl aimer_widget::PortableWidget for ProbeWidget {}
 
     /// A child that rebuilds itself, the way a derived widget does.
     ///
@@ -1436,8 +1132,6 @@ mod tests {
             "RebuildingProbe"
         }
     }
-
-    impl aimer_widget::PortableWidget for RebuildingProbe {}
 
     struct WatchingWidget {
         builds: Rc<Cell<usize>>,
@@ -1496,8 +1190,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for WatchingWidget {}
-
     struct KeyedProviderConsumer;
 
     struct KeyedProviderConsumerState;
@@ -1532,8 +1224,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for KeyedProviderConsumer {}
-
     impl StatefulWidget for MultiSelectorWidget {
         type State = MultiSelectorState;
 
@@ -1564,8 +1254,6 @@ mod tests {
                 .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for MultiSelectorWidget {}
 
     #[cfg(not(target_arch = "wasm32"))]
     fn dummy_async_handle() -> tokio::runtime::Handle {
@@ -1607,118 +1295,6 @@ mod tests {
         let mut found = false;
         element.visit_children(&mut |child| found |= contains_error_element(child));
         found
-    }
-
-    #[cfg(feature = "portable-guest")]
-    fn portable_context() -> aimer_widget::portable::PortableBuildContext {
-        aimer_widget::portable::PortableBuildContext::new(
-            1,
-            1,
-            aimer_widget::portable::PortableWidgetLimits::new(8, 16, 16, 16, 64, 2_048)
-                .with_max_blob_bytes(128),
-            aimer_widget::portable::PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap()
-    }
-
-    #[cfg(feature = "portable-guest")]
-    fn portable_codec() -> PortableProviderCodec<u32> {
-        fn encode(value: &u32) -> Result<Vec<u8>, PortableProviderCodecError> {
-            Ok(value.to_le_bytes().to_vec())
-        }
-        fn decode(bytes: &[u8], version: Version) -> Result<u32, PortableProviderCodecError> {
-            if version != Version::new(1, 0) || bytes.len() != 4 {
-                return Err(PortableProviderCodecError::new("invalid u32 snapshot"));
-            }
-            Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
-        }
-        PortableProviderCodec::new(
-            ValueSchemaMetadata::from_canonical_name(
-                "aimer.test:aimer_provider::u32",
-                Version::new(1, 0),
-                4,
-            ),
-            encode,
-            decode,
-        )
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn portable_context_reads_and_restores_nested_provider_values() {
-        let context = BuildContext::portable();
-        let outer = ProviderHandle::new(1_u32);
-        let inner = ProviderHandle::new(2_u32);
-
-        context.with_state(Provided(outer), |context| {
-            assert_eq!(*ProviderContext::read::<u32>(context), 1);
-            assert_eq!(*ProviderContext::watch::<u32>(context), 1);
-            assert_eq!(
-                ProviderContext::select::<u32, _>(context, |value| *value),
-                1
-            );
-            context.with_state(Provided(inner), |context| {
-                assert_eq!(*ProviderContext::read::<u32>(context), 2);
-            });
-            assert_eq!(*ProviderContext::read::<u32>(context), 1);
-        });
-        assert!(ProviderContext::try_read::<u32>(&context).is_none());
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn provider_portable_lowering_emits_a_versioned_snapshot_and_child() {
-        let mut context = portable_context();
-        let provider = Provider::new()
-            .handle(ProviderHandle::new(7_u32))
-            .portable_codec(portable_codec())
-            .child(PortableLeaf);
-        let root = aimer_widget::PortableWidget::to_portable_node(
-            provider,
-            &mut context,
-            aimer_widget::portable::SourceFingerprint::new(
-                aimer_widget::portable::StableId128::from_bytes([7; 16]),
-            ),
-        )
-        .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let limits = document.model_limits();
-        let image = document.encode().unwrap();
-        let view =
-            aimer_widget::portable::__anteros::WidgetDocumentView::decode(&image, limits).unwrap();
-        let node = view.node(view.root_node()).unwrap();
-
-        assert_eq!(
-            node.widget_type(),
-            aimer_widget::portable::__anteros::WIDGET_PROVIDER
-        );
-        assert_eq!(node.children().count(), 1);
-        assert!(node.properties().any(|property| {
-            property.property_id() == aimer_widget::portable::__anteros::PROPERTY_PROVIDER_VALUE
-                && property.value() == aimer_widget::portable::__anteros::PropertyValue::BlobRef(0)
-        }));
-        assert_eq!(view.blob(0), Some(7_u32.to_le_bytes().as_slice()));
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn provider_without_a_codec_is_rejected_at_its_guest_source() {
-        let mut context = portable_context();
-        let error = aimer_widget::PortableWidget::to_portable_node(
-            Provider::new()
-                .handle(ProviderHandle::new(7_u32))
-                .child(PortableLeaf),
-            &mut context,
-            aimer_widget::portable::SourceFingerprint::new(
-                aimer_widget::portable::StableId128::from_bytes([8; 16]),
-            ),
-        )
-        .expect_err("a provider without a stable codec must not cross the guest boundary");
-
-        assert!(matches!(
-            error,
-            aimer_widget::portable::PortableBuildError::ProviderEncoding { .. }
-        ));
     }
 
     #[test]
@@ -2100,8 +1676,6 @@ mod tests {
                 Leaf.boxed()
             }
         }
-
-        impl aimer_widget::PortableWidget for Child {}
 
         let drops = Rc::new(Cell::new(0));
         let provider = Provider::<Droppable>::new()

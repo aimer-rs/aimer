@@ -93,17 +93,6 @@ impl<R: Route + Router> RoutedShell<R> {
     }
 }
 
-impl<R: Route + Router> aimer_widget::PortableWidget for RoutedShell<R> {
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(self, ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<aimer_widget::portable::PortableNodeId, aimer_widget::portable::PortableBuildError> {
-        // Keep the existing portable shell lowering and immediate child swap.
-        let builder = self.builder;
-        aimer_widget::PortableWidget::to_portable_node(Shell::new(self.frame, move |ctx| builder(ctx)), ctx, source)
-    }
-}
-
 /// The shell's outlet as a navigator's swipe port sees it.
 struct OutletHandle<R: Route + Router> {
     outlet: Rc<RefCell<RouteOutlet<R>>>,

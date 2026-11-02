@@ -1,8 +1,6 @@
 use std::any::{Any, TypeId};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
-#[cfg(feature = "portable-guest")]
-use std::ops::Deref;
 use std::rc::Rc;
 
 use aimer_attribute::BoxConstraint;
@@ -26,74 +24,6 @@ pub use window_handle::{HeadlessWindowState, WindowHandle};
 
 pub use type_id_hasher::{InheritedStates, TypeIdHasher};
 
-/// A canvas available to native builds and deliberately unavailable to
-/// portable widget-description builds.
-///
-/// Portable builds may run ordinary widget `build` methods, but they cannot
-/// issue draw commands because no renderer exists in the guest. Dereferencing
-/// an unavailable canvas therefore reports the invalid operation rather than
-/// silently discarding it.
-#[cfg(feature = "portable-guest")]
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct BuildCanvas<'a>(Option<FrameCanvas<'a>>);
-
-#[cfg(feature = "portable-guest")]
-impl<'a> BuildCanvas<'a> {
-    #[inline]
-    fn native(canvas: FrameCanvas<'a>) -> Self {
-        Self(Some(canvas))
-    }
-
-    #[inline]
-    const fn unavailable() -> Self {
-        Self(None)
-    }
-}
-
-#[cfg(feature = "portable-guest")]
-impl<'a> Deref for BuildCanvas<'a> {
-    type Target = FrameCanvas<'a>;
-
-    #[track_caller]
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref().unwrap_or_else(|| {
-            panic!("drawing is unavailable while building portable Widget IR")
-        })
-    }
-}
-
-/// A Tokio handle that is absent from portable widget-description builds.
-#[cfg(all(feature = "portable-guest", not(target_arch = "wasm32")))]
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct BuildAsyncHandle(Option<Handle>);
-
-#[cfg(all(feature = "portable-guest", not(target_arch = "wasm32")))]
-impl BuildAsyncHandle {
-    #[inline]
-    fn native(handle: Handle) -> Self {
-        Self(Some(handle))
-    }
-
-    #[inline]
-    const fn unavailable() -> Self {
-        Self(None)
-    }
-}
-
-#[cfg(all(feature = "portable-guest", not(target_arch = "wasm32")))]
-impl Deref for BuildAsyncHandle {
-    type Target = Handle;
-
-    #[track_caller]
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref().unwrap_or_else(|| {
-            panic!("asynchronous runtime access is unavailable while building portable Widget IR")
-        })
-    }
-}
-
 /// An owned copy of a [`BuildContext`] taken by [`BuildContext::snapshot`].
 ///
 /// It holds everything a context carries except the borrowed frame canvas, so
@@ -101,7 +31,7 @@ impl Deref for BuildAsyncHandle {
 /// later frame's canvas. A retained element that is revisited alone, without
 /// its parents, uses it to see the same constraints, scale, window and
 /// inherited state its parents gave it the last time the whole tree was walked.
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+#[cfg(not(target_arch = "wasm32"))]
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct BuildContextSnapshot {
@@ -117,7 +47,7 @@ pub struct BuildContextSnapshot {
     inherited_states: InheritedStates,
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+#[cfg(not(target_arch = "wasm32"))]
 impl BuildContextSnapshot {
     /// Rebuilds a context that draws into `canvas`.
     ///
@@ -144,10 +74,7 @@ impl BuildContextSnapshot {
 #[derive(Clone)]
 pub struct BuildContext<'a> {
     pub parent_size: ResolvedSize,
-    #[cfg(not(feature = "portable-guest"))]
     pub canvas: FrameCanvas<'a>,
-    #[cfg(feature = "portable-guest")]
-    pub canvas: BuildCanvas<'a>,
     pub scale: f32,
     pub parent_pos: Vec2d,
     pub cursor_pos: Vec2d,
@@ -157,10 +84,8 @@ pub struct BuildContext<'a> {
     #[doc(hidden)]
     pub paint_background: Color,
     pub window: WindowHandle,
-    #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub async_handle: Handle,
-    #[cfg(all(not(target_arch = "wasm32"), feature = "portable-guest"))]
-    pub async_handle: BuildAsyncHandle,
     pub inherited_states: Rc<RefCell<InheritedStates>>,
 }
 
@@ -305,10 +230,7 @@ impl<'a> BuildContext<'a> {
         #[cfg(not(target_arch = "wasm32"))] async_handle: Handle,
     ) -> Self {
         Self {
-            #[cfg(not(feature = "portable-guest"))]
             canvas,
-            #[cfg(feature = "portable-guest")]
-            canvas: BuildCanvas::native(canvas),
             parent_size: size,
             scale,
             parent_pos,
@@ -317,10 +239,8 @@ impl<'a> BuildContext<'a> {
             visible_rect: None,
             paint_background: Color::Transparent,
             window,
-            #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+            #[cfg(not(target_arch = "wasm32"))]
             async_handle,
-            #[cfg(all(not(target_arch = "wasm32"), feature = "portable-guest"))]
-            async_handle: BuildAsyncHandle::native(async_handle),
             inherited_states: Rc::new(RefCell::new(InheritedStates::default())),
         }
     }
@@ -337,16 +257,10 @@ impl<'a> BuildContext<'a> {
 
     /// Replaces the canvas used by this build context.
     ///
-    /// Native and portable builds store the canvas behind different internal
-    /// wrappers. This method keeps callers that fork a recording context
-    /// independent of that implementation detail.
+    /// This keeps callers that fork a recording context independent of how the
+    /// canvas is stored.
     #[inline]
     pub fn replace_canvas(&mut self, canvas: FrameCanvas<'a>) {
-        #[cfg(feature = "portable-guest")]
-        {
-            self.canvas = BuildCanvas::native(canvas);
-        }
-        #[cfg(not(feature = "portable-guest"))]
         {
             self.canvas = canvas;
         }
@@ -382,64 +296,6 @@ impl<'a> BuildContext<'a> {
         }
 
         x + width >= vx && x <= vx + vw && y + height >= vy && y <= vy + vh
-    }
-
-    /// Creates the resource-free context passed to portable `build` methods.
-    ///
-    /// Layout-independent build logic, inherited state, and deterministic
-    /// platform defaults remain available. Drawing and native asynchronous
-    /// work fail explicitly because a portable guest owns neither resource.
-    #[cfg(feature = "portable-guest")]
-    #[inline]
-    pub fn portable() -> BuildContext<'static> {
-        Self::portable_with_inherited_states(Rc::new(RefCell::new(InheritedStates::default())))
-    }
-
-    /// Creates a portable build context backed by an existing inherited-state
-    /// scope.
-    ///
-    /// Generated guest lowering uses this constructor so each nested `build`
-    /// sees the same ambient provider map. The map is still scoped by the
-    /// lowering operation; native handles and subscriptions remain outside the
-    /// guest ABI.
-    #[doc(hidden)]
-    #[cfg(feature = "portable-guest")]
-    #[inline]
-    pub fn portable_with_inherited_states(
-        inherited_states: Rc<RefCell<InheritedStates>>,
-    ) -> BuildContext<'static> {
-        Self::portable_with_window(inherited_states, WindowHandle::portable())
-    }
-
-    #[doc(hidden)]
-    #[cfg(feature = "portable-guest")]
-    #[inline]
-    #[doc(hidden)]
-    pub fn portable_with_window(
-        inherited_states: Rc<RefCell<InheritedStates>>,
-        window: WindowHandle,
-    ) -> BuildContext<'static> {
-        BuildContext {
-            parent_size: ResolvedSize::default(),
-            canvas: BuildCanvas::unavailable(),
-            scale: 1.0,
-            parent_pos: Vec2d::default(),
-            cursor_pos: Vec2d::default(),
-            box_constraint: BoxConstraint::default(),
-            visible_rect: None,
-            paint_background: Color::Transparent,
-            window,
-            #[cfg(not(target_arch = "wasm32"))]
-            async_handle: BuildAsyncHandle::unavailable(),
-            inherited_states,
-        }
-    }
-
-    /// Returns whether this context belongs to a portable Widget IR build.
-    #[cfg(feature = "portable-guest")]
-    #[inline]
-    pub const fn is_portable(&self) -> bool {
-        matches!(self.window, WindowHandle::Portable(_))
     }
 
     pub fn insert_state<T: Any>(&self, state: T) {
@@ -512,7 +368,7 @@ impl<'a> BuildContext<'a> {
     /// leaves a scope, so a handle to that map only describes the scope it was
     /// taken in while that scope is still open. The stored values keep sharing
     /// their own `Rc` state, so a provider handle still reaches live data.
-    #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+    #[cfg(not(target_arch = "wasm32"))]
     #[doc(hidden)]
     pub fn snapshot(&self) -> BuildContextSnapshot {
         BuildContextSnapshot {
@@ -821,7 +677,7 @@ mod tests {
         )
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), not(feature = "portable-guest")))]
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn paint_background_survives_cloning_and_animation_context_snapshots() {
         let mut ctx = context();
@@ -831,33 +687,6 @@ mod tests {
         let snapshot = ctx.snapshot();
         ctx.paint_background = Color::BLACK;
         assert_eq!(snapshot.restore(ctx.canvas.clone()).paint_background, Color::WHITE);
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn portable_context_builds_stateless_widgets_without_native_resources() {
-        struct Probe;
-
-        impl crate::StatelessWidget for Probe {
-            fn build(&self, ctx: &BuildContext) -> impl crate::Widget {
-                assert_eq!(ctx.scale, 1.0);
-                assert_eq!(ctx.parent_size, ResolvedSize::default());
-                crate::ErrorWidget::new("portable probe")
-            }
-        }
-
-        let context = BuildContext::portable();
-        let _widget = crate::StatelessWidget::build(&Probe, &context);
-        assert!(context.is_portable());
-    }
-
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn portable_context_rejects_drawing_instead_of_silently_ignoring_it() {
-        let context = BuildContext::portable();
-        let result = catch_unwind(AssertUnwindSafe(|| context.canvas.save()));
-
-        assert!(result.is_err());
     }
 
     /// A render node to hand to `with_local_v2_paint_context`, and its handle.

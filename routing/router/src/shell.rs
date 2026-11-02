@@ -66,21 +66,6 @@ impl Shell {
     }
 }
 
-impl aimer_widget::PortableWidget for Shell {
-    #[cfg(feature = "portable-guest")]
-    fn to_portable_node(
-        self,
-        ctx: &mut aimer_widget::portable::PortableBuildContext,
-        source: aimer_widget::portable::SourceFingerprint,
-    ) -> Result<aimer_widget::portable::PortableNodeId, aimer_widget::portable::PortableBuildError>
-    {
-        let slot = OutletSlot::new(self.child_builder);
-        ctx.with_state(slot, |ctx| {
-            self.frame.into_portable_node(ctx, source.child(0))
-        })
-    }
-}
-
 impl Widget for Shell {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let route_context = RouteChildContext::capture(ctx);
@@ -240,20 +225,12 @@ pub fn active_top<R: Clone>(branches: &[Vec<R>], active: usize) -> Option<R> {
 /// [`crate::Outlet`]. Each branch starts with exactly one route and guarded
 /// pops never empty a stack. Descendants navigate through
 /// [`StatefulShellController`].
-#[derive(aimer_widget::PortableWidget)]
-#[portable_widget(id = "aimer_router::StatefulShell", schema_only)]
 pub struct StatefulShell<R: Route> {
-    #[portable_skip]
     pub branches: Vec<Vec<R>>,
-    #[portable_skip]
     pub active: usize,
-    #[portable_skip]
     pub frame: fn(&BuildContext) -> AnyWidget,
-    #[portable_skip]
     pub routes: fn(R) -> AnyWidget,
-    #[portable_skip]
     pub transition: Option<Rc<dyn NavigationTransition<R>>>,
-    #[portable_skip]
     swipe_area: SwipeBackArea,
 }
 
@@ -447,7 +424,7 @@ impl<R: Route> State<StatefulShell<R>> for StatefulShellState<R> {
         let child_builder = route_outlet_builder(&self.outlet);
 
         // Reflect the active branch's top route in the browser address bar.
-        #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+        #[cfg(target_arch = "wasm32")]
         if let Some(route) = active_top(&self.branches, self.active) {
             crate::navigator::browser_replace_state(&route.format());
         }
@@ -596,8 +573,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget::PortableWidget for ShellRouteContextProbe {}
-
     impl Widget for DeferredOutletWidget {
         fn to_element(self, _ctx: &BuildContext) -> AnyElement {
             DeferredOutletElement {
@@ -606,8 +581,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl aimer_widget::PortableWidget for DeferredOutletWidget {}
 
     struct DeferredOutletElement {
         child_built: Rc<Cell<bool>>,
@@ -769,58 +742,4 @@ mod tests {
         assert_eq!(branches[0].len(), 1);
     }
 
-    #[cfg(feature = "portable-guest")]
-    #[test]
-    fn shell_portable_lowering_replaces_outlet_with_the_active_child() {
-        use aimer_widget::portable::__anteros::{Version, WIDGET_TEXT, WidgetDocumentView};
-        use aimer_widget::portable::{
-            PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-            StableId128,
-        };
-        use aimer_widget::{ErrorWidget, PortableWidget};
-
-        struct PortableLeaf;
-
-        impl Widget for PortableLeaf {
-            fn to_element(self, ctx: &BuildContext) -> AnyElement {
-                ErrorWidget::new("portable leaf").to_element(ctx)
-            }
-        }
-
-        impl PortableWidget for PortableLeaf {
-            fn to_portable_node(
-                self,
-                ctx: &mut PortableBuildContext,
-                source: SourceFingerprint,
-            ) -> Result<
-                aimer_widget::portable::PortableNodeId,
-                aimer_widget::portable::PortableBuildError,
-            > {
-                ctx.push_node(WIDGET_TEXT, Version::new(1, 0), None, source, &[], &[])
-            }
-        }
-
-        let mut context = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 64, 2_048),
-            PortableLimits::new(8, 16, 64, 128, 1_024),
-        )
-        .unwrap();
-        let root = Shell::new(Outlet, |_| PortableLeaf.boxed())
-            .to_portable_node(
-                &mut context,
-                SourceFingerprint::new(StableId128::from_bytes([8; 16])),
-            )
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-
-        assert_eq!(
-            view.node(view.root_node()).unwrap().widget_type(),
-            WIDGET_TEXT
-        );
-        assert_eq!(view.node_count(), 1);
-    }
 }

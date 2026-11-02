@@ -5,8 +5,6 @@ edition = "2024"
 description = "Retained SVG parsing and widgets for Aimer"
 
 [features]
-portable-guest = ["aimer_widget/portable-guest"]
-
 [dependencies]
 aimer_canvas.workspace = true
 aimer_cupid.workspace = true

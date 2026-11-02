@@ -29,8 +29,6 @@ struct Visual {
 
 pub(super) struct VisualState(Visual);
 
-impl aimer_widget::PortableWidget for Visual {}
-
 impl Widget for Visual {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         StatefulElement::new_with_name(self, ctx, "ButtonVisual", None).0.boxed()

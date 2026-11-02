@@ -70,8 +70,6 @@ impl Widget for Probe {
     }
 }
 
-impl aimer_widget::PortableWidget for Probe {}
-
 struct RootState {
     mode: ThemeMode,
     seen: Seen,
@@ -118,8 +116,6 @@ impl Widget for Root {
     }
 }
 
-impl aimer_widget::PortableWidget for Root {}
-
 /// The shape of RustForum's sidebar: some rows outside any animation, and a
 /// scrolled list of rows inside an implicitly animated container.
 struct Sidebar {
@@ -141,8 +137,6 @@ impl Widget for Sidebar {
         .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Sidebar {}
 
 fn sidebar_content(seen: Seen, background: Color) -> impl Widget {
     {
@@ -507,8 +501,6 @@ impl Widget for StatefulSidebar {
     }
 }
 
-impl aimer_widget::PortableWidget for StatefulSidebar {}
-
 struct ShellState {
     mode: ThemeMode,
     zone_log: Rc<RefCell<Vec<bool>>>,
@@ -585,8 +577,6 @@ impl Widget for Shell {
             .boxed()
     }
 }
-
-impl aimer_widget::PortableWidget for Shell {}
 
 #[test]
 fn a_stateful_sidebar_that_rebuilt_for_its_resize_edge_still_follows_the_theme() {

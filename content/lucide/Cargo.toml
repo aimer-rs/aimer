@@ -14,9 +14,6 @@ aimer_widget.workspace = true
 [build-dependencies]
 aimer_cupid.workspace = true
 
-[lints]
-workspace = true
-
 [dev-dependencies]
 aimer_canvas.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

@@ -6,13 +6,9 @@ use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_events::element::ElementEvent;
 use aimer_events::pointer::{PointerButton, PointerSource};
 use aimer_utils::callback::Callback;
-#[cfg(feature = "portable-guest")]
-use aimer_utils::callback::CallbackExecutor;
 use aimer_utils::cursor::{reset_cursor, set_cursor};
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::*;
-#[cfg(feature = "portable-guest")]
-use aimer_widget::portable::{PortableBuildContext, PortableBuildError, SourceFingerprint};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventResult, LayoutElement, PointerKey,
     Rebuildable, RequiredChild, VisitorElement, Widget,
@@ -103,34 +99,18 @@ const WHOLE_SURFACE: f32 = 1.0e7;
 ///     .on_resize(move |size: ResolvedSize| recorded.set(size))
 ///     .child(ZeroSizedBox);
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(
-    id = "aimer_container::single_child::Resizable",
-    validate = validate_portable_resizable
-)]
 pub struct Resizable<W = RequiredChild> {
-    #[portable_optional]
     width: f32,
-    #[portable_optional]
     height: f32,
-    #[portable_optional]
     min_width: f32,
-    #[portable_optional]
     min_height: f32,
-    #[portable_optional]
     max_width: f32,
-    #[portable_optional]
     max_height: f32,
-    #[portable_optional]
     handle_thickness: f32,
     handle_outset: Option<f32>,
-    #[portable_optional]
     direction: Direction,
-    #[portable_skip]
     on_resize: Callback<ResolvedSize>,
-    #[portable_skip]
     on_resize_zone: Callback<Direction>,
-    #[portable_child]
     child: W,
 }
 
@@ -410,29 +390,6 @@ impl<W: Widget + 'static> Widget for Resizable<W> {
         }
         .boxed()
     }
-}
-
-#[cfg(feature = "portable-guest")]
-fn validate_portable_resizable<W>(
-    resizable: &Resizable<W>,
-    _ctx: &PortableBuildContext,
-    source: SourceFingerprint,
-) -> Result<(), PortableBuildError> {
-    if resizable.on_resize.raw().is_some() {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Resizable",
-            property: "on_resize",
-            source,
-        });
-    }
-    if resizable.on_resize_zone.raw().is_some() {
-        return Err(PortableBuildError::UnsupportedProperty {
-            widget: "Resizable",
-            property: "on_resize_zone",
-            source,
-        });
-    }
-    Ok(())
 }
 
 /// Where a drag started: the pointer position and the size at that moment.
@@ -1633,181 +1590,3 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod portable_tests {
-    use aimer_anteros::{PropertyValue, WidgetDocumentView, WidgetProperty};
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableBuildError, PortableLimits, PortableValue,
-        PortableWidgetLimits, PortableWidgetResource, PortableWidgetSchema, SourceFingerprint,
-        StableId128,
-    };
-    use aimer_widget::{PortableWidget, RequiredChild};
-
-    use super::{Direction, Resizable};
-    use crate::ZeroSizedBox;
-
-    fn source(value: u8) -> SourceFingerprint {
-        SourceFingerprint::new(StableId128::from_bytes([value; 16]))
-    }
-
-    fn limits() -> PortableWidgetLimits {
-        PortableWidgetLimits::new(4, 16, 4, 4, 64, 4_096).with_max_blob_bytes(256)
-    }
-
-    fn context(limits: PortableWidgetLimits) -> PortableBuildContext {
-        PortableBuildContext::new(5, 2, limits, PortableLimits::new(8, 32, 64, 256, 2_048)).unwrap()
-    }
-
-    #[test]
-    fn resizable_lowering_preserves_every_supported_property() {
-        let schema = <Resizable<RequiredChild> as PortableWidgetSchema>::SCHEMA;
-        let mut context = context(limits());
-        let root = Resizable::new()
-            .width(320.0)
-            .height(180.0)
-            .min_width(100.0)
-            .min_height(80.0)
-            .max_width(640.0)
-            .max_height(360.0)
-            .handle_thickness(9.0)
-            .handle_outset(3.0)
-            .direction(Direction::RIGHT_EDGES)
-            .child(ZeroSizedBox::new())
-            .to_portable_node(&mut context, source(4))
-            .unwrap();
-        let document = context.finish_document(root).unwrap();
-        let bytes = document.encode().unwrap();
-        let view = WidgetDocumentView::decode(&bytes, document.model_limits()).unwrap();
-        let node = view.node(root.index()).unwrap();
-        let properties = node.properties().collect::<Vec<_>>();
-
-        assert_eq!(
-            schema.widget().canonical_name(),
-            "aimer.widget:aimer_container::single_child::Resizable"
-        );
-        assert_eq!(
-            schema.children(),
-            aimer_anteros::ChildCardinality::exactly(1)
-        );
-        assert_eq!(node.children().collect::<Vec<_>>(), vec![0]);
-        assert_eq!(properties.len(), 9);
-
-        for (field, value) in [
-            ("width", 320.0),
-            ("height", 180.0),
-            ("min_width", 100.0),
-            ("min_height", 80.0),
-            ("max_width", 640.0),
-            ("max_height", 360.0),
-            ("handle_thickness", 9.0),
-            ("handle_outset", 3.0),
-        ] {
-            let canonical_name =
-                format!("aimer.property:aimer_container::single_child::Resizable:{field}");
-            let property = schema
-                .properties()
-                .iter()
-                .find(|property| property.canonical_name() == canonical_name)
-                .unwrap();
-            assert!(properties.contains(
-                &WidgetProperty::new(property.id(), PropertyValue::F64(value)).optional()
-            ));
-        }
-
-        let direction_schema = schema
-            .properties()
-            .iter()
-            .find(|property| property.canonical_name().ends_with(":direction"))
-            .unwrap();
-        let direction_blob = properties
-            .iter()
-            .find(|property| property.property_id() == direction_schema.id())
-            .and_then(|property| match property.value() {
-                PropertyValue::BlobRef(index) => view.blob(index),
-                _ => None,
-            })
-            .unwrap();
-        assert_eq!(
-            Direction::decode_value(
-                direction_blob,
-                <Direction as PortableValue>::SCHEMA.version(),
-            )
-            .unwrap(),
-            Direction::RIGHT_EDGES,
-        );
-    }
-
-    #[test]
-    fn resizable_lowering_enforces_property_and_blob_limits() {
-        let widget = || {
-            Resizable::new()
-                .width(320.0)
-                .height(180.0)
-                .min_width(100.0)
-                .min_height(80.0)
-                .max_width(640.0)
-                .max_height(360.0)
-                .handle_thickness(9.0)
-                .handle_outset(3.0)
-                .direction(Direction::RIGHT_EDGES)
-                .child(ZeroSizedBox::new())
-        };
-        let mut properties = context(limits().with_max_properties(8));
-        let result = widget().to_portable_node(&mut properties, source(5));
-        assert!(
-            matches!(
-                &result,
-                Err(PortableBuildError::LimitExceeded {
-                    resource: PortableWidgetResource::Properties,
-                    max: 8,
-                    actual: 9,
-                })
-            ),
-            "{result:?}"
-        );
-
-        let mut blobs = context(limits().with_max_blob_bytes(0));
-        let result = widget().to_portable_node(&mut blobs, source(6));
-        let cause = match result {
-            Err(PortableBuildError::PropertyEncoding { cause, .. }) => cause,
-            other => panic!("unexpected blob-limit result: {other:?}"),
-        };
-        assert!(matches!(
-            *cause,
-            PortableBuildError::LimitExceeded {
-                resource: PortableWidgetResource::BlobBytes,
-                max: 0,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn resizable_rejects_callbacks_that_cannot_cross_the_portable_abi() {
-        let mut resize = context(limits());
-        assert!(matches!(
-            Resizable::new()
-                .on_resize(|_| {})
-                .child(ZeroSizedBox::new())
-                .to_portable_node(&mut resize, source(7)),
-            Err(PortableBuildError::UnsupportedProperty {
-                widget: "Resizable",
-                property: "on_resize",
-                ..
-            })
-        ));
-
-        let mut zone = context(limits());
-        assert!(matches!(
-            Resizable::new()
-                .on_resize_zone(|_| {})
-                .child(ZeroSizedBox::new())
-                .to_portable_node(&mut zone, source(8)),
-            Err(PortableBuildError::UnsupportedProperty {
-                widget: "Resizable",
-                property: "on_resize_zone",
-                ..
-            })
-        ));
-    }
-}

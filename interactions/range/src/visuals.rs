@@ -6,8 +6,7 @@ use aimer_cupid::utilities::{Color as V2Color, Rect};
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
-    AnyElement, Drawable, Element, EventElement, LayoutElement, PortableWidget, Rebuildable,
-    VisitorElement, Widget,
+    AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement, Widget,
 };
 
 /// Interaction state used to configure a slider's built-in visual children.
@@ -39,8 +38,6 @@ impl Widget for SliderTrack {
         "SliderTrack"
     }
 }
-
-impl PortableWidget for SliderTrack {}
 
 struct RawSliderTrack {
     bounds: InteractionBounds,
@@ -251,8 +248,6 @@ impl Widget for SliderThumb {
         "SliderThumb"
     }
 }
-
-impl PortableWidget for SliderThumb {}
 
 struct RawSliderThumb {
     size: f32,
@@ -476,8 +471,6 @@ impl Widget for SliderTrail {
         "SliderTrail"
     }
 }
-
-impl PortableWidget for SliderTrail {}
 
 struct RawSliderTrail {
     width: Dimension,

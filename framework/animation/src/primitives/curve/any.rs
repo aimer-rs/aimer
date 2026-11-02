@@ -3,8 +3,8 @@
 use std::fmt;
 use std::sync::Arc;
 
-use super::builtin::{BEZIER_TAG, CubicBezier, Standard};
-use super::{Curve, CurveDescriptor};
+use super::builtin::{CubicBezier, Standard};
+use super::Curve;
 
 /// A curve of any kind, cheap to clone and compare.
 ///
@@ -31,24 +31,6 @@ impl AnyCurve {
     /// Wraps `curve`. Equivalent to [`Curve::into_any`].
     pub fn new(curve: impl Curve) -> Self {
         curve.into_any()
-    }
-
-    /// Rebuilds a standard curve from its [`CurveDescriptor`] parts, as stored
-    /// in a portable widget document.
-    ///
-    /// Returns `None` if `tag` is unknown, if `control_points` are given for a
-    /// curve that has none (or missing for a Bézier), or if a Bézier control
-    /// point is not finite.
-    pub fn from_descriptor(tag: i64, control_points: Option<[f64; 4]>) -> Option<Self> {
-        if tag == BEZIER_TAG {
-            let [x1, y1, x2, y2] = control_points?;
-            let curve = CubicBezier { x1: x1 as f32, y1: y1 as f32, x2: x2 as f32, y2: y2 as f32 };
-            return curve.is_valid().then(|| Self::bezier(curve));
-        }
-        if control_points.is_some() {
-            return None;
-        }
-        Standard::from_tag(tag).map(Self::standard)
     }
 
     pub(super) fn standard(curve: Standard) -> Self {
@@ -84,14 +66,6 @@ impl Curve for AnyCurve {
             Repr::Bezier(curve) => curve.transform(t),
             // A custom curve is promised progress inside 0..=1.
             Repr::Custom(curve) => curve.transform(t.clamp(0.0, 1.0)),
-        }
-    }
-
-    fn descriptor(&self) -> Option<CurveDescriptor> {
-        match &self.0 {
-            Repr::Standard(curve) => Some(curve.descriptor()),
-            Repr::Bezier(curve) => curve.descriptor(),
-            Repr::Custom(curve) => curve.descriptor(),
         }
     }
 

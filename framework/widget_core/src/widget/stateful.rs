@@ -1,7 +1,5 @@
 use std::any::Any;
 use std::cell::{Cell, RefCell, UnsafeCell};
-#[cfg(feature = "portable-guest")]
-use std::cell::Ref;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::panic::Location;
@@ -10,7 +8,6 @@ use std::rc::{Rc, Weak};
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_events::element::ElementEvent;
-#[cfg(not(aimer_portable_guest))]
 use aimer_events::window::{request_animation_frame, request_scoped_frame};
 use aimer_utils::{debug, error};
 
@@ -251,12 +248,6 @@ pub struct StateUpdater<S> {
     _ui_thread_only: PhantomData<Rc<()>>,
 }
 
-enum UpdaterSlot<S> {
-    Native(StateUpdaterInner<S>),
-    #[cfg(feature = "portable-guest")]
-    Portable(crate::portable::state::PortableStateHandle<S>),
-}
-
 impl<S> Copy for StateUpdater<S> {}
 
 impl<S> Clone for StateUpdater<S> {
@@ -268,26 +259,13 @@ impl<S> Clone for StateUpdater<S> {
 
 /// A synchronous borrow returned by a state updater.
 ///
-/// The guard retains an arena read lease. Native state uses a pointer valid for
-/// that lease, while portable state additionally holds its `RefCell` borrow.
-/// Both variants dereference to `S`, preserving ordinary `read_state().field`
-/// use.
+/// The guard retains an arena read lease and dereferences to `S`, preserving
+/// ordinary `read_state().field` use.
 #[doc(hidden)]
 pub struct StateReadGuard<'a, S: 'static> {
-    kind: StateReadGuardKind<S>,
+    state: *const S,
+    _slot: StateSlotReadGuard<UpdaterSlot<S>>,
     _marker: PhantomData<&'a S>,
-}
-
-enum StateReadGuardKind<S: 'static> {
-    Native {
-        state: *const S,
-        _slot: StateSlotReadGuard<UpdaterSlot<S>>,
-    },
-    #[cfg(feature = "portable-guest")]
-    Portable {
-        state: Ref<'static, S>,
-        _slot: StateSlotReadGuard<UpdaterSlot<S>>,
-    },
 }
 
 impl<S: 'static> std::ops::Deref for StateReadGuard<'_, S> {
@@ -295,19 +273,13 @@ impl<S: 'static> std::ops::Deref for StateReadGuard<'_, S> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        match &self.kind {
-            StateReadGuardKind::Native { state, .. } => {
-                // SAFETY: the native variant owns `slot`, whose read lease
-                // keeps the erased updater slot and its state alive.
-                unsafe { &**state }
-            }
-            #[cfg(feature = "portable-guest")]
-            StateReadGuardKind::Portable { state, .. } => state,
-        }
+        // SAFETY: the guard owns `_slot`, whose read lease keeps the erased
+        // updater slot and its state alive.
+        unsafe { &*self.state }
     }
 }
 
-struct StateUpdaterInner<S> {
+struct UpdaterSlot<S> {
     /// Shared UI-thread queue for pending state mutations.
     tx: Rc<StateMutationQueue<S>>,
     /// Shared state for synchronous reads on the render thread.
@@ -331,30 +303,13 @@ impl<S: 'static> StateUpdater<S> {
         failure: Rc<FailureState>,
         window: aimer_events::window::WindowKey,
     ) -> (StateStorage, Self) {
-        let (storage, slot) = StateStorage::insert(UpdaterSlot::Native(StateUpdaterInner {
-                tx,
-                state,
-                dirty_source,
-                failure,
-                window,
-            }));
-        (
-            storage,
-            Self {
-                slot: Some(slot),
-                _ui_thread_only: PhantomData,
-            },
-        )
-    }
-
-    /// Creates the hidden updater backend used by portable generated wrappers.
-    #[cfg(feature = "portable-guest")]
-    #[doc(hidden)]
-    #[inline]
-    pub(crate) fn from_portable(
-        handle: crate::portable::state::PortableStateHandle<S>,
-    ) -> (StateStorage, Self) {
-        let (storage, slot) = StateStorage::insert(UpdaterSlot::Portable(handle));
+        let (storage, slot) = StateStorage::insert(UpdaterSlot {
+            tx,
+            state,
+            dirty_source,
+            failure,
+            window,
+        });
         (
             storage,
             Self {
@@ -378,39 +333,16 @@ impl<S: 'static> StateUpdater<S> {
         let slot = slot
             .try_read_guard()
             .unwrap_or_else(|error| panic_state_updater_resolution(error));
-        match &*slot {
-            UpdaterSlot::Native(inner) => {
-                let state = unsafe {
-                    (&*inner.state.0.get())
-                        .as_ref()
-                        .unwrap_or_else(|| panic_consumed_state())
-                        as *const S
-                };
-                StateReadGuard {
-                    kind: StateReadGuardKind::Native {
-                        state,
-                        _slot: slot,
-                    },
-                    _marker: PhantomData,
-                }
-            }
-            #[cfg(feature = "portable-guest")]
-            UpdaterSlot::Portable(handle) => {
-                let state = handle.borrow();
-                // The slot read guard owns the `PortableStateHandle` until the
-                // `RefCell` borrow is dropped, so extending this borrow to the
-                // guard's owned lifetime is sound.
-                let state = unsafe {
-                    std::mem::transmute::<Ref<'_, S>, Ref<'static, S>>(state)
-                };
-                StateReadGuard {
-                    kind: StateReadGuardKind::Portable {
-                        state,
-                        _slot: slot,
-                    },
-                    _marker: PhantomData,
-                }
-            }
+        let state = unsafe {
+            (&*slot.state.0.get())
+                .as_ref()
+                .unwrap_or_else(|| panic_consumed_state())
+                as *const S
+        };
+        StateReadGuard {
+            state,
+            _slot: slot,
+            _marker: PhantomData,
         }
     }
 
@@ -423,11 +355,9 @@ impl<S: 'static> StateUpdater<S> {
     /// # Safety
     ///
     /// The caller must ensure that this updater is initialized, its owning
-    /// element or portable context is still live, its slot contains the
-    /// expected state, and the state has not been consumed or failed. The
-    /// call must remain on the UI thread. Portable callers must also ensure
-    /// that no conflicting `RefCell` borrow is active. Violating these
-    /// requirements is undefined behavior. Prefer [`Self::try_read_state`]
+    /// element is still live, its slot contains the expected state, and the
+    /// state has not been consumed or failed. The call must remain on the UI
+    /// thread. Violating these requirements is undefined behavior. Prefer [`Self::try_read_state`]
     /// when the updater may outlive its state.
     #[track_caller]
     pub unsafe fn read_state_unchecked(&self) -> StateReadGuard<'_, S> {
@@ -436,38 +366,13 @@ impl<S: 'static> StateUpdater<S> {
         // SAFETY: the caller guarantees a live, correctly typed slot and a
         // live owner lease while the read guard is acquired.
         let slot = unsafe { slot.read_guard_unchecked() };
-        match &*slot {
-            UpdaterSlot::Native(inner) => {
-                // SAFETY: the caller guarantees that the native state exists
-                // and has not been consumed or failed.
-                let state = unsafe {
-                    (&*inner.state.0.get()).as_ref().unwrap_unchecked() as *const S
-                };
-                StateReadGuard {
-                    kind: StateReadGuardKind::Native {
-                        state,
-                        _slot: slot,
-                    },
-                    _marker: PhantomData,
-                }
-            }
-            #[cfg(feature = "portable-guest")]
-            UpdaterSlot::Portable(handle) => {
-                let state = handle.borrow();
-                // The slot read guard owns the `PortableStateHandle` until the
-                // `RefCell` borrow is dropped, so extending this borrow to the
-                // guard's owned lifetime is sound.
-                let state = unsafe {
-                    std::mem::transmute::<Ref<'_, S>, Ref<'static, S>>(state)
-                };
-                StateReadGuard {
-                    kind: StateReadGuardKind::Portable {
-                        state,
-                        _slot: slot,
-                    },
-                    _marker: PhantomData,
-                }
-            }
+        // SAFETY: the caller guarantees that the state exists and has not
+        // been consumed or failed.
+        let state = unsafe { (&*slot.state.0.get()).as_ref().unwrap_unchecked() as *const S };
+        StateReadGuard {
+            state,
+            _slot: slot,
+            _marker: PhantomData,
         }
     }
 
@@ -480,16 +385,12 @@ impl<S: 'static> StateUpdater<S> {
         let Some(slot) = self.slot else {
             return false;
         };
-        slot.try_resolve(|slot| match slot {
-            UpdaterSlot::Native(inner) => {
-                if inner.failure.is_failed() {
-                    return false;
-                }
-                // Safety: the native rendering pipeline is single-threaded.
-                unsafe { (&*inner.state.0.get()).is_some() }
+        slot.try_resolve(|inner| {
+            if inner.failure.is_failed() {
+                return false;
             }
-            #[cfg(feature = "portable-guest")]
-            UpdaterSlot::Portable(_) => true,
+            // Safety: the native rendering pipeline is single-threaded.
+            unsafe { (&*inner.state.0.get()).is_some() }
         })
         .unwrap_or(false)
     }
@@ -503,20 +404,13 @@ impl<S: 'static> StateUpdater<S> {
     #[inline]
     pub fn try_read<R>(&self, read: impl FnOnce(&S) -> R) -> Option<R> {
         let slot = self.slot?;
-        slot.try_resolve(|slot| match slot {
-            UpdaterSlot::Native(inner) => {
-                if inner.failure.is_failed() {
-                    return None;
-                }
-                // Safety: the native rendering pipeline is single-threaded.
-                let state = unsafe { (&*inner.state.0.get()).as_ref()? };
-                Some(read(state))
+        slot.try_resolve(|inner| {
+            if inner.failure.is_failed() {
+                return None;
             }
-            #[cfg(feature = "portable-guest")]
-            UpdaterSlot::Portable(handle) => {
-                let state = handle.try_borrow()?;
-                Some(read(&state))
-            }
+            // Safety: the native rendering pipeline is single-threaded.
+            let state = unsafe { (&*inner.state.0.get()).as_ref()? };
+            Some(read(state))
         })
         .ok()
         .flatten()
@@ -599,24 +493,19 @@ impl<S: 'static> StateUpdater<S> {
                 panic!("State is not initialized (see error above)");
             }
         };
-        let result = slot.try_resolve(|slot| match slot {
-            UpdaterSlot::Native(inner) => {
-                if inner.failure.is_failed() {
-                    return;
-                }
-                inner.tx.push(Box::new(f));
-                // Only request a redraw if this is the first set_state since the last rebuild.
-                // This coalesces multiple set_state calls into a single redraw request.
-                if inner.dirty_source.mark() {
-                    #[cfg(not(aimer_portable_guest))]
-                    {
-                        crate::components::element::note_state_update_marked();
-                        request_state_frame(inner.window);
-                    }
+        let result = slot.try_resolve(|inner| {
+            if inner.failure.is_failed() {
+                return;
+            }
+            inner.tx.push(Box::new(f));
+            // Only request a redraw if this is the first set_state since the last rebuild.
+            // This coalesces multiple set_state calls into a single redraw request.
+            if inner.dirty_source.mark() {
+                {
+                    crate::components::element::note_state_update_marked();
+                    request_state_frame(inner.window);
                 }
             }
-            #[cfg(feature = "portable-guest")]
-            UpdaterSlot::Portable(handle) => handle.queue(f),
         });
         if let Err(error) = result {
             panic_state_updater_resolution(error);
@@ -634,28 +523,20 @@ impl<S: 'static> StateUpdater<S> {
         let Some(slot) = self.slot else {
             return None;
         };
-        slot.try_resolve(|slot| match slot {
-            UpdaterSlot::Native(inner) => {
-                if inner.failure.is_failed() {
-                    return None;
-                }
-                // Safety: the native rendering pipeline is single-threaded.
-                unsafe { (&*inner.state.0.get()).as_ref() }?;
-                inner.tx.push(Box::new(mutation));
-                if inner.dirty_source.mark() {
-                    #[cfg(not(aimer_portable_guest))]
-                    {
-                        crate::components::element::note_state_update_marked();
-                        request_state_frame(inner.window);
-                    }
-                }
-                Some(())
+        slot.try_resolve(|inner| {
+            if inner.failure.is_failed() {
+                return None;
             }
-            #[cfg(feature = "portable-guest")]
-            UpdaterSlot::Portable(handle) => {
-                handle.queue(mutation);
-                Some(())
+            // Safety: the native rendering pipeline is single-threaded.
+            unsafe { (&*inner.state.0.get()).as_ref() }?;
+            inner.tx.push(Box::new(mutation));
+            if inner.dirty_source.mark() {
+                {
+                    crate::components::element::note_state_update_marked();
+                    request_state_frame(inner.window);
+                }
             }
+            Some(())
         })
         .ok()
         .flatten()
@@ -666,7 +547,7 @@ impl<S: 'static> StateUpdater<S> {
     /// # Safety
     ///
     /// The caller must ensure that this updater is initialized, its owning
-    /// element or portable context is still live, the updater's state slot has
+    /// element is still live, the updater's state slot has
     /// not been consumed or failed, and the call is made on the UI thread.
     /// Violating those requirements is undefined behavior. Prefer
     /// [`Self::try_set_state`] when the updater may outlive its state.
@@ -678,19 +559,14 @@ impl<S: 'static> StateUpdater<S> {
         // SAFETY: the caller guarantees a live, correctly typed slot and a
         // live owner lease for the duration of this lookup.
         unsafe {
-            slot.resolve_unchecked(|slot| match slot {
-                UpdaterSlot::Native(inner) => {
-                    inner.tx.push(Box::new(mutation));
-                    if inner.dirty_source.mark() {
-                        #[cfg(not(aimer_portable_guest))]
-                        {
-                            crate::components::element::note_state_update_marked();
-                            request_state_frame(inner.window);
-                        }
+            slot.resolve_unchecked(|inner| {
+                inner.tx.push(Box::new(mutation));
+                if inner.dirty_source.mark() {
+                    {
+                        crate::components::element::note_state_update_marked();
+                        request_state_frame(inner.window);
                     }
                 }
-                #[cfg(feature = "portable-guest")]
-                UpdaterSlot::Portable(handle) => handle.queue(mutation),
             });
         }
     }
@@ -712,18 +588,14 @@ impl<S: 'static> StateUpdater<S> {
                 panic!("State is not initialized (see error above)");
             }
         };
-        slot.try_resolve(|slot| match slot {
-            UpdaterSlot::Native(inner) => {
-                // Safety: single-threaded rendering pipeline, no concurrent mutation.
-                let state = unsafe {
-                    (&*inner.state.0.get())
-                        .as_ref()
-                        .unwrap_or_else(|| panic_consumed_state())
-                };
-                f(state)
-            }
-            #[cfg(feature = "portable-guest")]
-            UpdaterSlot::Portable(handle) => handle.read(f),
+        slot.try_resolve(|inner| {
+            // Safety: single-threaded rendering pipeline, no concurrent mutation.
+            let state = unsafe {
+                (&*inner.state.0.get())
+                    .as_ref()
+                    .unwrap_or_else(|| panic_consumed_state())
+            };
+            f(state)
         })
         .unwrap_or_else(|error| panic_state_updater_resolution(error))
     }
@@ -737,38 +609,15 @@ impl<S: 'static> StateUpdater<S> {
     pub fn try_read_state(&self) -> Option<StateReadGuard<'_, S>> {
         let slot = self.slot?;
         let slot = slot.try_read_guard().ok()?;
-        match &*slot {
-            UpdaterSlot::Native(inner) => {
-                if inner.failure.is_failed() {
-                    return None;
-                }
-                let state = unsafe { (&*inner.state.0.get()).as_ref()? as *const S };
-                Some(StateReadGuard {
-                    kind: StateReadGuardKind::Native {
-                        state,
-                        _slot: slot,
-                    },
-                    _marker: PhantomData,
-                })
-            }
-            #[cfg(feature = "portable-guest")]
-            UpdaterSlot::Portable(handle) => {
-                let state = handle.try_borrow()?;
-                // The slot read guard owns the portable handle until the
-                // RefCell borrow is dropped, so extending this borrow to the
-                // returned guard's owned lifetime is sound.
-                let state = unsafe {
-                    std::mem::transmute::<Ref<'_, S>, Ref<'static, S>>(state)
-                };
-                Some(StateReadGuard {
-                    kind: StateReadGuardKind::Portable {
-                        state,
-                        _slot: slot,
-                    },
-                    _marker: PhantomData,
-                })
-            }
+        if slot.failure.is_failed() {
+            return None;
         }
+        let state = unsafe { (&*slot.state.0.get()).as_ref()? as *const S };
+        Some(StateReadGuard {
+            state,
+            _slot: slot,
+            _marker: PhantomData,
+        })
     }
 
     #[inline]
@@ -2150,8 +1999,6 @@ mod tests {
         }
     }
 
-    impl crate::widget::PortableWidget for PaintCountWidget {}
-
     impl VisitorElement for PaintCountElement {
         fn debug_name(&self) -> &'static str {
             "PaintCountElement"
@@ -2302,8 +2149,6 @@ mod tests {
         }
     }
 
-    impl crate::widget::PortableWidget for InnerProbe {}
-
     struct LeafProbe;
 
     impl Widget for LeafProbe {
@@ -2311,8 +2156,6 @@ mod tests {
             TestLeaf.boxed()
         }
     }
-
-    impl crate::widget::PortableWidget for LeafProbe {}
 
     /// One of two interchangeable "pages" below the keyed element, distinguished
     /// only by the name it builds under, the shape a route's pages have.
@@ -2340,8 +2183,6 @@ mod tests {
             self.name
         }
     }
-
-    impl crate::widget::PortableWidget for ProbePage {}
 
     /// A keyed stateful widget standing where a route transition stands: it
     /// keeps its own state by key, and everything below it does not.
@@ -2385,8 +2226,6 @@ mod tests {
             )
         }
     }
-
-    impl crate::widget::PortableWidget for KeyedOuter {}
 
     struct EventProbeWidget {
         events: Rc<Cell<usize>>,
@@ -2432,8 +2271,6 @@ mod tests {
             .boxed()
         }
     }
-
-    impl crate::widget::PortableWidget for EventProbeChild {}
 
     impl VisitorElement for EventProbeElement {
         fn debug_name(&self) -> &'static str {
@@ -2641,8 +2478,6 @@ mod tests {
             }
         }
     }
-
-    impl crate::widget::PortableWidget for LifecycleChild {}
 
     impl StatefulWidget for LifecycleWidget {
         type State = LifecycleState;
@@ -3463,8 +3298,6 @@ mod tests {
             StatefulElement::from_widget(self, ctx, "OwnedConfigWidget", None)
         }
     }
-
-    impl crate::widget::PortableWidget for OwnedConfigWidget {}
 
     #[test]
     fn adopt_config_from_consumes_the_new_state() {

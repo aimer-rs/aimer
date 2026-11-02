@@ -49,16 +49,6 @@ pub trait Curve: Send + Sync + 'static {
     /// Returns the eased value for progress `t`.
     fn transform(&self, t: f32) -> f32;
 
-    /// Describes this curve for a portable guest, or `None` if it cannot be
-    /// described.
-    ///
-    /// Only the standard curves and cubic Béziers can be serialized into a
-    /// portable widget document. A custom curve keeps the default `None`: it
-    /// works natively, and lowering it to a guest reports an error.
-    fn descriptor(&self) -> Option<CurveDescriptor> {
-        None
-    }
-
     /// Whether the curve's parameters are usable, such as the finite control
     /// points of a Bézier. Builders that cannot accept a broken curve check
     /// this and fall back or report an error.
@@ -76,21 +66,6 @@ pub trait Curve: Send + Sync + 'static {
     {
         AnyCurve::custom(self)
     }
-}
-
-/// A serializable description of a standard curve: a tag plus, for a cubic
-/// Bézier, its control points `(x1, y1, x2, y2)`.
-///
-/// The tags are part of the portable widget format and never change.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct CurveDescriptor {
-    /// Identifies the curve: `0` linear, `1` ease-in, `2` ease-out, `3`
-    /// ease-in-out, `4` cubic Bézier, `5` decelerate, `6`-`8` bounce out/in/in-out,
-    /// `9`-`11` elastic in/out/in-out, `12` fast-out-slow-in, `13`
-    /// linear-out-slow-in, `14` fast-out-linear-in.
-    pub tag: i64,
-    /// The control points of a cubic Bézier (tag `4`); `None` for every other curve.
-    pub control_points: Option<[f64; 4]>,
 }
 
 #[cfg(test)]
@@ -179,55 +154,6 @@ mod tests {
     }
 
     #[test]
-    fn every_standard_curve_round_trips_through_its_descriptor() {
-        let mut tags = Vec::new();
-        for (name, curve) in standard() {
-            let descriptor = curve.descriptor().unwrap_or_else(|| panic!("{name} has a descriptor"));
-            assert_eq!(descriptor.control_points.is_some(), descriptor.tag == 4, "{name}");
-
-            let decoded = AnyCurve::from_descriptor(descriptor.tag, descriptor.control_points)
-                .unwrap_or_else(|| panic!("{name} decodes"));
-
-            assert_eq!(decoded, curve, "{name}");
-            tags.push(descriptor.tag);
-        }
-        tags.sort_unstable();
-        assert_eq!(tags, (0..=14).collect::<Vec<_>>(), "the tag table is unchanged");
-    }
-
-    #[test]
-    fn the_portable_tag_table_is_stable() {
-        let tag = |curve: AnyCurve| curve.descriptor().unwrap().tag;
-        assert_eq!(tag(curves::LINEAR.into_any()), 0);
-        assert_eq!(tag(curves::EASE_IN.into_any()), 1);
-        assert_eq!(tag(curves::EASE_OUT.into_any()), 2);
-        assert_eq!(tag(curves::EASE_IN_OUT.into_any()), 3);
-        assert_eq!(tag(curves::cubic_bezier(0.0, 0.0, 1.0, 1.0).into_any()), 4);
-        assert_eq!(tag(curves::DECELERATE.into_any()), 5);
-        assert_eq!(tag(curves::BOUNCE_OUT.into_any()), 6);
-        assert_eq!(tag(curves::BOUNCE_IN.into_any()), 7);
-        assert_eq!(tag(curves::BOUNCE_IN_OUT.into_any()), 8);
-        assert_eq!(tag(curves::ELASTIC_IN.into_any()), 9);
-        assert_eq!(tag(curves::ELASTIC_OUT.into_any()), 10);
-        assert_eq!(tag(curves::ELASTIC_IN_OUT.into_any()), 11);
-        assert_eq!(tag(curves::FAST_OUT_SLOW_IN.into_any()), 12);
-        assert_eq!(tag(curves::LINEAR_OUT_SLOW_IN.into_any()), 13);
-        assert_eq!(tag(curves::FAST_OUT_LINEAR_IN.into_any()), 14);
-    }
-
-    #[test]
-    fn a_descriptor_that_does_not_describe_a_curve_is_rejected() {
-        let points = Some([0.1, 0.2, 0.3, 0.4]);
-
-        assert!(AnyCurve::from_descriptor(15, None).is_none(), "unknown tag");
-        assert!(AnyCurve::from_descriptor(-1, None).is_none(), "negative tag");
-        assert!(AnyCurve::from_descriptor(1, points).is_none(), "points on a curve that has none");
-        assert!(AnyCurve::from_descriptor(4, None).is_none(), "a Bézier without points");
-        assert!(AnyCurve::from_descriptor(4, Some([f64::NAN, 0.0, 1.0, 1.0])).is_none(), "non-finite points");
-        assert!(AnyCurve::from_descriptor(4, points).is_some());
-    }
-
-    #[test]
     fn a_bezier_with_a_non_finite_control_point_is_invalid() {
         assert!(curves::cubic_bezier(0.1, 0.2, 0.3, 0.4).is_valid());
         for broken in [
@@ -260,14 +186,6 @@ mod tests {
         assert_eq!(curve.transform(0.6), 0.5);
         assert_eq!(curve.transform(-2.0), 0.0);
         assert_eq!(curve.transform(2.0), 1.0);
-    }
-
-    #[test]
-    fn a_custom_curve_has_no_descriptor_and_is_valid() {
-        let curve = Stepped.into_any();
-
-        assert_eq!(curve.descriptor(), None);
-        assert!(curve.is_valid());
     }
 
     #[test]

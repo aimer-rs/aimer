@@ -53,8 +53,6 @@ impl Widget for Root {
     }
 }
 
-impl aimer_widget::PortableWidget for Root {}
-
 fn text_scale<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> f32 {
     let item = app.app.render_tree().render_all().into_iter().find_map(|op| match op {
         RenderOp::Draw(item) if item.snapshot().commands.iter()

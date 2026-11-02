@@ -391,7 +391,6 @@ fn a_users_own_curve_can_ease_the_whole_navigation() {
     let effect = resolve(&transition().curve(Halfway), 0, 7, NavigationAction::Push, &ctx).unwrap();
 
     assert_eq!(effect.curve().transform(1.0), 0.5);
-    assert!(effect.curve().descriptor().is_none(), "a custom curve has no portable description");
 }
 
 /// A row as wide as the host, which a scaled page could only slide out of.

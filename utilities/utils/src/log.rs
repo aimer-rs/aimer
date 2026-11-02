@@ -27,7 +27,7 @@ pub const JSON_OUTPUT_FLAG: &str = "--json-output";
 /// Any value other than `0` enables it.
 pub const JSON_OUTPUT_ENV: &str = "AIMER_JSON_OUTPUT";
 
-#[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+#[cfg(target_arch = "wasm32")]
 mod console {
     use wasm_bindgen::prelude::*;
 
@@ -172,7 +172,7 @@ pub fn log(msg: &str) {
     {
         emit(Level::Info, msg, Location::caller());
     }
-    #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+    #[cfg(target_arch = "wasm32")]
     {
         #[cfg(debug_assertions)]
         {
@@ -186,8 +186,6 @@ pub fn log(msg: &str) {
             console::log(&fmt);
         }
     }
-    #[cfg(all(target_arch = "wasm32", aimer_portable_guest))]
-    let _ = msg;
 }
 
 #[track_caller]
@@ -196,7 +194,7 @@ pub fn warn(msg: &str) {
     {
         emit(Level::Warn, msg, Location::caller());
     }
-    #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+    #[cfg(target_arch = "wasm32")]
     {
         #[cfg(debug_assertions)]
         {
@@ -210,8 +208,6 @@ pub fn warn(msg: &str) {
             console::warn(&fmt);
         }
     }
-    #[cfg(all(target_arch = "wasm32", aimer_portable_guest))]
-    let _ = msg;
 }
 
 #[track_caller]
@@ -220,7 +216,7 @@ pub fn error(msg: &str) {
     {
         emit(Level::Error, msg, Location::caller());
     }
-    #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+    #[cfg(target_arch = "wasm32")]
     {
         #[cfg(debug_assertions)]
         {
@@ -234,8 +230,6 @@ pub fn error(msg: &str) {
             console::error(&fmt);
         }
     }
-    #[cfg(all(target_arch = "wasm32", aimer_portable_guest))]
-    let _ = msg;
 }
 
 #[track_caller]
@@ -244,7 +238,7 @@ pub fn debug(msg: &str) {
     {
         emit(Level::Debug, msg, Location::caller());
     }
-    #[cfg(all(target_arch = "wasm32", not(aimer_portable_guest)))]
+    #[cfg(target_arch = "wasm32")]
     {
         #[cfg(debug_assertions)]
         {
@@ -258,8 +252,6 @@ pub fn debug(msg: &str) {
             console::log(&fmt);
         }
     }
-    #[cfg(all(target_arch = "wasm32", aimer_portable_guest))]
-    let _ = msg;
 }
 
 #[macro_export]

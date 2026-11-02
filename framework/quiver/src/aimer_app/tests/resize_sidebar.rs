@@ -128,8 +128,6 @@ impl Widget for Sidebar {
     }
 }
 
-impl aimer_widget::PortableWidget for Sidebar {}
-
 struct Shell {
     updater: Updater,
     hovered: Rc<std::cell::Cell<i32>>,
@@ -161,8 +159,6 @@ impl Widget for Shell {
             .to_element(ctx)
     }
 }
-
-impl aimer_widget::PortableWidget for Shell {}
 
 fn find<'a>(element: &'a dyn Element, name: &str) -> Option<&'a dyn Element> {
     if element.debug_name() == name {

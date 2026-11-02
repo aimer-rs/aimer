@@ -5,20 +5,12 @@ edition = "2024"
 resolver = "3"
 
 [features]
-portable-guest = [
-    "aimer_element/portable-guest",
-    "aimer_portable/portable-guest",
-    "aimer_widget_core/portable-guest",
-    "aimer_async_builder/portable-guest",
-    "aimer_focusable/portable-guest",
-]
 # Keep the allocation-free draw traversal counter available to release
 # acceptance probes without paying for it in ordinary release applications.
 frame-stats = ["aimer_element/frame-stats", "aimer_widget_core/frame-stats"]
 
 [dependencies]
 aimer_element.workspace = true
-aimer_portable.workspace = true
 aimer_widget_core.workspace = true
 aimer_async_builder.workspace = true
 aimer_focusable.workspace = true
@@ -33,5 +25,3 @@ aimer_canvas.workspace = true
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = {workspace = true, features = ["rt-multi-thread", "macros"]}
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aimer_portable_guest)"] }

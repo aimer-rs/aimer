@@ -4,8 +4,6 @@ use aimer_attribute::Dimension;
 use aimer_attribute::size::Size;
 use aimer_style::BoxFit;
 use aimer_widget::base::BuildContext;
-use aimer_widget::portable::__anteros::{PropertyId, WidgetDocumentView, WidgetNodeView};
-use aimer_widget::portable::{PortableMaterializeError, required_materialized_property};
 use aimer_widget::{AnyElement, AnyWidget, Element, LayoutCache, Widget};
 
 use crate::img_widget::image_widget::RawImageWidget;
@@ -25,52 +23,14 @@ use crate::img_widget::source::ImageSource;
 /// drawn when no loading widget is set. A load or decode failure similarly
 /// draws the [`AssetImage::error_widget`]; without one, the renderer uses its
 /// built-in magenta-and-black error pattern.
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_assets::AssetImage", materializer = materialize_asset_image)]
 pub struct AssetImage {
     pub key: String,
     pub width: Dimension,
     pub height: Dimension,
-    #[portable_skip]
     pub fit: BoxFit,
-    #[portable_skip]
     pub error_widget: Option<AnyWidget>,
-    #[portable_skip]
     pub loading_widget: Option<AnyWidget>,
     pub scale: f32,
-}
-
-fn materialize_asset_image(
-    document: &WidgetDocumentView<'_>,
-    node: WidgetNodeView<'_>,
-    children: Vec<AnyWidget>,
-) -> Result<AnyWidget, PortableMaterializeError> {
-    if !children.is_empty() {
-        return Err(PortableMaterializeError::InvalidChildCount {
-            expected: 0,
-            actual: children.len(),
-        });
-    }
-
-    const PROPERTY_KEY: PropertyId =
-        PropertyId::from_canonical_name("aimer.property:aimer_assets::AssetImage:key");
-    const PROPERTY_WIDTH: PropertyId =
-        PropertyId::from_canonical_name("aimer.property:aimer_assets::AssetImage:width");
-    const PROPERTY_HEIGHT: PropertyId =
-        PropertyId::from_canonical_name("aimer.property:aimer_assets::AssetImage:height");
-    const PROPERTY_SCALE: PropertyId =
-        PropertyId::from_canonical_name("aimer.property:aimer_assets::AssetImage:scale");
-
-    let key = required_materialized_property::<String>(document, &node, PROPERTY_KEY)?;
-    let width = required_materialized_property::<Dimension>(document, &node, PROPERTY_WIDTH)?;
-    let height = required_materialized_property::<Dimension>(document, &node, PROPERTY_HEIGHT)?;
-    let scale = required_materialized_property::<f32>(document, &node, PROPERTY_SCALE)?;
-
-    Ok(AssetImage::new(key)
-        .width(width)
-        .height(height)
-        .scale(scale)
-        .boxed())
 }
 
 impl AssetImage {
@@ -170,42 +130,3 @@ impl Widget for AssetImage {
     }
 }
 
-#[cfg(all(test, feature = "portable-guest"))]
-mod tests {
-    use aimer_attribute::Dimension;
-    use aimer_widget::PortableWidget;
-    use aimer_widget::portable::{
-        PortableBuildContext, PortableLimits, PortableWidgetLimits, SourceFingerprint,
-    };
-
-    use super::AssetImage;
-
-    #[test]
-    fn portable_asset_image_round_trips_through_its_native_materializer() {
-        let mut guest = PortableBuildContext::new(
-            1,
-            1,
-            PortableWidgetLimits::new(8, 8, 8, 8, 128, 4_096).with_max_blob_bytes(256),
-            PortableLimits::new(8, 16, 64, 128, 4_096),
-        )
-        .unwrap();
-        let source =
-            SourceFingerprint::new(aimer_widget::portable::StableId128::from_bytes([34; 16]));
-        let root = AssetImage::new("assets/polished_tooling.png")
-            .width(Dimension::Px(128.0))
-            .height(Dimension::Px(64.0))
-            .scale(0.5_f32)
-            .to_portable_node(&mut guest, source)
-            .unwrap();
-        let document = guest.finish_document(root).unwrap();
-        let image = document.encode().unwrap();
-        let view = aimer_widget::portable::__anteros::WidgetDocumentView::decode(
-            &image,
-            document.model_limits(),
-        )
-        .unwrap();
-        let node = view.node(root.index()).unwrap();
-
-        let _widget = super::materialize_asset_image(&view, node, Vec::new()).unwrap();
-    }
-}

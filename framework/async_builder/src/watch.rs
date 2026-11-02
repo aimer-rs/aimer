@@ -376,8 +376,6 @@ mod tests {
         }
     }
 
-    impl aimer_widget_core::widget::PortableWidget for LeafWidget {}
-
     struct Fetching {
         seen: Rc<RefCell<Vec<&'static str>>>,
     }

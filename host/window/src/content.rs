@@ -11,8 +11,7 @@ use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, PortableWidget, State, StateUpdater, StatefulElement, StatefulWidget,
-    Widget,
+    AnyElement, AnyWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
 };
 
 /// Builds the content of a window.
@@ -89,4 +88,3 @@ impl Widget for LiveRoot {
     }
 }
 
-impl PortableWidget for LiveRoot {}

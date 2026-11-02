@@ -68,8 +68,6 @@ impl Widget for Layout {
     }
 }
 
-impl aimer_widget::PortableWidget for Layout {}
-
 fn hover_fills<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> usize {
     fn walk<W: Widget + 'static>(
         app: &HeadlessAimerApp<W>,

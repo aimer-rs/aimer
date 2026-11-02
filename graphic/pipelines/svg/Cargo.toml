@@ -1,0 +1,17 @@
+[package]
+name = "aimer_svg_pipeline"
+version = "0.1.0"
+edition = "2024"
+description = "SVG mesh render pipeline for the Cupid rendering engine"
+
+[features]
+# Adds the `wgpu` vertex-layout helpers and the tests that read them.
+wgpu = ["dep:wgpu"]
+
+[dependencies]
+aimer_cupid_gpu.workspace = true
+aimer_cupid_svg.workspace = true
+aimer_pipeline_core.workspace = true
+aimer_primitives.workspace = true
+bytemuck.workspace = true
+wgpu = { workspace = true, optional = true }

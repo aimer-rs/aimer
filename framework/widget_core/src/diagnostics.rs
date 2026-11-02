@@ -39,8 +39,7 @@ pub fn detect_overflow(child: ResolvedSize, bounds: ResolvedSize, offset: Vec2d)
     }
 }
 
-#[derive(Clone, Debug, aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer.widget:aimer_widget::ErrorWidget", schema_only)]
+#[derive(Clone, Debug)]
 /// A diagnostic widget that fills its available bounds with an error message.
 ///
 /// Debug builds display the supplied message. Release builds log that message
@@ -188,13 +187,9 @@ impl LayoutElement for ErrorElement {
 /// The child is clipped to the available bounds by default. In debug builds,
 /// overflowing edges receive striped markers and a label; release builds keep
 /// only the optional clipping behavior.
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_widget::OverflowIndicator", schema_only)]
 pub struct OverflowIndicator<W> {
-    #[portable_child]
     child: W,
     label: Option<String>,
-    #[portable_optional]
     clip: bool,
 }
 

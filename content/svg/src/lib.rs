@@ -37,7 +37,6 @@ mod tests {
         SvgPaint, SvgPathCommand, SvgPreserveAspectRatio, SvgSpreadMethod,
     };
     use aimer_widget::Widget;
-    use aimer_widget::portable::PortableNativeWidget;
 
     use crate::{
         SvgAsset, SvgDocument, SvgError, SvgLimits, SvgPath, SvgSelector, SvgStyle, widget,
@@ -48,13 +47,6 @@ mod tests {
         let widget = SvgAsset::new("assets/icon.svg").width(24.0).height(32.0);
 
         assert_eq!(widget.debug_name(), "SvgAsset");
-    }
-
-    #[test]
-    fn svg_exposes_a_native_materializer_for_hot_reload_hosts() {
-        fn assert_materializer<T: PortableNativeWidget>() {}
-
-        assert_materializer::<crate::Svg>();
     }
 
     #[test]

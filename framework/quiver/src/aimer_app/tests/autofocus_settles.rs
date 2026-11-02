@@ -148,8 +148,6 @@ mod focus_ring {
         }
     }
 
-    impl aimer_widget::PortableWidget for FocusProbe {}
-
     #[test]
     fn the_focus_animation_of_an_autofocus_field_plays_without_any_input() {
         let _serial = VIRTUALIZED_RENDER_TEST_LOCK

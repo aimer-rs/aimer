@@ -9,8 +9,8 @@ use aimer_canvas::Mat3;
 use aimer_events::element::ElementEvent;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, Drawable, Element, EventElement, EventResult, LayoutElement, PortableWidget,
-    Rebuildable, VisitorElement, Widget, request_isolated_animation_frame,
+    AnyElement, Drawable, Element, EventElement, EventResult, LayoutElement, Rebuildable,
+    VisitorElement, Widget, request_isolated_animation_frame,
 };
 
 use crate::controller::{IndicatorController, IndicatorSample};
@@ -49,8 +49,6 @@ impl<W: Widget + 'static> Widget for IndicatorLayerWidget<W> {
         .boxed()
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for IndicatorLayerWidget<W> {}
 
 /// Retained implementation behind [`IndicatorLayerWidget`].
 struct IndicatorLayerElement {

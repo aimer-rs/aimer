@@ -42,20 +42,12 @@ use crate::paint::{contains, overlay_child_context};
 ///
 /// handle.dismiss();
 /// ```
-#[derive(aimer_macro::PortableWidget)]
-#[portable_widget(id = "aimer_modal::Modal", schema_only)]
 pub struct Modal<W = RequiredChild> {
-    #[portable_child]
     child: W,
-    #[portable_skip]
     barrier_color: Color,
-    #[portable_skip]
     alignment: Alignment,
-    #[portable_skip]
     animation: Option<ModalAnimation>,
-    #[portable_skip]
     barrier_dismissible: bool,
-    #[portable_skip]
     escape_dismissible: bool,
 }
 

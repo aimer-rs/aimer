@@ -2,7 +2,7 @@ use aimer_container::Container;
 use aimer_style::{LayoutSpacing, Spacing, TextStyle};
 use aimer_text::Text;
 use aimer_widget::base::{BuildContext, Color};
-use aimer_widget::{AnyElement, PortableWidget, RequiredChild, Widget};
+use aimer_widget::{AnyElement, RequiredChild, Widget};
 
 use crate::{Announcement, AnnouncementPriority};
 
@@ -128,8 +128,6 @@ impl<W: Widget + 'static> Widget for FeedbackSlot<W> {
         "FeedbackSlot"
     }
 }
-
-impl<W: Widget + 'static> PortableWidget for FeedbackSlot<W> {}
 
 /// A compact status banner backed by [`FeedbackSlot`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -272,4 +270,3 @@ impl Widget for StatusBanner {
     }
 }
 
-impl PortableWidget for StatusBanner {}

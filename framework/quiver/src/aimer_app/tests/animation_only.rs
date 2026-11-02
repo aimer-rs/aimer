@@ -27,8 +27,6 @@ impl Widget for Probe {
     }
 }
 
-impl aimer_widget::PortableWidget for Probe {}
-
 struct ProbeElement {
     updates: Rc<Cell<usize>>,
 }
