@@ -509,7 +509,8 @@ vec4 gaussian_sample(vec2 pixel) {
     vec2 local = clamp(pixel - _group_0_binding_0_fs.backdrop_rect.xy - vec2(0.5), vec2(0.0), size - vec2(1.0));
     vec2 uv = (local + vec2(0.5)) / vec2(textureSize(_group_0_binding_1_fs, 0));
     if (_group_0_binding_0_fs.effect.x < -0.5) return textureLod(_group_0_binding_1_fs, uv, 0.0);
-    return textureLod(_group_0_binding_3_fs, uv, 0.0);
+    // Binding 3 is a blur pass's render target, which OpenGL stores bottom-up.
+    return textureLod(_group_0_binding_3_fs, vec2(uv.x, 1.0 - uv.y), 0.0);
 }
 
 vec4 gaussian_backdrop(vec2 pixel) {
@@ -545,7 +546,9 @@ vec4 reduced_fetch(vec2 position, vec2 valid, bool from_capture) {
     if (from_capture) {
         return textureLod(_group_0_binding_1_fs, clamped / vec2(textureSize(_group_0_binding_1_fs, 0)), 0.0);
     }
-    return textureLod(_group_0_binding_3_fs, clamped / vec2(textureSize(_group_0_binding_3_fs, 0)), 0.0);
+    // A render target, stored bottom-up: flip V.
+    vec2 rendered_uv = clamped / vec2(textureSize(_group_0_binding_3_fs, 0));
+    return textureLod(_group_0_binding_3_fs, vec2(rendered_uv.x, 1.0 - rendered_uv.y), 0.0);
 }
 
 // The average of the `factor` x `factor` block of capture texels under a texel

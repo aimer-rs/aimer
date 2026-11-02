@@ -852,6 +852,15 @@ pub trait GpuBackend: Sized + 'static {
     /// The native texture format type (must be cheaply copyable and comparable).
     type TextureFormat: Copy + Eq + Send + Sync;
 
+    /// Whether row 0 of a texture the renderer drew into is the visual
+    /// *bottom* of the image.
+    ///
+    /// Shaders are written for WGSL clip space (NDC y up). Backends that emit
+    /// them unadjusted (OpenGL) therefore store rendered targets bottom-up,
+    /// while image uploads and the other backends are top-down. Sampling a
+    /// rendered target with top-left UVs must then flip V.
+    const RENDER_TARGET_ROWS_BOTTOM_UP: bool = false;
+
     /// Format used for single-channel glyph coverage atlases.
     fn r8_unorm_format() -> Self::TextureFormat;
 

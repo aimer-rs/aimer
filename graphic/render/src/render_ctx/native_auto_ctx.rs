@@ -7,7 +7,8 @@ use std::sync::Arc;
 use winit::window::Window;
 
 use crate::render_ctx::{
-    NativeBackendChoice, OpenGlApi, PresentOutcome, VulkanApi, choose_native_backend,
+    NativeBackendChoice, OpenGlApi, PresentOutcome, RENDER_BACKEND_ENV, VulkanApi,
+    choose_native_backend, parse_backend_override,
 };
 
 enum ActiveBackend {
@@ -16,6 +17,9 @@ enum ActiveBackend {
 }
 
 /// Linux and Android presenter that tries Vulkan first, then OpenGL if initialization fails.
+///
+/// Setting `CUPID_RENDER_BACKEND=0` forces Vulkan and `CUPID_RENDER_BACKEND=1`
+/// forces OpenGL; a forced backend is not allowed to fall back to the other one.
 pub struct NativeAutoApi {
     antialiasing: AntiAlias,
     active: Option<ActiveBackend>,
@@ -60,7 +64,9 @@ impl NativeAutoApi {
         let mut opengl = OpenGlApi::new(self.antialiasing);
         let mut vulkan_error = None;
         let mut opengl_error = None;
+        let forced = parse_backend_override(std::env::var(RENDER_BACKEND_ENV).ok().as_deref());
         let choice = choose_native_backend(
+            forced,
             || match vulkan.try_initialize(window, size) {
                 Ok(()) => true,
                 Err(error) => {
