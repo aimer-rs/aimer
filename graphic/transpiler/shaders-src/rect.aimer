@@ -1,0 +1,412 @@
+shader rect;
+
+import aimer::color::*;
+import aimer::sdf::sdf_rounded_rect;
+import aimer::clip::clip_alpha;
+
+uniform struct Viewport {
+    size: vec2,
+    surface_is_srgb: f32,
+    _pad: f32,
+}
+
+#[bind(0, 0)]
+uniform viewport: Viewport;
+
+#[varying]
+struct VertexOutput {
+    @position position: vec4,
+    color: vec4,
+    local_pos: vec2,
+    rect_size: vec2,
+    border_radius: vec4,
+    border_width: vec4,
+    border_color: vec4,
+    outline_width: vec4,
+    outline_color: vec4,
+    pixel_pos: vec2,
+    clip_rect: vec4,
+    clip_border_radius: vec4,
+    shadow_params: vec4,
+    shadow_color: vec4,
+    shadow_flags: vec4,
+}
+
+// One 144-byte record per rect; the four colours are packed `unorm8x4`.
+#[input(step = instance)]
+struct RectInstance {
+    pos: vec2,
+    size: vec2,
+    color: vec4 as unorm8x4,
+    border_radius: vec4,
+    border_width: vec4,
+    border_color: vec4 as unorm8x4,
+    outline_width: vec4,
+    outline_color: vec4 as unorm8x4,
+    clip_rect: vec4,
+    clip_border_radius: vec4,
+    shadow_params: vec4,
+    shadow_color: vec4 as unorm8x4,
+    shadow_flags: vec4,
+}
+
+// A quad from 6 vertices (two triangles).
+const CORNERS: [vec2; 6] = [
+    vec2(0.0, 0.0),
+    vec2(1.0, 0.0),
+    vec2(0.0, 1.0),
+    vec2(1.0, 0.0),
+    vec2(1.0, 1.0),
+    vec2(0.0, 1.0),
+];
+
+#[vertex]
+fn vs_main(vi: @vertex_index, inst: RectInstance) -> VertexOutput {
+    let corner = CORNERS[vi];
+    let pixel_pos = inst.pos + corner * inst.size;
+
+    // Pixel coordinates to NDC: x: [0, width] -> [-1, 1], y: [0, height] -> [1, -1]
+    let ndc = vec2(
+        (pixel_pos.x / viewport.size.x) * 2.0 - 1.0,
+        1.0 - (pixel_pos.y / viewport.size.y) * 2.0,
+    );
+
+    let mut out: VertexOutput;
+    out.position = vec4(ndc, 0.0, 1.0);
+    out.color = inst.color;
+    out.local_pos = corner * inst.size;
+    out.rect_size = inst.size;
+    out.border_radius = inst.border_radius;
+    out.border_width = inst.border_width;
+    out.border_color = inst.border_color;
+    out.outline_width = inst.outline_width;
+    out.outline_color = inst.outline_color;
+    out.pixel_pos = pixel_pos;
+    out.clip_rect = inst.clip_rect;
+    out.clip_border_radius = inst.clip_border_radius;
+    out.shadow_params = inst.shadow_params;
+    out.shadow_color = inst.shadow_color;
+    out.shadow_flags = inst.shadow_flags;
+    out
+}
+
+/// Gaussian integral (erf-based) for smooth shadow falloff.
+fn gaussian_integral(x: f32, sigma: f32) -> f32 {
+    let normalized = x / (sigma * 1.4142135); // sqrt(2)
+    let t = 1.0 / (1.0 + 0.3275911 * abs(normalized));
+    let poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741
+               + t * (-1.453152027 + t * 1.061405429))));
+    let erf_val = 1.0 - poly * exp(-normalized * normalized);
+    0.5 + 0.5 * sign(normalized) * erf_val
+}
+
+/// Shadow alpha from SDF distance and blur radius.
+/// Per CSS spec, the blur radius equals ~2 sigma of the Gaussian, so sigma = blur / 2.
+fn shadow_alpha(sdf_dist: f32, blur: f32, is_inset: bool) -> f32 {
+    let sigma = blur * 0.5;
+    if sigma < 0.001 {
+        // Hard edge
+        if is_inset {
+            return #[select] if sdf_dist < 0.0 { 0.0 } else { 1.0 };
+        } else {
+            return #[select] if sdf_dist < 0.0 { 1.0 } else { 0.0 };
+        }
+    }
+    let a = gaussian_integral(-sdf_dist, sigma);
+    if is_inset {
+        return 1.0 - a;
+    }
+    a
+}
+
+/// Side mask from the fragment's position relative to the rect center.
+/// side_type: 0=All, 1=Top, 2=Right, 3=Bottom, 4=Left, 5=Vertical, 6=Horizontal, 7=Range,
+///            8=TopLeft, 9=TopRight, 10=BottomRight, 11=BottomLeft
+/// centered: fragment position relative to rect center
+/// half_size: half-size of the original (unexpanded) rect
+/// For Range, angle_start and angle_end are in radians.
+fn shadow_side_mask(centered: vec2, half_size: vec2, border_radius: vec4, side_type: f32, angle_start: f32, angle_end: f32) -> f32 {
+    if side_type < 0.5 {
+        // All
+        return 1.0;
+    }
+
+    // For cardinal sides, use edge-distance masking with a smoothstep transition.
+    // When several sides are used (e.g. Top + Left), their shadows naturally
+    // overlap at shared corners, which is the correct behaviour.
+    let edge = 2.0;
+
+    if side_type < 1.5 {
+        // Top: visible above the top edge
+        return 1.0 - smoothstep(-half_size.y - edge, -half_size.y + edge, centered.y);
+    }
+    if side_type < 2.5 {
+        // Right: visible beyond the right edge
+        return smoothstep(half_size.x - edge, half_size.x + edge, centered.x);
+    }
+    if side_type < 3.5 {
+        // Bottom: visible below the bottom edge
+        return smoothstep(half_size.y - edge, half_size.y + edge, centered.y);
+    }
+    if side_type < 4.5 {
+        // Left: visible beyond the left edge
+        return 1.0 - smoothstep(-half_size.x - edge, -half_size.x + edge, centered.x);
+    }
+    if side_type < 5.5 {
+        // Vertical: top + bottom
+        let dist_y = abs(centered.y) - half_size.y;
+        let dist_x = abs(centered.x) - half_size.x;
+        return smoothstep(-edge, edge, dist_y - dist_x);
+    }
+    if side_type < 6.5 {
+        // Horizontal: left + right
+        let dist_x = abs(centered.x) - half_size.x;
+        let dist_y = abs(centered.y) - half_size.y;
+        return smoothstep(-edge, edge, dist_x - dist_y);
+    }
+    if side_type < 7.5 {
+        // Range: angular mask (handled below)
+    } else if side_type < 8.5 {
+        // TopLeft: visible where the fragment is closer to the top or left edge than to bottom or right
+        let dist_top = -(centered.y + half_size.y);
+        let dist_left = -(centered.x + half_size.x);
+        let dist_bottom = centered.y - half_size.y;
+        let dist_right = centered.x - half_size.x;
+        let near = max(dist_top, dist_left);
+        let far = max(dist_bottom, dist_right);
+        return smoothstep(-edge, edge, near - far);
+    } else if side_type < 9.5 {
+        // TopRight
+        let dist_top = -(centered.y + half_size.y);
+        let dist_right = centered.x - half_size.x;
+        let dist_bottom = centered.y - half_size.y;
+        let dist_left = -(centered.x + half_size.x);
+        let near = max(dist_top, dist_right);
+        let far = max(dist_bottom, dist_left);
+        return smoothstep(-edge, edge, near - far);
+    } else if side_type < 10.5 {
+        // BottomRight
+        let dist_bottom = centered.y - half_size.y;
+        let dist_right = centered.x - half_size.x;
+        let dist_top = -(centered.y + half_size.y);
+        let dist_left = -(centered.x + half_size.x);
+        let near = max(dist_bottom, dist_right);
+        let far = max(dist_top, dist_left);
+        return smoothstep(-edge, edge, near - far);
+    } else if side_type < 11.5 {
+        // BottomLeft
+        let dist_bottom = centered.y - half_size.y;
+        let dist_left = -(centered.x + half_size.x);
+        let dist_top = -(centered.y + half_size.y);
+        let dist_right = centered.x - half_size.x;
+        let near = max(dist_bottom, dist_left);
+        let far = max(dist_top, dist_right);
+        return smoothstep(-edge, edge, near - far);
+    }
+    // Range: angular mask
+    let angle = atan2(centered.y, centered.x);
+    let mut a = angle - angle_start;
+    let range = angle_end - angle_start;
+    let two_pi = 6.2831853;
+    a = a - floor(a / two_pi) * two_pi;
+    let r = range - floor(range / two_pi) * two_pi;
+    if a <= r {
+        return 1.0;
+    }
+    0.0
+}
+
+/// Converts an sRGB input colour to the right colour space, applies premultiplied alpha
+/// with the given alpha factor, and converts back to sRGB if needed.
+fn finalize_color(color: vec4, alpha: f32) -> vec4 {
+    let sc = if viewport.surface_is_srgb >= 1.5 { color } else { srgb_color_to_linear(color) };
+    let mut result = vec4(sc.rgb * sc.a, sc.a) * alpha;
+    if viewport.surface_is_srgb < 0.5 {
+        let a = result.a;
+        if a > 0.00001 {
+            let unpremul = result.rgb / a;
+            let srgb_rgb = vec3(linear_to_srgb(unpremul.r), linear_to_srgb(unpremul.g), linear_to_srgb(unpremul.b));
+            result = vec4(srgb_rgb * a, a);
+        }
+    }
+    result
+}
+
+#[fragment]
+fn fs_main(input: VertexOutput) -> @frag_color {
+    // --- Shadow early path ---
+    if input.shadow_color.a > 0.0 {
+        let shadow_offset = input.shadow_params.xy;
+        let shadow_blur = input.shadow_params.z;
+        let shadow_spread = input.shadow_params.w;
+        let is_inset = input.shadow_flags.x > 0.5;
+
+        // rect_size is the expanded quad size. The quad was expanded per axis by
+        // (blur + |spread| + |offset|) on each side, so the original size can be recovered.
+        let expand_x = shadow_blur + abs(shadow_spread) + abs(shadow_offset.x);
+        let expand_y = shadow_blur + abs(shadow_spread) + abs(shadow_offset.y);
+        let orig_size = input.rect_size - vec2(expand_x * 2.0, expand_y * 2.0);
+        let orig_half = orig_size * 0.5;
+
+        // local_pos is relative to the expanded quad; center it on the original rect
+        let centered = input.local_pos - input.rect_size * 0.5;
+
+        // SDF at the shadow-offset position with spread-adjusted half-size and radii
+        let shadow_half = orig_half + vec2(shadow_spread);
+        let shadow_p = centered - shadow_offset;
+        let spread_radii = vec4(
+            max(input.border_radius.x + shadow_spread, 0.0),
+            max(input.border_radius.y + shadow_spread, 0.0),
+            max(input.border_radius.z + shadow_spread, 0.0),
+            max(input.border_radius.w + shadow_spread, 0.0),
+        );
+        let shadow_d = sdf_rounded_rect(shadow_p, shadow_half, spread_radii);
+
+        let sa = shadow_alpha(shadow_d, shadow_blur, is_inset);
+
+        // Apply the side mask
+        let side_type = input.shadow_flags.y;
+        let angle_start = input.shadow_flags.z;
+        let angle_end = input.shadow_flags.w;
+        let side_mask = shadow_side_mask(centered, orig_half, input.border_radius, side_type, angle_start, angle_end);
+
+        // For inset shadows, clip to the original rect bounds
+        let ca = clip_alpha(input.pixel_pos, input.clip_rect, input.clip_border_radius);
+        if is_inset {
+            let orig_d = sdf_rounded_rect(centered, orig_half, input.border_radius);
+            let inside = 1.0 - smoothstep(-0.5, 0.5, orig_d);
+            return finalize_color(input.shadow_color, sa * inside * ca * side_mask);
+        }
+        return finalize_color(input.shadow_color, sa * ca * side_mask);
+    }
+
+    // The quad may have been expanded by outline_width on each side.
+    let ow_top = input.outline_width.x;
+    let ow_right = input.outline_width.y;
+    let ow_bottom = input.outline_width.z;
+    let ow_left = input.outline_width.w;
+    let has_outline = (ow_top + ow_right + ow_bottom + ow_left) > 0.0;
+
+    // Original rect size (before outline expansion)
+    let orig_size = vec2(
+        input.rect_size.x - ow_left - ow_right,
+        input.rect_size.y - ow_top - ow_bottom,
+    );
+    let orig_half = orig_size * 0.5;
+
+    // local_pos relative to the original rect
+    let orig_local = input.local_pos - vec2(ow_left, ow_top);
+    let orig_centered = orig_local - orig_half;
+
+    // SDF for the original rect outer edge
+    let d = sdf_rounded_rect(orig_centered, orig_half, input.border_radius);
+    // Anti-aliasing with a small margin to ensure no gap
+    let outer_alpha = 1.0 - smoothstep(-0.5, 0.5, d);
+
+    // Anti-aliased clip
+    let ca = clip_alpha(input.pixel_pos, input.clip_rect, input.clip_border_radius);
+
+    // On Android (surface_is_srgb >= 1.5), skip sRGB conversion entirely.
+    let mut fill_color: vec4;
+    let mut stroke_color: vec4;
+    let mut ol_color: vec4;
+    if viewport.surface_is_srgb >= 1.5 {
+        fill_color = input.color;
+        stroke_color = input.border_color;
+        ol_color = input.outline_color;
+    } else {
+        fill_color = srgb_color_to_linear(input.color);
+        stroke_color = srgb_color_to_linear(input.border_color);
+        ol_color = srgb_color_to_linear(input.outline_color);
+    }
+
+    // Compute the outline ring if needed
+    let mut outline_premul = vec4(0.0, 0.0, 0.0, 0.0);
+    if has_outline {
+        // Outline outer edge: expanded rect with expanded radii.
+        //
+        // A corner only grows rounder here when the box itself already has a
+        // radius there: offsetting a *sharp* corner outward by a uniform
+        // thickness is still sharp, it doesn't gain a `max(ow_top, ow_left)`
+        // radius of its own. The zero branch keeps square corners square no
+        // matter how thick the outline is.
+        let expanded_half = input.rect_size * 0.5;
+        let expanded_centered = input.local_pos - expanded_half;
+        let outline_radii = vec4(
+            #[select] if input.border_radius.x > 0.0 { input.border_radius.x + max(ow_top, ow_left) } else { 0.0 },
+            #[select] if input.border_radius.y > 0.0 { input.border_radius.y + max(ow_top, ow_right) } else { 0.0 },
+            #[select] if input.border_radius.z > 0.0 { input.border_radius.z + max(ow_bottom, ow_right) } else { 0.0 },
+            #[select] if input.border_radius.w > 0.0 { input.border_radius.w + max(ow_bottom, ow_left) } else { 0.0 },
+        );
+        let outline_d = sdf_rounded_rect(expanded_centered, expanded_half, outline_radii);
+        let outline_outer_alpha = 1.0 - smoothstep(-0.5, 0.5, outline_d);
+        let outline_ring_alpha = clamp(outline_outer_alpha - outer_alpha, 0.0, 1.0);
+        outline_premul = vec4(ol_color.rgb * ol_color.a, ol_color.a) * outline_ring_alpha;
+    }
+
+    // border_width: (top, right, bottom, left)
+    let has_border = (input.border_width.x + input.border_width.y + input.border_width.z + input.border_width.w) > 0.0;
+
+    if has_border {
+        let bw_top = input.border_width.x;
+        let bw_right = input.border_width.y;
+        let bw_bottom = input.border_width.z;
+        let bw_left = input.border_width.w;
+
+        // Inner rect center offset and half-size
+        let inner_offset = vec2((bw_left - bw_right) * 0.5, (bw_top - bw_bottom) * 0.5);
+        let inner_half = vec2(
+            orig_half.x - (bw_left + bw_right) * 0.5,
+            orig_half.y - (bw_top + bw_bottom) * 0.5,
+        );
+
+        // Inner radii: shrink each corner radius by the max of its two adjacent border widths
+        let inner_radii = vec4(
+            max(input.border_radius.x - max(bw_top, bw_left), 0.0),     // top-left
+            max(input.border_radius.y - max(bw_top, bw_right), 0.0),    // top-right
+            max(input.border_radius.z - max(bw_bottom, bw_right), 0.0), // bottom-right
+            max(input.border_radius.w - max(bw_bottom, bw_left), 0.0),  // bottom-left
+        );
+
+        let inner_p = orig_centered - inner_offset;
+        let inner_d = sdf_rounded_rect(inner_p, max(inner_half, vec2(0.0, 0.0)), inner_radii);
+        let inner_alpha = 1.0 - smoothstep(-0.5, 0.5, inner_d);
+
+        // Border ring: outer minus inner
+        let border_alpha = clamp(outer_alpha - inner_alpha, 0.0, 1.0);
+        let bc = stroke_color;
+        let fc = fill_color;
+
+        // Ensure fill and border combined do not exceed outer_alpha
+        let final_inner_alpha = min(inner_alpha, outer_alpha);
+
+        let fill_premul = vec4(fc.rgb * fc.a, fc.a) * final_inner_alpha;
+        let border_premul = vec4(bc.rgb * bc.a, bc.a) * border_alpha;
+
+        // Combine layers. Since they are disjoint, addition is correct.
+        let combined = (outline_premul + border_premul + fill_premul) * ca;
+
+        if viewport.surface_is_srgb < 0.5 {
+            let a = combined.a;
+            if a > 0.00001 {
+                let unpremul = combined.rgb / a;
+                let srgb_rgb = vec3(linear_to_srgb(unpremul.r), linear_to_srgb(unpremul.g), linear_to_srgb(unpremul.b));
+                return vec4(srgb_rgb * a, a);
+            }
+        }
+        combined
+    } else {
+        let fill_premul = vec4(fill_color.rgb * fill_color.a, fill_color.a) * outer_alpha;
+        let combined = (outline_premul + fill_premul) * ca;
+
+        if viewport.surface_is_srgb < 0.5 {
+            let a = combined.a;
+            if a > 0.000001 {
+                let unpremul = combined.rgb / a;
+                let srgb_rgb = vec3(linear_to_srgb(unpremul.r), linear_to_srgb(unpremul.g), linear_to_srgb(unpremul.b));
+                return vec4(srgb_rgb * a, a);
+            }
+        }
+        combined
+    }
+}

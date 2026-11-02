@@ -1,0 +1,344 @@
+AIMER-OPENGL-SHADER-PACK-1
+[VERTEX]
+#version 330 core
+struct VertexOutput {
+    vec4 position;
+    vec2 uv;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    float coverage_exponent;
+};
+struct FragmentInput {
+    vec2 uv;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    float coverage_exponent;
+};
+struct Viewport {
+    vec2 resolution;
+    float surface_is_srgb;
+    float _pad;
+};
+layout(std140) uniform Viewport_block_0Vertex { Viewport _group_0_binding_0_vs; };
+
+layout(location = 0) in vec2 _p2vs_location0;
+layout(location = 1) in vec2 _p2vs_location1;
+layout(location = 2) in vec4 _p2vs_location2;
+layout(location = 3) in vec4 _p2vs_location3;
+layout(location = 4) in vec4 _p2vs_location4;
+layout(location = 5) in vec4 _p2vs_location5;
+layout(location = 6) in float _p2vs_location6;
+layout(location = 7) in float _p2vs_location7;
+smooth out vec2 _vs2fs_location0;
+smooth out vec4 _vs2fs_location1;
+smooth out vec2 _vs2fs_location2;
+smooth out vec4 _vs2fs_location3;
+smooth out vec4 _vs2fs_location4;
+smooth out float _vs2fs_location5;
+
+float sdf_rounded_rect(vec2 p, vec2 half_size, vec4 radii) {
+    float r = 0.0;
+    if ((p.x < 0.0)) {
+        if ((p.y < 0.0)) {
+            r = radii.x;
+        } else {
+            r = radii.w;
+        }
+    } else {
+        if ((p.y < 0.0)) {
+            r = radii.y;
+        } else {
+            r = radii.z;
+        }
+    }
+    float _e17 = r;
+    r = min(_e17, min(half_size.x, half_size.y));
+    float _e24 = r;
+    float _e25 = r;
+    vec2 q = ((abs(p) - half_size) + vec2(_e24, _e25));
+    float _e39 = r;
+    return ((length(max(q, vec2(0.0, 0.0))) + min(max(q.x, q.y), 0.0)) - _e39);
+}
+
+float clip_alpha(vec2 pixel_pos_1, vec4 clip_rect_1, vec4 clip_radii) {
+    bool local = false;
+    bool local_1 = false;
+    bool local_2 = false;
+    bool local_3 = false;
+    if ((clip_rect_1.z < 0.0)) {
+        return 1.0;
+    }
+    if (!((clip_rect_1.z <= 0.01))) {
+        local = (clip_rect_1.w <= 0.01);
+    } else {
+        local = true;
+    }
+    bool _e17 = local;
+    if (_e17) {
+        return 0.0;
+    }
+    if (!((clip_radii.x > 0.0))) {
+        local_1 = (clip_radii.y > 0.0);
+    } else {
+        local_1 = true;
+    }
+    bool _e29 = local_1;
+    if (!(_e29)) {
+        local_2 = (clip_radii.z > 0.0);
+    } else {
+        local_2 = true;
+    }
+    bool _e37 = local_2;
+    if (!(_e37)) {
+        local_3 = (clip_radii.w > 0.0);
+    } else {
+        local_3 = true;
+    }
+    bool _e45 = local_3;
+    if (_e45) {
+        vec2 clip_center = (clip_rect_1.xy + (clip_rect_1.zw * 0.5));
+        vec2 clip_half = (clip_rect_1.zw * 0.5);
+        vec2 p_1 = (pixel_pos_1 - clip_center);
+        float _e55 = sdf_rounded_rect(p_1, clip_half, clip_radii);
+        return (1.0 - smoothstep(-0.5, 0.5, _e55));
+    }
+    vec2 clip_min = clip_rect_1.xy;
+    vec2 clip_max = (clip_rect_1.xy + clip_rect_1.zw);
+    float d_left = (pixel_pos_1.x - clip_min.x);
+    float d_right = (clip_max.x - pixel_pos_1.x);
+    float d_top = (pixel_pos_1.y - clip_min.y);
+    float d_bottom = (clip_max.y - pixel_pos_1.y);
+    float a_left = smoothstep(-0.5, 0.5, d_left);
+    float a_right = smoothstep(-0.5, 0.5, d_right);
+    float a_top = smoothstep(-0.5, 0.5, d_top);
+    float a_bottom = smoothstep(-0.5, 0.5, d_bottom);
+    return (((a_left * a_right) * a_top) * a_bottom);
+}
+
+float srgb_to_linear(float c) {
+    if ((c <= 0.04045)) {
+        return (c / 12.92);
+    }
+    return pow(((c + 0.055) / 1.055), 2.4);
+}
+
+float linear_to_srgb(float c_1) {
+    if ((c_1 <= 0.0031308)) {
+        return (c_1 * 12.92);
+    }
+    return ((1.055 * pow(c_1, 0.41666666)) - 0.055);
+}
+
+void main() {
+    uint vertex_idx = uint(gl_VertexID);
+    vec2 inst_pos = _p2vs_location0;
+    vec2 inst_size = _p2vs_location1;
+    vec4 inst_uv = _p2vs_location2;
+    vec4 inst_color = _p2vs_location3;
+    vec4 clip_rect = _p2vs_location4;
+    vec4 clip_radius = _p2vs_location5;
+    float inst_skew = _p2vs_location6;
+    float inst_coverage_exponent = _p2vs_location7;
+    vec2 pixel_pos = vec2(0.0);
+    VertexOutput out_ = VertexOutput(vec4(0.0), vec2(0.0), vec4(0.0), vec2(0.0), vec4(0.0), vec4(0.0), 0.0);
+    vec2 tri_idx[6] = vec2[6](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(1.0, 1.0));
+    vec2 c_2 = tri_idx[vertex_idx];
+    pixel_pos = (inst_pos + (c_2 * inst_size));
+    float _e34 = pixel_pos.x;
+    pixel_pos.x = (_e34 + ((inst_skew * inst_size.y) * (1.0 - c_2.y)));
+    float _e43 = pixel_pos.x;
+    float _e47 = _group_0_binding_0_vs.resolution.x;
+    float _e54 = pixel_pos.y;
+    float _e58 = _group_0_binding_0_vs.resolution.y;
+    vec2 ndc = vec2((((_e43 / _e47) * 2.0) - 1.0), -((((_e54 / _e58) * 2.0) - 1.0)));
+    out_.position = vec4(ndc, 0.0, 1.0);
+    out_.uv = mix(inst_uv.xy, inst_uv.zw, c_2);
+    out_.color = inst_color;
+    vec2 _e77 = pixel_pos;
+    out_.pixel_pos = _e77;
+    out_.clip_rect = clip_rect;
+    out_.clip_border_radius = clip_radius;
+    out_.coverage_exponent = inst_coverage_exponent;
+    VertexOutput _e81 = out_;
+    gl_Position = _e81.position;
+    _vs2fs_location0 = _e81.uv;
+    _vs2fs_location1 = _e81.color;
+    _vs2fs_location2 = _e81.pixel_pos;
+    _vs2fs_location3 = _e81.clip_rect;
+    _vs2fs_location4 = _e81.clip_border_radius;
+    _vs2fs_location5 = _e81.coverage_exponent;
+    return;
+}
+
+
+[FRAGMENT]
+#version 330 core
+struct VertexOutput {
+    vec4 position;
+    vec2 uv;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    float coverage_exponent;
+};
+struct FragmentInput {
+    vec2 uv;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    float coverage_exponent;
+};
+struct Viewport {
+    vec2 resolution;
+    float surface_is_srgb;
+    float _pad;
+};
+layout(std140) uniform Viewport_block_0Fragment { Viewport _group_0_binding_0_fs; };
+
+uniform sampler2D _group_0_binding_1_fs;
+
+smooth in vec2 _vs2fs_location0;
+smooth in vec4 _vs2fs_location1;
+smooth in vec2 _vs2fs_location2;
+smooth in vec4 _vs2fs_location3;
+smooth in vec4 _vs2fs_location4;
+smooth in float _vs2fs_location5;
+layout(location = 0) out vec4 _fs2p_location0;
+
+float sdf_rounded_rect(vec2 p, vec2 half_size, vec4 radii) {
+    float r = 0.0;
+    if ((p.x < 0.0)) {
+        if ((p.y < 0.0)) {
+            r = radii.x;
+        } else {
+            r = radii.w;
+        }
+    } else {
+        if ((p.y < 0.0)) {
+            r = radii.y;
+        } else {
+            r = radii.z;
+        }
+    }
+    float _e17 = r;
+    r = min(_e17, min(half_size.x, half_size.y));
+    float _e24 = r;
+    float _e25 = r;
+    vec2 q = ((abs(p) - half_size) + vec2(_e24, _e25));
+    float _e39 = r;
+    return ((length(max(q, vec2(0.0, 0.0))) + min(max(q.x, q.y), 0.0)) - _e39);
+}
+
+float clip_alpha(vec2 pixel_pos_1, vec4 clip_rect_1, vec4 clip_radii) {
+    bool local = false;
+    bool local_1 = false;
+    bool local_2 = false;
+    bool local_3 = false;
+    if ((clip_rect_1.z < 0.0)) {
+        return 1.0;
+    }
+    if (!((clip_rect_1.z <= 0.01))) {
+        local = (clip_rect_1.w <= 0.01);
+    } else {
+        local = true;
+    }
+    bool _e17 = local;
+    if (_e17) {
+        return 0.0;
+    }
+    if (!((clip_radii.x > 0.0))) {
+        local_1 = (clip_radii.y > 0.0);
+    } else {
+        local_1 = true;
+    }
+    bool _e29 = local_1;
+    if (!(_e29)) {
+        local_2 = (clip_radii.z > 0.0);
+    } else {
+        local_2 = true;
+    }
+    bool _e37 = local_2;
+    if (!(_e37)) {
+        local_3 = (clip_radii.w > 0.0);
+    } else {
+        local_3 = true;
+    }
+    bool _e45 = local_3;
+    if (_e45) {
+        vec2 clip_center = (clip_rect_1.xy + (clip_rect_1.zw * 0.5));
+        vec2 clip_half = (clip_rect_1.zw * 0.5);
+        vec2 p_1 = (pixel_pos_1 - clip_center);
+        float _e55 = sdf_rounded_rect(p_1, clip_half, clip_radii);
+        return (1.0 - smoothstep(-0.5, 0.5, _e55));
+    }
+    vec2 clip_min = clip_rect_1.xy;
+    vec2 clip_max = (clip_rect_1.xy + clip_rect_1.zw);
+    float d_left = (pixel_pos_1.x - clip_min.x);
+    float d_right = (clip_max.x - pixel_pos_1.x);
+    float d_top = (pixel_pos_1.y - clip_min.y);
+    float d_bottom = (clip_max.y - pixel_pos_1.y);
+    float a_left = smoothstep(-0.5, 0.5, d_left);
+    float a_right = smoothstep(-0.5, 0.5, d_right);
+    float a_top = smoothstep(-0.5, 0.5, d_top);
+    float a_bottom = smoothstep(-0.5, 0.5, d_bottom);
+    return (((a_left * a_right) * a_top) * a_bottom);
+}
+
+float srgb_to_linear(float c) {
+    if ((c <= 0.04045)) {
+        return (c / 12.92);
+    }
+    return pow(((c + 0.055) / 1.055), 2.4);
+}
+
+float linear_to_srgb(float c_1) {
+    if ((c_1 <= 0.0031308)) {
+        return (c_1 * 12.92);
+    }
+    return ((1.055 * pow(c_1, 0.41666666)) - 0.055);
+}
+
+void main() {
+    FragmentInput in_ = FragmentInput(_vs2fs_location0, _vs2fs_location1, _vs2fs_location2, _vs2fs_location3, _vs2fs_location4, _vs2fs_location5);
+    vec4 result = vec4(0.0);
+    vec4 _e5 = textureLod(_group_0_binding_1_fs, vec2(in_.uv), 0.0);
+    float coverage = _e5.x;
+    float _e10 = clip_alpha(in_.pixel_pos, in_.clip_rect, in_.clip_border_radius);
+    float _e14 = _group_0_binding_0_fs.surface_is_srgb;
+    if ((_e14 >= 1.5)) {
+        float a = ((in_.color.w * coverage) * _e10);
+        result = vec4((in_.color.xyz * a), a);
+    } else {
+        float _e29 = _group_0_binding_0_fs.surface_is_srgb;
+        float corrected = ((_e29 < 0.5) ? coverage : pow(coverage, in_.coverage_exponent));
+        float a_1 = ((in_.color.w * corrected) * _e10);
+        float _e39 = srgb_to_linear(in_.color.x);
+        float _e42 = srgb_to_linear(in_.color.y);
+        float _e45 = srgb_to_linear(in_.color.z);
+        result = vec4((_e39 * a_1), (_e42 * a_1), (_e45 * a_1), a_1);
+        float _e52 = _group_0_binding_0_fs.surface_is_srgb;
+        if ((_e52 < 0.5)) {
+            if ((a_1 > 1e-5)) {
+                float _e57 = linear_to_srgb(_e39);
+                float _e58 = linear_to_srgb(_e42);
+                float _e59 = linear_to_srgb(_e45);
+                result = vec4((_e57 * a_1), (_e58 * a_1), (_e59 * a_1), a_1);
+            }
+        }
+    }
+    vec4 _e64 = result;
+    _fs2p_location0 = _e64;
+    return;
+}
+
+
+[RESOURCES]
+SAMPLER 0 1 0 2 _group_0_binding_1_fs
+UBO 0 0 Viewport_block_0Fragment
+UBO 0 0 Viewport_block_0Vertex

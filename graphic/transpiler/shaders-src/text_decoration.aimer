@@ -1,0 +1,144 @@
+shader text_decoration;
+
+// Text decoration shader: draws styled decoration lines (underline, overline,
+// line-through) as solid-colour quads with a procedural coverage mask so a single
+// pipeline covers Solid / Double / Dotted / Dashed / Wavy without any atlas.
+
+import aimer::color::*;
+import aimer::clip::clip_alpha;
+
+#[varying]
+struct VertexOutput {
+    @position position: vec4,
+    uv: vec2,
+    color: vec4,
+    pixel_pos: vec2,
+    clip_rect: vec4,
+    clip_border_radius: vec4,
+    // params: [style_id, thickness_px, period_px, band_height_px]
+    params: vec4,
+    size: vec2,
+}
+
+uniform struct Viewport {
+    resolution: vec2,
+    surface_is_srgb: f32,
+    _pad: f32,
+}
+
+// Bindings mirror the text pipeline's layout (viewport + atlas + sampler) so the
+// same bind group can be reused; the atlas and sampler are intentionally unused here.
+#[bind(0, 0)]
+uniform viewport: Viewport;
+#[bind(0, 1)]
+texture atlas_texture: texture2d;
+#[bind(0, 2)]
+sampler atlas_sampler;
+
+#[input(step = instance)]
+struct DecorationInstance {
+    pos: vec2,
+    size: vec2,
+    color: vec4,
+    clip_rect: vec4,
+    clip_radius: vec4,
+    params: vec4,
+}
+
+const CORNERS: [vec2; 6] = [
+    vec2(0.0, 0.0),
+    vec2(1.0, 0.0),
+    vec2(0.0, 1.0),
+    vec2(0.0, 1.0),
+    vec2(1.0, 0.0),
+    vec2(1.0, 1.0),
+];
+
+#[vertex]
+fn vs_main(vertex_idx: @vertex_index, inst: DecorationInstance) -> VertexOutput {
+    let c = CORNERS[vertex_idx];
+
+    let pixel_pos = inst.pos + c * inst.size;
+    let ndc = vec2(
+        pixel_pos.x / viewport.resolution.x * 2.0 - 1.0,
+        -(pixel_pos.y / viewport.resolution.y * 2.0 - 1.0),
+    );
+
+    let mut out: VertexOutput;
+    out.position = vec4(ndc, 0.0, 1.0);
+    out.uv = c;
+    out.color = inst.color;
+    out.pixel_pos = pixel_pos;
+    out.clip_rect = inst.clip_rect;
+    out.clip_border_radius = inst.clip_radius;
+    out.params = inst.params;
+    out.size = inst.size;
+    out
+}
+
+// Anti-aliased "distance to stroke edge" coverage: 1 inside the stroke, 0 outside,
+// with a ~1px smooth transition.
+fn stroke_cov(dist: f32, half_thickness: f32) -> f32 {
+    smoothstep(0.5, -0.5, dist - half_thickness)
+}
+
+#[fragment]
+fn fs_main(input: VertexOutput) -> @frag_color {
+    let style = input.params.x;
+    let thickness = max(input.params.y, 0.5);
+    let period = max(input.params.z, 1.0);
+    let band = max(input.params.w, thickness);
+
+    // Local coordinates inside the band's quad, in pixels.
+    let px = input.uv.x * input.size.x;
+    let py = input.uv.y * input.size.y;
+    let center = band * 0.5;
+    let ht = thickness * 0.5;
+
+    let mut cov = 0.0;
+    if style < 0.5 {
+        // Solid.
+        cov = stroke_cov(abs(py - center), ht);
+    } else if style < 1.5 {
+        // Double: two strokes at the top and bottom of the band.
+        let c0 = ht;
+        let c1 = band - ht;
+        cov = max(stroke_cov(abs(py - c0), ht), stroke_cov(abs(py - c1), ht));
+    } else if style < 2.5 {
+        // Dotted: solid vertically, round dots along x (~50% duty at `period`).
+        let line_pos = stroke_cov(abs(py - center), ht);
+        let phase = px - period * floor(px / period);
+        let dot = stroke_cov(abs(phase - period * 0.5), period * 0.25);
+        cov = line_pos * dot;
+    } else if style < 3.5 {
+        // Dashed: solid vertically, longer dashes along x (~60% duty).
+        let line_pos = stroke_cov(abs(py - center), ht);
+        let phase = px - period * floor(px / period);
+        let dash = step(phase, period * 0.6);
+        cov = line_pos * dash;
+    } else {
+        // Wavy: sine curve whose amplitude fills the remaining band height.
+        let amp = max((band - thickness) * 0.5, 0.0);
+        let wave = center + amp * sin(px * 6.2831853 / period);
+        cov = stroke_cov(abs(py - wave), ht);
+    }
+
+    let ca = clip_alpha(input.pixel_pos, input.clip_rect, input.clip_border_radius);
+    let a = input.color.a * cov * ca;
+
+    let mut result: vec4;
+    if viewport.surface_is_srgb >= 1.5 {
+        result = vec4(input.color.rgb * a, a);
+    } else {
+        let r_lin = srgb_to_linear(input.color.r);
+        let g_lin = srgb_to_linear(input.color.g);
+        let b_lin = srgb_to_linear(input.color.b);
+        result = vec4(r_lin * a, g_lin * a, b_lin * a, a);
+        if viewport.surface_is_srgb < 0.5 {
+            if a > 0.00001 {
+                result = vec4(linear_to_srgb(r_lin) * a, linear_to_srgb(g_lin) * a, linear_to_srgb(b_lin) * a, a);
+            }
+        }
+    }
+    result
+}

@@ -1,0 +1,451 @@
+AIMER-OPENGL-SHADER-PACK-1
+[VERTEX]
+#version 330 core
+struct Viewport {
+    vec2 size;
+    float surface_is_srgb;
+    float _pad;
+};
+struct MorphInstance {
+    vec4 rect_from;
+    vec4 rect_to;
+    vec4 timing;
+    vec4 shape;
+    vec4 noise;
+};
+struct VertexOutput {
+    vec4 position;
+    vec2 pixel_pos;
+    vec4 rect_from;
+    vec4 rect_to;
+    vec4 timing;
+    vec4 shape;
+    vec4 noise;
+};
+const float GOO_THRESHOLD = 0.36;
+
+layout(std140) uniform Viewport_block_0Vertex { Viewport _group_0_binding_0_vs; };
+
+layout(location = 0) in vec4 _p2vs_location0;
+layout(location = 1) in vec4 _p2vs_location1;
+layout(location = 2) in vec4 _p2vs_location2;
+layout(location = 3) in vec4 _p2vs_location3;
+layout(location = 4) in vec4 _p2vs_location4;
+smooth out vec2 _vs2fs_location0;
+smooth out vec4 _vs2fs_location1;
+smooth out vec4 _vs2fs_location2;
+smooth out vec4 _vs2fs_location3;
+smooth out vec4 _vs2fs_location4;
+smooth out vec4 _vs2fs_location5;
+
+bool present(vec4 rect) {
+    bool local = false;
+    if ((rect.z > 0.0)) {
+        local = (rect.w > 0.0);
+    } else {
+        local = false;
+    }
+    bool _e10 = local;
+    return _e10;
+}
+
+vec4 union_rect(vec4 a, vec4 b) {
+    bool _e2 = present(a);
+    if (!(_e2)) {
+        return b;
+    }
+    bool _e4 = present(b);
+    if (!(_e4)) {
+        return a;
+    }
+    vec2 low = min(a.xy, b.xy);
+    vec2 high = max((a.xy + a.zw), (b.xy + b.zw));
+    return vec4(low, (high - low));
+}
+
+float hash21_(vec2 p) {
+    vec2 q = vec2(0.0);
+    q = fract((p * vec2(123.34, 456.21)));
+    vec2 _e7 = q;
+    vec2 _e8 = q;
+    vec2 _e9 = q;
+    q = (_e7 + vec2(dot(_e8, (_e9 + vec2(45.32)))));
+    float _e17 = q.x;
+    float _e19 = q.y;
+    return fract((_e17 * _e19));
+}
+
+float value_noise(vec2 p_1) {
+    vec2 i = floor(p_1);
+    vec2 f = fract(p_1);
+    vec2 u = ((f * f) * (vec2(3.0) - (2.0 * f)));
+    float _e10 = hash21_(i);
+    float _e15 = hash21_((i + vec2(1.0, 0.0)));
+    float _e20 = hash21_((i + vec2(0.0, 1.0)));
+    float _e25 = hash21_((i + vec2(1.0, 1.0)));
+    return mix(mix(_e10, _e15, u.x), mix(_e20, _e25, u.x), u.y);
+}
+
+void main() {
+    uint vi = uint(gl_VertexID);
+    MorphInstance inst = MorphInstance(_p2vs_location0, _p2vs_location1, _p2vs_location2, _p2vs_location3, _p2vs_location4);
+    vec2 corners[6] = vec2[6](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
+    VertexOutput out_ = VertexOutput(vec4(0.0), vec2(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e24 = union_rect(inst.rect_from, inst.rect_to);
+    vec2 _e27 = corners[vi];
+    vec2 pixel_pos = (_e24.xy + (_e27 * _e24.zw));
+    float _e35 = _group_0_binding_0_vs.size.x;
+    float _e45 = _group_0_binding_0_vs.size.y;
+    vec2 ndc = vec2((((pixel_pos.x / _e35) * 2.0) - 1.0), (1.0 - ((pixel_pos.y / _e45) * 2.0)));
+    out_.position = vec4(ndc, 0.0, 1.0);
+    out_.pixel_pos = pixel_pos;
+    out_.rect_from = inst.rect_from;
+    out_.rect_to = inst.rect_to;
+    out_.timing = inst.timing;
+    out_.shape = inst.shape;
+    out_.noise = inst.noise;
+    VertexOutput _e68 = out_;
+    gl_Position = _e68.position;
+    _vs2fs_location0 = _e68.pixel_pos;
+    _vs2fs_location1 = _e68.rect_from;
+    _vs2fs_location2 = _e68.rect_to;
+    _vs2fs_location3 = _e68.timing;
+    _vs2fs_location4 = _e68.shape;
+    _vs2fs_location5 = _e68.noise;
+    return;
+}
+
+
+[FRAGMENT]
+#version 330 core
+struct Viewport {
+    vec2 size;
+    float surface_is_srgb;
+    float _pad;
+};
+struct MorphInstance {
+    vec4 rect_from;
+    vec4 rect_to;
+    vec4 timing;
+    vec4 shape;
+    vec4 noise;
+};
+struct VertexOutput {
+    vec4 position;
+    vec2 pixel_pos;
+    vec4 rect_from;
+    vec4 rect_to;
+    vec4 timing;
+    vec4 shape;
+    vec4 noise;
+};
+const float GOO_THRESHOLD = 0.36;
+
+uniform sampler2D _group_1_binding_0_fs;
+
+uniform sampler2D _group_1_binding_1_fs;
+
+smooth in vec2 _vs2fs_location0;
+smooth in vec4 _vs2fs_location1;
+smooth in vec4 _vs2fs_location2;
+smooth in vec4 _vs2fs_location3;
+smooth in vec4 _vs2fs_location4;
+smooth in vec4 _vs2fs_location5;
+layout(location = 0) out vec4 _fs2p_location0;
+
+bool present(vec4 rect) {
+    bool local = false;
+    if ((rect.z > 0.0)) {
+        local = (rect.w > 0.0);
+    } else {
+        local = false;
+    }
+    bool _e10 = local;
+    return _e10;
+}
+
+vec4 union_rect(vec4 a, vec4 b) {
+    bool _e2 = present(a);
+    if (!(_e2)) {
+        return b;
+    }
+    bool _e4 = present(b);
+    if (!(_e4)) {
+        return a;
+    }
+    vec2 low = min(a.xy, b.xy);
+    vec2 high = max((a.xy + a.zw), (b.xy + b.zw));
+    return vec4(low, (high - low));
+}
+
+float hash21_(vec2 p) {
+    vec2 q = vec2(0.0);
+    q = fract((p * vec2(123.34, 456.21)));
+    vec2 _e7 = q;
+    vec2 _e8 = q;
+    vec2 _e9 = q;
+    q = (_e7 + vec2(dot(_e8, (_e9 + vec2(45.32)))));
+    float _e17 = q.x;
+    float _e19 = q.y;
+    return fract((_e17 * _e19));
+}
+
+float value_noise(vec2 p_1) {
+    vec2 i = floor(p_1);
+    vec2 f = fract(p_1);
+    vec2 u = ((f * f) * (vec2(3.0) - (2.0 * f)));
+    float _e10 = hash21_(i);
+    float _e15 = hash21_((i + vec2(1.0, 0.0)));
+    float _e20 = hash21_((i + vec2(0.0, 1.0)));
+    float _e25 = hash21_((i + vec2(1.0, 1.0)));
+    return mix(mix(_e10, _e15, u.x), mix(_e20, _e25, u.x), u.y);
+}
+
+vec4 sample_over(sampler2D tex, vec4 rect_1, vec4 source, vec2 p_2, float radius) {
+    vec4 sum_1 = vec4(0.0);
+    int k_1 = 0;
+    bool _e5 = present(source);
+    if (!(_e5)) {
+        return vec4(0.0);
+    }
+    vec2 edge = min((p_2 - rect_1.xy), ((rect_1.xy + rect_1.zw) - p_2));
+    float coverage = (clamp((edge.x + 0.5), 0.0, 1.0) * clamp((edge.y + 0.5), 0.0, 1.0));
+    if ((radius < 0.5)) {
+        vec2 uv = ((p_2 - rect_1.xy) / rect_1.zw);
+        vec4 _e42 = textureLod(tex, vec2(clamp(uv, vec2(0.0), vec2(1.0))), 0.0);
+        return (_e42 * coverage);
+    }
+    float _e44 = hash21_(p_2);
+    float turn = (_e44 * 6.2831855);
+    bool loop_init = true;
+    while(true) {
+        if (!loop_init) {
+            int _e85 = k_1;
+            k_1 = (_e85 + 1);
+        }
+        loop_init = false;
+        int _e52 = k_1;
+        if ((_e52 < 16)) {
+        } else {
+            break;
+        }
+        {
+            int _e55 = k_1;
+            float fk = float(_e55);
+            float angle = ((fk * 2.3999631) + turn);
+            float reach = (radius * sqrt(((fk + 0.5) / 16.0)));
+            vec2 tap = (p_2 + (vec2(cos(angle), sin(angle)) * reach));
+            vec2 uv_1 = ((tap - rect_1.xy) / rect_1.zw);
+            vec4 _e75 = sum_1;
+            vec4 _e83 = textureLod(tex, vec2(clamp(uv_1, vec2(0.0), vec2(1.0))), 0.0);
+            sum_1 = (_e75 + _e83);
+        }
+    }
+    vec4 _e88 = sum_1;
+    return ((_e88 / vec4(16.0)) * coverage);
+}
+
+vec4 tap_hard(sampler2D tex_1, vec4 rect_2, vec2 p_3) {
+    bool local_1 = false;
+    bool local_2 = false;
+    bool local_3 = false;
+    bool _e3 = present(rect_2);
+    if (!(_e3)) {
+        return vec4(0.0);
+    }
+    vec2 uv_2 = ((p_3 - rect_2.xy) / rect_2.zw);
+    if (!((uv_2.x < 0.0))) {
+        local_1 = (uv_2.y < 0.0);
+    } else {
+        local_1 = true;
+    }
+    bool _e21 = local_1;
+    if (!(_e21)) {
+        local_2 = (uv_2.x > 1.0);
+    } else {
+        local_2 = true;
+    }
+    bool _e29 = local_2;
+    if (!(_e29)) {
+        local_3 = (uv_2.y > 1.0);
+    } else {
+        local_3 = true;
+    }
+    bool _e37 = local_3;
+    if (_e37) {
+        return vec4(0.0);
+    }
+    vec4 _e42 = textureLod(tex_1, vec2(uv_2), 0.0);
+    return _e42;
+}
+
+void main() {
+    VertexOutput in_ = VertexOutput(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2, _vs2fs_location3, _vs2fs_location4, _vs2fs_location5);
+    vec4 from_color = vec4(0.0);
+    vec4 to_color = vec4(0.0);
+    float mix_amount = 0.0;
+    vec2 dir = vec2(0.0);
+    vec2 dir_1 = vec2(0.0);
+    vec4 sum = vec4(0.0);
+    int k = 0;
+    vec4 moving = vec4(0.0);
+    uint style = uint((in_.timing.x + 0.5));
+    float t = clamp(in_.timing.y, 0.0, 1.0);
+    float opacity = in_.timing.z;
+    float seed = in_.timing.w;
+    float softness = max(in_.shape.z, 0.001);
+    float amplitude = in_.shape.w;
+    float frequency = max(in_.noise.x, 0.001);
+    float radius_from = (in_.noise.y * t);
+    float radius_to = (in_.noise.y * (1.0 - t));
+    vec4 _e35 = union_rect(in_.rect_from, in_.rect_to);
+    float unit = max(min(_e35.z, _e35.w), 1.0);
+    vec2 q_1 = ((in_.pixel_pos - _e35.xy) / _e35.zw);
+    vec2 np = ((((in_.pixel_pos - _e35.xy) / vec2(unit)) * frequency) + vec2(seed, (seed * 1.7)));
+    if ((style == 0u)) {
+        vec4 _e65 = sample_over(_group_1_binding_0_fs, in_.rect_from, in_.rect_from, in_.pixel_pos, radius_from);
+        from_color = _e65;
+        vec4 _e70 = sample_over(_group_1_binding_1_fs, in_.rect_to, in_.rect_to, in_.pixel_pos, radius_to);
+        to_color = _e70;
+        float _e71 = value_noise(np);
+        float _e79 = value_noise(((np * 2.3) + vec2(11.0)));
+        float n = ((_e71 * 0.75) + (_e79 * 0.25));
+        mix_amount = clamp((((t * (1.0 + softness)) - n) / softness), 0.0, 1.0);
+    } else {
+        if ((style == 1u)) {
+            vec4 _e97 = sample_over(_group_1_binding_0_fs, in_.rect_from, in_.rect_from, in_.pixel_pos, radius_from);
+            from_color = _e97;
+            vec4 _e102 = sample_over(_group_1_binding_1_fs, in_.rect_to, in_.rect_to, in_.pixel_pos, radius_to);
+            to_color = _e102;
+            dir = in_.shape.xy;
+            vec2 _e106 = dir;
+            vec2 _e107 = dir;
+            if ((dot(_e106, _e107) < 1e-6)) {
+                dir = vec2(1.0, 0.0);
+            }
+            vec2 _e114 = dir;
+            dir = normalize(_e114);
+            float _e117 = dir.x;
+            float _e120 = dir.y;
+            float extent = max((abs(_e117) + abs(_e120)), 0.0001);
+            vec2 _e128 = dir;
+            float s = ((dot((q_1 - vec2(0.5)), _e128) / extent) + 0.5);
+            mix_amount = clamp((((t * (1.0 + softness)) - s) / softness), 0.0, 1.0);
+        } else {
+            if ((style == 2u)) {
+                float _e143 = value_noise(np);
+                float _e150 = value_noise((np + vec2(37.0, 91.0)));
+                vec2 flow = (((vec2((_e143 - 0.5), (_e150 - 0.5)) * 2.0) * amplitude) * unit);
+                vec2 p_from = (in_.pixel_pos + (flow * t));
+                vec2 p_to = (in_.pixel_pos - (flow * (1.0 - t)));
+                vec4 _e169 = sample_over(_group_1_binding_0_fs, in_.rect_from, in_.rect_from, p_from, radius_from);
+                from_color = _e169;
+                vec4 _e173 = sample_over(_group_1_binding_1_fs, in_.rect_to, in_.rect_to, p_to, radius_to);
+                to_color = _e173;
+                mix_amount = ((t * t) * (3.0 - (2.0 * t)));
+            } else {
+                if ((style == 4u)) {
+                    vec4 _e186 = sample_over(_group_1_binding_0_fs, in_.rect_from, in_.rect_from, in_.pixel_pos, radius_from);
+                    from_color = _e186;
+                    vec4 _e191 = sample_over(_group_1_binding_1_fs, in_.rect_to, in_.rect_to, in_.pixel_pos, radius_to);
+                    to_color = _e191;
+                    mix_amount = ((t * t) * (3.0 - (2.0 * t)));
+                } else {
+                    if ((style == 5u)) {
+                        dir_1 = in_.shape.xy;
+                        vec2 _e203 = dir_1;
+                        vec2 _e204 = dir_1;
+                        if ((dot(_e203, _e204) < 1e-6)) {
+                            dir_1 = vec2(1.0, 0.0);
+                        }
+                        vec2 _e211 = dir_1;
+                        dir_1 = normalize(_e211);
+                        float _e214 = dir_1.x;
+                        float _e219 = dir_1.y;
+                        float travel = ((abs(_e214) * _e35.z) + (abs(_e219) * _e35.w));
+                        vec2 _e228 = dir_1;
+                        vec4 _e232 = sample_over(_group_1_binding_0_fs, in_.rect_from, in_.rect_from, (in_.pixel_pos - ((_e228 * travel) * t)), radius_from);
+                        vec2 _e237 = dir_1;
+                        vec4 _e243 = sample_over(_group_1_binding_1_fs, in_.rect_to, in_.rect_to, (in_.pixel_pos + ((_e237 * travel) * (1.0 - t))), radius_to);
+                        _fs2p_location0 = ((_e243 + (_e232 * (1.0 - _e243.w))) * opacity);
+                        return;
+                    } else {
+                        if ((style == 6u)) {
+                            float reach_1 = (in_.noise.y * sin((3.1415927 * t)));
+                            float amount = ((t * t) * (3.0 - (2.0 * t)));
+                            if ((reach_1 < 0.5)) {
+                                vec4 _e271 = sample_over(_group_1_binding_0_fs, in_.rect_from, in_.rect_from, in_.pixel_pos, 0.0);
+                                from_color = _e271;
+                                vec4 _e277 = sample_over(_group_1_binding_1_fs, in_.rect_to, in_.rect_to, in_.pixel_pos, 0.0);
+                                to_color = _e277;
+                                vec4 _e278 = from_color;
+                                vec4 _e279 = to_color;
+                                _fs2p_location0 = (mix(_e278, _e279, amount) * opacity);
+                                return;
+                            }
+                            bool loop_init_1 = true;
+                            while(true) {
+                                if (!loop_init_1) {
+                                    int _e317 = k;
+                                    k = (_e317 + 1);
+                                }
+                                loop_init_1 = false;
+                                int _e288 = k;
+                                if ((_e288 < 64)) {
+                                } else {
+                                    break;
+                                }
+                                {
+                                    int _e291 = k;
+                                    float fk_1 = float(_e291);
+                                    float angle_1 = ((fk_1 * 2.3999631) + 0.0);
+                                    float ring = (reach_1 * sqrt(((fk_1 + 0.5) / 64.0)));
+                                    vec2 tap_1 = (in_.pixel_pos + (vec2(cos(angle_1), sin(angle_1)) * ring));
+                                    vec4 _e308 = sum;
+                                    vec4 _e311 = tap_hard(_group_1_binding_0_fs, in_.rect_from, tap_1);
+                                    vec4 _e314 = tap_hard(_group_1_binding_1_fs, in_.rect_to, tap_1);
+                                    sum = (_e308 + mix(_e311, _e314, amount));
+                                }
+                            }
+                            vec4 _e320 = sum;
+                            vec4 average = (_e320 / vec4(64.0));
+                            float cover = smoothstep((GOO_THRESHOLD - (softness * 0.5)), (GOO_THRESHOLD + (softness * 0.5)), average.w);
+                            vec3 straight = (average.xyz / vec3(max(average.w, 0.0001)));
+                            _fs2p_location0 = (vec4((straight * cover), cover) * opacity);
+                            return;
+                        } else {
+                            moving = mix(in_.rect_from, in_.rect_to, t);
+                            bool _e348 = present(in_.rect_from);
+                            if (!(_e348)) {
+                                moving = in_.rect_to;
+                            } else {
+                                bool _e352 = present(in_.rect_to);
+                                if (!(_e352)) {
+                                    moving = in_.rect_from;
+                                }
+                            }
+                            vec4 _e356 = moving;
+                            vec4 _e359 = sample_over(_group_1_binding_0_fs, _e356, in_.rect_from, in_.pixel_pos, radius_from);
+                            from_color = _e359;
+                            vec4 _e361 = moving;
+                            vec4 _e364 = sample_over(_group_1_binding_1_fs, _e361, in_.rect_to, in_.pixel_pos, radius_to);
+                            to_color = _e364;
+                            mix_amount = ((t * t) * (3.0 - (2.0 * t)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    vec4 _e371 = from_color;
+    vec4 _e372 = to_color;
+    float _e373 = mix_amount;
+    _fs2p_location0 = (mix(_e371, _e372, _e373) * opacity);
+    return;
+}
+
+
+[RESOURCES]
+SAMPLER 1 0 1 2 _group_1_binding_0_fs
+SAMPLER 1 1 1 2 _group_1_binding_1_fs
+UBO 0 0 Viewport_block_0Vertex

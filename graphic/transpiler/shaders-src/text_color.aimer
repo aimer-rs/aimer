@@ -1,0 +1,106 @@
+shader text_color;
+
+// Colour text shader, for COLR layers and embedded colour-strike glyphs.
+// Mirrors text.aimer but samples the full RGBA colour from the atlas and
+// modulates only by the per-instance alpha and clip alpha. The atlas stores
+// non-premultiplied RGBA8; the output is premultiplied so the same blend state
+// (PREMULTIPLIED_ALPHA_BLENDING) applies as for monochrome glyphs.
+
+import aimer::color::*;
+import aimer::clip::clip_alpha;
+
+#[varying]
+struct VertexOutput {
+    @position position: vec4,
+    uv: vec2,
+    color: vec4,
+    pixel_pos: vec2,
+    clip_rect: vec4,
+    clip_border_radius: vec4,
+}
+
+uniform struct Viewport {
+    resolution: vec2,
+    surface_is_srgb: f32,
+    _pad: f32,
+}
+
+#[bind(0, 0)]
+uniform viewport: Viewport;
+#[bind(0, 1)]
+texture atlas_texture: texture2d;
+#[bind(0, 2)]
+sampler atlas_sampler;
+
+#[input(step = instance)]
+struct TextInstance {
+    pos: vec2,
+    size: vec2,
+    uv: vec4,
+    color: vec4,
+    clip_rect: vec4,
+    clip_radius: vec4,
+    skew: f32,
+}
+
+const CORNERS: [vec2; 6] = [
+    vec2(0.0, 0.0),
+    vec2(1.0, 0.0),
+    vec2(0.0, 1.0),
+    vec2(0.0, 1.0),
+    vec2(1.0, 0.0),
+    vec2(1.0, 1.0),
+];
+
+#[vertex]
+fn vs_main(vertex_idx: @vertex_index, inst: TextInstance) -> VertexOutput {
+    let c = CORNERS[vertex_idx];
+
+    // Synthetic italic shear, pinned at the quad's bottom edge (see text.aimer).
+    let mut pixel_pos = inst.pos + c * inst.size;
+    pixel_pos.x = pixel_pos.x + inst.skew * inst.size.y * (1.0 - c.y);
+    let ndc = vec2(
+        pixel_pos.x / viewport.resolution.x * 2.0 - 1.0,
+        -(pixel_pos.y / viewport.resolution.y * 2.0 - 1.0),
+    );
+
+    let mut out: VertexOutput;
+    out.position = vec4(ndc, 0.0, 1.0);
+    out.uv = mix(inst.uv.xy, inst.uv.zw, c);
+    out.color = inst.color;
+    out.pixel_pos = pixel_pos;
+    out.clip_rect = inst.clip_rect;
+    out.clip_border_radius = inst.clip_radius;
+    out
+}
+
+#[fragment]
+fn fs_main(input: VertexOutput) -> @frag_color {
+    // Atlas stores non-premultiplied RGBA. We don't tint with `input.color.rgb`:
+    // emoji are full-colour art; we only honour the layout's alpha and clip.
+    let sample = atlas_texture.sample_level(atlas_sampler, input.uv, 0.0);
+    let ca = clip_alpha(input.pixel_pos, input.clip_rect, input.clip_border_radius);
+    let glyph_alpha = sample.a;
+    let final_alpha = glyph_alpha * input.color.a * ca;
+
+    let mut rgb = sample.rgb;
+
+    // Match the gamma/space behaviour of text.aimer. Colour emoji bitmaps are
+    // sRGB encoded; on Android (surface_is_srgb >= 1.5), the surface skips
+    // sRGB conversion entirely so we feed sRGB straight through. Otherwise we
+    // convert sRGB to linear, optionally back to sRGB if the surface format is
+    // already linear.
+    if viewport.surface_is_srgb < 1.5 {
+        let r_lin = srgb_to_linear(rgb.r);
+        let g_lin = srgb_to_linear(rgb.g);
+        let b_lin = srgb_to_linear(rgb.b);
+
+        if viewport.surface_is_srgb < 0.5 {
+            rgb = vec3(linear_to_srgb(r_lin), linear_to_srgb(g_lin), linear_to_srgb(b_lin));
+        } else {
+            rgb = vec3(r_lin, g_lin, b_lin);
+        }
+    }
+
+    vec4(rgb * final_alpha, final_alpha)
+}

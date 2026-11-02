@@ -1,0 +1,236 @@
+AIMER-OPENGL-SHADER-PACK-1
+[VERTEX]
+#version 330 core
+struct SvgVertex {
+    vec2 position;
+    float coverage;
+};
+struct SvgInstance {
+    vec4 transform_x;
+    vec4 transform_y;
+    vec4 color;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    vec4 viewport;
+};
+struct VertexOutput {
+    vec4 position;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    float surface_is_srgb;
+    float coverage;
+};
+layout(location = 0) in vec2 _p2vs_location0;
+layout(location = 7) in float _p2vs_location7;
+layout(location = 1) in vec4 _p2vs_location1;
+layout(location = 2) in vec4 _p2vs_location2;
+layout(location = 3) in vec4 _p2vs_location3;
+layout(location = 4) in vec4 _p2vs_location4;
+layout(location = 5) in vec4 _p2vs_location5;
+layout(location = 6) in vec4 _p2vs_location6;
+smooth out vec4 _vs2fs_location0;
+smooth out vec2 _vs2fs_location1;
+smooth out vec4 _vs2fs_location2;
+smooth out vec4 _vs2fs_location3;
+smooth out float _vs2fs_location4;
+smooth out float _vs2fs_location5;
+
+float correct_alpha(float input_1) {
+    return input_1;
+}
+
+float color_offset(float input_2) {
+    return input_2;
+}
+
+float srgb_to_linear(float c) {
+    if ((c <= 0.04045)) {
+        return (c / 12.92);
+    }
+    return pow(((c + 0.055) / 1.055), 2.4);
+}
+
+float linear_to_srgb(float c_1) {
+    if ((c_1 <= 0.0031308)) {
+        return (c_1 * 12.92);
+    }
+    return ((1.055 * pow(c_1, 0.41666666)) - 0.055);
+}
+
+float rounded_rect_distance(vec2 input_point, vec2 half_size, vec4 radii) {
+    float radius = 0.0;
+    if ((input_point.x < 0.0)) {
+        radius = ((input_point.y < 0.0) ? radii.x : radii.w);
+    } else {
+        radius = ((input_point.y < 0.0) ? radii.y : radii.z);
+    }
+    float _e19 = radius;
+    radius = min(_e19, min(half_size.x, half_size.y));
+    float _e26 = radius;
+    vec2 q = ((abs(input_point) - half_size) + vec2(_e26));
+    float _e39 = radius;
+    return ((length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0)) - _e39);
+}
+
+float clip_alpha(vec2 pixel_pos, vec4 clip_rect, vec4 radii_1) {
+    if ((clip_rect.z <= 0.0)) {
+        return 1.0;
+    }
+    vec2 half_size_1 = (clip_rect.zw * 0.5);
+    vec2 center = (clip_rect.xy + half_size_1);
+    float _e13 = rounded_rect_distance((pixel_pos - center), half_size_1, radii_1);
+    return (1.0 - smoothstep(-0.5, 0.5, _e13));
+}
+
+void main() {
+    SvgVertex vertex = SvgVertex(_p2vs_location0, _p2vs_location7);
+    SvgInstance instance = SvgInstance(_p2vs_location1, _p2vs_location2, _p2vs_location3, _p2vs_location4, _p2vs_location5, _p2vs_location6);
+    VertexOutput output_ = VertexOutput(vec4(0.0), vec4(0.0), vec2(0.0), vec4(0.0), vec4(0.0), 0.0, 0.0);
+    vec3 local_1 = vec3(vertex.position, 1.0);
+    vec2 pixel_pos_1 = vec2(dot(local_1, instance.transform_x.xyz), dot(local_1, instance.transform_y.xyz));
+    vec2 ndc = vec2((((pixel_pos_1.x / instance.viewport.x) * 2.0) - 1.0), (1.0 - ((pixel_pos_1.y / instance.viewport.y) * 2.0)));
+    output_.position = vec4(ndc, 0.0, 1.0);
+    output_.color = instance.color;
+    output_.pixel_pos = pixel_pos_1;
+    output_.clip_rect = instance.clip_rect;
+    output_.clip_border_radius = instance.clip_border_radius;
+    output_.surface_is_srgb = instance.viewport.z;
+    output_.coverage = vertex.coverage;
+    VertexOutput _e46 = output_;
+    gl_Position = _e46.position;
+    _vs2fs_location0 = _e46.color;
+    _vs2fs_location1 = _e46.pixel_pos;
+    _vs2fs_location2 = _e46.clip_rect;
+    _vs2fs_location3 = _e46.clip_border_radius;
+    _vs2fs_location4 = _e46.surface_is_srgb;
+    _vs2fs_location5 = _e46.coverage;
+    return;
+}
+
+
+[FRAGMENT]
+#version 330 core
+struct SvgVertex {
+    vec2 position;
+    float coverage;
+};
+struct SvgInstance {
+    vec4 transform_x;
+    vec4 transform_y;
+    vec4 color;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    vec4 viewport;
+};
+struct VertexOutput {
+    vec4 position;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    float surface_is_srgb;
+    float coverage;
+};
+smooth in vec4 _vs2fs_location0;
+smooth in vec2 _vs2fs_location1;
+smooth in vec4 _vs2fs_location2;
+smooth in vec4 _vs2fs_location3;
+smooth in float _vs2fs_location4;
+smooth in float _vs2fs_location5;
+layout(location = 0) out vec4 _fs2p_location0;
+
+float correct_alpha(float input_1) {
+    return input_1;
+}
+
+float color_offset(float input_2) {
+    return input_2;
+}
+
+float srgb_to_linear(float c) {
+    if ((c <= 0.04045)) {
+        return (c / 12.92);
+    }
+    return pow(((c + 0.055) / 1.055), 2.4);
+}
+
+float linear_to_srgb(float c_1) {
+    if ((c_1 <= 0.0031308)) {
+        return (c_1 * 12.92);
+    }
+    return ((1.055 * pow(c_1, 0.41666666)) - 0.055);
+}
+
+float rounded_rect_distance(vec2 input_point, vec2 half_size, vec4 radii) {
+    float radius = 0.0;
+    if ((input_point.x < 0.0)) {
+        radius = ((input_point.y < 0.0) ? radii.x : radii.w);
+    } else {
+        radius = ((input_point.y < 0.0) ? radii.y : radii.z);
+    }
+    float _e19 = radius;
+    radius = min(_e19, min(half_size.x, half_size.y));
+    float _e26 = radius;
+    vec2 q = ((abs(input_point) - half_size) + vec2(_e26));
+    float _e39 = radius;
+    return ((length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0)) - _e39);
+}
+
+float clip_alpha(vec2 pixel_pos, vec4 clip_rect, vec4 radii_1) {
+    if ((clip_rect.z <= 0.0)) {
+        return 1.0;
+    }
+    vec2 half_size_1 = (clip_rect.zw * 0.5);
+    vec2 center = (clip_rect.xy + half_size_1);
+    float _e13 = rounded_rect_distance((pixel_pos - center), half_size_1, radii_1);
+    return (1.0 - smoothstep(-0.5, 0.5, _e13));
+}
+
+void main() {
+    VertexOutput input_ = VertexOutput(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2, _vs2fs_location3, _vs2fs_location4, _vs2fs_location5);
+    vec4 color = vec4(0.0);
+    vec4 result = vec4(0.0);
+    bool local = false;
+    float _e4 = clip_alpha(input_.pixel_pos, input_.clip_rect, input_.clip_border_radius);
+    color = input_.color;
+    if ((input_.surface_is_srgb < 1.5)) {
+        float _e11 = color.x;
+        float _e12 = srgb_to_linear(_e11);
+        float _e14 = color.y;
+        float _e15 = srgb_to_linear(_e14);
+        float _e17 = color.z;
+        float _e18 = srgb_to_linear(_e17);
+        float _e20 = color.w;
+        color = vec4(_e12, _e15, _e18, _e20);
+    }
+    vec4 _e22 = color;
+    float _e25 = color.w;
+    float _e28 = color.w;
+    result = ((vec4((_e22.xyz * _e25), _e28) * _e4) * input_.coverage);
+    if ((input_.surface_is_srgb < 0.5)) {
+        float _e40 = result.w;
+        local = (_e40 > 1e-6);
+    } else {
+        local = false;
+    }
+    bool _e44 = local;
+    if (_e44) {
+        vec4 _e45 = result;
+        float _e48 = result.w;
+        vec3 unpremultiplied = (_e45.xyz / vec3(_e48));
+        float _e52 = linear_to_srgb(unpremultiplied.x);
+        float _e54 = linear_to_srgb(unpremultiplied.y);
+        float _e56 = linear_to_srgb(unpremultiplied.z);
+        float _e59 = result.w;
+        float _e62 = result.w;
+        result = vec4((vec3(_e52, _e54, _e56) * _e59), _e62);
+    }
+    vec4 _e64 = result;
+    _fs2p_location0 = _e64;
+    return;
+}
+
+
+[RESOURCES]

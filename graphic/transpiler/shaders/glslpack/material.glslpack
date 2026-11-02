@@ -1,0 +1,1080 @@
+AIMER-OPENGL-SHADER-PACK-1
+[VERTEX]
+#version 330 core
+struct MaterialUniform {
+    vec4 bounds;
+    vec4 tint;
+    vec4 border_color;
+    vec4 shadow;
+    vec4 effect;
+    vec4 light;
+    vec4 detail;
+    vec4 radii;
+    vec4 clip_rect;
+    vec4 clip_radii;
+    vec4 viewport;
+    vec4 backdrop_rect;
+    vec4 liquid;
+    vec4 liquid2_;
+};
+struct VertexOutput {
+    vec4 position;
+    vec2 uv;
+    vec2 pixel_pos;
+};
+layout(std140) uniform MaterialUniform_block_0Vertex { MaterialUniform _group_0_binding_0_vs; };
+
+smooth out vec2 _vs2fs_location0;
+smooth out vec2 _vs2fs_location1;
+
+float selected_radius(vec2 point, vec4 radii) {
+    if ((point.x < 0.0)) {
+        if ((point.y < 0.0)) {
+            return radii.x;
+        }
+        return radii.w;
+    }
+    if ((point.y < 0.0)) {
+        return radii.y;
+    }
+    return radii.z;
+}
+
+float sdf_rounded_rect(vec2 point_1, vec2 half_size, vec4 radii_1) {
+    float _e3 = selected_radius(point_1, radii_1);
+    float radius = min(_e3, min(half_size.x, half_size.y));
+    vec2 q = ((abs(point_1) - half_size) + vec2(radius, radius));
+    return ((length(max(q, vec2(0.0, 0.0))) + min(max(q.x, q.y), 0.0)) - radius);
+}
+
+float liquid_shape_distance(vec2 uv) {
+    vec2 point_2 = vec2(0.0);
+    float distance_1 = 0.0;
+    vec4 _e3 = _group_0_binding_0_vs.bounds;
+    vec2 size = max(_e3.zw, vec2(1.0, 1.0));
+    vec2 half_size_1 = (size * 0.5);
+    point_2 = ((uv - vec2(0.5, 0.5)) * size);
+    float tip_pull = _group_0_binding_0_vs.liquid.w;
+    if ((tip_pull > 0.0)) {
+        float _e24 = point_2.y;
+        float vertical_t = clamp((((_e24 / max(half_size_1.y, 1.0)) * 0.5) + 0.5), 0.0, 1.0);
+        float taper = mix((1.0 - (tip_pull * 0.82)), 1.0, vertical_t);
+        float _e44 = point_2.x;
+        point_2.x = (_e44 / max(taper, 0.12));
+    }
+    vec2 _e48 = point_2;
+    vec4 _e51 = _group_0_binding_0_vs.radii;
+    float _e52 = sdf_rounded_rect(_e48, half_size_1, _e51);
+    distance_1 = _e52;
+    float blob_amount = _group_0_binding_0_vs.liquid.x;
+    if ((blob_amount > 0.0)) {
+        float _e63 = _group_0_binding_0_vs.liquid.y;
+        float seed = (_e63 * 6.28318);
+        float _e67 = point_2.y;
+        float _e69 = point_2.x;
+        float angle = atan(_e67, _e69);
+        float wobble = (((sin(((angle * 3.0) + seed)) * 0.5) + (sin(((angle * 5.0) - (seed * 1.7))) * 0.3)) + (sin(((angle * 7.0) + (seed * 2.3))) * 0.2));
+        float amplitude = ((blob_amount * min(half_size_1.x, half_size_1.y)) * 0.2);
+        float _e101 = distance_1;
+        distance_1 = (_e101 - (wobble * amplitude));
+    }
+    float _e104 = distance_1;
+    return _e104;
+}
+
+float srgb_to_linear(float value) {
+    if ((value <= 0.04045)) {
+        return (value / 12.92);
+    }
+    return pow(((value + 0.055) / 1.055), 2.4);
+}
+
+vec3 srgb_rgb_to_linear(vec3 color) {
+    float _e2 = srgb_to_linear(color.x);
+    float _e4 = srgb_to_linear(color.y);
+    float _e6 = srgb_to_linear(color.z);
+    return vec3(_e2, _e4, _e6);
+}
+
+float linear_to_srgb(float value_1) {
+    if ((value_1 <= 0.0031308)) {
+        return (value_1 * 12.92);
+    }
+    return ((1.055 * pow(value_1, 0.41666666)) - 0.055);
+}
+
+vec3 linear_rgb_to_srgb(vec3 color_1) {
+    float _e2 = linear_to_srgb(color_1.x);
+    float _e4 = linear_to_srgb(color_1.y);
+    float _e6 = linear_to_srgb(color_1.z);
+    return vec3(_e2, _e4, _e6);
+}
+
+vec3 backdrop_to_material_rgb(vec3 color_2) {
+    bool local_1 = false;
+    float _e4 = _group_0_binding_0_vs.viewport.w;
+    if ((_e4 > 0.5)) {
+        float _e12 = _group_0_binding_0_vs.viewport.z;
+        local_1 = (_e12 > 0.5);
+    } else {
+        local_1 = false;
+    }
+    bool _e16 = local_1;
+    if (_e16) {
+        vec3 _e17 = linear_rgb_to_srgb(color_2);
+        return _e17;
+    }
+    return color_2;
+}
+
+vec3 adjust_backdrop(vec3 color_3) {
+    float luminance = dot(color_3, vec3(0.2126, 0.7152, 0.0722));
+    float _e10 = _group_0_binding_0_vs.light.x;
+    vec3 saturated = mix(vec3(luminance, luminance, luminance), color_3, _e10);
+    float _e20 = _group_0_binding_0_vs.light.z;
+    vec3 contrasted = (((saturated - vec3(0.5, 0.5, 0.5)) * _e20) + vec3(0.5, 0.5, 0.5));
+    float _e30 = _group_0_binding_0_vs.light.y;
+    return clamp((contrasted * _e30), vec3(0.0, 0.0, 0.0), vec3(1.0, 1.0, 1.0));
+}
+
+vec3 glass_frosted_base(vec3 sampled_backdrop) {
+    vec4 _e7 = _group_0_binding_0_vs.tint;
+    vec3 milky_tint = mix(vec3(0.86, 0.89, 0.92), _e7.xyz, 0.72);
+    float _e14 = _group_0_binding_0_vs.effect.y;
+    float _e18 = _group_0_binding_0_vs.tint.w;
+    float tint_strength = clamp(((_e14 * _e18) * 0.76), 0.0, 0.82);
+    return mix(sampled_backdrop, milky_tint, tint_strength);
+}
+
+vec3 glass_glow(vec2 uv_2, vec3 sampled_backdrop_1) {
+    vec2 blue_point = ((uv_2 - vec2(0.6, 0.34)) * vec2(1.35, 1.05));
+    float blue = exp((-(dot(blue_point, blue_point)) * 3.2));
+    vec2 cyan_point = ((uv_2 - vec2(0.18, 0.84)) * vec2(1.5, 1.1));
+    float cyan = exp((-(dot(cyan_point, cyan_point)) * 4.4));
+    float diagonal = smoothstep(0.18, 0.92, (uv_2.x + ((1.0 - uv_2.y) * 0.32)));
+    vec3 _e38 = glass_frosted_base(sampled_backdrop_1);
+    vec4 _e45 = _group_0_binding_0_vs.tint;
+    vec3 highlight_color = mix(vec3(0.82, 0.91, 1.0), _e45.xyz, 0.38);
+    float _e60 = _group_0_binding_0_vs.detail.x;
+    float highlight = ((((blue * 0.22) + (cyan * 0.28)) + (diagonal * 0.08)) * _e60);
+    return (_e38 + (highlight_color * highlight));
+}
+
+float glass_rim(vec2 uv_3) {
+    float edge = min(min(uv_3.x, uv_3.y), min((1.0 - uv_3.x), (1.0 - uv_3.y)));
+    float rim_1 = (1.0 - smoothstep(0.0, 0.075, edge));
+    float top_sheen = (1.0 - smoothstep(0.0, 0.18, (uv_3.y + (uv_3.x * 0.18))));
+    return clamp(((rim_1 * 0.82) + (top_sheen * 0.14)), 0.0, 1.0);
+}
+
+vec2 liquid_warp(vec2 uv_4) {
+    float phase = _group_0_binding_0_vs.effect.z;
+    float strength = _group_0_binding_0_vs.effect.w;
+    float interaction = _group_0_binding_0_vs.detail.y;
+    return (vec2(((sin((((uv_4.y * 25.0) + (phase * 1.2)) + (interaction * 4.0))) * 0.006) + (sin(((uv_4.y * 8.0) - (phase * 0.55))) * 0.004)), ((cos((((uv_4.x * 22.0) - (phase * 0.9)) + (interaction * 3.0))) * 0.0055) + (cos(((uv_4.x * 7.0) + (phase * 0.45))) * 0.0035))) * strength);
+}
+
+vec2 liquid_shape_normal(vec2 uv_5) {
+    float _e5 = liquid_shape_distance((uv_5 + vec2(0.0015, 0.0)));
+    float _e9 = liquid_shape_distance((uv_5 - vec2(0.0015, 0.0)));
+    float dx = (_e5 - _e9);
+    float _e14 = liquid_shape_distance((uv_5 + vec2(0.0, 0.0015)));
+    float _e18 = liquid_shape_distance((uv_5 - vec2(0.0, 0.0015)));
+    float dy = (_e14 - _e18);
+    vec2 gradient = vec2(dx, dy);
+    float gradient_length = length(gradient);
+    if ((gradient_length < 1e-5)) {
+        return vec2(0.0, 0.0);
+    }
+    return (gradient / vec2(gradient_length));
+}
+
+float liquid_bevel_slope(float inset, float bevel_radius) {
+    float t = clamp((inset / bevel_radius), 0.0, 1.0);
+    float u = (1.0 - t);
+    return (u / sqrt(max((1.0 - (u * u)), 0.0001)));
+}
+
+vec3 liquid_bevel_normal(vec2 uv_6, float distance_3, float bevel_radius_1) {
+    float inset_1 = max(-(distance_3), 0.0);
+    float _e6 = liquid_bevel_slope(inset_1, bevel_radius_1);
+    vec2 _e7 = liquid_shape_normal(uv_6);
+    return normalize(vec3((_e7 * _e6), 1.0));
+}
+
+vec2 liquid_bevel_refract_offset(vec3 normal, float eta, float depth) {
+    vec3 incident = vec3(0.0, 0.0, -1.0);
+    float cos_i = -(dot(normal, incident));
+    float sin2_t = ((eta * eta) * max((1.0 - (cos_i * cos_i)), 0.0));
+    if ((sin2_t >= 1.0)) {
+        return (-(normal.xy) * depth);
+    }
+    float cos_t = sqrt((1.0 - sin2_t));
+    vec3 refracted = ((eta * incident) + (((eta * cos_i) - cos_t) * normal));
+    return ((refracted.xy / vec2(max(abs(refracted.z), 0.05))) * depth);
+}
+
+float liquid_rim(float distance_4) {
+    vec4 _e3 = _group_0_binding_0_vs.bounds;
+    vec2 size_1 = max(_e3.zw, vec2(1.0, 1.0));
+    float width = max((min(size_1.x, size_1.y) * 0.1), 3.0);
+    float inner = clamp((-(distance_4) / width), 0.0, 1.0);
+    return pow((1.0 - inner), 2.2);
+}
+
+float liquid_sheen(vec2 uv_7, float rim) {
+    float phase_1 = _group_0_binding_0_vs.effect.z;
+    float interaction_1 = _group_0_binding_0_vs.detail.y;
+    float seed_1 = _group_0_binding_0_vs.liquid.y;
+    float light_angle = (((3.9 + (sin((seed_1 * 6.28318)) * 0.25)) + (sin((phase_1 * 0.2)) * 0.1)) + (interaction_1 * 0.15));
+    vec2 light_dir = vec2(cos(light_angle), sin(light_angle));
+    vec2 outward = normalize(((uv_7 - vec2(0.5, 0.5)) + vec2(0.0001, -0.0001)));
+    float facing = clamp(dot(outward, light_dir), 0.0, 1.0);
+    return (rim * pow(facing, 2.4));
+}
+
+vec3 adaptive_tint(vec3 sampled_backdrop_2) {
+    float luminance_1 = dot(sampled_backdrop_2, vec3(0.2126, 0.7152, 0.0722));
+    vec4 _e8 = _group_0_binding_0_vs.tint;
+    vec3 lightened = mix(_e8.xyz, vec3(1.0, 1.0, 1.0), 0.55);
+    vec4 _e18 = _group_0_binding_0_vs.tint;
+    vec3 darkened = mix(_e18.xyz, vec3(0.0, 0.0, 0.0), 0.45);
+    return mix(lightened, darkened, luminance_1);
+}
+
+vec3 material_rgb(vec2 uv_8, vec3 sampled_backdrop_3) {
+    float _e5 = _group_0_binding_0_vs.effect.x;
+    if ((_e5 < 0.5)) {
+        vec3 _e8 = glass_glow(uv_8, sampled_backdrop_3);
+        float _e9 = glass_rim(uv_8);
+        float _e13 = _group_0_binding_0_vs.border_color.w;
+        float _e17 = _group_0_binding_0_vs.detail.w;
+        float border_mix = (_e13 * clamp(_e17, 0.0, 1.0));
+        vec4 _e24 = _group_0_binding_0_vs.tint;
+        vec4 _e28 = _group_0_binding_0_vs.border_color;
+        vec3 edge_color = mix(_e24.xyz, _e28.xyz, border_mix);
+        float _e34 = _group_0_binding_0_vs.light.w;
+        float edge_strength = ((_e9 * _e34) * 0.35);
+        return mix(_e8, edge_color, edge_strength);
+    }
+    float _e39 = liquid_shape_distance(uv_8);
+    float _e40 = liquid_rim(_e39);
+    float _e41 = liquid_sheen(uv_8, _e40);
+    float luminance_2 = dot(sampled_backdrop_3, vec3(0.2126, 0.7152, 0.0722));
+    float _e50 = _group_0_binding_0_vs.tint.w;
+    float _e54 = _group_0_binding_0_vs.effect.y;
+    float tint_strength_1 = clamp(((_e50 * _e54) * 0.35), 0.0, 0.5);
+    vec3 _e61 = adaptive_tint(sampled_backdrop_3);
+    vec3 tinted = mix(sampled_backdrop_3, _e61, tint_strength_1);
+    vec3 rim_tone = mix(vec3(1.0, 1.0, 1.0), vec3(0.0, 0.0, 0.0), luminance_2);
+    float _e75 = _group_0_binding_0_vs.light.w;
+    vec3 rim_shaded = mix(tinted, rim_tone, ((_e40 * _e75) * 0.55));
+    float _e87 = _group_0_binding_0_vs.detail.x;
+    return mix(rim_shaded, vec3(1.0, 1.0, 1.0), (_e41 * _e87));
+}
+
+float material_alpha(vec2 uv_9) {
+    bool local_2 = false;
+    float _e4 = _group_0_binding_0_vs.effect.y;
+    float _e8 = _group_0_binding_0_vs.tint.w;
+    float opacity = (_e4 * _e8);
+    float _e13 = _group_0_binding_0_vs.effect.x;
+    if ((_e13 < 0.5)) {
+        float _e16 = glass_rim(uv_9);
+        float _e20 = _group_0_binding_0_vs.viewport.w;
+        if ((_e20 > 0.5)) {
+            float _e28 = _group_0_binding_0_vs.detail.z;
+            local_2 = (_e28 > 0.0);
+        } else {
+            local_2 = false;
+        }
+        bool _e32 = local_2;
+        if (_e32) {
+            return 1.0;
+        }
+        float _e37 = _group_0_binding_0_vs.light.w;
+        return (opacity * (0.62 + ((_e16 * _e37) * 0.3)));
+    }
+    float _e44 = liquid_shape_distance(uv_9);
+    float _e45 = liquid_rim(_e44);
+    float _e46 = liquid_sheen(uv_9, _e45);
+    float base_alpha = mix(0.8, 1.0, clamp(opacity, 0.0, 1.0));
+    float _e56 = _group_0_binding_0_vs.light.w;
+    float _e64 = _group_0_binding_0_vs.detail.x;
+    return clamp(((base_alpha + ((_e45 * _e56) * 0.15)) + ((_e46 * _e64) * 0.15)), 0.0, 1.0);
+}
+
+void main() {
+    uint vertex_index = uint(gl_VertexID);
+    vec2 corners[6] = vec2[6](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
+    VertexOutput output_ = VertexOutput(vec4(0.0), vec2(0.0), vec2(0.0));
+    vec2 uv_10 = corners[vertex_index];
+    vec4 _e25 = _group_0_binding_0_vs.bounds;
+    vec4 _e29 = _group_0_binding_0_vs.bounds;
+    vec2 pixel_4 = (_e25.xy + (uv_10 * _e29.zw));
+    float _e37 = _group_0_binding_0_vs.viewport.x;
+    float _e49 = _group_0_binding_0_vs.viewport.y;
+    vec2 ndc = vec2((((pixel_4.x / max(_e37, 1.0)) * 2.0) - 1.0), (1.0 - ((pixel_4.y / max(_e49, 1.0)) * 2.0)));
+    output_.position = vec4(ndc, 0.0, 1.0);
+    output_.uv = uv_10;
+    output_.pixel_pos = pixel_4;
+    VertexOutput _e65 = output_;
+    gl_Position = _e65.position;
+    _vs2fs_location0 = _e65.uv;
+    _vs2fs_location1 = _e65.pixel_pos;
+    return;
+}
+
+
+[FRAGMENT]
+#version 330 core
+struct MaterialUniform {
+    vec4 bounds;
+    vec4 tint;
+    vec4 border_color;
+    vec4 shadow;
+    vec4 effect;
+    vec4 light;
+    vec4 detail;
+    vec4 radii;
+    vec4 clip_rect;
+    vec4 clip_radii;
+    vec4 viewport;
+    vec4 backdrop_rect;
+    vec4 liquid;
+    vec4 liquid2_;
+};
+struct VertexOutput {
+    vec4 position;
+    vec2 uv;
+    vec2 pixel_pos;
+};
+layout(std140) uniform MaterialUniform_block_0Fragment { MaterialUniform _group_0_binding_0_fs; };
+
+uniform sampler2D _group_0_binding_1_fs;
+uniform sampler2D _group_0_binding_3_fs;
+
+smooth in vec2 _vs2fs_location0;
+smooth in vec2 _vs2fs_location1;
+layout(location = 0) out vec4 _fs2p_location0;
+
+float selected_radius(vec2 point, vec4 radii) {
+    if ((point.x < 0.0)) {
+        if ((point.y < 0.0)) {
+            return radii.x;
+        }
+        return radii.w;
+    }
+    if ((point.y < 0.0)) {
+        return radii.y;
+    }
+    return radii.z;
+}
+
+float sdf_rounded_rect(vec2 point_1, vec2 half_size, vec4 radii_1) {
+    float _e3 = selected_radius(point_1, radii_1);
+    float radius = min(_e3, min(half_size.x, half_size.y));
+    vec2 q = ((abs(point_1) - half_size) + vec2(radius, radius));
+    return ((length(max(q, vec2(0.0, 0.0))) + min(max(q.x, q.y), 0.0)) - radius);
+}
+
+float sdf_alpha(float distance_) {
+    float _e1 = fwidth(distance_);
+    float antialias = max(_e1, 0.65);
+    return (1.0 - smoothstep(-(antialias), antialias, distance_));
+}
+
+float liquid_shape_distance(vec2 uv) {
+    vec2 point_2 = vec2(0.0);
+    float distance_1 = 0.0;
+    vec4 _e3 = _group_0_binding_0_fs.bounds;
+    vec2 size = max(_e3.zw, vec2(1.0, 1.0));
+    vec2 half_size_1 = (size * 0.5);
+    point_2 = ((uv - vec2(0.5, 0.5)) * size);
+    float tip_pull = _group_0_binding_0_fs.liquid.w;
+    if ((tip_pull > 0.0)) {
+        float _e24 = point_2.y;
+        float vertical_t = clamp((((_e24 / max(half_size_1.y, 1.0)) * 0.5) + 0.5), 0.0, 1.0);
+        float taper = mix((1.0 - (tip_pull * 0.82)), 1.0, vertical_t);
+        float _e44 = point_2.x;
+        point_2.x = (_e44 / max(taper, 0.12));
+    }
+    vec2 _e48 = point_2;
+    vec4 _e51 = _group_0_binding_0_fs.radii;
+    float _e52 = sdf_rounded_rect(_e48, half_size_1, _e51);
+    distance_1 = _e52;
+    float blob_amount = _group_0_binding_0_fs.liquid.x;
+    if ((blob_amount > 0.0)) {
+        float _e63 = _group_0_binding_0_fs.liquid.y;
+        float seed = (_e63 * 6.28318);
+        float _e67 = point_2.y;
+        float _e69 = point_2.x;
+        float angle = atan(_e67, _e69);
+        float wobble = (((sin(((angle * 3.0) + seed)) * 0.5) + (sin(((angle * 5.0) - (seed * 1.7))) * 0.3)) + (sin(((angle * 7.0) + (seed * 2.3))) * 0.2));
+        float amplitude = ((blob_amount * min(half_size_1.x, half_size_1.y)) * 0.2);
+        float _e101 = distance_1;
+        distance_1 = (_e101 - (wobble * amplitude));
+    }
+    float _e104 = distance_1;
+    return _e104;
+}
+
+float surface_alpha(vec2 uv_1) {
+    float distance_2 = 0.0;
+    float _e5 = _group_0_binding_0_fs.effect.x;
+    if ((_e5 > 0.5) && (_group_0_binding_0_fs.effect.x < 1.5)) {
+        float _e8 = liquid_shape_distance(uv_1);
+        distance_2 = _e8;
+    } else {
+        vec4 _e11 = _group_0_binding_0_fs.bounds;
+        vec2 size_1 = max(_e11.zw, vec2(1.0, 1.0));
+        vec2 point_3 = ((uv_1 - vec2(0.5, 0.5)) * size_1);
+        vec4 _e26 = _group_0_binding_0_fs.radii;
+        float _e27 = sdf_rounded_rect(point_3, (size_1 * 0.5), _e26);
+        distance_2 = _e27;
+    }
+    float _e28 = distance_2;
+    float _e29 = sdf_alpha(_e28);
+    return _e29;
+}
+
+float clip_alpha(vec2 pixel) {
+    bool local = false;
+    float _e4 = _group_0_binding_0_fs.clip_rect.z;
+    if ((_e4 < 0.0)) {
+        return 1.0;
+    }
+    float _e11 = _group_0_binding_0_fs.clip_rect.z;
+    if (!((_e11 <= 0.0))) {
+        float _e20 = _group_0_binding_0_fs.clip_rect.w;
+        local = (_e20 <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e24 = local;
+    if (_e24) {
+        return 0.0;
+    }
+    vec4 _e28 = _group_0_binding_0_fs.clip_rect;
+    vec4 _e32 = _group_0_binding_0_fs.clip_rect;
+    vec2 point_4 = (pixel - (_e28.xy + (_e32.zw * 0.5)));
+    vec4 _e40 = _group_0_binding_0_fs.clip_rect;
+    vec4 _e46 = _group_0_binding_0_fs.clip_radii;
+    float _e47 = sdf_rounded_rect(point_4, (_e40.zw * 0.5), _e46);
+    float _e48 = sdf_alpha(_e47);
+    return _e48;
+}
+
+float srgb_to_linear(float value) {
+    if ((value <= 0.04045)) {
+        return (value / 12.92);
+    }
+    return pow(((value + 0.055) / 1.055), 2.4);
+}
+
+vec3 srgb_rgb_to_linear(vec3 color) {
+    float _e2 = srgb_to_linear(color.x);
+    float _e4 = srgb_to_linear(color.y);
+    float _e6 = srgb_to_linear(color.z);
+    return vec3(_e2, _e4, _e6);
+}
+
+float linear_to_srgb(float value_1) {
+    if ((value_1 <= 0.0031308)) {
+        return (value_1 * 12.92);
+    }
+    return ((1.055 * pow(value_1, 0.41666666)) - 0.055);
+}
+
+vec3 linear_rgb_to_srgb(vec3 color_1) {
+    float _e2 = linear_to_srgb(color_1.x);
+    float _e4 = linear_to_srgb(color_1.y);
+    float _e6 = linear_to_srgb(color_1.z);
+    return vec3(_e2, _e4, _e6);
+}
+
+vec4 sample_backdrop(vec2 pixel_1) {
+    vec4 _e3 = _group_0_binding_0_fs.backdrop_rect;
+    vec2 valid_size = max(_e3.zw, vec2(1.0, 1.0));
+    vec4 _e11 = _group_0_binding_0_fs.backdrop_rect;
+    float center_offset = (_group_0_binding_0_fs.effect.x > 1.5 || _group_0_binding_0_fs.effect.x < -0.5) ? 0.5 : 0.0;
+    vec2 local_pixel = clamp((pixel_1 - _e11.xy - vec2(center_offset)), vec2(0.0, 0.0), (valid_size - vec2(1.0, 1.0)));
+    vec2 texture_size = vec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy));
+    vec4 _e36 = texture(_group_0_binding_1_fs, vec2(((local_pixel + vec2(0.5, 0.5)) / max(texture_size, vec2(1.0, 1.0)))));
+    return _e36;
+}
+
+vec4 gaussian_sample(vec2 pixel) {
+    vec2 size = max(_group_0_binding_0_fs.backdrop_rect.zw, vec2(1.0));
+    vec2 local = clamp(pixel - _group_0_binding_0_fs.backdrop_rect.xy - vec2(0.5), vec2(0.0), size - vec2(1.0));
+    vec2 uv = (local + vec2(0.5)) / vec2(textureSize(_group_0_binding_1_fs, 0));
+    if (_group_0_binding_0_fs.effect.x < -0.5) return textureLod(_group_0_binding_1_fs, uv, 0.0);
+    return textureLod(_group_0_binding_3_fs, uv, 0.0);
+}
+
+vec4 gaussian_backdrop(vec2 pixel) {
+    vec2 axis = _group_0_binding_0_fs.effect.x < -0.5 ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    int support = int(ceil(_group_0_binding_0_fs.detail.z));
+    vec4 total = gaussian_sample(pixel);
+    float normalization = 1.0;
+    float previous = 1.0;
+    float ratio = _group_0_binding_0_fs.liquid2_.z;
+    for (int tap = 1; tap <= support; tap += 2) {
+        float first = previous * ratio;
+        ratio *= _group_0_binding_0_fs.liquid2_.w;
+        float second = tap + 1 <= support ? first * ratio : 0.0;
+        float weight = first + second;
+        vec2 offset = axis * (float(tap) + second / max(weight, 0.00000001));
+        total += (gaussian_sample(pixel + offset) + gaussian_sample(pixel - offset)) * weight;
+        normalization += 2.0 * weight;
+        previous = second;
+        ratio *= _group_0_binding_0_fs.liquid2_.w;
+    }
+    return total / normalization;
+}
+
+// A large blur is made on a texture `material.liquid.x` times smaller in each
+// direction (a power of two up to 8; below 2 the blur is made at full size). One
+// pass averages each block of the capture into a texel, a horizontal and a
+// vertical Gaussian then run over the small texture, where every pass center is
+// a texel center and the two-taps-in-one bilinear read of `gaussian_backdrop` is
+// exact, and the material's pass reads the result back with bilinear filtering.
+// Sigma is at least four texels there, so the filtering costs under a level.
+vec4 reduced_fetch(vec2 position, vec2 valid, bool from_capture) {
+    vec2 clamped = clamp(position, vec2(0.5), valid - vec2(0.5));
+    if (from_capture) {
+        return textureLod(_group_0_binding_1_fs, clamped / vec2(textureSize(_group_0_binding_1_fs, 0)), 0.0);
+    }
+    return textureLod(_group_0_binding_3_fs, clamped / vec2(textureSize(_group_0_binding_3_fs, 0)), 0.0);
+}
+
+// The average of the `factor` x `factor` block of capture texels under a texel
+// of the small texture, as `factor / 2` x `factor / 2` bilinear reads of four
+// texels each.
+vec4 decimate_backdrop(vec2 pixel) {
+    float factor = _group_0_binding_0_fs.liquid.x;
+    int count = int(factor) / 2;
+    vec2 center = pixel * factor;
+    vec2 valid = max(_group_0_binding_0_fs.backdrop_rect.zw, vec2(1.0));
+    vec4 total = vec4(0.0);
+    for (int row = 0; row < count; row++) {
+        for (int column = 0; column < count; column++) {
+            vec2 offset = vec2(float(2 * column - (count - 1)), float(2 * row - (count - 1)));
+            total += reduced_fetch(center + offset, valid, true);
+        }
+    }
+    return total / float(count * count);
+}
+
+// `gaussian_backdrop` over the small texture, along `axis`.
+vec4 gaussian_reduced(vec2 pixel, vec2 axis) {
+    vec2 valid = max(_group_0_binding_0_fs.backdrop_rect.zw, vec2(1.0));
+    int support = int(ceil(_group_0_binding_0_fs.detail.z));
+    vec4 total = reduced_fetch(pixel, valid, false);
+    float normalization = 1.0;
+    float previous = 1.0;
+    float ratio = _group_0_binding_0_fs.liquid2_.z;
+    for (int tap = 1; tap <= support; tap += 2) {
+        float first = previous * ratio;
+        ratio *= _group_0_binding_0_fs.liquid2_.w;
+        float second = tap + 1 <= support ? first * ratio : 0.0;
+        float weight = first + second;
+        vec2 offset = axis * (float(tap) + second / max(weight, 0.00000001));
+        total += (reduced_fetch(pixel + offset, valid, false) + reduced_fetch(pixel - offset, valid, false)) * weight;
+        normalization += 2.0 * weight;
+        previous = second;
+        ratio *= _group_0_binding_0_fs.liquid2_.w;
+    }
+    return total / normalization;
+}
+
+// The blurred small texture under a fragment of the material's own pass.
+vec4 reduced_result(vec2 pixel) {
+    float factor = _group_0_binding_0_fs.liquid.x;
+    vec2 valid = max(ceil(_group_0_binding_0_fs.backdrop_rect.zw / factor), vec2(1.0));
+    return reduced_fetch((pixel - _group_0_binding_0_fs.backdrop_rect.xy) / factor, valid, false);
+}
+
+vec4 frosted_backdrop(vec2 pixel_2) {
+    vec4 total = vec4(0.0);
+    float radius_1 = _group_0_binding_0_fs.detail.z;
+    if ((radius_1 <= 0.0)) {
+        vec4 _e7 = sample_backdrop(pixel_2);
+        return _e7;
+    }
+    float reed = (sin((pixel_2.x * 0.115)) + sin(((pixel_2.x * 0.037) + (pixel_2.y * 0.021))));
+    float ripple = cos(((pixel_2.y * 0.083) + (reed * 0.7)));
+    vec2 center = pixel_2;
+    if (_group_0_binding_0_fs.effect.x < 1.5) {
+        center += vec2(reed * radius_1 * 0.075, ripple * radius_1 * 0.035);
+    }
+    float axis = (radius_1 * 0.42);
+    float diagonal = (radius_1 * 0.24);
+    vec4 _e40 = sample_backdrop(center);
+    total = (_e40 * 0.2);
+    vec4 _e44 = total;
+    vec4 _e48 = sample_backdrop((center + vec2(axis, 0.0)));
+    total = (_e44 + (_e48 * 0.12));
+    vec4 _e52 = total;
+    vec4 _e56 = sample_backdrop((center - vec2(axis, 0.0)));
+    total = (_e52 + (_e56 * 0.12));
+    vec4 _e60 = total;
+    vec4 _e64 = sample_backdrop((center + vec2(0.0, axis)));
+    total = (_e60 + (_e64 * 0.12));
+    vec4 _e68 = total;
+    vec4 _e72 = sample_backdrop((center - vec2(0.0, axis)));
+    total = (_e68 + (_e72 * 0.12));
+    vec4 _e76 = total;
+    vec4 _e79 = sample_backdrop((center + vec2(diagonal, diagonal)));
+    total = (_e76 + (_e79 * 0.08));
+    vec4 _e83 = total;
+    vec4 _e87 = sample_backdrop((center + vec2(diagonal, -(diagonal))));
+    total = (_e83 + (_e87 * 0.08));
+    vec4 _e91 = total;
+    vec4 _e95 = sample_backdrop((center + vec2(-(diagonal), diagonal)));
+    total = (_e91 + (_e95 * 0.08));
+    vec4 _e99 = total;
+    vec4 _e102 = sample_backdrop((center - vec2(diagonal, diagonal)));
+    total = (_e99 + (_e102 * 0.08));
+    vec4 _e106 = total;
+    return _e106;
+}
+
+vec3 backdrop_to_material_rgb(vec3 color_2) {
+    bool local_1 = false;
+    float _e4 = _group_0_binding_0_fs.viewport.w;
+    if ((_e4 > 0.5)) {
+        float _e12 = _group_0_binding_0_fs.viewport.z;
+        local_1 = (_e12 > 0.5);
+    } else {
+        local_1 = false;
+    }
+    bool _e16 = local_1;
+    if (_e16) {
+        vec3 _e17 = linear_rgb_to_srgb(color_2);
+        return _e17;
+    }
+    return color_2;
+}
+
+vec3 adjust_backdrop(vec3 color_3) {
+    float luminance = dot(color_3, vec3(0.2126, 0.7152, 0.0722));
+    float _e10 = _group_0_binding_0_fs.light.x;
+    vec3 saturated = mix(vec3(luminance, luminance, luminance), color_3, _e10);
+    float _e20 = _group_0_binding_0_fs.light.z;
+    vec3 contrasted = (((saturated - vec3(0.5, 0.5, 0.5)) * _e20) + vec3(0.5, 0.5, 0.5));
+    float _e30 = _group_0_binding_0_fs.light.y;
+    return clamp((contrasted * _e30), vec3(0.0, 0.0, 0.0), vec3(1.0, 1.0, 1.0));
+}
+
+vec3 glass_frosted_base(vec3 sampled_backdrop) {
+    vec4 _e7 = _group_0_binding_0_fs.tint;
+    vec3 milky_tint = mix(vec3(0.86, 0.89, 0.92), _e7.xyz, 0.72);
+    float _e14 = _group_0_binding_0_fs.effect.y;
+    float _e18 = _group_0_binding_0_fs.tint.w;
+    float tint_strength = clamp(((_e14 * _e18) * 0.76), 0.0, 0.82);
+    return mix(sampled_backdrop, milky_tint, tint_strength);
+}
+
+vec3 glass_glow(vec2 uv_2, vec3 sampled_backdrop_1) {
+    vec2 blue_point = ((uv_2 - vec2(0.6, 0.34)) * vec2(1.35, 1.05));
+    float blue = exp((-(dot(blue_point, blue_point)) * 3.2));
+    vec2 cyan_point = ((uv_2 - vec2(0.18, 0.84)) * vec2(1.5, 1.1));
+    float cyan = exp((-(dot(cyan_point, cyan_point)) * 4.4));
+    float diagonal_1 = smoothstep(0.18, 0.92, (uv_2.x + ((1.0 - uv_2.y) * 0.32)));
+    vec3 _e38 = glass_frosted_base(sampled_backdrop_1);
+    vec4 _e45 = _group_0_binding_0_fs.tint;
+    vec3 highlight_color = mix(vec3(0.82, 0.91, 1.0), _e45.xyz, 0.38);
+    float _e60 = _group_0_binding_0_fs.detail.x;
+    float highlight = ((((blue * 0.22) + (cyan * 0.28)) + (diagonal_1 * 0.08)) * _e60);
+    return (_e38 + (highlight_color * highlight));
+}
+
+float glass_rim(vec2 uv_3) {
+    float edge = min(min(uv_3.x, uv_3.y), min((1.0 - uv_3.x), (1.0 - uv_3.y)));
+    float rim_1 = (1.0 - smoothstep(0.0, 0.075, edge));
+    float top_sheen = (1.0 - smoothstep(0.0, 0.18, (uv_3.y + (uv_3.x * 0.18))));
+    return clamp(((rim_1 * 0.82) + (top_sheen * 0.14)), 0.0, 1.0);
+}
+
+vec2 liquid_warp(vec2 uv_4) {
+    float phase = _group_0_binding_0_fs.effect.z;
+    float strength = _group_0_binding_0_fs.effect.w;
+    float interaction = _group_0_binding_0_fs.detail.y;
+    return (vec2(((sin((((uv_4.y * 25.0) + (phase * 1.2)) + (interaction * 4.0))) * 0.006) + (sin(((uv_4.y * 8.0) - (phase * 0.55))) * 0.004)), ((cos((((uv_4.x * 22.0) - (phase * 0.9)) + (interaction * 3.0))) * 0.0055) + (cos(((uv_4.x * 7.0) + (phase * 0.45))) * 0.0035))) * strength);
+}
+
+vec2 liquid_shape_normal(vec2 uv_5) {
+    float _e5 = liquid_shape_distance((uv_5 + vec2(0.0015, 0.0)));
+    float _e9 = liquid_shape_distance((uv_5 - vec2(0.0015, 0.0)));
+    float dx = (_e5 - _e9);
+    float _e14 = liquid_shape_distance((uv_5 + vec2(0.0, 0.0015)));
+    float _e18 = liquid_shape_distance((uv_5 - vec2(0.0, 0.0015)));
+    float dy = (_e14 - _e18);
+    vec2 gradient = vec2(dx, dy);
+    float gradient_length = length(gradient);
+    if ((gradient_length < 1e-5)) {
+        return vec2(0.0, 0.0);
+    }
+    return (gradient / vec2(gradient_length));
+}
+
+float liquid_bevel_slope(float inset, float bevel_radius) {
+    float t = clamp((inset / bevel_radius), 0.0, 1.0);
+    float u = (1.0 - t);
+    return (u / sqrt(max((1.0 - (u * u)), 0.0001)));
+}
+
+vec3 liquid_bevel_normal(vec2 uv_6, float distance_3, float bevel_radius_1) {
+    float inset_1 = max(-(distance_3), 0.0);
+    float _e6 = liquid_bevel_slope(inset_1, bevel_radius_1);
+    vec2 _e7 = liquid_shape_normal(uv_6);
+    return normalize(vec3((_e7 * _e6), 1.0));
+}
+
+vec2 liquid_bevel_refract_offset(vec3 normal, float eta, float depth) {
+    vec3 incident = vec3(0.0, 0.0, -1.0);
+    float cos_i = -(dot(normal, incident));
+    float sin2_t = ((eta * eta) * max((1.0 - (cos_i * cos_i)), 0.0));
+    if ((sin2_t >= 1.0)) {
+        return (-(normal.xy) * depth);
+    }
+    float cos_t = sqrt((1.0 - sin2_t));
+    vec3 refracted = ((eta * incident) + (((eta * cos_i) - cos_t) * normal));
+    return ((refracted.xy / vec2(max(abs(refracted.z), 0.05))) * depth);
+}
+
+vec3 liquid_chromatic_sample(vec2 pixel_3, vec3 normal_1, float eta_1, float depth_1, float aberration) {
+    if ((aberration <= 0.0)) {
+        vec2 _e7 = liquid_bevel_refract_offset(normal_1, eta_1, depth_1);
+        vec3 _e9 = sample_backdrop((pixel_3 + _e7)).xyz;
+        vec3 _e10 = backdrop_to_material_rgb(_e9);
+        return _e10;
+    }
+    float spread = (aberration * 0.05);
+    vec2 _e16 = liquid_bevel_refract_offset(normal_1, (eta_1 * (1.0 - spread)), depth_1);
+    vec2 _e17 = liquid_bevel_refract_offset(normal_1, eta_1, depth_1);
+    vec2 _e21 = liquid_bevel_refract_offset(normal_1, (eta_1 * (1.0 + spread)), depth_1);
+    vec3 _e23 = sample_backdrop((pixel_3 + _e16)).xyz;
+    vec3 _e24 = backdrop_to_material_rgb(_e23);
+    float red = _e24.x;
+    vec3 _e27 = sample_backdrop((pixel_3 + _e17)).xyz;
+    vec3 _e28 = backdrop_to_material_rgb(_e27);
+    float green = _e28.y;
+    vec3 _e31 = sample_backdrop((pixel_3 + _e21)).xyz;
+    vec3 _e32 = backdrop_to_material_rgb(_e31);
+    float blue_1 = _e32.z;
+    return vec3(red, green, blue_1);
+}
+
+float liquid_rim(float distance_4) {
+    vec4 _e3 = _group_0_binding_0_fs.bounds;
+    vec2 size_2 = max(_e3.zw, vec2(1.0, 1.0));
+    float width = max((min(size_2.x, size_2.y) * 0.1), 3.0);
+    float inner = clamp((-(distance_4) / width), 0.0, 1.0);
+    return pow((1.0 - inner), 2.2);
+}
+
+float liquid_sheen(vec2 uv_7, float rim) {
+    float phase_1 = _group_0_binding_0_fs.effect.z;
+    float interaction_1 = _group_0_binding_0_fs.detail.y;
+    float seed_1 = _group_0_binding_0_fs.liquid.y;
+    float light_angle = (((3.9 + (sin((seed_1 * 6.28318)) * 0.25)) + (sin((phase_1 * 0.2)) * 0.1)) + (interaction_1 * 0.15));
+    vec2 light_dir = vec2(cos(light_angle), sin(light_angle));
+    vec2 outward = normalize(((uv_7 - vec2(0.5, 0.5)) + vec2(0.0001, -0.0001)));
+    float facing = clamp(dot(outward, light_dir), 0.0, 1.0);
+    return (rim * pow(facing, 2.4));
+}
+
+vec3 adaptive_tint(vec3 sampled_backdrop_2) {
+    float luminance_1 = dot(sampled_backdrop_2, vec3(0.2126, 0.7152, 0.0722));
+    vec4 _e8 = _group_0_binding_0_fs.tint;
+    vec3 lightened = mix(_e8.xyz, vec3(1.0, 1.0, 1.0), 0.55);
+    vec4 _e18 = _group_0_binding_0_fs.tint;
+    vec3 darkened = mix(_e18.xyz, vec3(0.0, 0.0, 0.0), 0.45);
+    return mix(lightened, darkened, luminance_1);
+}
+
+vec3 material_rgb(vec2 uv_8, vec3 sampled_backdrop_3) {
+    float _e5 = _group_0_binding_0_fs.effect.x;
+    if ((_e5 < 0.5)) {
+        vec3 _e8 = glass_glow(uv_8, sampled_backdrop_3);
+        float _e9 = glass_rim(uv_8);
+        float _e13 = _group_0_binding_0_fs.border_color.w;
+        float _e17 = _group_0_binding_0_fs.detail.w;
+        float border_mix = (_e13 * clamp(_e17, 0.0, 1.0));
+        vec4 _e24 = _group_0_binding_0_fs.tint;
+        vec4 _e28 = _group_0_binding_0_fs.border_color;
+        vec3 edge_color = mix(_e24.xyz, _e28.xyz, border_mix);
+        float _e34 = _group_0_binding_0_fs.light.w;
+        float edge_strength = ((_e9 * _e34) * 0.35);
+        return mix(_e8, edge_color, edge_strength);
+    }
+    float _e39 = liquid_shape_distance(uv_8);
+    float _e40 = liquid_rim(_e39);
+    float _e41 = liquid_sheen(uv_8, _e40);
+    float luminance_2 = dot(sampled_backdrop_3, vec3(0.2126, 0.7152, 0.0722));
+    float _e50 = _group_0_binding_0_fs.tint.w;
+    float _e54 = _group_0_binding_0_fs.effect.y;
+    float tint_strength_1 = clamp(((_e50 * _e54) * 0.35), 0.0, 0.5);
+    vec3 _e61 = adaptive_tint(sampled_backdrop_3);
+    vec3 tinted = mix(sampled_backdrop_3, _e61, tint_strength_1);
+    vec3 rim_tone = mix(vec3(1.0, 1.0, 1.0), vec3(0.0, 0.0, 0.0), luminance_2);
+    float _e75 = _group_0_binding_0_fs.light.w;
+    vec3 rim_shaded = mix(tinted, rim_tone, ((_e40 * _e75) * 0.55));
+    float _e87 = _group_0_binding_0_fs.detail.x;
+    return mix(rim_shaded, vec3(1.0, 1.0, 1.0), (_e41 * _e87));
+}
+
+float material_alpha(vec2 uv_9) {
+    bool local_2 = false;
+    float _e4 = _group_0_binding_0_fs.effect.y;
+    float _e8 = _group_0_binding_0_fs.tint.w;
+    float opacity = (_e4 * _e8);
+    float _e13 = _group_0_binding_0_fs.effect.x;
+    if ((_e13 < 0.5)) {
+        float _e16 = glass_rim(uv_9);
+        float _e20 = _group_0_binding_0_fs.viewport.w;
+        if ((_e20 > 0.5)) {
+            float _e28 = _group_0_binding_0_fs.detail.z;
+            local_2 = (_e28 > 0.0);
+        } else {
+            local_2 = false;
+        }
+        bool _e32 = local_2;
+        if (_e32) {
+            return 1.0;
+        }
+        float _e37 = _group_0_binding_0_fs.light.w;
+        return (opacity * (0.62 + ((_e16 * _e37) * 0.3)));
+    }
+    float _e44 = liquid_shape_distance(uv_9);
+    float _e45 = liquid_rim(_e44);
+    float _e46 = liquid_sheen(uv_9, _e45);
+    float base_alpha = mix(0.8, 1.0, clamp(opacity, 0.0, 1.0));
+    float _e56 = _group_0_binding_0_fs.light.w;
+    float _e64 = _group_0_binding_0_fs.detail.x;
+    return clamp(((base_alpha + ((_e45 * _e56) * 0.15)) + ((_e46 * _e64) * 0.15)), 0.0, 1.0);
+}
+
+// Rounded-rectangle normal in device pixels, independent of aspect ratio.
+vec3 lens_bevel_normal(vec2 point, vec2 half_size, vec4 radii, float distance, float bevel_width) {
+    float radius = min(selected_radius(point, radii), min(half_size.x, half_size.y));
+    vec2 q = abs(point) - half_size + radius;
+    vec2 outer = max(q, vec2(0.0));
+    vec2 outward = q.x > q.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    if (dot(outer, outer) > 0.0) outward = normalize(outer);
+    outward *= sign(point);
+    float slope = liquid_bevel_slope(max(-distance, 0.0), bevel_width);
+    return normalize(vec3(outward * slope, 1.0));
+}
+
+vec4 light_edge(vec2 pixel) {
+    vec2 half_size = _group_0_binding_0_fs.bounds.zw * 0.5;
+    vec2 point = pixel - _group_0_binding_0_fs.bounds.xy - half_size;
+    float radius = min(selected_radius(point, _group_0_binding_0_fs.radii), min(half_size.x, half_size.y));
+    vec2 q = abs(point) - half_size + vec2(radius, radius);
+    vec2 outer = max(q, vec2(0.0, 0.0));
+    // Smooth only the lighting normal across straight/curved joins. Keep
+    // the exact SDF for coverage; limiting the blend to flat spans preserves circles.
+    vec2 blend = min(vec2(_group_0_binding_0_fs.detail.w), max(half_size - vec2(radius), vec2(0.0)));
+    vec2 join = max(blend - abs(q), vec2(0.0));
+    vec2 lighting_outer = outer + join * join / max(4.0 * blend, vec2(0.0001));
+    vec2 outward = q.x > q.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    if (dot(lighting_outer, lighting_outer) > 0.0) outward = normalize(lighting_outer);
+    outward *= sign(point);
+    float distance = length(outer) + min(max(q.x, q.y), 0.0) - radius;
+    // A cubic inward falloff has no solid band or abrupt inner boundary.
+    // Grazing light narrows the bevel; the opposite side catches a weaker reflection.
+    float alignment = dot(outward, _group_0_binding_0_fs.effect.zw);
+    float width = max(_group_0_binding_0_fs.detail.w * (0.35 + 0.65 * abs(alignment)), 0.0001);
+    float remaining = 1.0 - clamp(max(-distance, 0.0) / width, 0.0, 1.0);
+    float coverage = sdf_alpha(distance) * remaining * remaining * remaining;
+    float facing = pow(abs(alignment), 2.4) * (alignment >= 0.0 ? 1.0 : _group_0_binding_0_fs.light.w);
+    float alpha = clamp(coverage * facing * _group_0_binding_0_fs.detail.x * _group_0_binding_0_fs.border_color.a
+        * _group_0_binding_0_fs.effect.y * clip_alpha(pixel), 0.0, 1.0);
+    vec3 rgb = _group_0_binding_0_fs.border_color.rgb;
+    vec3 converted = _group_0_binding_0_fs.viewport.z > 0.5 ? srgb_rgb_to_linear(rgb) : rgb;
+    return vec4(converted * alpha, alpha);
+}
+
+// Analytic color ramp. The ramp lives in slots the other kinds use for other
+// things (see `MaterialUniform::apply_gradient`): `tint` is the geometry,
+// `light`/`detail` the stop offsets, `border_color`/`shadow` the packed RGBA8
+// stop colors stored as raw float bits, and `liquid.xy` the shape and count.
+float gradient_stop_offset(uint index) {
+    return index < 4u ? _group_0_binding_0_fs.light[index] : _group_0_binding_0_fs.detail[index - 4u];
+}
+
+vec4 gradient_stop_color(uint index) {
+    float bits = index < 4u ? _group_0_binding_0_fs.border_color[index] : _group_0_binding_0_fs.shadow[index - 4u];
+    uint packed_ = floatBitsToUint(bits);
+    vec4 straight_ = vec4(float(packed_ & 255u), float((packed_ >> 8u) & 255u),
+                          float((packed_ >> 16u) & 255u), float(packed_ >> 24u)) / 255.0;
+    // Blend premultiplied so a transparent stop does not tint its neighbors.
+    return vec4(straight_.rgb * straight_.a, straight_.a);
+}
+
+vec4 gradient_ramp(float t) {
+    uint count = uint(_group_0_binding_0_fs.liquid.y);
+    vec4 previous = gradient_stop_color(0u);
+    float previous_offset = gradient_stop_offset(0u);
+    if (t <= previous_offset) return previous;
+    for (uint index = 1u; index < count; index++) {
+        float offset_ = gradient_stop_offset(index);
+        vec4 current = gradient_stop_color(index);
+        if (t <= offset_) {
+            float f = clamp((t - previous_offset) / max(offset_ - previous_offset, 0.000001), 0.0, 1.0);
+            return mix(previous, current, f);
+        }
+        previous = current;
+        previous_offset = offset_;
+    }
+    return previous;
+}
+
+vec4 gradient_fill(vec2 pixel) {
+    vec2 half_size = _group_0_binding_0_fs.bounds.zw * 0.5;
+    vec2 point = pixel - _group_0_binding_0_fs.bounds.xy - half_size;
+    float distance_ = sdf_rounded_rect(point, half_size, _group_0_binding_0_fs.radii);
+    float coverage = sdf_alpha(distance_) * clip_alpha(pixel);
+    vec2 local = pixel - _group_0_binding_0_fs.bounds.xy;
+    vec4 geometry = _group_0_binding_0_fs.tint;
+    float shape = _group_0_binding_0_fs.liquid.x;
+    float t;
+    if (shape < 0.5) {
+        vec2 axis = geometry.zw - geometry.xy;
+        t = dot(local - geometry.xy, axis) / max(dot(axis, axis), 0.000001);
+    } else if (shape < 1.5) {
+        t = length((local - geometry.xy) / max(geometry.zw, vec2(0.0001)));
+    } else {
+        vec2 offset_ = local - geometry.xy;
+        t = fract((atan(offset_.y, offset_.x) - geometry.z) / 6.28318530718);
+    }
+    vec4 ramp = gradient_ramp(clamp(t, 0.0, 1.0));
+    // Interleaved gradient noise, one 8-bit step wide, hides banding in slow ramps.
+    float noise = fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
+    vec3 rgb = clamp(ramp.rgb / max(ramp.a, 0.00001) + vec3((noise - 0.5) / 255.0), vec3(0.0), vec3(1.0));
+    float alpha = clamp(ramp.a * _group_0_binding_0_fs.effect.y * coverage, 0.0, 1.0);
+    vec3 converted = _group_0_binding_0_fs.viewport.z > 0.5 ? srgb_rgb_to_linear(rgb) : rgb;
+    return vec4(converted * alpha, alpha);
+}
+
+void main() {
+    VertexOutput input_ = VertexOutput(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    if (_group_0_binding_0_fs.effect.x > 4.5) {
+        _fs2p_location0 = gradient_fill(input_.pixel_pos);
+        return;
+    }
+    if (_group_0_binding_0_fs.effect.x > 3.5) {
+        _fs2p_location0 = light_edge(input_.pixel_pos);
+        return;
+    }
+    vec3 material_backdrop = vec3(0.0);
+    if (_group_0_binding_0_fs.effect.x > 1.5 && _group_0_binding_0_fs.viewport.w < 0.5) {
+        discard;
+    }
+    if (_group_0_binding_0_fs.effect.x < -0.5) {
+        if (_group_0_binding_0_fs.effect.x < -3.5) { _fs2p_location0 = gaussian_reduced(input_.pixel_pos, vec2(0.0, 1.0)); return; }
+        if (_group_0_binding_0_fs.effect.x < -2.5) { _fs2p_location0 = gaussian_reduced(input_.pixel_pos, vec2(1.0, 0.0)); return; }
+        if (_group_0_binding_0_fs.effect.x < -1.5) { _fs2p_location0 = decimate_backdrop(input_.pixel_pos); return; }
+        _fs2p_location0 = gaussian_backdrop(input_.pixel_pos);
+        return;
+    }
+    if (_group_0_binding_0_fs.effect.x > 2.5) {
+        vec2 center = _group_0_binding_0_fs.bounds.xy + _group_0_binding_0_fs.bounds.zw * 0.5;
+        float distance = sdf_rounded_rect(input_.pixel_pos - center, _group_0_binding_0_fs.bounds.zw * 0.5, _group_0_binding_0_fs.radii);
+        float depth = _group_0_binding_0_fs.liquid2_.y;
+        float bevel_width = _group_0_binding_0_fs.liquid2_.z;
+        vec2 offset = vec2(0.0);
+        if (bevel_width > 0.0 && -distance < bevel_width) {
+            vec3 normal = lens_bevel_normal(input_.pixel_pos - center, _group_0_binding_0_fs.bounds.zw * 0.5, _group_0_binding_0_fs.radii, distance, bevel_width);
+            offset = liquid_bevel_refract_offset(normal, 2.0 / 3.0, depth);
+        }
+        vec2 origin = _group_0_binding_0_fs.liquid.xy;
+        vec2 axes = _group_0_binding_0_fs.effect.zw;
+        float bulge = 1.0;
+        if (_group_0_binding_0_fs.liquid.w > 0.0) {
+            vec2 extent = max(max(origin - _group_0_binding_0_fs.bounds.xy, _group_0_binding_0_fs.bounds.xy + _group_0_binding_0_fs.bounds.zw - origin), vec2(0.001, 0.001));
+            vec2 normalized = (input_.pixel_pos - origin) / extent * axes;
+            float falloff = max(0.0, 1.0 - dot(normalized, normalized));
+            bulge += _group_0_binding_0_fs.liquid.w * falloff * falloff;
+        }
+        vec2 warped = origin + (input_.pixel_pos - origin + offset) / (_group_0_binding_0_fs.liquid.z * bulge);
+        vec2 sample_pixel = mix(input_.pixel_pos, warped, axes);
+        float mask = clamp(_group_0_binding_0_fs.effect.y * sdf_alpha(distance) * clip_alpha(input_.pixel_pos), 0.0, 1.0);
+        if (mask <= 0.0) discard;
+        vec4 enlarged = sample_backdrop(sample_pixel);
+        if (mask >= 1.0) { _fs2p_location0 = enlarged; return; }
+        _fs2p_location0 = mix(sample_backdrop(input_.pixel_pos), enlarged, mask); return;
+    }
+    vec4 filtered;
+    if (_group_0_binding_0_fs.effect.x > 1.5) {
+        if (_group_0_binding_0_fs.detail.z <= 0.0) {
+            filtered = sample_backdrop(input_.pixel_pos);
+        } else if (_group_0_binding_0_fs.liquid.x > 1.5) {
+            filtered = reduced_result(input_.pixel_pos);
+        } else {
+            filtered = gaussian_backdrop(input_.pixel_pos);
+        }
+    } else {
+        filtered = frosted_backdrop(input_.pixel_pos);
+    }
+    if (_group_0_binding_0_fs.effect.x > 1.5) {
+        vec3 color = backdrop_to_material_rgb(filtered.rgb / max(filtered.a, 0.00001));
+        vec3 rgb = adjust_backdrop(color);
+        vec3 converted = _group_0_binding_0_fs.viewport.z > 0.5 ? srgb_rgb_to_linear(rgb) : rgb;
+        float mask = surface_alpha(input_.uv) * clip_alpha(input_.pixel_pos);
+        float weight = clamp(_group_0_binding_0_fs.effect.y * mask, 0.0, 1.0);
+        if (weight <= 0.0) {
+            discard;
+        }
+        vec4 result = vec4(converted * filtered.a, filtered.a);
+        if (weight < 1.0) {
+            result = mix(sample_backdrop(input_.pixel_pos), result, weight);
+        }
+        _fs2p_location0 = result;
+        return;
+    }
+    vec3 _e3 = backdrop_to_material_rgb(filtered.rgb);
+    material_backdrop = _e3;
+    float _e8 = _group_0_binding_0_fs.effect.x;
+    if ((_e8 > 0.5) && (_group_0_binding_0_fs.effect.x < 1.5)) {
+        vec4 _e13 = _group_0_binding_0_fs.bounds;
+        vec2 size_3 = max(_e13.zw, vec2(1.0, 1.0));
+        float _e20 = liquid_shape_distance(input_.uv);
+        float _e24 = _group_0_binding_0_fs.liquid2_.y;
+        float bevel_radius_2 = max(_e24, 1.0);
+        vec3 _e28 = liquid_bevel_normal(input_.uv, _e20, bevel_radius_2);
+        float magnification = _group_0_binding_0_fs.liquid.z;
+        float eta_2 = (1.0 / (1.0 + (magnification * 0.6)));
+        float depth_2 = (bevel_radius_2 * (1.0 + magnification));
+        vec2 _e44 = liquid_warp(input_.uv);
+        vec2 ripple_pixel = (input_.pixel_pos + (_e44 * size_3));
+        float _e50 = _group_0_binding_0_fs.liquid2_.x;
+        vec3 _e51 = liquid_chromatic_sample(ripple_pixel, _e28, eta_2, depth_2, _e50);
+        material_backdrop = mix(_e3, _e51, 0.78);
+    }
+    vec3 _e54 = material_backdrop;
+    vec3 _e55 = adjust_backdrop(_e54);
+    vec3 _e57 = material_rgb(input_.uv, _e55);
+    vec3 rgb = clamp(_e57, vec3(0.0, 0.0, 0.0), vec3(1.0, 1.0, 1.0));
+    float _e68 = surface_alpha(input_.uv);
+    float _e70 = clip_alpha(input_.pixel_pos);
+    float mask = (_e68 * _e70);
+    float _e73 = material_alpha(input_.uv);
+    float alpha = clamp((_e73 * mask), 0.0, 1.0);
+    vec3 _e78 = srgb_rgb_to_linear(rgb);
+    float _e82 = _group_0_binding_0_fs.viewport.z;
+    vec3 converted = ((_e82 > 0.5) ? _e78 : rgb);
+    _fs2p_location0 = vec4((converted * alpha), alpha);
+    return;
+}
+
+
+[RESOURCES]
+SAMPLER 0 1 0 2 _group_0_binding_1_fs
+UBO 0 0 MaterialUniform_block_0Fragment
+UBO 0 0 MaterialUniform_block_0Vertex
+
+SAMPLER 0 3 0 2 _group_0_binding_3_fs

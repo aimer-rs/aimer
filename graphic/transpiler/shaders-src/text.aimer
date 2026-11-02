@@ -1,0 +1,126 @@
+shader text;
+
+// Minimal text shader, GLES/ANGLE safe.
+
+import aimer::color::*;
+import aimer::clip::clip_alpha;
+
+#[varying]
+struct VertexOutput {
+    @position position: vec4,
+    uv: vec2,
+    color: vec4,
+    pixel_pos: vec2,
+    clip_rect: vec4,
+    clip_border_radius: vec4,
+    // Exponent applied to the atlas coverage before blending; see
+    // `coverage_exponent` in `aimer_text_pipeline`.
+    coverage_exponent: f32,
+}
+
+uniform struct Viewport {
+    resolution: vec2,
+    surface_is_srgb: f32,
+    _pad: f32,
+}
+
+#[bind(0, 0)]
+uniform viewport: Viewport;
+#[bind(0, 1)]
+texture atlas_texture: texture2d;
+#[bind(0, 2)]
+sampler atlas_sampler;
+
+// Per-instance data:
+//   pos:  screen-space top-left       size: quad width/height in pixels
+//   uv:   (u_min, v_min, u_max, v_max)  color: text colour with alpha
+//   clip_rect: (x, y, w, h)           clip_radius: per-corner radii
+#[input(step = instance)]
+struct TextInstance {
+    pos: vec2,
+    size: vec2,
+    uv: vec4,
+    color: vec4,
+    clip_rect: vec4,
+    clip_radius: vec4,
+    skew: f32,
+    coverage_exponent: f32,
+}
+
+// Triangle list for a quad: vertices 0-5 map to corners.
+const CORNERS: [vec2; 6] = [
+    vec2(0.0, 0.0),
+    vec2(1.0, 0.0),
+    vec2(0.0, 1.0),
+    vec2(0.0, 1.0),
+    vec2(1.0, 0.0),
+    vec2(1.0, 1.0),
+];
+
+#[vertex]
+fn vs_main(vertex_idx: @vertex_index, inst: TextInstance) -> VertexOutput {
+    let c = CORNERS[vertex_idx];
+
+    // Synthetic italic: shear x by the skew factor, pinned at the quad's bottom
+    // edge (c.y == 1 -> no shift, c.y == 0 -> full shift right), so upright glyphs
+    // (skew == 0) are untouched.
+    let mut pixel_pos = inst.pos + c * inst.size;
+    pixel_pos.x = pixel_pos.x + inst.skew * inst.size.y * (1.0 - c.y);
+    let ndc = vec2(
+        pixel_pos.x / viewport.resolution.x * 2.0 - 1.0,
+        -(pixel_pos.y / viewport.resolution.y * 2.0 - 1.0),
+    );
+
+    let mut out: VertexOutput;
+    out.position = vec4(ndc, 0.0, 1.0);
+    out.uv = mix(inst.uv.xy, inst.uv.zw, c);
+    out.color = inst.color;
+    out.pixel_pos = pixel_pos;
+    out.clip_rect = inst.clip_rect;
+    out.clip_border_radius = inst.clip_radius;
+    out.coverage_exponent = inst.coverage_exponent;
+    out
+}
+
+#[fragment]
+fn fs_main(input: VertexOutput) -> @frag_color {
+    let coverage = atlas_texture.sample_level(atlas_sampler, input.uv, 0.0).r;
+    let ca = clip_alpha(input.pixel_pos, input.clip_rect, input.clip_border_radius);
+
+    // On Android (surface_is_srgb >= 1.5), skip sRGB conversion entirely.
+    let mut result: vec4;
+    if viewport.surface_is_srgb >= 1.5 {
+        let a = input.color.a * coverage * ca;
+        result = vec4(input.color.rgb * a, a);
+    } else {
+        // The target is sRGB, so the hardware blends this fragment in linear
+        // light. Coverage is a geometric fraction, not a light ratio: blended
+        // linearly it makes antialiased edges lighter than the rasterizer
+        // meant, which robs small text of stroke weight. The exponent restores
+        // it. The non-sRGB path below already blends in sRGB space and must
+        // stay untouched.
+        let corrected = #[select] if viewport.surface_is_srgb < 0.5 {
+            coverage
+        } else {
+            pow(coverage, input.coverage_exponent)
+        };
+        let a = input.color.a * corrected * ca;
+
+        let r_lin = srgb_to_linear(input.color.r);
+        let g_lin = srgb_to_linear(input.color.g);
+        let b_lin = srgb_to_linear(input.color.b);
+
+        result = vec4(r_lin * a, g_lin * a, b_lin * a, a);
+
+        if viewport.surface_is_srgb < 0.5 {
+            if a > 0.00001 {
+                let srgb_r = linear_to_srgb(r_lin);
+                let srgb_g = linear_to_srgb(g_lin);
+                let srgb_b = linear_to_srgb(b_lin);
+                result = vec4(srgb_r * a, srgb_g * a, srgb_b * a, a);
+            }
+        }
+    }
+
+    result
+}

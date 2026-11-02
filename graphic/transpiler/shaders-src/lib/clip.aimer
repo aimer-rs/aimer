@@ -1,0 +1,40 @@
+module aimer::clip;
+
+import aimer::sdf::sdf_rounded_rect;
+
+/// Anti-aliased clip alpha from a clip rect in pixel coordinates.
+/// clip_rect = (x, y, width, height). A negative width disables clipping (returns 1.0).
+pub fn clip_alpha(pixel_pos: vec2, clip_rect: vec4, clip_radii: vec4) -> f32 {
+    if clip_rect.z < 0.0 {
+        return 1.0;
+    }
+
+    // Width or height of zero or almost zero is an empty clip (fully clipped).
+    if clip_rect.z <= 0.01 || clip_rect.w <= 0.01 {
+        return 0.0;
+    }
+
+    if clip_radii.x > 0.0 || clip_radii.y > 0.0 || clip_radii.z > 0.0 || clip_radii.w > 0.0 {
+        let clip_center = clip_rect.xy + clip_rect.zw * 0.5;
+        let clip_half = clip_rect.zw * 0.5;
+        let p = pixel_pos - clip_center;
+        let d = sdf_rounded_rect(p, clip_half, clip_radii);
+        return 1.0 - smoothstep(-0.5, 0.5, d);
+    }
+
+    let clip_min = clip_rect.xy;
+    let clip_max = clip_rect.xy + clip_rect.zw;
+
+    let d_left = pixel_pos.x - clip_min.x;
+    let d_right = clip_max.x - pixel_pos.x;
+    let d_top = pixel_pos.y - clip_min.y;
+    let d_bottom = clip_max.y - pixel_pos.y;
+
+    // AA centered on the boundary so the clip does not erode ~1px inside each edge.
+    let a_left = smoothstep(-0.5, 0.5, d_left);
+    let a_right = smoothstep(-0.5, 0.5, d_right);
+    let a_top = smoothstep(-0.5, 0.5, d_top);
+    let a_bottom = smoothstep(-0.5, 0.5, d_bottom);
+
+    a_left * a_right * a_top * a_bottom
+}

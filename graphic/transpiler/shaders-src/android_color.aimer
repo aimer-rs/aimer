@@ -1,0 +1,5 @@
+shader android_color;
+
+// A function-only shader: the Android colour prelude. `pub import` re-exports the public functions of
+// `aimer::color` (the alpha helpers are identities, and the sRGB helpers), so they are all written.
+pub import aimer::color::*;

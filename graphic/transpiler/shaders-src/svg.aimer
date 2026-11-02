@@ -1,0 +1,96 @@
+shader svg;
+
+import aimer::color::*;
+
+#[input(step = vertex)]
+struct SvgVertex {
+    @location(0) position: vec2,
+    @location(7) coverage: f32,
+}
+
+#[input(step = instance)]
+struct SvgInstance {
+    @location(1) transform_x: vec4,
+    @location(2) transform_y: vec4,
+    @location(3) color: vec4,
+    @location(4) clip_rect: vec4,
+    @location(5) clip_border_radius: vec4,
+    @location(6) viewport: vec4,
+}
+
+#[varying]
+struct VertexOutput {
+    @position position: vec4,
+    color: vec4,
+    pixel_pos: vec2,
+    clip_rect: vec4,
+    clip_border_radius: vec4,
+    surface_is_srgb: f32,
+    coverage: f32,
+}
+
+#[vertex]
+fn vs_main(vertex: SvgVertex, instance: SvgInstance) -> VertexOutput {
+    let local = vec3(vertex.position, 1.0);
+    let pixel_pos = vec2(
+        dot(local, instance.transform_x.xyz),
+        dot(local, instance.transform_y.xyz),
+    );
+    let ndc = vec2(
+        pixel_pos.x / instance.viewport.x * 2.0 - 1.0,
+        1.0 - pixel_pos.y / instance.viewport.y * 2.0,
+    );
+    VertexOutput {
+        position: vec4(ndc, 0.0, 1.0),
+        color: instance.color,
+        pixel_pos: pixel_pos,
+        clip_rect: instance.clip_rect,
+        clip_border_radius: instance.clip_border_radius,
+        surface_is_srgb: instance.viewport.z,
+        coverage: vertex.coverage,
+    }
+}
+
+fn rounded_rect_distance(input_point: vec2, half_size: vec2, radii: vec4) -> f32 {
+    let mut radius = if input_point.x < 0.0 {
+        #[select] if input_point.y < 0.0 { radii.x } else { radii.w }
+    } else {
+        #[select] if input_point.y < 0.0 { radii.y } else { radii.z }
+    };
+    radius = min(radius, min(half_size.x, half_size.y));
+    let q = abs(input_point) - half_size + vec2(radius);
+    length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - radius
+}
+
+fn clip_alpha(pixel_pos: vec2, clip_rect: vec4, radii: vec4) -> f32 {
+    if clip_rect.z <= 0.0 {
+        return 1.0;
+    }
+    let half_size = clip_rect.zw * 0.5;
+    let center = clip_rect.xy + half_size;
+    let distance = rounded_rect_distance(pixel_pos - center, half_size, radii);
+    1.0 - smoothstep(-0.5, 0.5, distance)
+}
+
+#[fragment]
+fn fs_main(input: VertexOutput) -> @frag_color {
+    let clip = clip_alpha(input.pixel_pos, input.clip_rect, input.clip_border_radius);
+    let mut color = input.color;
+    if input.surface_is_srgb < 1.5 {
+        color = vec4(
+            srgb_to_linear(color.r),
+            srgb_to_linear(color.g),
+            srgb_to_linear(color.b),
+            color.a,
+        );
+    }
+    let mut result = vec4(color.rgb * color.a, color.a) * clip * input.coverage;
+    if input.surface_is_srgb < 0.5 && result.a > 0.000001 {
+        let unpremultiplied = result.rgb / result.a;
+        result = vec4(
+            vec3(linear_to_srgb(unpremultiplied.r), linear_to_srgb(unpremultiplied.g), linear_to_srgb(unpremultiplied.b)) * result.a,
+            result.a,
+        );
+    }
+    result
+}

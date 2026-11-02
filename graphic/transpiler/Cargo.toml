@@ -1,0 +1,30 @@
+[package]
+name = "aimer_transpiler"
+version = "0.1.0"
+edition = "2024"
+description = "Transpiler from the .aimer shader language to WGSL, MSL, HLSL, GLSL and GLSL ES"
+publish = false
+
+[lib]
+name = "aimer_transpiler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aimer_transpiler"
+path = "src/main.rs"
+
+[features]
+default = []
+# Language services for editors (diagnostics, hover, completion, navigation) and the
+# WebAssembly C ABI used by the VS Code extension, see scripts/build-wasm.sh.
+lsp = []
+
+[[test]]
+name = "lsp"
+path = "tests/lsp.rs"
+required-features = ["lsp"]
+
+[dependencies]
+
+[dev-dependencies]
+naga.workspace = true

@@ -1,0 +1,374 @@
+AIMER-OPENGL-SHADER-PACK-1
+[VERTEX]
+#version 330 core
+struct VertexOutput {
+    vec4 position;
+    vec2 uv;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    vec4 params;
+    vec2 size;
+};
+struct FragmentInput {
+    vec2 uv;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    vec4 params;
+    vec2 size;
+};
+struct Viewport {
+    vec2 resolution;
+    float surface_is_srgb;
+    float _pad;
+};
+layout(std140) uniform Viewport_block_0Vertex { Viewport _group_0_binding_0_vs; };
+
+layout(location = 0) in vec2 _p2vs_location0;
+layout(location = 1) in vec2 _p2vs_location1;
+layout(location = 2) in vec4 _p2vs_location2;
+layout(location = 3) in vec4 _p2vs_location3;
+layout(location = 4) in vec4 _p2vs_location4;
+layout(location = 5) in vec4 _p2vs_location5;
+smooth out vec2 _vs2fs_location0;
+smooth out vec4 _vs2fs_location1;
+smooth out vec2 _vs2fs_location2;
+smooth out vec4 _vs2fs_location3;
+smooth out vec4 _vs2fs_location4;
+smooth out vec4 _vs2fs_location5;
+smooth out vec2 _vs2fs_location6;
+
+float sdf_rounded_rect(vec2 p, vec2 half_size, vec4 radii) {
+    float r = 0.0;
+    if ((p.x < 0.0)) {
+        if ((p.y < 0.0)) {
+            r = radii.x;
+        } else {
+            r = radii.w;
+        }
+    } else {
+        if ((p.y < 0.0)) {
+            r = radii.y;
+        } else {
+            r = radii.z;
+        }
+    }
+    float _e17 = r;
+    r = min(_e17, min(half_size.x, half_size.y));
+    float _e24 = r;
+    float _e25 = r;
+    vec2 q = ((abs(p) - half_size) + vec2(_e24, _e25));
+    float _e39 = r;
+    return ((length(max(q, vec2(0.0, 0.0))) + min(max(q.x, q.y), 0.0)) - _e39);
+}
+
+float clip_alpha(vec2 pixel_pos, vec4 clip_rect_1, vec4 clip_radii) {
+    bool local = false;
+    bool local_1 = false;
+    bool local_2 = false;
+    bool local_3 = false;
+    if ((clip_rect_1.z < 0.0)) {
+        return 1.0;
+    }
+    if (!((clip_rect_1.z <= 0.01))) {
+        local = (clip_rect_1.w <= 0.01);
+    } else {
+        local = true;
+    }
+    bool _e17 = local;
+    if (_e17) {
+        return 0.0;
+    }
+    if (!((clip_radii.x > 0.0))) {
+        local_1 = (clip_radii.y > 0.0);
+    } else {
+        local_1 = true;
+    }
+    bool _e29 = local_1;
+    if (!(_e29)) {
+        local_2 = (clip_radii.z > 0.0);
+    } else {
+        local_2 = true;
+    }
+    bool _e37 = local_2;
+    if (!(_e37)) {
+        local_3 = (clip_radii.w > 0.0);
+    } else {
+        local_3 = true;
+    }
+    bool _e45 = local_3;
+    if (_e45) {
+        vec2 clip_center = (clip_rect_1.xy + (clip_rect_1.zw * 0.5));
+        vec2 clip_half = (clip_rect_1.zw * 0.5);
+        vec2 p_1 = (pixel_pos - clip_center);
+        float _e55 = sdf_rounded_rect(p_1, clip_half, clip_radii);
+        return (1.0 - smoothstep(-0.5, 0.5, _e55));
+    }
+    vec2 clip_min = clip_rect_1.xy;
+    vec2 clip_max = (clip_rect_1.xy + clip_rect_1.zw);
+    float a_left = smoothstep(-0.5, 0.5, (pixel_pos.x - clip_min.x));
+    float a_right = smoothstep(-0.5, 0.5, (clip_max.x - pixel_pos.x));
+    float a_top = smoothstep(-0.5, 0.5, (pixel_pos.y - clip_min.y));
+    float a_bottom = smoothstep(-0.5, 0.5, (clip_max.y - pixel_pos.y));
+    return (((a_left * a_right) * a_top) * a_bottom);
+}
+
+float srgb_to_linear(float c) {
+    if ((c <= 0.04045)) {
+        return (c / 12.92);
+    }
+    return pow(((c + 0.055) / 1.055), 2.4);
+}
+
+float linear_to_srgb(float c_1) {
+    if ((c_1 <= 0.0031308)) {
+        return (c_1 * 12.92);
+    }
+    return ((1.055 * pow(c_1, 0.41666666)) - 0.055);
+}
+
+float stroke_cov(float dist, float half_thickness) {
+    return smoothstep(0.5, -0.5, (dist - half_thickness));
+}
+
+void main() {
+    uint vertex_idx = uint(gl_VertexID);
+    vec2 inst_pos = _p2vs_location0;
+    vec2 inst_size = _p2vs_location1;
+    vec4 inst_color = _p2vs_location2;
+    vec4 clip_rect = _p2vs_location3;
+    vec4 clip_radius = _p2vs_location4;
+    vec4 inst_params = _p2vs_location5;
+    VertexOutput out_ = VertexOutput(vec4(0.0), vec2(0.0), vec4(0.0), vec2(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec2(0.0));
+    vec2 tri_idx[6] = vec2[6](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(1.0, 1.0));
+    vec2 c_2 = tri_idx[vertex_idx];
+    vec2 pixel_pos_1 = (inst_pos + (c_2 * inst_size));
+    float _e33 = _group_0_binding_0_vs.resolution.x;
+    float _e43 = _group_0_binding_0_vs.resolution.y;
+    vec2 ndc = vec2((((pixel_pos_1.x / _e33) * 2.0) - 1.0), -((((pixel_pos_1.y / _e43) * 2.0) - 1.0)));
+    out_.position = vec4(ndc, 0.0, 1.0);
+    out_.uv = c_2;
+    out_.color = inst_color;
+    out_.pixel_pos = pixel_pos_1;
+    out_.clip_rect = clip_rect;
+    out_.clip_border_radius = clip_radius;
+    out_.params = inst_params;
+    out_.size = inst_size;
+    VertexOutput _e63 = out_;
+    gl_Position = _e63.position;
+    _vs2fs_location0 = _e63.uv;
+    _vs2fs_location1 = _e63.color;
+    _vs2fs_location2 = _e63.pixel_pos;
+    _vs2fs_location3 = _e63.clip_rect;
+    _vs2fs_location4 = _e63.clip_border_radius;
+    _vs2fs_location5 = _e63.params;
+    _vs2fs_location6 = _e63.size;
+    return;
+}
+
+
+[FRAGMENT]
+#version 330 core
+struct VertexOutput {
+    vec4 position;
+    vec2 uv;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    vec4 params;
+    vec2 size;
+};
+struct FragmentInput {
+    vec2 uv;
+    vec4 color;
+    vec2 pixel_pos;
+    vec4 clip_rect;
+    vec4 clip_border_radius;
+    vec4 params;
+    vec2 size;
+};
+struct Viewport {
+    vec2 resolution;
+    float surface_is_srgb;
+    float _pad;
+};
+layout(std140) uniform Viewport_block_0Fragment { Viewport _group_0_binding_0_fs; };
+
+smooth in vec2 _vs2fs_location0;
+smooth in vec4 _vs2fs_location1;
+smooth in vec2 _vs2fs_location2;
+smooth in vec4 _vs2fs_location3;
+smooth in vec4 _vs2fs_location4;
+smooth in vec4 _vs2fs_location5;
+smooth in vec2 _vs2fs_location6;
+layout(location = 0) out vec4 _fs2p_location0;
+
+float sdf_rounded_rect(vec2 p, vec2 half_size, vec4 radii) {
+    float r = 0.0;
+    if ((p.x < 0.0)) {
+        if ((p.y < 0.0)) {
+            r = radii.x;
+        } else {
+            r = radii.w;
+        }
+    } else {
+        if ((p.y < 0.0)) {
+            r = radii.y;
+        } else {
+            r = radii.z;
+        }
+    }
+    float _e17 = r;
+    r = min(_e17, min(half_size.x, half_size.y));
+    float _e24 = r;
+    float _e25 = r;
+    vec2 q = ((abs(p) - half_size) + vec2(_e24, _e25));
+    float _e39 = r;
+    return ((length(max(q, vec2(0.0, 0.0))) + min(max(q.x, q.y), 0.0)) - _e39);
+}
+
+float clip_alpha(vec2 pixel_pos, vec4 clip_rect_1, vec4 clip_radii) {
+    bool local = false;
+    bool local_1 = false;
+    bool local_2 = false;
+    bool local_3 = false;
+    if ((clip_rect_1.z < 0.0)) {
+        return 1.0;
+    }
+    if (!((clip_rect_1.z <= 0.01))) {
+        local = (clip_rect_1.w <= 0.01);
+    } else {
+        local = true;
+    }
+    bool _e17 = local;
+    if (_e17) {
+        return 0.0;
+    }
+    if (!((clip_radii.x > 0.0))) {
+        local_1 = (clip_radii.y > 0.0);
+    } else {
+        local_1 = true;
+    }
+    bool _e29 = local_1;
+    if (!(_e29)) {
+        local_2 = (clip_radii.z > 0.0);
+    } else {
+        local_2 = true;
+    }
+    bool _e37 = local_2;
+    if (!(_e37)) {
+        local_3 = (clip_radii.w > 0.0);
+    } else {
+        local_3 = true;
+    }
+    bool _e45 = local_3;
+    if (_e45) {
+        vec2 clip_center = (clip_rect_1.xy + (clip_rect_1.zw * 0.5));
+        vec2 clip_half = (clip_rect_1.zw * 0.5);
+        vec2 p_1 = (pixel_pos - clip_center);
+        float _e55 = sdf_rounded_rect(p_1, clip_half, clip_radii);
+        return (1.0 - smoothstep(-0.5, 0.5, _e55));
+    }
+    vec2 clip_min = clip_rect_1.xy;
+    vec2 clip_max = (clip_rect_1.xy + clip_rect_1.zw);
+    float a_left = smoothstep(-0.5, 0.5, (pixel_pos.x - clip_min.x));
+    float a_right = smoothstep(-0.5, 0.5, (clip_max.x - pixel_pos.x));
+    float a_top = smoothstep(-0.5, 0.5, (pixel_pos.y - clip_min.y));
+    float a_bottom = smoothstep(-0.5, 0.5, (clip_max.y - pixel_pos.y));
+    return (((a_left * a_right) * a_top) * a_bottom);
+}
+
+float srgb_to_linear(float c) {
+    if ((c <= 0.04045)) {
+        return (c / 12.92);
+    }
+    return pow(((c + 0.055) / 1.055), 2.4);
+}
+
+float linear_to_srgb(float c_1) {
+    if ((c_1 <= 0.0031308)) {
+        return (c_1 * 12.92);
+    }
+    return ((1.055 * pow(c_1, 0.41666666)) - 0.055);
+}
+
+float stroke_cov(float dist, float half_thickness) {
+    return smoothstep(0.5, -0.5, (dist - half_thickness));
+}
+
+void main() {
+    FragmentInput in_ = FragmentInput(_vs2fs_location0, _vs2fs_location1, _vs2fs_location2, _vs2fs_location3, _vs2fs_location4, _vs2fs_location5, _vs2fs_location6);
+    float cov = 0.0;
+    vec4 result = vec4(0.0);
+    float style = in_.params.x;
+    float thickness = max(in_.params.y, 0.5);
+    float period = max(in_.params.z, 1.0);
+    float band = max(in_.params.w, thickness);
+    float px = (in_.uv.x * in_.size.x);
+    float py = (in_.uv.y * in_.size.y);
+    float center = (band * 0.5);
+    float c0_ = (thickness * 0.5);
+    if ((style < 0.5)) {
+        float _e34 = stroke_cov(abs((py - center)), c0_);
+        cov = _e34;
+    } else {
+        if ((style < 1.5)) {
+            float c1_ = (band - c0_);
+            float _e40 = stroke_cov(abs((py - c0_)), c0_);
+            float _e43 = stroke_cov(abs((py - c1_)), c0_);
+            cov = max(_e40, _e43);
+        } else {
+            if ((style < 2.5)) {
+                float _e49 = stroke_cov(abs((py - center)), c0_);
+                float phase = (px - (period * floor((px / period))));
+                float _e60 = stroke_cov(abs((phase - (period * 0.5))), (period * 0.25));
+                cov = (_e49 * _e60);
+            } else {
+                if ((style < 3.5)) {
+                    float _e66 = stroke_cov(abs((py - center)), c0_);
+                    float phase_1 = (px - (period * floor((px / period))));
+                    float dash = step(phase_1, (period * 0.6));
+                    cov = (_e66 * dash);
+                } else {
+                    float amp = max(((band - thickness) * 0.5), 0.0);
+                    float wave = (center + (amp * sin(((px * 6.2831855) / period))));
+                    float _e88 = stroke_cov(abs((py - wave)), c0_);
+                    cov = _e88;
+                }
+            }
+        }
+    }
+    float _e92 = clip_alpha(in_.pixel_pos, in_.clip_rect, in_.clip_border_radius);
+    float _e95 = cov;
+    float a = ((in_.color.w * _e95) * _e92);
+    float _e101 = _group_0_binding_0_fs.surface_is_srgb;
+    if ((_e101 >= 1.5)) {
+        result = vec4((in_.color.xyz * a), a);
+    } else {
+        float _e110 = srgb_to_linear(in_.color.x);
+        float _e113 = srgb_to_linear(in_.color.y);
+        float _e116 = srgb_to_linear(in_.color.z);
+        result = vec4((_e110 * a), (_e113 * a), (_e116 * a), a);
+        float _e123 = _group_0_binding_0_fs.surface_is_srgb;
+        if ((_e123 < 0.5)) {
+            if ((a > 1e-5)) {
+                float _e128 = linear_to_srgb(_e110);
+                float _e130 = linear_to_srgb(_e113);
+                float _e132 = linear_to_srgb(_e116);
+                result = vec4((_e128 * a), (_e130 * a), (_e132 * a), a);
+            }
+        }
+    }
+    vec4 _e135 = result;
+    _fs2p_location0 = _e135;
+    return;
+}
+
+
+[RESOURCES]
+UBO 0 0 Viewport_block_0Fragment
+UBO 0 0 Viewport_block_0Vertex

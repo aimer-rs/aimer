@@ -1,0 +1,14 @@
+module aimer::sdf;
+
+/// SDF for a rounded rectangle with per-corner radii.
+/// radii = (top-left, top-right, bottom-right, bottom-left)
+pub fn sdf_rounded_rect(p: vec2, half_size: vec2, radii: vec4) -> f32 {
+    let mut r = if p.x < 0.0 {
+        if p.y < 0.0 { radii.x } else { radii.w }
+    } else {
+        if p.y < 0.0 { radii.y } else { radii.z }
+    };
+    r = min(r, min(half_size.x, half_size.y));
+    let q = abs(p) - half_size + vec2(r, r);
+    length(max(q, vec2(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - r
+}
