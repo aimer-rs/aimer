@@ -44,7 +44,6 @@ fn other_kinds_keep_the_version_three_packet_and_an_empty_ramp() {
         MaterialKind::Glass,
         MaterialKind::Liquid,
         MaterialKind::BackdropFilter,
-        MaterialKind::Magnification,
         MaterialKind::LightEdge,
     ] {
         let mut request = MaterialRequest::new(kind, [0.0, 0.0, 20.0, 10.0]);

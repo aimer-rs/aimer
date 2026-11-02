@@ -277,3 +277,25 @@ fn steady_lens_frames_reuse_resources_without_gaussian_intermediates() {
         assert_eq!(parent.upload.as_ptr(), original.3);
     }
 }
+
+#[test]
+fn the_shoulder_radius_reaches_the_lens_uniform_in_device_pixels_bounded_by_the_box() {
+    use crate::MagnificationStyle as S;
+    let mut request = MaterialRequest::new(MaterialKind::Magnification, [0.0, 0.0, 320.0, 208.0]);
+    request.transform = [2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0];
+    request.magnification_style = S::UNIFORM | S::BULGE;
+    request.bulge_strength = 0.5;
+    let radius = |request: MaterialRequest| {
+        MaterialUniform::from_request(request, 900, 800, false, None).liquid2[3]
+    };
+    // Unset keeps the bell: the shader reads zero as "no shoulders".
+    assert_eq!(radius(request), 0.0);
+    request.bulge_radius = 24.0;
+    assert_eq!(radius(request), 48.0, "logical radius times the display scale");
+    // Past half the shorter side the shoulders would cross, so they stop there.
+    request.bulge_radius = 500.0;
+    assert_eq!(radius(request), 104.0);
+    // Without the bulge effect there is nothing to shape.
+    request.magnification_style = S::UNIFORM | S::REFRACTION;
+    assert_eq!(radius(request), 0.0);
+}

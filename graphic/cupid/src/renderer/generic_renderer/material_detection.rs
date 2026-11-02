@@ -19,6 +19,8 @@ fn packet_needs_backdrop(bytes: &[u8]) -> bool {
         (MATERIAL_GRADIENT_PACKET_VERSION, MATERIAL_GRADIENT_PACKET_LEN) => {
             bytes[5] != MaterialKind::Gradient as u8
         }
+        // Lens packets (their own version and length) land here too: a lens
+        // always reads the backdrop, as does any packet this does not know.
         _ => true,
     }
 }

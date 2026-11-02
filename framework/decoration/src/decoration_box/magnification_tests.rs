@@ -25,7 +25,7 @@ fn request(lens: Magnification) -> MaterialRequest {
     let [DrawCommand::DrawCustom { data, .. }] = commands.as_slice() else {
         panic!("one lens packet")
     };
-    assert_eq!(data.len(), 256);
+    assert_eq!(data.len(), 260);
     MaterialRequest::decode(data).unwrap()
 }
 
@@ -207,4 +207,18 @@ fn magnification_bounds_and_sanitizes_the_declared_corners() {
         let lens = stacked(&[&BorderRadius::from(invalid), &Magnification::new()]);
         assert_eq!(lens.corner_radii, [0.0; 4], "{invalid}");
     }
+}
+
+#[test]
+fn bulge_radius_defaults_to_the_bell_and_is_carried_bounded() {
+    assert_eq!(request(Magnification::new()).bulge_radius, 0.0);
+    assert_eq!(request(Magnification::new().bulge_radius(12.0)).bulge_radius, 12.0);
+    assert_eq!(request(Magnification::new().bulge_radius(999.0)).bulge_radius, 512.0);
+    for invalid in [-1.0, f32::NAN, f32::INFINITY] {
+        assert_eq!(request(Magnification::new().bulge_radius(invalid)).bulge_radius, 0.0);
+    }
+    // Shaping the bulge does not touch the rest of the lens.
+    let shaped = request(Magnification::new().bulge_radius(12.0));
+    assert_eq!(shaped.bulge_strength, 0.25);
+    assert_eq!(shaped.magnification, 1.4);
 }

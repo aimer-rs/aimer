@@ -136,6 +136,10 @@ pub struct MaterialDrawRequest {
     pub magnification_style: MagnificationStyle,
     /// Additional Magnification bulge strength in `0..=1`.
     pub bulge_strength: f32,
+    /// Magnification bulge shoulder radius in logical pixels, `0.0..=512.0`.
+    /// Zero keeps the bell-shaped bulge; a positive radius gives it a flat top
+    /// that rolls off along a quarter circle over that distance from the edge.
+    pub bulge_radius: f32,
     /// LightEdge light direction in degrees clockwise from screen-right.
     pub light_angle: f32,
     /// Color ramp of a [`MaterialKind::Gradient`]; ignored by every other kind.
@@ -154,6 +158,11 @@ impl MaterialDrawRequest {
     /// Packet schema version of a [`MaterialKind::Gradient`], whose color ramp
     /// does not fit the shared body and is appended to it.
     pub const GRADIENT_VERSION: u8 = 4;
+    /// Packet schema version of a [`MaterialKind::Magnification`], which
+    /// appends its bulge radius to the shared body.
+    pub const MAGNIFICATION_VERSION: u8 = 5;
+    /// Exact byte length of [`Self::encode`] for a [`MaterialKind::Magnification`].
+    pub const MAGNIFICATION_PACKET_LEN: usize = Self::PACKET_LEN + 4;
     /// Exact byte length of [`Self::encode`] for a [`MaterialKind::Gradient`].
     pub const GRADIENT_PACKET_LEN: usize =
         Self::PACKET_LEN + aimer_cupid::material::GRADIENT_PACKET_EXTENSION_LEN;
@@ -219,6 +228,7 @@ impl MaterialDrawRequest {
             } else {
                 0.0
             },
+            bulge_radius: 0.0,
             light_angle: 225.0,
             gradient: MaterialGradient::default(),
             quality: 2,
@@ -284,9 +294,11 @@ impl MaterialDrawRequest {
         );
         if self.kind == MaterialKind::Magnification {
             self.bulge_strength = normalize(self.bulge_strength, 0.25, 0.0, 1.0);
+            self.bulge_radius = normalize(self.bulge_radius, 0.0, 0.0, 512.0);
         } else {
             self.magnification_style = MagnificationStyle::NONE;
             self.bulge_strength = 0.0;
+            self.bulge_radius = 0.0;
         }
         self.light_angle = if self.light_angle.is_finite() {
             self.light_angle.rem_euclid(360.0)
@@ -312,10 +324,10 @@ impl MaterialDrawRequest {
         let request = self.normalized();
         let mut bytes = Vec::with_capacity(Self::GRADIENT_PACKET_LEN);
         bytes.extend_from_slice(b"AIMR");
-        bytes.push(if request.kind == MaterialKind::Gradient {
-            Self::GRADIENT_VERSION
-        } else {
-            Self::VERSION
+        bytes.push(match request.kind {
+            MaterialKind::Gradient => Self::GRADIENT_VERSION,
+            MaterialKind::Magnification => Self::MAGNIFICATION_VERSION,
+            _ => Self::VERSION,
         });
         bytes.push(request.kind as u8);
         bytes.push(request.motion_policy as u8);
@@ -360,6 +372,10 @@ impl MaterialDrawRequest {
         push_f32(&mut bytes, request.bulge_strength);
         push_f32(&mut bytes, request.light_angle);
         debug_assert_eq!(bytes.len(), Self::PACKET_LEN);
+        if request.kind == MaterialKind::Magnification {
+            push_f32(&mut bytes, request.bulge_radius);
+            debug_assert_eq!(bytes.len(), Self::MAGNIFICATION_PACKET_LEN);
+        }
         if request.kind == MaterialKind::Gradient {
             request.gradient.encode_extension(&mut bytes);
             debug_assert_eq!(bytes.len(), Self::GRADIENT_PACKET_LEN);
@@ -541,6 +557,22 @@ mod tests {
         assert_eq!(request.encode().len(), MaterialDrawRequest::PACKET_LEN);
         assert_eq!(request.encode(), request.encode());
         assert_eq!(&request.encode()[..4], b"AIMR");
+    }
+
+    #[test]
+    fn a_lens_packet_carries_the_bulge_radius_in_its_own_versioned_length() {
+        let mut lens = MaterialDrawRequest::new(MaterialKind::Magnification, [0.0, 0.0, 80.0, 40.0]);
+        lens.bulge_radius = 12.0;
+        let bytes = lens.encode();
+        assert_eq!(bytes.len(), MaterialDrawRequest::MAGNIFICATION_PACKET_LEN);
+        assert_eq!(bytes[4], MaterialDrawRequest::MAGNIFICATION_VERSION);
+        let decoded = aimer_cupid::material::MaterialRequest::decode(&bytes).unwrap();
+        assert_eq!(decoded.bulge_radius, 12.0);
+        // Another kind has no use for it and keeps the shared body.
+        let mut glass = MaterialDrawRequest::new(MaterialKind::Glass, [0.0, 0.0, 80.0, 40.0]);
+        glass.bulge_radius = 12.0;
+        assert_eq!(glass.encode().len(), MaterialDrawRequest::PACKET_LEN);
+        assert_eq!(glass.normalized().bulge_radius, 0.0);
     }
 
     #[test]

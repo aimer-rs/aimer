@@ -37,6 +37,7 @@ pub struct Magnification {
     thickness: f32,
     style: MagnificationStyle,
     bulge: f32,
+    bulge_radius: f32,
 }
 
 impl Default for Magnification {
@@ -56,6 +57,7 @@ impl Magnification {
             thickness: 16.0,
             style: MagnificationStyle::DEFAULT,
             bulge: 0.25,
+            bulge_radius: 0.0,
         }
     }
 
@@ -86,6 +88,33 @@ impl Magnification {
     #[inline]
     pub fn bulge(mut self, strength: f32) -> Self {
         self.bulge = normalize(strength, 0.25, 1.0);
+        self
+    }
+
+    /// Sets the radius of the bulge's rounded shoulders in logical pixels,
+    /// clamped to `0.0..=512.0`. Nonfinite values use `0.0`.
+    ///
+    /// Seen from the side, the bulge is a swell in the glass. Left at the
+    /// default `0.0` it is a bell that peaks only at the anchor and falls away
+    /// on every side. With a radius it becomes a slab: the swell holds its full
+    /// [strength](Self::bulge) across the middle and rolls off along a quarter
+    /// circle over this distance from the edge, so a larger radius gives rounder
+    /// shoulders and a smaller one a flatter top. At paint time the radius is
+    /// limited to half the box's shorter side, where the shoulders meet and the
+    /// slab becomes a dome.
+    ///
+    /// The shoulders follow the box's own shape, rounded corners included, when
+    /// both axes are enabled, and the distance to the nearest edge along the
+    /// enabled axis otherwise. Anchors still choose where the enlargement is
+    /// centered. Requires the `BULGE` style flag.
+    ///
+    /// ```
+    /// use aimer_decoration::Magnification;
+    /// let slab = Magnification::new().bulge(0.4).bulge_radius(14.0);
+    /// ```
+    #[inline]
+    pub fn bulge_radius(mut self, radius: f32) -> Self {
+        self.bulge_radius = normalize(radius, 0.0, 512.0);
         self
     }
 
@@ -128,6 +157,7 @@ impl Decoration for Magnification {
         request.bevel_radius = self.thickness;
         request.magnification_style = self.style;
         request.bulge_strength = self.bulge;
+        request.bulge_radius = self.bulge_radius;
         request.corner_radii =
             declared_corner_radii(canvas, MaterialDrawRequest::MAX_CORNER_RADIUS);
         request.blur_radius = 0.0;

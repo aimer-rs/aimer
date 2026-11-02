@@ -574,10 +574,23 @@ float4 fs_main(MaterialVaryings input) : SV_Target0 {
         float2 axes = material.effect.zw;
         float bulge = 1.0;
         if (material.liquid.w > 0.0) {
-            float2 extent = max(max(origin - material.bounds.xy, material.bounds.xy + material.bounds.zw - origin), float2(0.001, 0.001));
-            float2 normalized = (input.pixel_pos - origin) / extent * axes;
-            float falloff = max(0.0, 1.0 - dot(normalized, normalized));
-            bulge += material.liquid.w * falloff * falloff;
+            // A positive shoulder radius reshapes the bulge from a bell into a slab: full
+            // swell across the middle, rolled off along a quarter circle over that distance
+            // from the edge. `inset` is the distance to the edge, by the box's own shape on
+            // both axes and along the enabled axis alone otherwise.
+            if (material.liquid2.w > 0.0) {
+                float2 edge_gap = material.bounds.zw * 0.5 - abs(input.pixel_pos - center);
+                float inset = max(-distance, 0.0);
+                if (axes.x < 0.5) { inset = max(edge_gap.y, 0.0); }
+                if (axes.y < 0.5) { inset = max(edge_gap.x, 0.0); }
+                float rise = 1.0 - clamp(inset / material.liquid2.w, 0.0, 1.0);
+                bulge += material.liquid.w * sqrt(max(1.0 - rise * rise, 0.0));
+            } else {
+                float2 extent = max(max(origin - material.bounds.xy, material.bounds.xy + material.bounds.zw - origin), float2(0.001, 0.001));
+                float2 normalized = (input.pixel_pos - origin) / extent * axes;
+                float falloff = max(0.0, 1.0 - dot(normalized, normalized));
+                bulge += material.liquid.w * falloff * falloff;
+            }
         }
         float2 warped = origin + (input.pixel_pos - origin + offset) / (material.liquid.z * bulge);
         float2 sample_pixel = lerp(input.pixel_pos, warped, axes);

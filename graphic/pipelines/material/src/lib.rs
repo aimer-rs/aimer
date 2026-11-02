@@ -30,6 +30,14 @@ pub const MATERIAL_PACKET_LEN: usize = 256;
 pub const MATERIAL_GRADIENT_PACKET_VERSION: u8 = 4;
 /// The exact size of one encoded [`MaterialKind::Gradient`] request.
 pub const MATERIAL_GRADIENT_PACKET_LEN: usize = MATERIAL_PACKET_LEN + GRADIENT_PACKET_EXTENSION_LEN;
+/// The packet version of [`MaterialKind::Magnification`] requests.
+///
+/// A lens appends its [`MaterialRequest::bulge_radius`] to the version-3 body,
+/// which has no room for it. Every other kind keeps version 3, and a version-3
+/// lens packet still decodes, with the bell-shaped bulge.
+pub const MATERIAL_MAGNIFICATION_PACKET_VERSION: u8 = 5;
+/// The exact size of one encoded [`MaterialKind::Magnification`] request.
+pub const MATERIAL_MAGNIFICATION_PACKET_LEN: usize = MATERIAL_PACKET_LEN + 4;
 /// Maximum intermediate texture dimension used by one surface.
 ///
 /// iOS devices get a larger budget; see [`intermediate_pixel_budget`].
@@ -209,6 +217,12 @@ pub struct MaterialRequest {
     pub magnification_style: MagnificationStyle,
     /// Additional Magnification bulge strength in `0..=1`.
     pub bulge_strength: f32,
+    /// Magnification bulge shoulder radius in logical pixels, `0.0..=512.0`.
+    ///
+    /// Zero keeps the bell-shaped bulge that peaks at the anchor. A positive
+    /// radius gives the bulge a flat top that rolls off along a quarter circle
+    /// over this distance from the edge, limited to half the shorter side.
+    pub bulge_radius: f32,
     /// LightEdge light direction in degrees clockwise from screen-right.
     pub light_angle: f32,
     /// Color ramp of a [`MaterialKind::Gradient`]; empty for every other kind.
@@ -271,6 +285,7 @@ impl MaterialRequest {
             } else {
                 0.0
             },
+            bulge_radius: 0.0,
             light_angle: 225.0,
             gradient: MaterialGradient {
                 shape: GradientShape::Linear,
@@ -292,10 +307,10 @@ impl MaterialRequest {
         let request = self.normalized();
         let mut bytes = Vec::with_capacity(MATERIAL_GRADIENT_PACKET_LEN);
         bytes.extend_from_slice(b"AIMR");
-        bytes.push(if request.kind == MaterialKind::Gradient {
-            MATERIAL_GRADIENT_PACKET_VERSION
-        } else {
-            MATERIAL_PACKET_VERSION
+        bytes.push(match request.kind {
+            MaterialKind::Gradient => MATERIAL_GRADIENT_PACKET_VERSION,
+            MaterialKind::Magnification => MATERIAL_MAGNIFICATION_PACKET_VERSION,
+            _ => MATERIAL_PACKET_VERSION,
         });
         bytes.push(request.kind as u8);
         bytes.push(request.motion_policy as u8);
@@ -345,6 +360,10 @@ impl MaterialRequest {
         bytes.extend_from_slice(&request.bulge_strength.to_le_bytes());
         bytes.extend_from_slice(&request.light_angle.to_le_bytes());
         debug_assert_eq!(bytes.len(), MATERIAL_PACKET_LEN);
+        if request.kind == MaterialKind::Magnification {
+            bytes.extend_from_slice(&request.bulge_radius.to_le_bytes());
+            debug_assert_eq!(bytes.len(), MATERIAL_MAGNIFICATION_PACKET_LEN);
+        }
         if request.kind == MaterialKind::Gradient {
             request.gradient.encode_extension(&mut bytes);
             debug_assert_eq!(bytes.len(), MATERIAL_GRADIENT_PACKET_LEN);
@@ -400,9 +419,11 @@ impl MaterialRequest {
         );
         if self.kind == MaterialKind::Magnification {
             self.bulge_strength = normalize(self.bulge_strength, 0.25, 0.0, 1.0);
+            self.bulge_radius = normalize(self.bulge_radius, 0.0, 0.0, 512.0);
         } else {
             self.magnification_style = MagnificationStyle::NONE;
             self.bulge_strength = 0.0;
+            self.bulge_radius = 0.0;
         }
         self.light_angle = if self.light_angle.is_finite() {
             self.light_angle.rem_euclid(360.0)
@@ -440,6 +461,7 @@ impl MaterialRequest {
             2 => 252,
             MATERIAL_PACKET_VERSION => MATERIAL_PACKET_LEN,
             MATERIAL_GRADIENT_PACKET_VERSION => MATERIAL_GRADIENT_PACKET_LEN,
+            MATERIAL_MAGNIFICATION_PACKET_VERSION => MATERIAL_MAGNIFICATION_PACKET_LEN,
             _ => return Err(MaterialDecodeError::UnsupportedVersion),
         };
         if bytes.len() != expected {
@@ -452,6 +474,11 @@ impl MaterialRequest {
             MaterialKind::from_wire(reader.u8()?).ok_or(MaterialDecodeError::UnsupportedKind)?;
         // The ramp rides only in version 4, and version 4 carries only a ramp.
         if (kind == MaterialKind::Gradient) != (version == MATERIAL_GRADIENT_PACKET_VERSION) {
+            return Err(MaterialDecodeError::UnsupportedKind);
+        }
+        // Likewise the radius rides only in version 5, which only a lens may use.
+        // A lens may also still arrive in an earlier version, without the radius.
+        if version == MATERIAL_MAGNIFICATION_PACKET_VERSION && kind != MaterialKind::Magnification {
             return Err(MaterialDecodeError::UnsupportedKind);
         }
         let motion_policy = MaterialMotionPolicy::from_wire(reader.u8()?)
@@ -507,6 +534,11 @@ impl MaterialRequest {
             (style, reader.f32()?)
         };
         let light_angle = if version >= 3 { reader.f32()? } else { 225.0 };
+        let bulge_radius = if version == MATERIAL_MAGNIFICATION_PACKET_VERSION {
+            reader.f32()?
+        } else {
+            0.0
+        };
         let gradient = if kind == MaterialKind::Gradient {
             debug_assert_eq!(reader.position(), MATERIAL_PACKET_LEN);
             MaterialGradient::decode_extension(&bytes[MATERIAL_PACKET_LEN..])?
@@ -550,6 +582,7 @@ impl MaterialRequest {
             bevel_radius,
             magnification_style,
             bulge_strength,
+            bulge_radius,
             light_angle,
             gradient,
             quality,

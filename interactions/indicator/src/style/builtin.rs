@@ -1,10 +1,11 @@
 //! The standard indicator styles.
 
-use aimer_attribute::ResolvedSize;
+use aimer_attribute::{ResolvedSize, Vec2d};
+use aimer_canvas::Canvas;
 use aimer_container::SizedBox;
 use aimer_decoration::{
-    BorderRadius, BoxDecoration, DecorationBox, LightEdge, Magnification, MagnificationStyle,
-    MultiDecorationBox,
+    BorderRadius, BoxDecoration, Decoration, DecorationBox, LightEdge, Magnification,
+    MagnificationStyle,
 };
 use aimer_widget::base::Color;
 use aimer_widget::AnyWidget;
@@ -36,6 +37,7 @@ pub struct LiquidGlass {
     zoom: f32,
     thickness: f32,
     bulge: f32,
+    bulge_radius: f32,
     rim: f32,
 }
 
@@ -57,6 +59,7 @@ pub const LIQUID_GLASS: LiquidGlass = LiquidGlass {
     zoom: 1.25,
     thickness: 10.0,
     bulge: 0.15,
+    bulge_radius: 0.0,
     rim: 0.8,
 };
 
@@ -142,6 +145,19 @@ impl LiquidGlass {
         self
     }
 
+    /// Sets the radius of the rounded shoulders of the swell, in logical
+    /// pixels. `0.0`, the default, keeps the swell a bell that peaks only at the
+    /// center; a radius turns it into a slab with a flat top that rolls off
+    /// along a quarter circle over that distance from the edge, up to half the
+    /// lens's height, where it is a dome again. See
+    /// [`Magnification::bulge_radius`]. Negative or non-finite values make the
+    /// style invalid.
+    #[inline]
+    pub const fn bulge_radius(mut self, radius: f32) -> Self {
+        self.bulge_radius = radius;
+        self
+    }
+
     /// Sets the strength of the rim of light, from `0.0` for none to `1.0`.
     /// Values outside that range or that are not finite make the style invalid.
     #[inline]
@@ -151,30 +167,55 @@ impl LiquidGlass {
     }
 
     fn lens(&self, size: ResolvedSize) -> AnyWidget {
-        let radius = size.height * 0.5;
         // No shadow decoration: it would be painted before the optics, which
         // sample the backdrop of the same node, and turn the whole lens grey.
-        MultiDecorationBox::new()
-            // The shape comes first: the optics and the rim both adopt it.
-            .decoration(BorderRadius::from(radius))
-            .decoration(
-                Magnification::new()
-                    .style(
-                        MagnificationStyle::UNIFORM
-                            | MagnificationStyle::BULGE
-                            | MagnificationStyle::REFRACTION,
-                    )
-                    .zoom(self.zoom)
-                    .bulge(self.bulge)
-                    .thickness(self.thickness),
-            )
-            .decoration(
-                LightEdge::new()
-                    .width(6.0)
-                    .strength(self.rim)
-                    .reflection_strength(self.rim * 0.5),
-            )
+        DecorationBox::new()
+            .decoration(*self)
             .box_child(SizedBox::new().width(size.width).height(size.height))
+    }
+
+    fn optics(&self) -> Magnification {
+        Magnification::new()
+            .style(
+                MagnificationStyle::UNIFORM
+                    | MagnificationStyle::BULGE
+                    | MagnificationStyle::REFRACTION,
+            )
+            .zoom(self.zoom)
+            .bulge(self.bulge)
+            .bulge_radius(self.bulge_radius)
+            .thickness(self.thickness)
+    }
+
+    fn rim_light(&self) -> LightEdge {
+        LightEdge::new()
+            .width(6.0)
+            .strength(self.rim)
+            .reflection_strength(self.rim * 0.5)
+    }
+}
+
+/// Paints the lens: the optics, then the rim of light, both on a capsule.
+///
+/// The capsule is declared here rather than expected from a preceding
+/// [`BorderRadius`], so the style is a complete decoration on its own. Like
+/// `BorderRadius`, it leaves that shape declared for the layers after it.
+///
+/// Do not stack it after a decoration that paints opaquely on the same node:
+/// the optics sample the backdrop of that node.
+impl Decoration for LiquidGlass {
+    fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
+        if !(size.width > 0.0 && size.height > 0.0) {
+            return;
+        }
+        BorderRadius::from(size.height * 0.5).paint(canvas, origin, size, scale);
+        self.optics().paint(canvas, origin, size, scale);
+        self.rim_light().paint(canvas, origin, size, scale);
+    }
+
+    #[inline]
+    fn child_clip_radius(&self, size: ResolvedSize, _scale: f32) -> Option<[f32; 4]> {
+        Some([size.height * 0.5; 4])
     }
 }
 
@@ -205,6 +246,8 @@ impl IndicatorStyle for LiquidGlass {
             && self.thickness.is_finite()
             && self.thickness >= 0.0
             && (0.0..=1.0).contains(&self.bulge)
+            && self.bulge_radius.is_finite()
+            && self.bulge_radius >= 0.0
             && (0.0..=1.0).contains(&self.rim)
     }
 
@@ -248,6 +291,95 @@ impl IndicatorStyle for FlatPill {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aimer_cupid::draw_cmd_v2::DrawCommand;
+    use aimer_cupid::material::MaterialRequest;
+    use aimer_decoration::MultiDecorationBox;
+    use aimer_widget::Widget;
+
+    use crate::test_support::context;
+
+    /// The material requests a widget records, in paint order.
+    fn materials(widget: impl Widget) -> Vec<MaterialRequest> {
+        let ctx = context();
+        let element = widget.to_element(&ctx);
+        aimer_widget::testing::record_retained_paint(element.as_ref(), &ctx)
+            .iter()
+            .flat_map(|paint| paint.commands.iter())
+            .filter_map(|command| match command {
+                DrawCommand::DrawCustom { data, .. } => MaterialRequest::decode(data).ok(),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn sized() -> SizedBox {
+        SizedBox::new().width(SLOT.width).height(SLOT.height)
+    }
+
+    #[test]
+    fn liquid_glass_is_a_decoration_that_paints_the_lens_itself() {
+        let by_decoration = materials(DecorationBox::new().decoration(LIQUID_GLASS).child(sized()));
+        let by_layer = materials(LIQUID_GLASS.lens(SLOT));
+        assert_eq!(by_decoration.len(), 2, "optics and rim");
+        assert_eq!(by_decoration, by_layer);
+        // A capsule: the radius is half the height, with no BorderRadius before it.
+        for request in &by_decoration {
+            assert_eq!(request.corner_radii, [SLOT.height * 0.5; 4]);
+        }
+    }
+
+    #[test]
+    fn liquid_glass_follows_its_settings_as_a_decoration() {
+        let glass = LIQUID_GLASS.zoom(2.0).thickness(4.0).bulge(0.5).rim(0.4);
+        let expected = materials(
+            MultiDecorationBox::new()
+                .decoration(BorderRadius::from(SLOT.height * 0.5))
+                .decoration(
+                    Magnification::new()
+                        .style(
+                            MagnificationStyle::UNIFORM
+                                | MagnificationStyle::BULGE
+                                | MagnificationStyle::REFRACTION,
+                        )
+                        .zoom(2.0)
+                        .bulge(0.5)
+                        .thickness(4.0),
+                )
+                .decoration(LightEdge::new().width(6.0).strength(0.4).reflection_strength(0.2))
+                .child(sized()),
+        );
+        assert_eq!(materials(DecorationBox::new().decoration(glass).child(sized())), expected);
+    }
+
+    #[test]
+    fn liquid_glass_paints_nothing_into_an_empty_box() {
+        for (width, height) in [(0.0, 10.0), (10.0, 0.0), (0.0, 0.0)] {
+            let empty = SizedBox::new().width(width).height(height);
+            assert!(materials(DecorationBox::new().decoration(LIQUID_GLASS).child(empty)).is_empty());
+        }
+    }
+
+    #[test]
+    fn the_bulge_radius_shapes_the_lens_and_is_validated() {
+        // Unset by default: the lens keeps its bell-shaped bulge.
+        assert_eq!(materials(LIQUID_GLASS.lens(SLOT))[0].bulge_radius, 0.0);
+        let shaped = LIQUID_GLASS.bulge_radius(14.0);
+        assert!(shaped.is_valid());
+        assert_eq!(materials(shaped.lens(SLOT))[0].bulge_radius, 14.0);
+        assert_ne!(LIQUID_GLASS.into_any(), shaped.into_any());
+        for broken in [-1.0, f32::NAN, f32::INFINITY] {
+            let style = LIQUID_GLASS.bulge_radius(broken);
+            assert!(!style.is_valid(), "{broken}");
+            assert!(style.into_any().layer(IndicatorLayer::Lift, SLOT).is_none());
+        }
+    }
+
+    #[test]
+    fn liquid_glass_reports_the_capsule_as_its_clip() {
+        assert_eq!(LIQUID_GLASS.child_clip_radius(SLOT, 1.0), Some([SLOT.height * 0.5; 4]));
+        assert_eq!(LIQUID_GLASS.paint_outsets(SLOT, 1.0), [0.0; 4]);
+        assert_eq!(LIQUID_GLASS.content_insets(SLOT, 1.0), [0.0; 4]);
+    }
 
     const SLOT: ResolvedSize = ResolvedSize { width: 100.0, height: 56.0 };
 

@@ -501,3 +501,66 @@ fn default_capabilities_follow_the_platform_budget() {
         intermediate_pixel_budget(cfg!(target_os = "ios"))
     );
 }
+
+#[test]
+fn magnification_packets_carry_the_bulge_radius_in_their_own_versioned_length() {
+    let mut request = MaterialRequest::new(MaterialKind::Magnification, [1.0, 2.0, 80.0, 40.0]);
+    request.bulge_radius = 12.0;
+    let bytes = request.encode_for_test();
+    assert_eq!(bytes.len(), MATERIAL_MAGNIFICATION_PACKET_LEN);
+    assert_eq!(bytes.len(), MATERIAL_PACKET_LEN + 4);
+    assert_eq!(bytes[4], MATERIAL_MAGNIFICATION_PACKET_VERSION);
+    assert_eq!(MaterialRequest::decode(&bytes), Ok(request.normalized()));
+    assert_eq!(MaterialRequest::decode(&bytes).unwrap().bulge_radius, 12.0);
+}
+
+#[test]
+fn a_version_three_lens_packet_keeps_the_bell_shaped_bulge() {
+    let mut request = MaterialRequest::new(MaterialKind::Magnification, [1.0, 2.0, 80.0, 40.0]);
+    request.bulge_radius = 12.0;
+    // The shared version-3 body has no room for the radius.
+    let legacy = packet(request);
+    assert_eq!(legacy[4], MATERIAL_PACKET_VERSION);
+    assert_eq!(MaterialRequest::decode(&legacy).unwrap().bulge_radius, 0.0);
+}
+
+#[test]
+fn only_a_lens_may_use_the_lens_packet_version() {
+    let mut request = MaterialRequest::new(MaterialKind::Magnification, [0.0, 0.0, 80.0, 40.0]);
+    request.bulge_radius = 8.0;
+    let bytes = request.encode_for_test();
+    for kind in [MaterialKind::Glass, MaterialKind::Liquid, MaterialKind::LightEdge] {
+        let mut other = bytes.clone();
+        other[5] = kind as u8;
+        assert_eq!(
+            MaterialRequest::decode(&other),
+            Err(MaterialDecodeError::UnsupportedKind),
+            "{kind:?}"
+        );
+    }
+    let mut short = bytes.clone();
+    short.truncate(MATERIAL_PACKET_LEN);
+    assert!(matches!(
+        MaterialRequest::decode(&short),
+        Err(MaterialDecodeError::InvalidLength { expected: MATERIAL_MAGNIFICATION_PACKET_LEN, .. })
+    ));
+}
+
+#[test]
+fn the_bulge_radius_is_bounded_and_ignored_by_other_kinds() {
+    for (value, expected) in [
+        (-4.0, 0.0),
+        (f32::NAN, 0.0),
+        (f32::INFINITY, 0.0),
+        (9_999.0, 512.0),
+        (24.0, 24.0),
+    ] {
+        let mut lens = MaterialRequest::new(MaterialKind::Magnification, [0.0, 0.0, 80.0, 40.0]);
+        lens.bulge_radius = value;
+        assert_eq!(lens.normalized().bulge_radius, expected, "{value}");
+    }
+    let mut glass = MaterialRequest::new(MaterialKind::Glass, [0.0, 0.0, 80.0, 40.0]);
+    glass.bulge_radius = 24.0;
+    assert_eq!(glass.normalized().bulge_radius, 0.0);
+    assert_eq!(glass.encode_for_test().len(), MATERIAL_PACKET_LEN);
+}

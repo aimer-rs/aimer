@@ -41,7 +41,8 @@ struct MaterialUniform {
     // Magnification: x/y physical anchor, z uniform zoom, w bulge strength.
     liquid: [f32; 4],
     // x: chromatic aberration, y: bevel radius/depth, z/w: Gaussian recurrence
-    // Magnification reuses z for its corner-bounded bevel width.
+    // Magnification reuses z for its corner-bounded bevel width and w for the
+    // bulge shoulder radius, which no lens pass uses for blur.
     liquid2: [f32; 4],
 }
 
@@ -162,7 +163,7 @@ impl MaterialUniform {
                         request.chromatic_aberration,
                         depth,
                         lens_bevel_width_pixels(&request, depth),
-                        0.0,
+                        lens_bulge_radius_pixels(&request),
                     ]
                 } else {
                     let sigma = (blur_radius_pixels(&request) / 3.0).max(0.001);
@@ -853,6 +854,24 @@ fn lens_thickness_pixels(request: &MaterialRequest) -> f32 {
     let scale_x = (m[0] * m[0] + m[1] * m[1]).sqrt();
     let scale_y = (m[3] * m[3] + m[4] * m[4]).sqrt();
     (request.bevel_radius * (scale_x + scale_y) * 0.5)
+        .min(request.bounds[2].min(request.bounds[3]) * 0.5)
+}
+
+/// The radius of the bulge's rounded shoulders in device pixels, or zero for
+/// the bell-shaped bulge.
+///
+/// Like the thickness it is logical until here, so display scaling cannot clamp
+/// it, and it is bounded by half the shorter side: past that the two shoulders
+/// would cross and the flat top would vanish.
+#[inline]
+fn lens_bulge_radius_pixels(request: &MaterialRequest) -> f32 {
+    if !request.magnification_style.contains(MagnificationStyle::BULGE) {
+        return 0.0;
+    }
+    let m = &request.transform;
+    let scale_x = (m[0] * m[0] + m[1] * m[1]).sqrt();
+    let scale_y = (m[3] * m[3] + m[4] * m[4]).sqrt();
+    (request.bulge_radius * (scale_x + scale_y) * 0.5)
         .min(request.bounds[2].min(request.bounds[3]) * 0.5)
 }
 

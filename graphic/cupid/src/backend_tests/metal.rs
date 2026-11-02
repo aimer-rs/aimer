@@ -1129,6 +1129,156 @@ fn cropped_opacity_groups_render_with_msaa_through_native_metal() {
     );
 }
 
+/// Renders a capsule lens over a backdrop whose red channel is twice the column
+/// (0..=254 across the 128-pixel frame), with the bulge at full strength and no
+/// zoom or refraction, so a lens pixel's red reads back as twice the column it
+/// sampled. Returns the frame, or `None` without a Metal device.
+fn render_bulge_lens(bulge_radius: f32) -> Option<Vec<u8>> {
+    use std::sync::Arc;
+
+    use crate::pipeline::material::{
+        MATERIAL_PIPELINE_NAME, MagnificationStyle, MaterialKind, MaterialRequest,
+    };
+
+    const FRAME: u32 = 128;
+    const FRAME_ROW_BYTES: u32 = FRAME * 4;
+    let Some(backend) = MetalBackend::new() else {
+        eprintln!("skipping: this host exposes no Metal device");
+        return None;
+    };
+    let mut renderer = RendererImpl::<MetalBackend>::new(&backend, FORMAT);
+    let tree = RenderTree::new();
+    let root = tree
+        .add_root(Rect::new(0.0, 0.0, FRAME as f32, FRAME as f32))
+        .unwrap();
+    let lens = tree.add_child(root, Rect::new(8.0, 24.0, 112.0, 48.0)).unwrap();
+    let columns = (0..FRAME)
+        .map(|x| V2DrawCommand::FillRect {
+            rect: Rect::new(x as f32, 0.0, 1.0, FRAME as f32),
+            color: Color::rgba8((x * 2) as u8, 0, 0, 255),
+            border_radius: [0.0; 4],
+            border_width: [0.0; 4],
+            border_color: Color::transparent(),
+            outline_width: [0.0; 4],
+            outline_color: Color::transparent(),
+        })
+        .collect();
+    tree.context(root).unwrap().begin_recording().unwrap().commit(columns).unwrap();
+    let mut request = MaterialRequest::new(MaterialKind::Magnification, [0.0, 0.0, 112.0, 48.0]);
+    request.magnification_style = MagnificationStyle::UNIFORM | MagnificationStyle::BULGE;
+    request.magnification = 1.0;
+    request.bulge_strength = 1.0;
+    request.bulge_radius = bulge_radius;
+    request.bevel_radius = 0.0;
+    request.corner_radii = [24.0; 4];
+    request.opacity = 1.0;
+    request.tint = [0.0; 4];
+    request.border_width = 0.0;
+    request.shadow_color = [0.0; 4];
+    request.shadow_blur = 0.0;
+    request.elevation = 0.0;
+    request.edge_lighting = 0.0;
+    request.specular_highlight = 0.0;
+    request.distortion_strength = 0.0;
+    request.chromatic_aberration = 0.0;
+    tree.context(lens)
+        .unwrap()
+        .begin_recording()
+        .unwrap()
+        .commit(vec![V2DrawCommand::DrawCustom {
+            pipeline_name: Arc::from(MATERIAL_PIPELINE_NAME),
+            data: Arc::from(request.encode_for_test()),
+        }])
+        .unwrap();
+
+    let target = backend.create_texture(&TextureDescriptor {
+        label: Some("Metal bulge lens target".to_string()),
+        size: (FRAME, FRAME, 1),
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: FORMAT,
+        usage: vec![TextureUsage::RenderAttachment, TextureUsage::CopySrc],
+    });
+    let view = backend.create_texture_view(&target, "Metal bulge lens view");
+    let packet = FramePacket::from_v2_direct(
+        RenderFrame {
+            damage: vec![Rect::new(0.0, 0.0, FRAME as f32, FRAME as f32)],
+            operations: tree.render_all(),
+        },
+        FrameRenderMetadata::new(1.0, 601, 1, 1, 1, DamageSet::new(FRAME, FRAME)),
+    )
+    .expect("lower the bulge lens scene");
+    renderer.render_packet(&backend, &view, &packet, false);
+    let size = u64::from(FRAME_ROW_BYTES) * u64::from(FRAME);
+    let readback = backend.create_buffer(&BufferDescriptor {
+        label: Some("Metal bulge lens readback".to_string()),
+        size,
+        usage: vec![BufferUsage::CopyDst, BufferUsage::MapRead],
+    });
+    let mut encoder = backend.create_command_encoder("Metal bulge lens readback");
+    backend.copy_texture_to_buffer(
+        &mut encoder,
+        &TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(FRAME_ROW_BYTES),
+                rows_per_image: Some(FRAME),
+            },
+        },
+        Extent3d { width: FRAME, height: FRAME, depth_or_array_layers: 1 },
+    );
+    backend.submit(encoder);
+    Some(backend.read_buffer(&readback, size))
+}
+
+/// The bulge's shoulder radius reshapes the swell the lens draws. On the lens's
+/// center row, 40 pixels right of the middle (inside the capsule's end cap), the
+/// bell has swelled only a little, so the lens shows content further out; the
+/// slab, still on its shoulder, has swelled more and shows content nearer the
+/// middle. The middle itself, where nothing is displaced, is the same either way.
+#[test]
+fn bulge_shoulder_radius_reshapes_the_swell_on_metal() {
+    let (Some(bell), Some(slab)) = (render_bulge_lens(0.0), render_bulge_lens(24.0)) else {
+        return;
+    };
+    let red = |frame: &[u8], x: u32| pixel_with_stride(frame, 128 * 4, x, 48)[0];
+    // Bell: 64 + 40.5 / 1.2275 = column 97; slab: 64 + 40.5 / 1.935 = column 85.
+    for (frame, label, expected) in [(&bell, "bell", 194.0), (&slab, "slab", 170.0)] {
+        let actual = f32::from(red(frame, 104));
+        assert!((actual - expected).abs() <= 8.0, "{label}: red {actual}, expected {expected}");
+    }
+    assert!(red(&bell, 104) > red(&slab, 104) + 12, "the slab swells more there");
+    assert!(red(&bell, 64).abs_diff(red(&slab, 64)) <= 3, "the middle is not displaced");
+}
+
+/// With a radius narrower than half the height the lens has a plateau: an
+/// inset copy of the capsule where the swell is flat, inside a ring, as wide as
+/// the radius, where it rolls off. On the center row the plateau spans columns
+/// 8+8 to 120-8 and the swell there is a constant 2x, so the lens shows the
+/// column halfway between the middle and the pixel; in the ring it is less.
+#[test]
+fn bulge_plateau_is_flat_inside_a_ring_of_the_radius_on_metal() {
+    let Some(frame) = render_bulge_lens(8.0) else { return };
+    let red = |x: u32| f32::from(pixel_with_stride(&frame, 128 * 4, x, 48)[0]);
+    // On the plateau a pixel dx right of the middle (64) samples 64 + dx / 2.
+    for (x, expected) in [(80u32, 144.5), (88, 152.5), (104, 168.5), (110, 174.5)] {
+        assert!((red(x) - expected).abs() <= 6.0, "plateau x {x}: red {}, expected {expected}", red(x));
+    }
+    // 1.5 px inside the right edge: rise 0.81, swell 1.58x, column 98.
+    assert!((red(118) - 197.0).abs() <= 8.0, "ring: red {}", red(118));
+    // The plateau is linear, so equal steps give equal red steps.
+    let (a, b) = (red(88) - red(80), red(104) - red(96));
+    assert!((a - b).abs() <= 3.0, "plateau steps {a} and {b}");
+}
+
 /// Timing probe: `cargo nextest run -p aimer_cupid --run-ignored only --no-capture`.
 ///
 /// What the raster thread pays, in the frame a decoded image is first drawn, to
