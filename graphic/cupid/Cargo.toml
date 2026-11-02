@@ -15,18 +15,18 @@ native = [
     "dep:objc2-foundation",
     "dep:objc2-quartz-core",
     "dep:objc2-metal",
-    "dep:aimer_cupid_metal",
-    "dep:aimer_cupid_vulkan",
-    "dep:aimer_cupid_opengl",
-    "dep:aimer_cupid_dx12",
+    "dep:aimer_metal",
+    "dep:aimer_vulkan",
+    "dep:aimer_opengl",
+    "dep:aimer_directx",
     "dep:objc2-app-kit",
     "dep:windows",
     "dep:ash",
 ]
 # Keep the WGPU adapter optional so a WGPU-only build can disable default
 # features and omit the native API dependency set.
-wgpu = ["dep:wgpu", "dep:winit", "dep:aimer_cupid_wgpu"]
-frame-stats = ["aimer_cupid_metal?/frame-stats"]
+wgpu = ["dep:wgpu", "dep:winit", "dep:aimer_wgpu"]
+frame-stats = ["aimer_metal?/frame-stats"]
 # Keep optional checked-in fallback faces out of native downstream binaries
 # unless an application explicitly opts into deterministic bundled rendering.
 # wasm always carries the generic Latin/monospace faces because browsers do not
@@ -45,7 +45,7 @@ dx12-demo = ["native", "dep:winit"]
 vulkan-demo = ["native", "dep:winit"]
 opengl-demo = ["native", "dep:winit"]
 # Browser GPU APIs used by the target-selected WebGPU/WebGL2 backends.
-web = ["dep:aimer_cupid_webgl", "dep:aimer_cupid_webgpu"]
+web = ["dep:aimer_webgl", "dep:aimer_webgpu"]
 # Optional windowed demo for the direct OpenGL backend.
 metal-demo = [
     "native",
@@ -108,17 +108,17 @@ aimer_shape.workspace = true
 aimer_cupid_svg.workspace = true
 aimer_cupid_font.workspace = true
 aimer_cupid_gpu.workspace = true
-aimer_cupid_vulkan = { workspace = true, optional = true }
-aimer_cupid_opengl = { workspace = true, optional = true }
-aimer_cupid_dx12 = { workspace = true, optional = true }
-aimer_cupid_webgl = { workspace = true, optional = true }
-aimer_cupid_webgpu = { workspace = true, optional = true }
+aimer_vulkan = { workspace = true, optional = true }
+aimer_opengl = { workspace = true, optional = true }
+aimer_directx = { workspace = true, optional = true }
+aimer_webgl = { workspace = true, optional = true }
+aimer_webgpu = { workspace = true, optional = true }
 
 
 
 #############
 wgpu = { workspace = true, optional = true }
-aimer_cupid_wgpu = { workspace = true, optional = true }
+aimer_wgpu = { workspace = true, optional = true }
 winit = { version = "0.30.12", default-features = false, optional = true, features = [
     "android-native-activity",
     "rwh_06",
@@ -144,7 +144,7 @@ smallvec.workspace = true
 aimer_cupid_font = { workspace = true, features = ["test-counters"] }
 
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
-aimer_cupid_metal = { workspace = true, optional = true }
+aimer_metal = { workspace = true, optional = true }
 objc2-core-foundation = { workspace = true, optional = true, features = [
     "std",
     "CFArray",

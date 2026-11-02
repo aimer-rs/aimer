@@ -1,12 +1,12 @@
 //! Metal backend tests that drive the real renderer.
 //!
-//! They live beside the renderer rather than in `aimer_cupid_metal` because
+//! They live beside the renderer rather than in `aimer_metal` because
 //! they need draw lists, frames and the rect pipeline's instance layout, and the
 //! backend crate must not depend on any of that.
 
 use std::mem::{offset_of, size_of};
 
-use aimer_cupid_metal::*;
+use aimer_metal::*;
 use crate::backend::*;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -552,7 +552,7 @@ fn two_bands_render_and_read_back_through_metal() {
 
     // A shader that fails to compile here is the most likely first failure
     // of a hand-written MSL port, so carry the compiler's own words.
-    let msl = include_str!("../../../cupid_metal/shaders/metal/rect.metal");
+    let msl = include_str!("../../../backends/metal/shaders/metal/rect.metal");
     let module = backend
         .try_create_shader_module(msl.as_bytes(), "rect shader")
         .expect("rect.metal must compile as MSL");
@@ -820,7 +820,7 @@ fn unorm_vertex_attributes_reach_the_shader_normalized() {
         eprintln!("skipping: this host exposes no Metal device");
         return;
     };
-    let msl = include_str!("../../../cupid_metal/shaders/metal/rect.metal");
+    let msl = include_str!("../../../backends/metal/shaders/metal/rect.metal");
     let module = backend
         .try_create_shader_module(msl.as_bytes(), "rect shader")
         .expect("rect.metal must compile as MSL");

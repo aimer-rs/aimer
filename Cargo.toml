@@ -231,16 +231,16 @@ members = [
     "services/passkey",
     # graphic
     "graphic/cupid",
-    "graphic/cupid_svg",
-    "graphic/cupid_font",
+    "graphic/vectors/svg",
+    "graphic/vectors/font",
     "graphic/cupid_gpu",
-    "graphic/cupid_wgpu",
-    "graphic/cupid_metal",
-    "graphic/cupid_vulkan",
-    "graphic/cupid_opengl",
-    "graphic/cupid_dx12",
-    "graphic/cupid_webgl",
-    "graphic/cupid_webgpu",
+    "graphic/backends/wgpu",
+    "graphic/backends/metal",
+    "graphic/backends/vulkan",
+    "graphic/backends/opengl",
+    "graphic/backends/directx",
+    "graphic/backends/webgl",
+    "graphic/backends/webgpu",
     "graphic/canvas",
     "graphic/render",
     # framework
@@ -308,16 +308,16 @@ aimer_cupid = { path = "graphic/cupid", default-features = false, features = [
     "native",
 ] }
 aimer_simd = { path = "cores/simd" }
-aimer_cupid_svg = { path = "graphic/cupid_svg" }
-aimer_cupid_font = { path = "graphic/cupid_font" }
+aimer_cupid_svg = { path = "graphic/vectors/svg" }
+aimer_cupid_font = { path = "graphic/vectors/font" }
 aimer_cupid_gpu = { path = "graphic/cupid_gpu" }
-aimer_cupid_wgpu = { path = "graphic/cupid_wgpu" }
-aimer_cupid_metal = { path = "graphic/cupid_metal" }
-aimer_cupid_vulkan = { path = "graphic/cupid_vulkan" }
-aimer_cupid_opengl = { path = "graphic/cupid_opengl" }
-aimer_cupid_dx12 = { path = "graphic/cupid_dx12" }
-aimer_cupid_webgl = { path = "graphic/cupid_webgl" }
-aimer_cupid_webgpu = { path = "graphic/cupid_webgpu" }
+aimer_wgpu = { path = "graphic/backends/wgpu" }
+aimer_metal = { path = "graphic/backends/metal" }
+aimer_vulkan = { path = "graphic/backends/vulkan" }
+aimer_opengl = { path = "graphic/backends/opengl" }
+aimer_directx = { path = "graphic/backends/directx" }
+aimer_webgl = { path = "graphic/backends/webgl" }
+aimer_webgpu = { path = "graphic/backends/webgpu" }
 aimer_rubick = { path = "cores/rubick" }
 aimer_venus = { path = "cores/venus" }
 aimer_quiver = { path = "framework/quiver", default-features = false }

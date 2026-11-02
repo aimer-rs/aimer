@@ -28,7 +28,7 @@ pub mod canvas;
 mod lru_map;
 mod pipeline;
 #[cfg(feature = "wgpu")]
-pub use aimer_cupid_wgpu::pipeline_cache;
+pub use aimer_wgpu::pipeline_cache;
 pub mod renderer;
 pub mod shape;
 // SVG parsing and tessellation live in `aimer_cupid_svg`; the path stays so

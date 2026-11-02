@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 // Regenerate checked-in Vulkan shader modules with:
-// `cargo run -p aimer_cupid_vulkan --example vulkan_shadergen`
+// `cargo run -p aimer_vulkan --example vulkan_shadergen`
 // Pass a shader name (for example `-- material`) to regenerate only that module.
 
 const SHADERS: &[(&str, &str)] = &[

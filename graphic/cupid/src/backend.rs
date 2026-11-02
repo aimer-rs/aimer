@@ -17,7 +17,7 @@ pub use aimer_cupid_gpu::*;
 
 // WGPU is an opt-in compatibility backend.
 #[cfg(feature = "wgpu")]
-pub use aimer_cupid_wgpu as wgpu;
+pub use aimer_wgpu as wgpu;
 
 // Native backend modules are selected from the target, not individual Cargo
 // backend features. Linux and Android compile both APIs for init-time fallback.
@@ -26,28 +26,28 @@ pub use aimer_cupid_wgpu as wgpu;
     not(feature = "wgpu"),
     any(target_os = "macos", target_os = "ios")
 ))]
-pub use aimer_cupid_metal as metal;
+pub use aimer_metal as metal;
 
 #[cfg(all(feature = "native", not(feature = "wgpu"), target_os = "windows"))]
-pub use aimer_cupid_dx12 as dx12;
+pub use aimer_directx as dx12;
 
 #[cfg(all(
     feature = "native",
     not(feature = "wgpu"),
     any(target_os = "linux", target_os = "android")
 ))]
-pub use aimer_cupid_vulkan as vulkan;
+pub use aimer_vulkan as vulkan;
 
 #[cfg(all(
     feature = "native",
     not(feature = "wgpu"),
     any(target_os = "linux", target_os = "android")
 ))]
-pub use aimer_cupid_opengl as opengl;
+pub use aimer_opengl as opengl;
 #[cfg(all(feature = "web", target_arch = "wasm32", not(feature = "wgpu")))]
-pub use aimer_cupid_webgl as webgl;
+pub use aimer_webgl as webgl;
 #[cfg(all(feature = "web", target_arch = "wasm32", not(feature = "wgpu")))]
-pub use aimer_cupid_webgpu as webgpu;
+pub use aimer_webgpu as webgpu;
 
 /// Backend selected for generic type defaults on this target.
 #[cfg(feature = "wgpu")]

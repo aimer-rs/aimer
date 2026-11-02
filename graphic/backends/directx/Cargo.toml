@@ -1,5 +1,5 @@
 [package]
-name = "aimer_cupid_dx12"
+name = "aimer_directx"
 version = "0.1.0"
 edition = "2024"
 description = "The native Direct3D 12 backend for the Cupid rendering engine"

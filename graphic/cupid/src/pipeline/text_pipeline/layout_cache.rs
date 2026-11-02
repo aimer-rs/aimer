@@ -307,7 +307,7 @@ mod tests {
         // checked-in face instead of relying on the host's default font.
         let family = FontRegistry::register(FontRegistration {
             family: "aimer-layout-cache-test",
-            bytes: include_bytes!("../../../../cupid_font/fonts/GoogleSans-Regular.ttf"),
+            bytes: include_bytes!("../../../../vectors/font/fonts/GoogleSans-Regular.ttf"),
             weight: FontWeight::Normal,
             style: FontStyle::Normal,
         })

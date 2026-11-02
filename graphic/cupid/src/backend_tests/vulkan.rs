@@ -1,10 +1,10 @@
 //! Vulkan backend tests that drive the real renderer.
 //!
-//! They live beside the renderer rather than in `aimer_cupid_vulkan` because
+//! They live beside the renderer rather than in `aimer_vulkan` because
 //! they need draw lists and frames, and the backend crate must not depend on
 //! either.
 
-use aimer_cupid_vulkan::*;
+use aimer_vulkan::*;
 use crate::backend::*;
 use ash::vk;
 use crate::damage_region::DamageSet;

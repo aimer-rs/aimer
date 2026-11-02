@@ -1,5 +1,5 @@
 [package]
-name = "aimer_cupid_vulkan"
+name = "aimer_vulkan"
 version = "0.1.0"
 edition = "2024"
 description = "The native Vulkan backend for the Cupid rendering engine"

@@ -7,8 +7,8 @@
 //! shader sources more than one backend shares: [`BuiltinShader::wgsl_source`]
 //! for the WGSL path and [`glslpack`] for the OpenGL and WebGL2 backends.
 //!
-//! The concrete backends live in sibling crates (`aimer_cupid_wgpu`,
-//! `aimer_cupid_metal`, ...) and `aimer_cupid::backend` re-exports them.
+//! The concrete backends live in sibling crates (`aimer_wgpu`,
+//! `aimer_metal`, ...) and `aimer_cupid::backend` re-exports them.
 
 use std::num::NonZeroU32;
 use std::ops::Range;

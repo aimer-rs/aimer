@@ -1,9 +1,9 @@
 //! OpenGL backend tests that drive the real renderer.
 //!
-//! They live beside the renderer rather than in `aimer_cupid_opengl` because
+//! They live beside the renderer rather than in `aimer_opengl` because
 //! they need draw lists, and the backend crate must not depend on them.
 
-use aimer_cupid_opengl::*;
+use aimer_opengl::*;
 use crate::backend::*;
 use crate::draw_cmd::DrawList;
 use crate::renderer::RendererImpl;

@@ -1,5 +1,5 @@
 [package]
-name = "aimer_cupid_metal"
+name = "aimer_metal"
 version = "0.1.0"
 edition = "2024"
 description = "The native Metal backend for the Cupid rendering engine"

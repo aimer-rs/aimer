@@ -357,7 +357,7 @@ mod tests {
     use super::*;
     use crate::AssetImage;
 
-    const FONT_BYTES: &[u8] = include_bytes!("../../../graphic/cupid_font/fonts/JetBrainsMono-Regular.ttf");
+    const FONT_BYTES: &[u8] = include_bytes!("../../../graphic/vectors/font/fonts/JetBrainsMono-Regular.ttf");
 
     /// Writes `bytes` to a per-process temp file and returns its absolute path
     /// as the `'static` string the const-friendly handles require.

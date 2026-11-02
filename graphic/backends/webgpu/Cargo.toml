@@ -1,5 +1,5 @@
 [package]
-name = "aimer_cupid_webgpu"
+name = "aimer_webgpu"
 version = "0.1.0"
 edition = "2024"
 description = "The browser WebGPU backend for the Cupid rendering engine"
