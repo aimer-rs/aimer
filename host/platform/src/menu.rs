@@ -33,6 +33,7 @@ pub struct MenuShortcut {
     pub shift: bool,
 }
 
+
 impl MenuShortcut {
     /// The event this shortcut delivers to the widget tree.
     ///
@@ -59,6 +60,7 @@ impl MenuShortcut {
         }
     }
 }
+
 
 /// The shortcut an activated menu item stands for, or `None` for an item this
 /// module does not own.

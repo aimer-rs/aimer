@@ -8,7 +8,6 @@ use aimer_widget::{Element, EventResult, PointerKey};
 use super::handle_scroll::{axis_velocity, dispatch_child_event, owns_pointer};
 use crate::raw_scroll::{DragMode, RawScrollableContainer};
 use crate::scrollable::constants::*;
-use crate::scrollable::state::thumb_grab::ThumbGrab;
 
 impl<E: Element> RawScrollableContainer<E> {
     /// Ends the interaction a `PointerUp` or `Cancel` closes: lets the child
@@ -107,17 +106,11 @@ impl<E: Element> RawScrollableContainer<E> {
         }
 
         self.ctrl.last_frame_time.set(Some(now));
-        // match self.ctrl.end_thumb_grab() {
-        //     ThumbGrab::Holding { since, .. } => thumb_log!(
-        //         "finger lifted before the hold completed: down {} ms, needs {SCROLLBAR_THUMB_HOLD_MS} ms",
-        //         now.duration_since(since).as_millis()
-        //     ),
-        //     ThumbGrab::Armed { since } => thumb_log!(
-        //         "thumb let go after being held {} ms",
-        //         now.duration_since(since).as_millis()
-        //     ),
-        //     ThumbGrab::Idle => {}
-        // }
+        // The finger is up, so whatever it had of the scroll bar thumb — an
+        // unfinished hold or a taken thumb — ends here. This must run: nothing
+        // else lets go of the grab, and a grab left behind makes the next touch
+        // on the thumb start already armed.
+        self.ctrl.end_thumb_grab();
         self.ctrl.drag_mode.set(DragMode::None);
         self.ctrl.last_pointer_pos.set(None);
         // A pointer interaction owns the edge from here on, so a wheel or
