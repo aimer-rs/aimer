@@ -2076,8 +2076,8 @@ impl<B: GpuBackend> Renderer<B> {
                 (group.bounds.y - parent_origin.1) as f32,
             ],
             size: [group.bounds.width as f32, group.bounds.height as f32],
-            uv_offset: [0.0, 0.0],
-            uv_scale: [1.0, 1.0],
+            uv_offset: rendered_target_uv::<B>().0,
+            uv_scale: rendered_target_uv::<B>().1,
             // Descendant clips were applied while building the isolated
             // surface. The group bounds only limit its damage scissor; treating
             // that union as another clip would add an unwanted antialiased edge.
@@ -3000,8 +3000,8 @@ impl<B: GpuBackend> Renderer<B> {
                                 instance: ImageInstance {
                                     position: [x1.min(x2), y1.min(y2)],
                                     size: [(x2 - x1).abs(), (y2 - y1).abs()],
-                                    uv_offset: [0.0, 0.0],
-                                    uv_scale: [1.0, 1.0],
+                                    uv_offset: rendered_target_uv::<B>().0,
+                                    uv_scale: rendered_target_uv::<B>().1,
                                     clip_rect: clip_to_array(self.clip_stack.last()),
                                     clip_border_radius: clip_border_radius(self.clip_stack.last()),
                                     alpha: alpha_state.current(),
@@ -3324,6 +3324,19 @@ impl<B: GpuBackend> Renderer<B> {
                 total_bytes = total_bytes.saturating_sub(bytes);
             }
         }
+    }
+}
+
+/// `(uv_offset, uv_scale)` for sampling a texture the renderer drew into.
+///
+/// See [`GpuBackend::RENDER_TARGET_ROWS_BOTTOM_UP`]: such targets need V
+/// flipped so they read top-down like an uploaded image.
+#[inline]
+fn rendered_target_uv<B: GpuBackend>() -> ([f32; 2], [f32; 2]) {
+    if B::RENDER_TARGET_ROWS_BOTTOM_UP {
+        ([0.0, 1.0], [1.0, -1.0])
+    } else {
+        ([0.0, 0.0], [1.0, 1.0])
     }
 }
 

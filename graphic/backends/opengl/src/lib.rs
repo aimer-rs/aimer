@@ -135,6 +135,11 @@ pub(crate) struct OpenGlTextureInner {
     pub(crate) target: u32,
     pub(crate) size: (u32, u32, u32),
     pub(crate) format: OpenGlTextureFormat,
+    /// Whether row 0 is the visual bottom. Render attachments are drawn in
+    /// NDC with y up and no adjustment, so OpenGL stores them bottom-up;
+    /// uploaded textures stay top-down. Texture-to-texture copies address
+    /// both kinds by top-left coordinates and reconcile this difference.
+    pub(crate) bottom_up: bool,
 }
 
 impl Drop for OpenGlTextureInner {

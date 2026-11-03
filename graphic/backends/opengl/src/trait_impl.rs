@@ -18,6 +18,8 @@ use super::{
 };
 
 impl GpuBackend for OpenGlBackend {
+    const RENDER_TARGET_ROWS_BOTTOM_UP: bool = true;
+
     type Buffer = OpenGlBuffer;
     type Texture = OpenGlTexture;
     type TextureView = OpenGlTextureView;
@@ -170,6 +172,7 @@ impl GpuBackend for OpenGlBackend {
             target,
             size: desc.size,
             format: desc.format,
+            bottom_up: desc.usage.contains(&TextureUsage::RenderAttachment),
         }))
     }
 
@@ -914,6 +917,19 @@ fn copy_texture_to_texture(
 ) {
     let mask = copy_aspect_mask(src.texture.0.format, src.aspect);
     let attachment = copy_attachment(src.texture.0.format, src.aspect);
+    // Regions are given from the top-left; bottom-up storage counts rows from
+    // the other end.
+    let storage_row = |info: &TexelCopyTextureInfo<'_, OpenGlBackend>| {
+        let texture = &info.texture.0;
+        if texture.bottom_up {
+            let rows = (texture.size.1 >> info.mip_level).max(1);
+            rows.saturating_sub(info.origin.y.saturating_add(extent.height))
+        } else {
+            info.origin.y
+        }
+    };
+    let (src_row, dst_row) = (storage_row(src), storage_row(dst));
+    let mirror = src.texture.0.bottom_up != dst.texture.0.bottom_up;
     for layer in 0..extent.depth_or_array_layers {
         let src_view = pipeline::subresource_view(
             &backend.shared,
@@ -943,13 +959,16 @@ fn copy_texture_to_texture(
             }
             (backend.shared.gl.blit_framebuffer)(
                 src.origin.x as i32,
-                src.origin.y as i32,
+                src_row as i32,
                 (src.origin.x + extent.width) as i32,
-                (src.origin.y + extent.height) as i32,
+                (src_row + extent.height) as i32,
                 dst.origin.x as i32,
-                dst.origin.y as i32,
+                // Swapping the destination rows makes the blit mirror the
+                // content, which is how a top-down and a bottom-up texture
+                // exchange pixels without turning the picture over.
+                if mirror { dst_row + extent.height } else { dst_row } as i32,
                 (dst.origin.x + extent.width) as i32,
-                (dst.origin.y + extent.height) as i32,
+                if mirror { dst_row } else { dst_row + extent.height } as i32,
                 mask,
                 gl::NEAREST,
             );

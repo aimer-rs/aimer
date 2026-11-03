@@ -4,16 +4,36 @@ enum NativeBackendChoice {
     OpenGl,
 }
 
+/// Environment variable that forces the Linux/Android render backend.
+///
+/// `0` selects Vulkan and `1` selects OpenGL. Any other value, or an unset
+/// variable, keeps the automatic Vulkan-then-OpenGL selection.
+#[allow(dead_code)]
+const RENDER_BACKEND_ENV: &str = "CUPID_RENDER_BACKEND";
+
+/// Parses the value of [`RENDER_BACKEND_ENV`]; surrounding whitespace is ignored.
+#[allow(dead_code)]
+fn parse_backend_override(value: Option<&str>) -> Option<NativeBackendChoice> {
+    match value?.trim() {
+        "0" => Some(NativeBackendChoice::Vulkan),
+        "1" => Some(NativeBackendChoice::OpenGl),
+        _ => None,
+    }
+}
+
+/// Picks a backend. A `forced` choice initializes only that backend, with no
+/// fallback, so a broken forced backend fails loudly instead of being masked.
 fn choose_native_backend(
+    forced: Option<NativeBackendChoice>,
     initialize_vulkan: impl FnOnce() -> bool,
     initialize_opengl: impl FnOnce() -> bool,
 ) -> Option<NativeBackendChoice> {
-    if initialize_vulkan() {
-        Some(NativeBackendChoice::Vulkan)
-    } else if initialize_opengl() {
-        Some(NativeBackendChoice::OpenGl)
-    } else {
-        None
+    match forced {
+        Some(NativeBackendChoice::Vulkan) => initialize_vulkan().then_some(NativeBackendChoice::Vulkan),
+        Some(NativeBackendChoice::OpenGl) => initialize_opengl().then_some(NativeBackendChoice::OpenGl),
+        None if initialize_vulkan() => Some(NativeBackendChoice::Vulkan),
+        None if initialize_opengl() => Some(NativeBackendChoice::OpenGl),
+        None => None,
     }
 }
 
@@ -192,12 +212,13 @@ pub enum PresentOutcome {
 mod backend_selection_tests {
     use std::cell::RefCell;
 
-    use super::{NativeBackendChoice, choose_native_backend};
+    use super::{NativeBackendChoice, choose_native_backend, parse_backend_override};
 
     #[test]
     fn native_selection_uses_vulkan_when_it_initializes() {
         let calls = RefCell::new(Vec::new());
         let selected = choose_native_backend(
+            None,
             || {
                 calls.borrow_mut().push("vulkan");
                 true
@@ -216,6 +237,7 @@ mod backend_selection_tests {
     fn native_selection_tries_opengl_after_vulkan_failure() {
         let calls = RefCell::new(Vec::new());
         let selected = choose_native_backend(
+            None,
             || {
                 calls.borrow_mut().push("vulkan");
                 false
@@ -232,7 +254,58 @@ mod backend_selection_tests {
 
     #[test]
     fn native_selection_reports_failure_when_both_backends_fail() {
-        assert_eq!(choose_native_backend(|| false, || false), None,);
+        assert_eq!(choose_native_backend(None, || false, || false), None);
+    }
+
+    #[test]
+    fn override_parses_zero_as_vulkan_and_one_as_opengl() {
+        assert_eq!(parse_backend_override(Some("0")), Some(NativeBackendChoice::Vulkan));
+        assert_eq!(parse_backend_override(Some("1")), Some(NativeBackendChoice::OpenGl));
+        assert_eq!(parse_backend_override(Some(" 1\n")), Some(NativeBackendChoice::OpenGl));
+    }
+
+    #[test]
+    fn override_ignores_unset_and_invalid_values() {
+        assert_eq!(parse_backend_override(None), None);
+        assert_eq!(parse_backend_override(Some("")), None);
+        assert_eq!(parse_backend_override(Some("2")), None);
+        assert_eq!(parse_backend_override(Some("opengl")), None);
+    }
+
+    #[test]
+    fn forced_opengl_never_initializes_vulkan() {
+        let calls = RefCell::new(Vec::new());
+        let selected = choose_native_backend(
+            Some(NativeBackendChoice::OpenGl),
+            || {
+                calls.borrow_mut().push("vulkan");
+                true
+            },
+            || {
+                calls.borrow_mut().push("opengl");
+                true
+            },
+        );
+        assert_eq!(selected, Some(NativeBackendChoice::OpenGl));
+        assert_eq!(*calls.borrow(), ["opengl"]);
+    }
+
+    #[test]
+    fn forced_vulkan_does_not_fall_back_to_opengl() {
+        let calls = RefCell::new(Vec::new());
+        let selected = choose_native_backend(
+            Some(NativeBackendChoice::Vulkan),
+            || {
+                calls.borrow_mut().push("vulkan");
+                false
+            },
+            || {
+                calls.borrow_mut().push("opengl");
+                true
+            },
+        );
+        assert_eq!(selected, None);
+        assert_eq!(*calls.borrow(), ["vulkan"]);
     }
 }
 

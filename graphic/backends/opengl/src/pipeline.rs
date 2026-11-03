@@ -251,11 +251,13 @@ pub(super) fn submit_encoder(shared: &Rc<OpenGlShared>, commands: Vec<OpenGlComm
                 .as_mut()
                 .expect("OpenGL vertex buffer set outside render pass")
                 .set_vertex_buffer(slot, &buffer, offset),
-            OpenGlCommand::SetIndexBuffer(index) => {
-                pass.as_mut()
-                    .expect("OpenGL index buffer set outside render pass")
-                    .index = Some(index)
-            }
+            // Must go through the executor so the buffer is bound to
+            // GL_ELEMENT_ARRAY_BUFFER; storing it alone leaves glDrawElements
+            // reading from client memory.
+            OpenGlCommand::SetIndexBuffer(index) => pass
+                .as_mut()
+                .expect("OpenGL index buffer set outside render pass")
+                .set_index_buffer(&index._buffer, index.format, index.offset),
             OpenGlCommand::SetScissor {
                 x,
                 y,
