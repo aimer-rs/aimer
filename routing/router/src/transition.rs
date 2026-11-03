@@ -355,13 +355,14 @@ impl ResolvedNavigationTransition {
     pub(crate) fn veil_above(&self) -> bool { self.veil_above }
 
     /// Puts a solid `color` directly under the page painted on top, shown with the
-    /// presentation of `page`: moved, clipped, rounded and faded as it is.
+    /// presentation of `page`: moved, clipped and rounded as it is, and always
+    /// fully opaque, whatever the page's own opacity.
     ///
     /// A page that paints no background of its own is see-through, so while it is
     /// a window growing out of an item, whatever is on the page beneath shows in it,
     /// and a [`veil`](Self::with_veil_above) blurs that along with the page. The
     /// backing is the page's missing background: nothing beneath shows through the
-    /// window. `page` should be the page painted on top, which is the arriving
+    /// window, even while the page itself is still fading in. `page` should be the page painted on top, which is the arriving
     /// one unless [`outgoing_on_top`](Self::outgoing_on_top) says otherwise. The
     /// layer takes no input and is dropped when the effect ends.
     pub fn with_backing(mut self, color: Color, page: TransitionPage) -> Self {
@@ -847,9 +848,13 @@ impl<R> ContainerTransition<R> {
 }
 
 /// A layer that blurs whatever is painted beneath it by `radius`.
+///
+/// The layer is clipped to the window of the page it follows, and the blur is
+/// confined to it: what lies outside the window is neither blurred nor read, so
+/// it cannot bleed into the window's edge.
 pub(crate) fn blur_veil(radius: f32) -> AnyWidget {
     DecorationBox::new()
-        .decoration(BackdropFilter::new().blur_radius(radius))
+        .decoration(BackdropFilter::new().blur_radius(radius).confined(true))
         .child(SizedBox::new().width(Dimension::Percent(100.0)).height(Dimension::Percent(100.0)))
         .boxed()
 }

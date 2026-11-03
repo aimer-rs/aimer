@@ -235,6 +235,10 @@ pub struct MaterialRequest {
     pub light_angle: f32,
     /// Color ramp of a [`MaterialKind::Gradient`]; empty for every other kind.
     pub gradient: MaterialGradient,
+    /// Whether a [`MaterialKind::BackdropFilter`] reads only inside its own
+    /// bounds and clip, clamping at their edge, instead of the pixels around
+    /// them. Ignored by every other kind. Rides bit 0 of the packet's flags byte.
+    pub confine_backdrop: bool,
     /// Sampling quality in `1..=4`.
     pub quality: u8,
     /// Reduced-motion policy.
@@ -303,6 +307,7 @@ impl MaterialRequest {
                 offsets: [0.0; MAX_GRADIENT_STOPS],
                 colors: [0; MAX_GRADIENT_STOPS],
             },
+            confine_backdrop: false,
             quality: 2,
             motion_policy: MaterialMotionPolicy::Full,
         }
@@ -326,7 +331,8 @@ impl MaterialRequest {
         bytes.push(request.quality);
         bytes.extend_from_slice(&request.z_order.to_le_bytes());
         bytes.push(request.clip.is_some() as u8);
-        bytes.extend_from_slice(&[0, 0, 0]);
+        bytes.push(u8::from(request.confine_backdrop));
+        bytes.extend_from_slice(&[0, 0]);
         let clip = request.clip.unwrap_or(MaterialClip {
             rect: [0.0; 4],
             corner_radii: [0.0; 4],
@@ -447,6 +453,8 @@ impl MaterialRequest {
         } else {
             MaterialGradient::default()
         };
+        // Only a backdrop filter has a capture to confine.
+        self.confine_backdrop &= self.kind == MaterialKind::BackdropFilter;
         self.quality = self.quality.clamp(1, 4);
         if self.motion_policy == MaterialMotionPolicy::Reduced {
             self.distortion_strength = 0.0;
@@ -498,8 +506,13 @@ impl MaterialRequest {
         let quality = reader.u8()?;
         let z_order = reader.u32()?;
         let clip_present = reader.u8()?;
-        let reserved = reader.bytes::<3>()?;
-        if !reserved.iter().all(|value| *value == 0) {
+        // Bit 0 confines a backdrop filter. It exists from version 3 and means
+        // something only to that kind; anywhere else, like every other bit and the
+        // bytes after it, it is reserved and must be zero.
+        let flags = reader.u8()?;
+        let reserved = reader.bytes::<2>()?;
+        let confinable = version >= MATERIAL_PACKET_VERSION && kind == MaterialKind::BackdropFilter;
+        if flags > u8::from(confinable) || !reserved.iter().all(|value| *value == 0) {
             return Err(MaterialDecodeError::NonZeroReserved);
         }
         if clip_present > 1 {
@@ -598,6 +611,7 @@ impl MaterialRequest {
             bevel_width,
             light_angle,
             gradient,
+            confine_backdrop: flags & 1 != 0,
             quality,
             motion_policy,
         }

@@ -618,16 +618,17 @@ impl Drawable for NavigationFrameElement {
                 if !veil.apply_to_child(ctx, ordinals.veil, size, &self.veil_clip) { return false; }
             }
         }
-        // The backing is shown as the page it backs is, and as opaque: it rises
-        // and falls with the page, so a page that fades in does not do it over
-        // a hole.
+        // The backing is shown as the page it backs is, but always at full
+        // strength: a page that is still fading in, as in a crossfade, must not
+        // let the page behind show through the window, and so be blurred with it.
         if let Some((_, page)) = self.playback.as_ref().and_then(|playback| playback.effect.backing()) {
             if has_old && self.backing().is_some() {
                 let followed = match page {
                     TransitionPage::Incoming => frame.frame.incoming,
                     TransitionPage::Outgoing => frame.frame.outgoing,
                 };
-                if !followed.apply_to_child(ctx, ordinals.backing, size, &self.backing_clip) { return false; }
+                let backing = PaintPresentation { opacity: 1.0, ..followed };
+                if !backing.apply_to_child(ctx, ordinals.backing, size, &self.backing_clip) { return false; }
             }
         }
         // The item copy is last, and is as large as the item was.

@@ -143,7 +143,8 @@ impl<R> ExpandTransition<R> {
     /// it. Off by default. The page then rises on the dissolve's curve exactly as
     /// far as the item falls, so a little of the page behind shows through the
     /// window at the crossing; it is dimmed, and a [`blur`](Self::blur) hides most
-    /// of it. See [`ExpandSpec::crossfade`].
+    /// of it, or a [`background`](Self::background) hides all of it. See
+    /// [`ExpandSpec::crossfade`].
     #[inline]
     pub fn crossfade(mut self, crossfade: bool) -> Self { self.motion = self.motion.crossfade(crossfade); self }
     /// Has the page scaled to fill the window, as the copy of the item is, instead
@@ -183,9 +184,10 @@ impl<R> ExpandTransition<R> {
     /// background of its own is see-through: the page it grows over, the other
     /// items of a grid or feed, would show in the window, and a [`blur`](Self::blur)
     /// would blur them along with it. The fill is the page's missing background:
-    /// it is moved, clipped and rounded exactly as the window is, and takes the
-    /// page's opacity, so with a [`crossfade`](Self::crossfade) it rises with the
-    /// page. Give it the colour the page paints, so that the page replaces it
+    /// it is moved, clipped and rounded exactly as the window is, and is opaque
+    /// from the first frame, also with a [`crossfade`](Self::crossfade), so the
+    /// page behind never shows in the window while the item and the page cross
+    /// over. Give it the colour the page paints, so that the page replaces it
     /// unseen. It applies to the growing window only; a route with nothing to grow
     /// from still zooms without it.
     #[inline]

@@ -148,6 +148,10 @@ pub struct MaterialDrawRequest {
     pub light_angle: f32,
     /// Color ramp of a [`MaterialKind::Gradient`]; ignored by every other kind.
     pub gradient: MaterialGradient,
+    /// Whether a [`MaterialKind::BackdropFilter`] reads only inside its own
+    /// bounds and clip, clamping at their edge, instead of the pixels around
+    /// them. Ignored by every other kind. Rides bit 0 of the packet's flags byte.
+    pub confine_backdrop: bool,
     /// Sampling quality in `1..=4`.
     pub quality: u8,
     /// Motion policy for dynamic fields.
@@ -236,6 +240,7 @@ impl MaterialDrawRequest {
             bevel_width: 0.0,
             light_angle: 225.0,
             gradient: MaterialGradient::default(),
+            confine_backdrop: false,
             quality: 2,
             motion_policy: MaterialMotionPolicy::Full,
         }
@@ -341,7 +346,9 @@ impl MaterialDrawRequest {
         bytes.push(request.quality);
         bytes.extend_from_slice(&request.z_order.to_le_bytes());
         bytes.push(request.clip.is_some() as u8);
-        bytes.extend_from_slice(&[0, 0, 0]);
+        // Flags: bit 0 confines a backdrop filter to its bounds and clip.
+        bytes.push(u8::from(request.confine_backdrop && request.kind == MaterialKind::BackdropFilter));
+        bytes.extend_from_slice(&[0, 0]);
 
         push_f32s(&mut bytes, &request.bounds);
         push_f32s(&mut bytes, &request.transform);

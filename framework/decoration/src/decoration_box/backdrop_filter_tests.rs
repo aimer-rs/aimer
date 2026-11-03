@@ -78,3 +78,12 @@ fn a_rounded_backdrop_filter_stays_a_plain_filter() {
     assert_eq!(glass.shadow_color, [0.0; 4]);
     assert_eq!(glass.edge_lighting, 0.0);
 }
+
+/// A blur reads the pixels around the box by default, so what lies just outside
+/// it softens the edge; a confined one reads only the box and clamps at its edge.
+#[test]
+fn a_backdrop_filter_reads_beyond_its_box_unless_confined() {
+    assert!(!stacked(&[&BackdropFilter::new()]).confine_backdrop);
+    assert!(stacked(&[&BackdropFilter::new().confined(true)]).confine_backdrop);
+    assert!(!stacked(&[&BackdropFilter::new().confined(true).confined(false)]).confine_backdrop);
+}

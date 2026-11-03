@@ -1548,7 +1548,7 @@ mod presentation {
         let backing = nodes[1];
         let (transform, opacity) = tree.presentation(backing).unwrap();
         assert_eq!(transform, Mat3::translate(10.0, 20.0), "moved with the window");
-        assert_eq!(opacity, 0.75, "and as opaque as the page, so it rises with it");
+        assert_eq!(opacity, 1.0, "and opaque, whatever the page's own opacity: a page that is still fading in must not let the page behind show through");
         assert_eq!(
             clip_of(&tree, backing),
             (Some(Rect::new(10.0, 20.0, 40.0, 30.0)), [8.0; 4]),
@@ -1573,7 +1573,7 @@ mod presentation {
         assert!(sync(&element, &tree, root, &context));
 
         // Paint order: the arriving page, the backing, the departing page.
-        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75));
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::translate(10.0, 20.0), 1.0));
     }
 
     #[test]
@@ -1603,7 +1603,7 @@ mod presentation {
         assert!(sync(&element, &tree, root, &context));
 
         // Painted: departing page, backing, arriving page, the item's copy, the veil.
-        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75), "backing");
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::translate(10.0, 20.0), 1.0), "backing");
         assert_eq!(tree.presentation(nodes[3]).unwrap().1, 0.5, "the copy keeps its own presentation");
         assert_eq!(tree.presentation(nodes[4]).unwrap(), (Mat3::translate(10.0, 20.0), 1.0), "veil");
     }

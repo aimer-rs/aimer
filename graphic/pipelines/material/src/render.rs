@@ -952,6 +952,22 @@ fn backdrop_source_origin(region: BackdropRegion, source_offset: (u32, u32)) -> 
     )
 }
 
+/// The part of a request's bounds that its clip leaves, `[x, y, width, height]`.
+///
+/// The bounds themselves when there is no clip, and a zero-sized rectangle when
+/// the clip lies wholly outside them.
+fn visible_area(request: &MaterialRequest) -> [f32; 4] {
+    let [x, y, width, height] = request.bounds;
+    let Some(clip) = request.clip else {
+        return request.bounds;
+    };
+    let left = x.max(clip.rect[0]);
+    let top = y.max(clip.rect[1]);
+    let right = (x + width).min(clip.rect[0] + clip.rect[2]);
+    let bottom = (y + height).min(clip.rect[1] + clip.rect[3]);
+    [left, top, (right - left).max(0.0), (bottom - top).max(0.0)]
+}
+
 fn backdrop_region(
     request: MaterialRequest,
     viewport_width: u32,
@@ -990,16 +1006,25 @@ fn backdrop_region(
     } else {
         (blur_expansion, blur_expansion)
     };
-    let left = (request.bounds[0] - expansion_x)
+    // The shader clamps every backdrop read to the capture, so a capture that
+    // ends at the area the filter draws makes that edge the blur's edge: nothing
+    // past it is read. A filter that is not confined reads on past its edge, by
+    // up to the blur radius, so the blur is continuous with its surroundings.
+    let (area, expansion_x, expansion_y) = if request.confine_backdrop {
+        (visible_area(&request), 0.0, 0.0)
+    } else {
+        (request.bounds, expansion_x, expansion_y)
+    };
+    let left = (area[0] - expansion_x)
         .floor()
         .clamp(0.0, viewport_width as f32) as u32;
-    let top = (request.bounds[1] - expansion_y)
+    let top = (area[1] - expansion_y)
         .floor()
         .clamp(0.0, viewport_height as f32) as u32;
-    let right = (request.bounds[0] + request.bounds[2] + expansion_x)
+    let right = (area[0] + area[2] + expansion_x)
         .ceil()
         .clamp(0.0, viewport_width as f32) as u32;
-    let bottom = (request.bounds[1] + request.bounds[3] + expansion_y)
+    let bottom = (area[1] + area[3] + expansion_y)
         .ceil()
         .clamp(0.0, viewport_height as f32) as u32;
     let width = right.saturating_sub(left);

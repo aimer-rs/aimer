@@ -49,6 +49,7 @@ pub struct BackdropFilter {
     saturation: f32,
     brightness: f32,
     contrast: f32,
+    confined: bool,
 }
 
 impl Default for BackdropFilter {
@@ -72,6 +73,7 @@ impl BackdropFilter {
             saturation: 1.0,
             brightness: 1.0,
             contrast: 1.0,
+            confined: false,
         }
     }
 
@@ -82,6 +84,28 @@ impl BackdropFilter {
     #[inline]
     pub fn blur_radius(mut self, radius: f32) -> Self {
         self.blur_radius = normalize(radius, Self::DEFAULT_BLUR_RADIUS, Self::MAX_BLUR_RADIUS);
+        self
+    }
+
+    /// Makes the blur read only the box it covers, clamping at its edge, instead
+    /// of the pixels around it. The default is `false`.
+    ///
+    /// A blur normally reads on past the box by up to its radius, so that it is
+    /// continuous with what surrounds it: glass over a page picks up the page
+    /// just outside its edge. That is wrong for a filter that stands for a region
+    /// of its own, such as the window of a transition growing out of an item,
+    /// where what lies outside the window would bleed into its edge. A confined
+    /// blur treats the box, narrowed by any clip above it, as the whole picture,
+    /// and repeats its outermost pixels beyond.
+    ///
+    /// ```
+    /// use aimer_decoration::BackdropFilter;
+    ///
+    /// let blur = BackdropFilter::new().blur_radius(24.0).confined(true);
+    /// ```
+    #[inline]
+    pub fn confined(mut self, confined: bool) -> Self {
+        self.confined = confined;
         self
     }
 
@@ -134,6 +158,7 @@ impl Decoration for BackdropFilter {
         request.saturation = self.saturation;
         request.brightness = self.brightness;
         request.contrast = self.contrast;
+        request.confine_backdrop = self.confined;
         request.tint = [0.0; 4];
         request.opacity = 1.0;
         request.border_color = [0.0; 4];
