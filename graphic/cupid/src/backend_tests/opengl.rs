@@ -532,3 +532,42 @@ fn blurred_backdrop_filter_keeps_the_backdrop_upright_on_headless_opengl() {
         assert_red_over_blue(&pixels, &format!("blur {blur}"));
     }
 }
+
+/// Regression: every window owns an OpenGL context, but they share one EGL
+/// display. Closing a window terminated that display and left the other
+/// windows' contexts unusable, so the parent could no longer render.
+#[test]
+fn dropping_one_opengl_context_leaves_the_others_usable() {
+    const SIZE: u32 = 16;
+    let (Ok(parent), Ok(child)) = (OpenGlBackend::new_headless(), OpenGlBackend::new_headless())
+    else {
+        eprintln!("skipping: a headless OpenGL 3.3 context is unavailable");
+        return;
+    };
+    drop(child);
+
+    let mut renderer =
+        RendererImpl::<OpenGlBackend>::new(&parent, OpenGlBackend::rgba8_unorm_format());
+    let mut draw = DrawList::new();
+    draw.fill_rect(
+        Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32),
+        Color::red(),
+        [0.0; 4],
+        [0.0; 4],
+        Color::transparent(),
+    );
+    let target = parent.create_texture(&TextureDescriptor {
+        label: Some("Cupid OpenGL surviving context target".to_owned()),
+        size: (SIZE, SIZE, 1),
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: OpenGlBackend::rgba8_unorm_format(),
+        usage: vec![TextureUsage::RenderAttachment, TextureUsage::CopySrc],
+    });
+    let view = parent.create_texture_view(&target, "Cupid OpenGL surviving context view");
+    renderer.render(&parent, &view, SIZE, SIZE, false, &draw);
+    let pixels = read_gl_target(&parent, &target, SIZE);
+    let center = gl_pixel(&pixels, SIZE, 8, 8);
+    assert_eq!(center, [255, 0, 0, 255], "the remaining context still renders");
+}

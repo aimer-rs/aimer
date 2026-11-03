@@ -238,6 +238,45 @@ impl Drop for WaylandEgl {
     }
 }
 
+/// How many live contexts rely on each initialized EGL display.
+///
+/// `eglGetDisplay` hands every window the same `EGLDisplay` for a native
+/// display, and `eglTerminate` is not reference counted: terminating it when
+/// one window closes leaves every other window's context and surface unusable.
+/// So the display is terminated only when the last context using it goes away.
+static DISPLAY_USERS: std::sync::Mutex<Vec<(usize, usize)>> = std::sync::Mutex::new(Vec::new());
+
+/// Records that a context now depends on the initialized `display`.
+fn retain_display(display: EglDisplay) {
+    let mut users = DISPLAY_USERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match users.iter_mut().find(|(key, _)| *key == display as usize) {
+        Some((_, count)) => *count += 1,
+        None => users.push((display as usize, 1)),
+    }
+}
+
+/// Drops one dependency on `display`, terminating it once none remain.
+fn release_display(egl: &EglFns, display: EglDisplay) {
+    let last = {
+        let mut users = DISPLAY_USERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(position) = users.iter().position(|(key, _)| *key == display as usize) else {
+            return;
+        };
+        users[position].1 -= 1;
+        if users[position].1 == 0 {
+            users.swap_remove(position);
+            true
+        } else {
+            false
+        }
+    };
+    if last {
+        // SAFETY: `display` was initialized by `eglInitialize` and no live
+        // context uses it any more.
+        unsafe { (egl.terminate)(display) };
+    }
+}
+
 pub struct Context {
     egl: EglFns,
     display: EglDisplay,
@@ -276,12 +315,13 @@ impl Context {
                 unsafe { (egl.get_error)() }
             ));
         }
+        retain_display(display);
         #[cfg(target_os = "android")]
         let gl_api = EGL_OPENGL_ES_API;
         #[cfg(not(target_os = "android"))]
         let gl_api = EGL_OPENGL_API;
         if unsafe { (egl.bind_api)(gl_api) } == EGL_FALSE {
-            unsafe { (egl.terminate)(display) };
+            release_display(&egl, display);
             return Err(format!("eglBindAPI(OpenGL) failed (error {:#x})", unsafe {
                 (egl.get_error)()
             }));
@@ -320,7 +360,7 @@ impl Context {
         } == EGL_FALSE
             || config_count == 0
         {
-            unsafe { (egl.terminate)(display) };
+            release_display(&egl, display);
             return Err(format!(
                 "EGL found no headless OpenGL pbuffer config (error {:#x})",
                 unsafe { (egl.get_error)() }
@@ -330,7 +370,7 @@ impl Context {
         let surface =
             unsafe { (egl.create_pbuffer_surface)(display, config, pbuffer_attributes.as_ptr()) };
         if surface.is_null() {
-            unsafe { (egl.terminate)(display) };
+            release_display(&egl, display);
             return Err(format!(
                 "eglCreatePbufferSurface failed (error {:#x})",
                 unsafe { (egl.get_error)() }
@@ -354,7 +394,7 @@ impl Context {
         if context.is_null() {
             unsafe {
                 (egl.destroy_surface)(display, surface);
-                (egl.terminate)(display);
+                release_display(&egl, display);
             }
             return Err(format!(
                 "EGL could not create a headless OpenGL 3.3 context (error {:#x})",
@@ -365,7 +405,7 @@ impl Context {
             unsafe {
                 (egl.destroy_context)(display, context);
                 (egl.destroy_surface)(display, surface);
-                (egl.terminate)(display);
+                release_display(&egl, display);
             }
             return Err(format!(
                 "eglMakeCurrent failed for the headless context (error {:#x})",
@@ -424,12 +464,13 @@ impl Context {
                 (egl.get_error)()
             }));
         }
+        retain_display(display);
         #[cfg(target_os = "android")]
         let gl_api = EGL_OPENGL_ES_API;
         #[cfg(not(target_os = "android"))]
         let gl_api = EGL_OPENGL_API;
         if unsafe { (egl.bind_api)(gl_api) } == EGL_FALSE {
-            unsafe { (egl.terminate)(display) };
+            release_display(&egl, display);
             return Err(format!("eglBindAPI(OpenGL) failed (error {:#x})", unsafe {
                 (egl.get_error)()
             }));
@@ -472,7 +513,7 @@ impl Context {
         } == EGL_FALSE
             || config_count == 0
         {
-            unsafe { (egl.terminate)(display) };
+            release_display(&egl, display);
             return Err(format!(
                 "eglChooseConfig found no desktop OpenGL window config (error {:#x})",
                 unsafe { (egl.get_error)() }
@@ -483,7 +524,7 @@ impl Context {
             match WaylandEgl::new(surface, size) {
                 Ok(wayland) => Some(wayland),
                 Err(error) => {
-                    unsafe { (egl.terminate)(display) };
+                    release_display(&egl, display);
                     return Err(error);
                 }
             }
@@ -503,7 +544,7 @@ impl Context {
             unsafe { (egl.create_window_surface)(display, config, native_window, null()) }
         };
         if surface.is_null() {
-            unsafe { (egl.terminate)(display) };
+            release_display(&egl, display);
             return Err(format!(
                 "EGL could not create a window surface (error {:#x})",
                 unsafe { (egl.get_error)() }
@@ -528,7 +569,7 @@ impl Context {
         if context.is_null() {
             unsafe {
                 (egl.destroy_surface)(display, surface);
-                (egl.terminate)(display);
+                release_display(&egl, display);
             }
             return Err(format!(
                 "EGL could not create an OpenGL 3.3 Core context (error {:#x})",
@@ -539,7 +580,7 @@ impl Context {
             unsafe {
                 (egl.destroy_context)(display, context);
                 (egl.destroy_surface)(display, surface);
-                (egl.terminate)(display);
+                release_display(&egl, display);
             }
             return Err(format!("eglMakeCurrent failed (error {:#x})", unsafe {
                 (egl.get_error)()
@@ -616,7 +657,7 @@ impl Drop for Context {
             (self.egl.make_current)(self.display, null_mut(), null_mut(), null_mut());
             (self.egl.destroy_context)(self.display, self.context);
             (self.egl.destroy_surface)(self.display, self.surface);
-            (self.egl.terminate)(self.display);
+            release_display(&self.egl, self.display);
             if !self._gl_library.is_null() {
                 dlclose(self._gl_library);
             }

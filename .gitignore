@@ -19,3 +19,19 @@ website/builds
 .vscode
 
 app/jaime/builds/linux/bundle/
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64.tar.gz
+app/jaime/builds/linux/dist/release/jaime-0.0.1-x86_64.AppImage
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/app.png
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/jaime
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/jaime.desktop
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/android_screenshot.png
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/cat-svgrepo-com.svg
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/github-svgrepo-com.png
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/image.png
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/ios_screenshot.png
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/JAIME.md
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/JetBrainsMono-Regular.ttf
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/macos_screenshot.png
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/my_image.png
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/polished_tooling.png
+app/jaime/builds/linux/dist/release/jaime-0.0.1-linux-x86_64/jaime-0.0.1/assets/web_screenshot.png
