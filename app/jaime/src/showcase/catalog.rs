@@ -77,6 +77,7 @@ pub(super) enum ExampleId {
     BorderOutline,
     AssetImage,
     Gif,
+    Audio,
     BundledAssets,
     CustomPaint,
     ColorMelt,
@@ -154,6 +155,7 @@ pub(super) const EXAMPLES: &[ExampleId] = &[
     ExampleId::BorderOutline,
     ExampleId::AssetImage,
     ExampleId::Gif,
+    ExampleId::Audio,
     ExampleId::BundledAssets,
     ExampleId::CustomPaint,
     ExampleId::ColorMelt,
@@ -280,6 +282,7 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
             ExampleId::AssetsMedia,
             ExampleId::AssetImage,
             ExampleId::Gif,
+            ExampleId::Audio,
             ExampleId::BundledAssets,
         ],
     },
@@ -386,6 +389,7 @@ impl ExampleId {
             Self::BorderOutline => "Border and outline",
             Self::AssetImage => "Asset image",
             Self::Gif => "Animated GIF",
+            Self::Audio => "Audio",
             Self::BundledAssets => "Bundled assets",
             Self::CustomPaint => "Custom paint",
             Self::ColorMelt => "Color melt",
@@ -447,6 +451,7 @@ impl ExampleId {
             Self::JustifyContent => "☷",
             Self::Svg | Self::AssetImage => "◇",
             Self::Gif => "▶",
+            Self::Audio => "♪",
             Self::CustomFont | Self::BundledAssets => "Aa",
             Self::PanicRecovery => "!",
 
@@ -535,6 +540,7 @@ impl ExampleId {
             Self::BorderOutline => "border-outline",
             Self::AssetImage => "asset-image",
             Self::Gif => "gif",
+            Self::Audio => "audio",
             Self::BundledAssets => "bundled-assets",
             Self::CustomPaint => "custom-paint",
             Self::ColorMelt => "color-melt",
@@ -684,6 +690,7 @@ impl ExampleId {
             Self::BorderOutline => "Compare a border and an outline around a field.",
             Self::AssetImage => "Load and decorate a bundled raster asset.",
             Self::Gif => "Play, pause, restart and seek a bundled animated GIF.",
+            Self::Audio => "Play a bundled track with seek, volume and loop controls, and tap an overlapping sound effect.",
             Self::BundledAssets => {
                 "Typed handles for Aimer.toml assets and fonts, with lazy font loading."
             }

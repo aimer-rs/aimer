@@ -42,6 +42,7 @@ pub use aimer_focus::{
 };
 pub use aimer_form as form;
 pub use aimer_haptics as haptics;
+pub use aimer_audio as audio;
 pub use aimer_i18n as i18n;
 pub use aimer_indicator as indicator;
 pub use aimer_input as input;

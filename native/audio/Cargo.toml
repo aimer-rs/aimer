@@ -1,0 +1,17 @@
+[package]
+name = "aimer_audio"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dev-dependencies]
+aimer_tls.workspace = true
+
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["std", "NSData", "NSError", "NSString", "NSURL"] }
+objc2-avf-audio = { workspace = true, features = ["std", "AVAudioPlayer"] }
+
+# The audio session only exists on iOS; macOS plays without one.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-avf-audio = { workspace = true, features = ["AVAudioSession", "AVAudioSessionTypes"] }

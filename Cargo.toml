@@ -24,6 +24,7 @@ aimer_focus.workspace = true
 aimer_grid.workspace = true
 aimer_device.workspace = true
 aimer_haptics.workspace = true
+aimer_audio.workspace = true
 aimer_quiver.workspace = true
 aimer_input.workspace = true
 aimer_screen.workspace = true
@@ -192,6 +193,7 @@ members = [
     # system
     "native/clipboard",
     "native/haptics",
+    "native/audio",
     "native/device",
     "native/screen",
     # services
@@ -361,6 +363,7 @@ aimer_shape = { path = "cores/shape" }
 aimer_collapsible = { path = "interactions/collapsible" }
 aimer_clipboard = { path = "native/clipboard" }
 aimer_haptics = { path = "native/haptics" }
+aimer_audio = { path = "native/audio" }
 aimer_device = { path = "native/device" }
 aimer_screen = { path = "native/screen" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
@@ -460,6 +463,10 @@ muda = "0.21.2"
 objc2-ui-kit = "0.3.2"
 # Core Haptics for `aimer_haptics`' programmable iOS patterns.
 objc2-core-haptics = "0.3.2"
+# AVAudioPlayer / AVAudioSession for `aimer_audio`. Already in the lockfile
+# through `objc2-core-haptics`; default features are off so only the two
+# classes in use are bound.
+objc2-avf-audio = { version = "0.3.2", default-features = false }
 objc2-app-kit = { version = "0.3.2", default-features = false }
 # `disable-encoding-assertions` drops the check objc2 runs on *every* message
 # send in a debug build: it re-parses the method's type encoding and compares it
