@@ -1708,6 +1708,8 @@ mod tests {
     mod collapsible_animation;
     mod compositor_reset;
     mod custom_theme_switch;
+    mod shared_element_theme;
+    mod expand_first_frames;
     #[cfg(debug_assertions)]
     mod debug_overlay;
     mod decoration_box;

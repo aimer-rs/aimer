@@ -85,6 +85,7 @@ aimer_text.workspace = true
 aimer_space.workspace = true
 aimer_macro.workspace = true
 aimer_container.workspace = true
+aimer_router.workspace = true
 aimer_flex.workspace = true
 aimer_scroll.workspace = true
 aimer_input.workspace = true

@@ -104,3 +104,45 @@ fn a_confined_blur_still_softens_what_is_inside_its_clip() {
     let edge = pixel(&render(AntiAlias::Analytic, &tree), 64, 64);
     assert!(edge[0] > 60 && edge[0] < 195, "the edge inside the window is blurred: {edge:?}");
 }
+
+/// root (a dark feed) -> [backing: an opaque green fill the size of the host, veil: a
+/// confined blur the size of the host], both moved down by 40 and clipped to a window
+/// at the top-left of what they were moved from, as a transition's host presents them.
+fn presented_backing_and_veil(blur: f32) -> RenderTree {
+    use crate::utilities::Mat3;
+    let tree = RenderTree::new();
+    let root = tree.add_root(Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32)).unwrap();
+    let backing = tree.add_child(root, Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32)).unwrap();
+    let veil = tree.add_child(root, Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32)).unwrap();
+    record(&tree, root, vec![fill(Color::rgba8(20, 10, 10, 255), Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32))]);
+    record(&tree, backing, vec![fill(Color::rgba8(10, 200, 10, 255), Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32))]);
+    let mut filter = MaterialRequest::new(MaterialKind::BackdropFilter, [0.0, 0.0, SIZE as f32, SIZE as f32]);
+    filter.blur_radius = blur;
+    filter.opacity = 1.0;
+    filter.corner_radii = [0.0; 4];
+    filter.confine_backdrop = true;
+    record(&tree, veil, vec![DrawCommand::DrawCustom {
+        pipeline_name: Arc::from(MATERIAL_PIPELINE_NAME),
+        data: Arc::from(filter.encode_for_test()),
+    }]);
+    let host = tree.context(root).unwrap();
+    for index in 0..2 {
+        assert!(host.set_child_presentation_at(index, Mat3::translate(0.0, 40.0), 1.0));
+        assert!(host.set_child_clip_at(index, Some(Rect::new(0.0, 0.0, 60.0, 50.0)), [6.0; 4]));
+    }
+    tree
+}
+
+#[test]
+fn nothing_is_drawn_outside_the_window_whatever_the_blur() {
+    for blur in [0.0, 0.001, 0.5, 2.0, 12.0] {
+        let pixels = render(AntiAlias::Analytic, &presented_backing_and_veil(blur));
+        // Inside the window: the backing, blurred or not.
+        let inside = pixel(&pixels, 30, 60);
+        assert!(inside[1] > 150 && inside[0] < 60, "blur {blur}: the window shows the backing: {inside:?}");
+        // Outside the window, where the host-sized backing would reach if unclipped.
+        for (x, y) in [(100, 100), (100, 60), (30, 120)] {
+            near(pixel(&pixels, x, y), [20, 10, 10, 255], 2, &format!("blur {blur} outside the window at ({x}, {y})"));
+        }
+    }
+}

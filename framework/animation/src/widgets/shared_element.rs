@@ -86,6 +86,30 @@ fn next_owner() -> u64 {
     })
 }
 
+/// Makes `content` what the registry hands out for `tag`, wherever it keeps the tag.
+///
+/// An element registers when it is next synchronized, which is later than when it
+/// is built, and a card that rebuilds on every frame of a theme change can be
+/// built, replaced and built again without ever being synchronized. Between the
+/// old element dropping and the new one registering, the registry has only what
+/// the old one left behind, which was built before the change. Refreshing the
+/// stored content at build time keeps what a lookup in that gap returns as new
+/// as the latest build; where the card is stays what was last seen.
+fn refresh_content(tag: &Key, content: &SharedContent) {
+    REGISTRY.with(|registry| {
+        if let Some(entry) = registry.borrow_mut().get_mut(tag) {
+            entry.content = Some(content.clone());
+        }
+    });
+    REMEMBERED.with(|remembered| {
+        for (key, snapshot) in remembered.borrow_mut().iter_mut() {
+            if key == tag {
+                snapshot.content = Some(content.clone());
+            }
+        }
+    });
+}
+
 /// Returns where the element tagged `tag` is on screen right now.
 ///
 /// The bounds are in logical pixels from the window's top-left corner and are
@@ -210,6 +234,13 @@ impl<W> SharedElement<W> {
     /// runs once for the real child and again for every copy, so it should
     /// produce the same item each time. The copy is inert: it takes no input.
     ///
+    /// The closure is kept after the item is gone, and a transition going back
+    /// builds its copy from it before the page that held the item has been
+    /// rebuilt. Anything it captured is as old as the item's last build: a theme
+    /// that changed while the item was off screen would draw the copy in the old
+    /// colours. Capture the item's data, and have the widget the closure returns
+    /// read the theme (or any other context state) in its own `build`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -249,6 +280,9 @@ impl Widget for Repeated {
 
 impl<W: Widget> Widget for SharedElement<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        if let (Some(tag), Some(content)) = (&self.tag, &self.content) {
+            refresh_content(tag, content);
+        }
         RawSharedElement {
             tag: self.tag,
             content: self.content,
@@ -709,5 +743,81 @@ mod tests {
         let before = builds.get();
         drop(snapshot.content.expect("content survives the drop").build());
         assert_eq!(builds.get(), before + 1);
+    }
+
+    /// How many copies each generation of a card has been asked for.
+    fn copy_of(tag: &str) -> Option<SharedContent> {
+        snapshot(tag).and_then(|snapshot| snapshot.content)
+    }
+
+    #[test]
+    fn a_rebuilt_element_hands_out_its_content_before_it_has_registered() {
+        // A theme change rebuilds a card on every frame of its animation: the new
+        // element is built, the old one dropped, and the new one only registers
+        // when it is next synchronized. Someone asking in between, such as a
+        // navigation that resolves just then, must get the newer card, not the
+        // one the old element was built with.
+        let (old_builds, new_builds) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+        let context = context();
+        let old = counted("rebuilt-before-registering", &old_builds, &context);
+        Node::at(Rect::new(5.0, 6.0, 7.0, 8.0)).sync(old.as_ref(), &context);
+
+        let new = counted("rebuilt-before-registering", &new_builds, &context);
+        drop(old);
+
+        let content = copy_of("rebuilt-before-registering").expect("remembered");
+        let (old_before, new_before) = (old_builds.get(), new_builds.get());
+        drop(content.build());
+        assert_eq!((old_builds.get(), new_builds.get()), (old_before, new_before + 1),
+            "the copy is the new element's");
+        // Where the card was is still known, though the new element has not synced.
+        assert_eq!(snapshot("rebuilt-before-registering").unwrap().bounds, ElementBounds::new(5.0, 6.0, 7.0, 8.0));
+        drop(new);
+    }
+
+    #[test]
+    fn an_element_built_after_the_old_one_dropped_is_the_newer_content_too() {
+        let (old_builds, new_builds) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+        let context = context();
+        let old = counted("rebuilt-after-drop", &old_builds, &context);
+        Node::at(Rect::new(1.0, 2.0, 3.0, 4.0)).sync(old.as_ref(), &context);
+        drop(old);
+
+        let new = counted("rebuilt-after-drop", &new_builds, &context);
+
+        let before = new_builds.get();
+        drop(copy_of("rebuilt-after-drop").expect("remembered").build());
+        assert_eq!(new_builds.get(), before + 1);
+        drop(new);
+    }
+
+    #[test]
+    fn a_registered_element_that_is_rebuilt_while_it_stands_hands_out_the_newer_content() {
+        let (old_builds, new_builds) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+        let context = context();
+        let old = counted("rebuilt-while-live", &old_builds, &context);
+        Node::at(Rect::new(1.0, 2.0, 30.0, 40.0)).sync(old.as_ref(), &context);
+
+        let new = counted("rebuilt-while-live", &new_builds, &context);
+
+        let before = new_builds.get();
+        drop(copy_of("rebuilt-while-live").expect("registered").build());
+        assert_eq!(new_builds.get(), before + 1, "the live registration follows the latest build");
+        assert_eq!(snapshot("rebuilt-while-live").unwrap().bounds, ElementBounds::new(1.0, 2.0, 30.0, 40.0));
+        drop((old, new));
+    }
+
+    #[test]
+    fn building_an_element_with_no_content_does_not_erase_what_is_remembered() {
+        let builds = Rc::new(Cell::new(0));
+        let context = context();
+        let with = counted("plain-after-content", &builds, &context);
+        Node::at(Rect::new(1.0, 1.0, 5.0, 5.0)).sync(with.as_ref(), &context);
+        drop(with);
+
+        let plain = tagged("plain-after-content", &context);
+
+        assert!(copy_of("plain-after-content").is_some(), "an element given no way to copy itself says nothing about it");
+        drop(plain);
     }
 }

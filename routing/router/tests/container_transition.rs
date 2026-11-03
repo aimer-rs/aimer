@@ -887,6 +887,40 @@ fn an_expanding_background_backs_the_growing_window_only_when_asked() {
     );
 }
 
+#[test]
+fn an_expanding_background_can_be_read_again_for_every_navigation() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use aimer_widget::base::Color;
+    let ctx = context();
+    let _item = repeatable_item("album-7", row(), &ctx);
+    // A theme that changes between navigations: a colour fixed when the
+    // transition was built would be the old theme's.
+    let surface = Rc::new(Cell::new(Color::Rgb(20, 16, 16)));
+    let read = Rc::clone(&surface);
+    let transition = expanding().background_with(move |_| read.get());
+    let backed = |action, from, to| resolve_expand(&transition, from, to, action, &ctx).unwrap().backing().map(|(color, _)| color);
+
+    assert_eq!(backed(NavigationAction::Push, 0, 7), Some(Color::Rgb(20, 16, 16)));
+    surface.set(Color::Rgb(255, 248, 245));
+    assert_eq!(backed(NavigationAction::Push, 0, 7), Some(Color::Rgb(255, 248, 245)));
+    assert_eq!(backed(NavigationAction::Pop, 7, 0), Some(Color::Rgb(255, 248, 245)));
+}
+
+#[test]
+fn the_last_background_set_wins_whichever_way_it_was_given() {
+    use aimer_widget::base::Color;
+    let ctx = context();
+    let _item = repeatable_item("album-7", row(), &ctx);
+    let (ink, paper) = (Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255));
+    let color = |transition: ExpandTransition<Page>| {
+        resolve_expand(&transition, 0, 7, NavigationAction::Push, &ctx).unwrap().backing().map(|(color, _)| color)
+    };
+
+    assert_eq!(color(expanding().background(ink).background_with(move |_| paper)), Some(paper));
+    assert_eq!(color(expanding().background_with(move |_| paper).background(ink)), Some(ink));
+}
+
 fn resolve_expand(
     transition: &ExpandTransition<Page>,
     from: u32,

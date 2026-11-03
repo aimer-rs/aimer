@@ -10,8 +10,8 @@ use aimer_widget::{AnyElement, AnyWidget, ChildBuilder, Drawable, Element, Event
 
 use aimer_attribute::Dimension;
 use aimer_container::SizedBox;
-use aimer_decoration::{BoxDecoration, DecorationBox};
 
+use self::backing::{BackingLayer, SharedWindow, window_of};
 use crate::outlet::RouteChildContext;
 use crate::swipe_back::SwipeLink;
 use crate::{AnchoredFrame, NavigationAction, NavigationContext, NavigationTransition,
@@ -368,22 +368,19 @@ impl Widget for NavigationFrame {
                     .to_element(ctx))
             });
         // The solid layer under the page on top, which the page's own transparency
-        // would otherwise leave the page beneath showing through.
+        // would otherwise leave the page beneath showing through. It paints the
+        // window itself, from what the host publishes on every frame.
+        let backing_window: SharedWindow = Rc::new(Cell::new(None));
         let backing = self.playback.as_ref().filter(|_| outgoing.is_some())
             .and_then(|playback| playback.effect.backing())
-            .map(|(color, _)| {
-                DecorationBox::new()
-                    .decoration(BoxDecoration::new().background_color(color))
-                    .child(SizedBox::new().width(Dimension::Percent(100.0)).height(Dimension::Percent(100.0)))
-                    .to_element(ctx)
-            });
+            .map(|(color, _)| BackingLayer::new(color, Rc::clone(&backing_window)).boxed());
         NavigationFrameElement {
             incoming: self.child.build(ctx), outgoing: UnsafeCell::new(outgoing), anchor: UnsafeCell::new(anchor),
             veil: UnsafeCell::new(veil), backing: UnsafeCell::new(backing),
             playback: self.playback, swipe: self.swipe,
             incoming_clip: PresentationClip::default(), outgoing_clip: PresentationClip::default(),
             anchor_clip: PresentationClip::default(), veil_clip: PresentationClip::default(),
-            backing_clip: PresentationClip::default(),
+            backing_window,
         }.boxed()
     }
 }
@@ -407,8 +404,6 @@ struct Ordinals {
     anchor: usize,
     /// The veil, wherever it is painted; meaningful only while there is one.
     veil: usize,
-    /// The backing under the page on top; meaningful only while there is one.
-    backing: usize,
 }
 
 struct NavigationFrameElement {
@@ -428,7 +423,8 @@ struct NavigationFrameElement {
     outgoing_clip: PresentationClip,
     anchor_clip: PresentationClip,
     veil_clip: PresentationClip,
-    backing_clip: PresentationClip,
+    /// Where the backing paints; published here on every frame, read by the layer.
+    backing_window: SharedWindow,
 }
 
 // Safety: element traversal and structural mutation run exclusively on the
@@ -486,8 +482,6 @@ impl NavigationFrameElement {
             } else {
                 1
             },
-            // Directly under the page on top, and over the veil between the pages.
-            backing: top.saturating_sub(1),
         }
     }
 
@@ -618,17 +612,17 @@ impl Drawable for NavigationFrameElement {
                 if !veil.apply_to_child(ctx, ordinals.veil, size, &self.veil_clip) { return false; }
             }
         }
-        // The backing is shown as the page it backs is, but always at full
-        // strength: a page that is still fading in, as in a crossfade, must not
-        // let the page behind show through the window, and so be blurred with it.
+        // The backing is the window of the page it backs, painted by the layer
+        // itself and always at full strength: a page that is still fading in, as in
+        // a crossfade, must not let the page behind show through the window, and so
+        // be blurred with it.
         if let Some((_, page)) = self.playback.as_ref().and_then(|playback| playback.effect.backing()) {
             if has_old && self.backing().is_some() {
                 let followed = match page {
                     TransitionPage::Incoming => frame.frame.incoming,
                     TransitionPage::Outgoing => frame.frame.outgoing,
                 };
-                let backing = PaintPresentation { opacity: 1.0, ..followed };
-                if !backing.apply_to_child(ctx, ordinals.backing, size, &self.backing_clip) { return false; }
+                self.backing_window.set(window_of(&followed, size));
             }
         }
         // The item copy is last, and is as large as the item was.
@@ -642,6 +636,15 @@ impl Drawable for NavigationFrameElement {
         let size = self.logical_size(ctx);
         (size.width.is_finite() && size.height.is_finite() && size.width >= 0.0 && size.height >= 0.0)
             .then_some(Rect::new(0.0, 0.0, size.width, size.height))
+    }
+    /// The backing is as large as the host and at its corner; it paints the window
+    /// within that, so it is neither moved nor clipped.
+    fn retained_v2_child_geometry_at(&self, ctx: &BuildContext, child: &dyn Element, _: usize)
+        -> Option<(Rect, Option<Rect>)>
+    {
+        if !self.backing().is_some_and(|backing| std::ptr::eq(child, backing.as_ref())) { return None; }
+        let size = self.logical_size(ctx);
+        Some((Rect::new(0.0, 0.0, size.width, size.height), None))
     }
     fn retained_v2_child_context<'a>(&self, ctx: &BuildContext<'a>, _: &dyn Element) -> Option<BuildContext<'a>> {
         // This is an overlay, not a layout container. With two children the
@@ -788,5 +791,6 @@ impl PageElement {
     }
 }
 
+mod backing;
 #[cfg(test)]
 mod tests;

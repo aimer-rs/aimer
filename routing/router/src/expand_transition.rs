@@ -10,7 +10,7 @@ use aimer_animation::{
     AnyCurve, Curve, ElementBounds, ExpandSpec, curves, last_shared_element, last_shared_element_bounds,
 };
 use aimer_widget::Key;
-use aimer_widget::base::ResolvedSize;
+use aimer_widget::base::{BuildContext, ResolvedSize};
 
 use crate::Route;
 use crate::transition::{
@@ -76,7 +76,24 @@ pub struct ExpandTransition<R> {
     /// frame with [`ExpandSpec::retargeted`].
     motion: ExpandSpec,
     blur: f32,
-    background: Option<Color>,
+    background: Option<Background>,
+}
+
+/// Where the colour of the window's background comes from.
+enum Background {
+    Fixed(Color),
+    /// Asked of the host's inherited state for every navigation, so that it
+    /// follows a theme that changes while the transition lives.
+    Resolved(Rc<dyn Fn(&BuildContext) -> Color>),
+}
+
+impl Background {
+    fn color(&self, ctx: &BuildContext) -> Color {
+        match self {
+            Self::Fixed(color) => *color,
+            Self::Resolved(resolve) => resolve(ctx),
+        }
+    }
 }
 
 impl<R> Default for ExpandTransition<R> {
@@ -191,7 +208,31 @@ impl<R> ExpandTransition<R> {
     /// unseen. It applies to the growing window only; a route with nothing to grow
     /// from still zooms without it.
     #[inline]
-    pub fn background(mut self, color: impl Into<Color>) -> Self { self.background = Some(color.into()); self }
+    pub fn background(mut self, color: impl Into<Color>) -> Self { self.background = Some(Background::Fixed(color.into())); self }
+    /// Like [`background`](Self::background), with the colour asked of `resolve`
+    /// for every navigation instead of fixed when the transition is built.
+    ///
+    /// A transition is built once and lives as long as the route's policy does,
+    /// which can be much longer than the theme: a colour read from the theme at
+    /// that point is the old theme's after a change, and the window would open in
+    /// it. `resolve` is given the host's inherited state as the navigation starts,
+    /// so it reads the theme that is on screen. The last of this and
+    /// [`background`](Self::background) wins.
+    ///
+    /// ```
+    /// use aimer_router::{ExpandTransition, Route};
+    /// use aimer_widget::base::Color;
+    ///
+    /// fn post<R: Route>() -> ExpandTransition<R> {
+    ///     // Read the surface of the theme in effect, not the one at construction.
+    ///     ExpandTransition::new().background_with(|_ctx| Color::Rgb(250, 248, 240))
+    /// }
+    /// ```
+    #[inline]
+    pub fn background_with(mut self, resolve: impl Fn(&BuildContext) -> Color + 'static) -> Self {
+        self.background = Some(Background::Resolved(Rc::new(resolve)));
+        self
+    }
     /// Holds the blur at its peak through the middle of the dissolve, by
     /// `fraction` of it in `0.0..=0.95`, instead of a single swell. See
     /// [`ExpandSpec::blur_held`].
@@ -239,9 +280,12 @@ impl<R> ExpandTransition<R> {
     /// `effect` with the background of the window, if one was set. The window is
     /// the page painted on top: the arriving one on a push, the departing one on
     /// a pop.
-    fn backed(&self, effect: ResolvedNavigationTransition, reverse: bool) -> ResolvedNavigationTransition {
-        match self.background {
-            Some(color) => effect.with_backing(color, if reverse { TransitionPage::Outgoing } else { TransitionPage::Incoming }),
+    fn backed(&self, effect: ResolvedNavigationTransition, reverse: bool, ctx: &BuildContext) -> ResolvedNavigationTransition {
+        match &self.background {
+            Some(background) => effect.with_backing(
+                background.color(ctx),
+                if reverse { TransitionPage::Outgoing } else { TransitionPage::Incoming },
+            ),
             None => effect,
         }
     }
@@ -306,6 +350,6 @@ impl<R: Route> NavigationTransition<R> for ExpandTransition<R> {
                 self.duration, self.curve.clone(),
                 move |p, size, origin| sample(p, size, origin).frame),
         };
-        effect.map(|effect| self.backed(self.veiled(effect.outgoing_on_top(reverse), reverse), reverse))
+        effect.map(|effect| self.backed(self.veiled(effect.outgoing_on_top(reverse), reverse), reverse, navigation.build_context))
     }
 }

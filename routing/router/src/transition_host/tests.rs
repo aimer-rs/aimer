@@ -1537,7 +1537,10 @@ mod presentation {
     }
 
     #[test]
-    fn a_backing_follows_the_page_it_backs_so_nothing_behind_shows_through_its_window() {
+    fn the_backing_paints_the_window_itself_so_it_takes_no_presentation_of_its_own() {
+        // A layer that the host moved and clipped could be drawn, for a frame, with
+        // the move and without the clip: a host-sized rectangle over everything
+        // behind. This one has nothing to clip: it paints the window.
         let context = context();
         let element = host(backed_effect(crate::TransitionPage::Incoming, false), &context);
         let (tree, root, nodes) = veiled_tree();
@@ -1545,21 +1548,31 @@ mod presentation {
         assert!(sync(&element, &tree, root, &context));
 
         // Paint order: the departing page, the backing, the arriving page.
-        let backing = nodes[1];
-        let (transform, opacity) = tree.presentation(backing).unwrap();
-        assert_eq!(transform, Mat3::translate(10.0, 20.0), "moved with the window");
-        assert_eq!(opacity, 1.0, "and opaque, whatever the page's own opacity: a page that is still fading in must not let the page behind show through");
-        assert_eq!(
-            clip_of(&tree, backing),
-            (Some(Rect::new(10.0, 20.0, 40.0, 30.0)), [8.0; 4]),
-            "clipped to the window, with its corners"
-        );
-        assert_eq!(tree.presentation(nodes[0]).unwrap().1, 0.25, "the page below is untouched");
-        assert_eq!(tree.presentation(nodes[2]).unwrap().1, 0.75, "and so is the page on top");
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::identity(), 1.0), "the backing is left as it is");
+        assert_eq!(tree.presentation(nodes[0]).unwrap().1, 0.25, "the page below is presented");
+        assert_eq!(tree.presentation(nodes[2]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75), "and so is the page on top");
     }
 
     #[test]
-    fn a_backing_can_follow_the_departing_page_when_that_is_the_one_on_top() {
+    fn the_backing_is_the_size_of_the_host_at_its_corner() {
+        let context = context();
+        let element = host(backed_effect(crate::TransitionPage::Incoming, false), &context);
+        let mut geometry = Vec::new();
+
+        element.visit_retained_v2_children(&mut |index, child| {
+            geometry.push((index, element.retained_v2_child_geometry_at(&context, child, index)));
+        });
+
+        // Slot 4 is the backing: the host's own box, and no clip of its own.
+        let backing = geometry.iter().find(|(index, _)| *index == 4).expect("the backing is visited");
+        assert_eq!(backing.1, Some((Rect::new(0.0, 0.0, 100.0, 100.0), None)));
+        for (index, geometry) in &geometry {
+            if *index != 4 { assert_eq!(*geometry, None, "slot {index} keeps the geometry it has"); }
+        }
+    }
+
+    #[test]
+    fn a_backing_can_stand_under_the_departing_page_when_that_is_the_one_on_top() {
         let context = context();
         let effect = ResolvedNavigationTransition::new(Duration::from_millis(100), curves::LINEAR, |_, _| {
             NavigationTransitionFrame { outgoing: window(), incoming: opacity(0.5) }
@@ -1573,7 +1586,9 @@ mod presentation {
         assert!(sync(&element, &tree, root, &context));
 
         // Paint order: the arriving page, the backing, the departing page.
-        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::translate(10.0, 20.0), 1.0));
+        assert_eq!(tree.presentation(nodes[0]).unwrap().1, 0.5, "the arriving page below");
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::identity(), 1.0));
+        assert_eq!(tree.presentation(nodes[2]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75), "the departing page on top");
     }
 
     #[test]
@@ -1603,7 +1618,8 @@ mod presentation {
         assert!(sync(&element, &tree, root, &context));
 
         // Painted: departing page, backing, arriving page, the item's copy, the veil.
-        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::translate(10.0, 20.0), 1.0), "backing");
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::identity(), 1.0), "the backing takes none");
+        assert_eq!(tree.presentation(nodes[2]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75), "the arriving page");
         assert_eq!(tree.presentation(nodes[3]).unwrap().1, 0.5, "the copy keeps its own presentation");
         assert_eq!(tree.presentation(nodes[4]).unwrap(), (Mat3::translate(10.0, 20.0), 1.0), "veil");
     }
