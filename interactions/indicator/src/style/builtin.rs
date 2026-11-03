@@ -38,6 +38,8 @@ pub struct LiquidGlass {
     thickness: f32,
     bulge: f32,
     bulge_radius: f32,
+    bevel_width: f32,
+    radial: bool,
     rim: f32,
 }
 
@@ -60,6 +62,8 @@ pub const LIQUID_GLASS: LiquidGlass = LiquidGlass {
     thickness: 10.0,
     bulge: 0.15,
     bulge_radius: 0.0,
+    bevel_width: 0.0,
+    radial: false,
     rim: 0.8,
 };
 
@@ -158,6 +162,29 @@ impl LiquidGlass {
         self
     }
 
+    /// Sets how wide the band of bent content at the rim is, in logical pixels,
+    /// independently of the [thickness](Self::thickness). `0.0`, the default,
+    /// makes the band as wide as the thickness. See
+    /// [`Magnification::bevel_width`]. Negative or non-finite values make the
+    /// style invalid.
+    #[inline]
+    pub const fn bevel_width(mut self, width: f32) -> Self {
+        self.bevel_width = width;
+        self
+    }
+
+    /// Chooses how the glass bends what is under it: `false`, the default, bends
+    /// only a band at the rim and leaves the middle flat; `true` pulls the content
+    /// toward the middle across the whole lens, nothing at the center and the
+    /// [thickness](Self::thickness) at the rim, as a convex lens does. See
+    /// [`MagnificationStyle::RADIAL`]. With it on, [`bevel_width`](Self::bevel_width)
+    /// narrows the pulled region, which is the whole lens when unset.
+    #[inline]
+    pub const fn radial(mut self, radial: bool) -> Self {
+        self.radial = radial;
+        self
+    }
+
     /// Sets the strength of the rim of light, from `0.0` for none to `1.0`.
     /// Values outside that range or that are not finite make the style invalid.
     #[inline]
@@ -179,11 +206,16 @@ impl LiquidGlass {
             .style(
                 MagnificationStyle::UNIFORM
                     | MagnificationStyle::BULGE
-                    | MagnificationStyle::REFRACTION,
+                    | if self.radial {
+                        MagnificationStyle::RADIAL
+                    } else {
+                        MagnificationStyle::REFRACTION
+                    },
             )
             .zoom(self.zoom)
             .bulge(self.bulge)
             .bulge_radius(self.bulge_radius)
+            .bevel_width(self.bevel_width)
             .thickness(self.thickness)
     }
 
@@ -248,6 +280,8 @@ impl IndicatorStyle for LiquidGlass {
             && (0.0..=1.0).contains(&self.bulge)
             && self.bulge_radius.is_finite()
             && self.bulge_radius >= 0.0
+            && self.bevel_width.is_finite()
+            && self.bevel_width >= 0.0
             && (0.0..=1.0).contains(&self.rim)
     }
 
@@ -369,6 +403,35 @@ mod tests {
         assert_ne!(LIQUID_GLASS.into_any(), shaped.into_any());
         for broken in [-1.0, f32::NAN, f32::INFINITY] {
             let style = LIQUID_GLASS.bulge_radius(broken);
+            assert!(!style.is_valid(), "{broken}");
+            assert!(style.into_any().layer(IndicatorLayer::Lift, SLOT).is_none());
+        }
+    }
+
+    #[test]
+    fn a_radial_lens_swaps_the_rim_bevel_for_the_inward_pull() {
+        let style = |glass: LiquidGlass| materials(glass.lens(SLOT))[0].magnification_style;
+        assert!(style(LIQUID_GLASS).contains(MagnificationStyle::REFRACTION));
+        assert!(!style(LIQUID_GLASS).contains(MagnificationStyle::RADIAL));
+        let radial = style(LIQUID_GLASS.radial(true));
+        assert!(radial.contains(MagnificationStyle::RADIAL));
+        assert!(!radial.contains(MagnificationStyle::REFRACTION));
+        // The rest of the lens is untouched.
+        assert!(radial.contains(MagnificationStyle::UNIFORM | MagnificationStyle::BULGE));
+        assert_ne!(LIQUID_GLASS.into_any(), LIQUID_GLASS.radial(true).into_any());
+        assert_eq!(style(LIQUID_GLASS.radial(true).radial(false)), style(LIQUID_GLASS));
+    }
+
+    #[test]
+    fn the_bevel_width_shapes_the_lens_and_is_validated() {
+        assert_eq!(materials(LIQUID_GLASS.lens(SLOT))[0].bevel_width, 0.0);
+        let shaped = LIQUID_GLASS.bevel_width(6.0);
+        assert!(shaped.is_valid());
+        let lens = &materials(shaped.lens(SLOT))[0];
+        assert_eq!((lens.bevel_width, lens.bevel_radius), (6.0, LIQUID_GLASS.thickness));
+        assert_ne!(LIQUID_GLASS.into_any(), shaped.into_any());
+        for broken in [-1.0, f32::NAN, f32::INFINITY] {
+            let style = LIQUID_GLASS.bevel_width(broken);
             assert!(!style.is_valid(), "{broken}");
             assert!(style.into_any().layer(IndicatorLayer::Lift, SLOT).is_none());
         }

@@ -140,6 +140,10 @@ pub struct MaterialDrawRequest {
     /// Zero keeps the bell-shaped bulge; a positive radius gives it a flat top
     /// that rolls off along a quarter circle over that distance from the edge.
     pub bulge_radius: f32,
+    /// Magnification bevel width in logical pixels, `0.0..=512.0`. Zero derives
+    /// the width from the depth; a positive width sets how far in from the edge
+    /// the refraction reaches, and may exceed the corner radii.
+    pub bevel_width: f32,
     /// LightEdge light direction in degrees clockwise from screen-right.
     pub light_angle: f32,
     /// Color ramp of a [`MaterialKind::Gradient`]; ignored by every other kind.
@@ -159,10 +163,10 @@ impl MaterialDrawRequest {
     /// does not fit the shared body and is appended to it.
     pub const GRADIENT_VERSION: u8 = 4;
     /// Packet schema version of a [`MaterialKind::Magnification`], which
-    /// appends its bulge radius to the shared body.
+    /// appends its bulge radius and bevel width to the shared body.
     pub const MAGNIFICATION_VERSION: u8 = 5;
     /// Exact byte length of [`Self::encode`] for a [`MaterialKind::Magnification`].
-    pub const MAGNIFICATION_PACKET_LEN: usize = Self::PACKET_LEN + 4;
+    pub const MAGNIFICATION_PACKET_LEN: usize = Self::PACKET_LEN + 8;
     /// Exact byte length of [`Self::encode`] for a [`MaterialKind::Gradient`].
     pub const GRADIENT_PACKET_LEN: usize =
         Self::PACKET_LEN + aimer_cupid::material::GRADIENT_PACKET_EXTENSION_LEN;
@@ -229,6 +233,7 @@ impl MaterialDrawRequest {
                 0.0
             },
             bulge_radius: 0.0,
+            bevel_width: 0.0,
             light_angle: 225.0,
             gradient: MaterialGradient::default(),
             quality: 2,
@@ -295,10 +300,12 @@ impl MaterialDrawRequest {
         if self.kind == MaterialKind::Magnification {
             self.bulge_strength = normalize(self.bulge_strength, 0.25, 0.0, 1.0);
             self.bulge_radius = normalize(self.bulge_radius, 0.0, 0.0, 512.0);
+            self.bevel_width = normalize(self.bevel_width, 0.0, 0.0, 512.0);
         } else {
             self.magnification_style = MagnificationStyle::NONE;
             self.bulge_strength = 0.0;
             self.bulge_radius = 0.0;
+            self.bevel_width = 0.0;
         }
         self.light_angle = if self.light_angle.is_finite() {
             self.light_angle.rem_euclid(360.0)
@@ -374,6 +381,7 @@ impl MaterialDrawRequest {
         debug_assert_eq!(bytes.len(), Self::PACKET_LEN);
         if request.kind == MaterialKind::Magnification {
             push_f32(&mut bytes, request.bulge_radius);
+            push_f32(&mut bytes, request.bevel_width);
             debug_assert_eq!(bytes.len(), Self::MAGNIFICATION_PACKET_LEN);
         }
         if request.kind == MaterialKind::Gradient {
@@ -563,16 +571,19 @@ mod tests {
     fn a_lens_packet_carries_the_bulge_radius_in_its_own_versioned_length() {
         let mut lens = MaterialDrawRequest::new(MaterialKind::Magnification, [0.0, 0.0, 80.0, 40.0]);
         lens.bulge_radius = 12.0;
+        lens.bevel_width = 5.0;
         let bytes = lens.encode();
         assert_eq!(bytes.len(), MaterialDrawRequest::MAGNIFICATION_PACKET_LEN);
         assert_eq!(bytes[4], MaterialDrawRequest::MAGNIFICATION_VERSION);
         let decoded = aimer_cupid::material::MaterialRequest::decode(&bytes).unwrap();
-        assert_eq!(decoded.bulge_radius, 12.0);
-        // Another kind has no use for it and keeps the shared body.
+        assert_eq!((decoded.bulge_radius, decoded.bevel_width), (12.0, 5.0));
+        assert_eq!(bytes.len(), MaterialDrawRequest::PACKET_LEN + 8);
+        // Another kind has no use for them and keeps the shared body.
         let mut glass = MaterialDrawRequest::new(MaterialKind::Glass, [0.0, 0.0, 80.0, 40.0]);
         glass.bulge_radius = 12.0;
+        glass.bevel_width = 12.0;
         assert_eq!(glass.encode().len(), MaterialDrawRequest::PACKET_LEN);
-        assert_eq!(glass.normalized().bulge_radius, 0.0);
+        assert_eq!((glass.normalized().bulge_radius, glass.normalized().bevel_width), (0.0, 0.0));
     }
 
     #[test]

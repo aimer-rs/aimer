@@ -25,7 +25,7 @@ fn request(lens: Magnification) -> MaterialRequest {
     let [DrawCommand::DrawCustom { data, .. }] = commands.as_slice() else {
         panic!("one lens packet")
     };
-    assert_eq!(data.len(), 260);
+    assert_eq!(data.len(), 264);
     MaterialRequest::decode(data).unwrap()
 }
 
@@ -221,4 +221,27 @@ fn bulge_radius_defaults_to_the_bell_and_is_carried_bounded() {
     let shaped = request(Magnification::new().bulge_radius(12.0));
     assert_eq!(shaped.bulge_strength, 0.25);
     assert_eq!(shaped.magnification, 1.4);
+}
+
+#[test]
+fn bevel_width_defaults_to_the_depth_derived_one_and_is_carried_bounded() {
+    assert_eq!(request(Magnification::new()).bevel_width, 0.0);
+    assert_eq!(request(Magnification::new().bevel_width(6.0)).bevel_width, 6.0);
+    assert_eq!(request(Magnification::new().bevel_width(999.0)).bevel_width, 512.0);
+    for invalid in [-1.0, f32::NAN, f32::INFINITY] {
+        assert_eq!(request(Magnification::new().bevel_width(invalid)).bevel_width, 0.0);
+    }
+    // The width is not the depth.
+    let wide = request(Magnification::new().thickness(24.0).bevel_width(6.0));
+    assert_eq!((wide.bevel_radius, wide.bevel_width), (24.0, 6.0));
+}
+
+#[test]
+fn a_radial_lens_paints_with_thickness_and_not_without() {
+    let radial = Magnification::new().style(S::RADIAL).zoom(1.0).bulge(0.0);
+    let shown = request(radial.thickness(20.0));
+    assert_eq!(shown.magnification_style, S::RADIAL);
+    assert_eq!(shown.bevel_radius, 20.0);
+    let size = ResolvedSize { width: 80.0, height: 40.0 };
+    assert!(recorded(radial.thickness(0.0), size).is_empty());
 }

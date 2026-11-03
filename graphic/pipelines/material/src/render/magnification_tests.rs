@@ -299,3 +299,83 @@ fn the_shoulder_radius_reaches_the_lens_uniform_in_device_pixels_bounded_by_the_
     request.magnification_style = S::UNIFORM | S::REFRACTION;
     assert_eq!(radius(request), 0.0);
 }
+
+#[test]
+fn an_explicit_bevel_width_is_signed_for_the_shader_and_not_capped_by_the_corners() {
+    let mut request = MaterialRequest::new(MaterialKind::Magnification, [0.0, 0.0, 320.0, 208.0]);
+    request.bevel_radius = 64.0;
+    request.transform = [2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0];
+    let width = |request: MaterialRequest| {
+        let uniform = MaterialUniform::from_request(request, 640, 400, false, None);
+        // Depth 128 is itself limited to half the shorter side.
+        assert_eq!(uniform.liquid2[1], 104.0, "the width never changes the optical depth");
+        uniform.liquid2[2]
+    };
+    request.corner_radii = [0.0; 4];
+    // Unset: positive, as wide as the depth.
+    assert_eq!(width(request), 104.0, "as wide as the depth");
+    // Set: negative marks an explicit width, in logical pixels times the display scale.
+    request.bevel_width = 10.0;
+    assert_eq!(width(request), -20.0);
+    request.bevel_width = 500.0;
+    assert_eq!(width(request), -104.0, "bounded by half the shorter side");
+    // Rounded corners cap only the derived width: an explicit one keeps the
+    // corner radius on its inner contour instead, so it may be wider than they are.
+    request.bevel_width = 40.0;
+    request.corner_radii = [16.0; 4];
+    assert_eq!(width(request), -80.0);
+    request.bevel_width = 0.0;
+    assert_eq!(width(request), 16.0, "the derived width still stops at the corners");
+    // Without depth there is no refraction for a width to shape.
+    request.bevel_width = 40.0;
+    request.bevel_radius = 0.0;
+    let uniform = MaterialUniform::from_request(request, 640, 400, false, None);
+    assert_eq!(uniform.liquid2[2], 0.0);
+}
+
+#[test]
+fn a_radial_lens_pulls_across_the_whole_box_unless_given_a_narrower_band() {
+    use crate::MagnificationStyle as S;
+    let mut request = MaterialRequest::new(MaterialKind::Magnification, [0.0, 0.0, 320.0, 208.0]);
+    request.bevel_radius = 40.0;
+    request.transform = [2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0];
+    request.magnification_style = S::UNIFORM | S::RADIAL;
+    let uniform = |request: MaterialRequest| {
+        MaterialUniform::from_request(request, 640, 400, false, None)
+    };
+    // The pull is the thickness at the rim, in device pixels; refraction is not selected.
+    assert_eq!(uniform(request).liquid2[1], 80.0);
+    // The profile reaches the shader in a slot a lens never otherwise reads.
+    assert_eq!(uniform(request).tint, [1.0, 0.0, 0.0, 0.0]);
+    // Unset, the band is half the shorter side (negative: the rounded-contour path).
+    assert_eq!(uniform(request).liquid2[2], -104.0);
+    request.bevel_width = 10.0;
+    assert_eq!(uniform(request).liquid2[2], -20.0);
+    // A bevel lens keeps its profile marker clear, and so does every other kind.
+    request.magnification_style = S::UNIFORM | S::REFRACTION;
+    assert_eq!(uniform(request).tint, [0.0; 4]);
+    // Without thickness there is nothing to pull with.
+    request.magnification_style = S::UNIFORM | S::RADIAL;
+    request.bevel_radius = 0.0;
+    let flat = uniform(request);
+    assert_eq!((flat.liquid2[1], flat.liquid2[2]), (0.0, 0.0));
+}
+
+#[test]
+fn a_radial_lens_is_painted_only_with_thickness() {
+    use crate::{MagnificationStyle as S, MaterialCapabilities};
+    let mut request = MaterialRequest::new(MaterialKind::Magnification, [0.0, 0.0, 320.0, 208.0]);
+    request.magnification = 1.0;
+    request.bulge_strength = 0.0;
+    request.magnification_style = S::RADIAL;
+    request.bevel_radius = 0.0;
+    assert_eq!(
+        plan_material(request, MaterialCapabilities::default()).path,
+        MaterialRenderPath::Skip
+    );
+    request.bevel_radius = 16.0;
+    assert_ne!(
+        plan_material(request, MaterialCapabilities::default()).path,
+        MaterialRenderPath::Skip
+    );
+}

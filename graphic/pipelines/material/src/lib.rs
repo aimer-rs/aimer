@@ -32,12 +32,13 @@ pub const MATERIAL_GRADIENT_PACKET_VERSION: u8 = 4;
 pub const MATERIAL_GRADIENT_PACKET_LEN: usize = MATERIAL_PACKET_LEN + GRADIENT_PACKET_EXTENSION_LEN;
 /// The packet version of [`MaterialKind::Magnification`] requests.
 ///
-/// A lens appends its [`MaterialRequest::bulge_radius`] to the version-3 body,
-/// which has no room for it. Every other kind keeps version 3, and a version-3
+/// A lens appends its [`MaterialRequest::bulge_radius`] and
+/// [`MaterialRequest::bevel_width`] to the version-3 body, which has no room
+/// for them. Every other kind keeps version 3, and a version-3
 /// lens packet still decodes, with the bell-shaped bulge.
 pub const MATERIAL_MAGNIFICATION_PACKET_VERSION: u8 = 5;
 /// The exact size of one encoded [`MaterialKind::Magnification`] request.
-pub const MATERIAL_MAGNIFICATION_PACKET_LEN: usize = MATERIAL_PACKET_LEN + 4;
+pub const MATERIAL_MAGNIFICATION_PACKET_LEN: usize = MATERIAL_PACKET_LEN + 8;
 /// Maximum intermediate texture dimension used by one surface.
 ///
 /// iOS devices get a larger budget; see [`intermediate_pixel_budget`].
@@ -223,6 +224,13 @@ pub struct MaterialRequest {
     /// radius gives the bulge a flat top that rolls off along a quarter circle
     /// over this distance from the edge, limited to half the shorter side.
     pub bulge_radius: f32,
+    /// Magnification bevel width in logical pixels, `0.0..=512.0`.
+    ///
+    /// Zero keeps the width derived from the depth ([`Self::bevel_radius`]).
+    /// A positive width sets how far in from the edge the refraction reaches,
+    /// independently of the depth, and may exceed the corner radii. Without
+    /// depth there is no refraction for it to shape.
+    pub bevel_width: f32,
     /// LightEdge light direction in degrees clockwise from screen-right.
     pub light_angle: f32,
     /// Color ramp of a [`MaterialKind::Gradient`]; empty for every other kind.
@@ -286,6 +294,7 @@ impl MaterialRequest {
                 0.0
             },
             bulge_radius: 0.0,
+            bevel_width: 0.0,
             light_angle: 225.0,
             gradient: MaterialGradient {
                 shape: GradientShape::Linear,
@@ -362,6 +371,7 @@ impl MaterialRequest {
         debug_assert_eq!(bytes.len(), MATERIAL_PACKET_LEN);
         if request.kind == MaterialKind::Magnification {
             bytes.extend_from_slice(&request.bulge_radius.to_le_bytes());
+            bytes.extend_from_slice(&request.bevel_width.to_le_bytes());
             debug_assert_eq!(bytes.len(), MATERIAL_MAGNIFICATION_PACKET_LEN);
         }
         if request.kind == MaterialKind::Gradient {
@@ -420,10 +430,12 @@ impl MaterialRequest {
         if self.kind == MaterialKind::Magnification {
             self.bulge_strength = normalize(self.bulge_strength, 0.25, 0.0, 1.0);
             self.bulge_radius = normalize(self.bulge_radius, 0.0, 0.0, 512.0);
+            self.bevel_width = normalize(self.bevel_width, 0.0, 0.0, 512.0);
         } else {
             self.magnification_style = MagnificationStyle::NONE;
             self.bulge_strength = 0.0;
             self.bulge_radius = 0.0;
+            self.bevel_width = 0.0;
         }
         self.light_angle = if self.light_angle.is_finite() {
             self.light_angle.rem_euclid(360.0)
@@ -534,10 +546,10 @@ impl MaterialRequest {
             (style, reader.f32()?)
         };
         let light_angle = if version >= 3 { reader.f32()? } else { 225.0 };
-        let bulge_radius = if version == MATERIAL_MAGNIFICATION_PACKET_VERSION {
-            reader.f32()?
+        let (bulge_radius, bevel_width) = if version == MATERIAL_MAGNIFICATION_PACKET_VERSION {
+            (reader.f32()?, reader.f32()?)
         } else {
-            0.0
+            (0.0, 0.0)
         };
         let gradient = if kind == MaterialKind::Gradient {
             debug_assert_eq!(reader.position(), MATERIAL_PACKET_LEN);
@@ -583,6 +595,7 @@ impl MaterialRequest {
             magnification_style,
             bulge_strength,
             bulge_radius,
+            bevel_width,
             light_angle,
             gradient,
             quality,
@@ -768,7 +781,7 @@ pub fn plan_material(
                 && request.bulge_strength > 0.0
             || request
                 .magnification_style
-                .contains(MagnificationStyle::REFRACTION)
+                .intersects(MagnificationStyle::REFRACTION | MagnificationStyle::RADIAL)
                 && request.bevel_radius > 0.0);
     let inert_edge = request.kind == MaterialKind::LightEdge
         && (request.border_width == 0.0

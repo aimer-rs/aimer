@@ -863,6 +863,30 @@ fn an_expanding_blur_covers_the_growing_window_not_the_whole_host() {
     assert_eq!(plain.veil_page(), None);
 }
 
+#[test]
+fn an_expanding_background_backs_the_growing_window_only_when_asked() {
+    use aimer_widget::base::Color;
+    use aimer_router::TransitionPage;
+    let ctx = context();
+    let _item = repeatable_item("album-7", row(), &ctx);
+    let backing = |transition: ExpandTransition<Page>, from, to, action| {
+        resolve_expand(&transition, from, to, action, &ctx).unwrap().backing()
+    };
+    let paper = Color::Rgba(250, 248, 240, 255);
+
+    assert_eq!(backing(expanding(), 0, 7, NavigationAction::Push), None);
+    // The window is the arriving page when it opens and the departing one when it
+    // closes back into the item; the background is that page's.
+    assert_eq!(
+        backing(expanding().background(paper), 0, 7, NavigationAction::Push),
+        Some((paper, TransitionPage::Incoming))
+    );
+    assert_eq!(
+        backing(expanding().background(paper).blur(12.0), 7, 0, NavigationAction::Pop),
+        Some((paper, TransitionPage::Outgoing))
+    );
+}
+
 fn resolve_expand(
     transition: &ExpandTransition<Page>,
     from: u32,

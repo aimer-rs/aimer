@@ -172,7 +172,7 @@ fn magnification_style_packets_preserve_legacy_and_reject_unknown_bits() {
         MaterialKind::Magnification,
         [0.0, 0.0, 80.0, 40.0],
     ));
-    bytes[244..248].copy_from_slice(&(1u32 << 9).to_le_bytes());
+    bytes[244..248].copy_from_slice(&(1u32 << 10).to_le_bytes());
     assert_eq!(
         MaterialRequest::decode(&bytes),
         Err(MaterialDecodeError::InvalidMagnificationStyle)
@@ -506,12 +506,14 @@ fn default_capabilities_follow_the_platform_budget() {
 fn magnification_packets_carry_the_bulge_radius_in_their_own_versioned_length() {
     let mut request = MaterialRequest::new(MaterialKind::Magnification, [1.0, 2.0, 80.0, 40.0]);
     request.bulge_radius = 12.0;
+    request.bevel_width = 5.0;
     let bytes = request.encode_for_test();
     assert_eq!(bytes.len(), MATERIAL_MAGNIFICATION_PACKET_LEN);
-    assert_eq!(bytes.len(), MATERIAL_PACKET_LEN + 4);
+    assert_eq!(bytes.len(), MATERIAL_PACKET_LEN + 8);
     assert_eq!(bytes[4], MATERIAL_MAGNIFICATION_PACKET_VERSION);
     assert_eq!(MaterialRequest::decode(&bytes), Ok(request.normalized()));
-    assert_eq!(MaterialRequest::decode(&bytes).unwrap().bulge_radius, 12.0);
+    let decoded = MaterialRequest::decode(&bytes).unwrap();
+    assert_eq!((decoded.bulge_radius, decoded.bevel_width), (12.0, 5.0));
 }
 
 #[test]
@@ -521,7 +523,8 @@ fn a_version_three_lens_packet_keeps_the_bell_shaped_bulge() {
     // The shared version-3 body has no room for the radius.
     let legacy = packet(request);
     assert_eq!(legacy[4], MATERIAL_PACKET_VERSION);
-    assert_eq!(MaterialRequest::decode(&legacy).unwrap().bulge_radius, 0.0);
+    let decoded = MaterialRequest::decode(&legacy).unwrap();
+    assert_eq!((decoded.bulge_radius, decoded.bevel_width), (0.0, 0.0));
 }
 
 #[test]
@@ -559,8 +562,15 @@ fn the_bulge_radius_is_bounded_and_ignored_by_other_kinds() {
         lens.bulge_radius = value;
         assert_eq!(lens.normalized().bulge_radius, expected, "{value}");
     }
+    for (value, expected) in [(-4.0, 0.0), (f32::NAN, 0.0), (9_999.0, 512.0), (6.0, 6.0)] {
+        let mut lens = MaterialRequest::new(MaterialKind::Magnification, [0.0, 0.0, 80.0, 40.0]);
+        lens.bevel_width = value;
+        assert_eq!(lens.normalized().bevel_width, expected, "{value}");
+    }
     let mut glass = MaterialRequest::new(MaterialKind::Glass, [0.0, 0.0, 80.0, 40.0]);
     glass.bulge_radius = 24.0;
+    glass.bevel_width = 24.0;
     assert_eq!(glass.normalized().bulge_radius, 0.0);
+    assert_eq!(glass.normalized().bevel_width, 0.0);
     assert_eq!(glass.encode_for_test().len(), MATERIAL_PACKET_LEN);
 }

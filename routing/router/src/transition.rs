@@ -102,6 +102,7 @@ use std::time::Duration;
 pub use aimer_animation::{AnyCurve, Curve, PaintPresentation, curves};
 use aimer_animation::{SharedContent, StageSpans, last_shared_element};
 use aimer_canvas::Mat3;
+use aimer_widget::base::Color;
 use aimer_container::SizedBox;
 use aimer_decoration::{BackdropFilter, DecorationBox};
 use aimer_attribute::Dimension;
@@ -244,6 +245,8 @@ pub struct ResolvedNavigationTransition {
     veil_above: bool,
     /// The page whose presentation the veil is shown with, if it is not to fill the host.
     veil_follows: Option<TransitionPage>,
+    /// A solid layer directly under the page painted on top, shown as that page is.
+    backing: Option<(Color, TransitionPage)>,
     /// Receives eased progress, the host's logical size, and the host's
     /// top-left corner in the window in logical pixels.
     sampler: Box<dyn Fn(f32, ResolvedSize, (f32, f32)) -> AnchoredFrame>,
@@ -303,7 +306,7 @@ impl ResolvedNavigationTransition {
         if !curve.is_valid() { return None; }
         Some(Self {
             duration, curve, outgoing_on_top: false, anchor, veil: None, veil_above: false,
-            veil_follows: None, sampler: Box::new(sampler),
+            veil_follows: None, backing: None, sampler: Box::new(sampler),
         })
     }
 
@@ -350,6 +353,25 @@ impl ResolvedNavigationTransition {
 
     /// Whether the veil is painted above everything rather than between the pages.
     pub(crate) fn veil_above(&self) -> bool { self.veil_above }
+
+    /// Puts a solid `color` directly under the page painted on top, shown with the
+    /// presentation of `page`: moved, clipped, rounded and faded as it is.
+    ///
+    /// A page that paints no background of its own is see-through, so while it is
+    /// a window growing out of an item, whatever is on the page beneath shows in it,
+    /// and a [`veil`](Self::with_veil_above) blurs that along with the page. The
+    /// backing is the page's missing background: nothing beneath shows through the
+    /// window. `page` should be the page painted on top, which is the arriving
+    /// one unless [`outgoing_on_top`](Self::outgoing_on_top) says otherwise. The
+    /// layer takes no input and is dropped when the effect ends.
+    pub fn with_backing(mut self, color: Color, page: TransitionPage) -> Self {
+        self.backing = Some((color, page));
+        self
+    }
+
+    /// The color and the page of the backing, if the effect has one; see
+    /// [`with_backing`](Self::with_backing).
+    pub fn backing(&self) -> Option<(Color, TransitionPage)> { self.backing }
 
     /// The layer built between the pages, if the effect has one.
     pub(crate) fn veil(&self) -> Option<&Rc<dyn Fn(f32) -> AnyWidget>> { self.veil.as_ref() }

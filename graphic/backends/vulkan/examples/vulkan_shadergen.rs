@@ -1,9 +1,11 @@
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use std::path::PathBuf;
 
 // Regenerate checked-in Vulkan shader modules with:
 // `cargo run -p aimer_vulkan --example vulkan_shadergen`
 // Pass a shader name (for example `-- material`) to regenerate only that module.
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
 const SHADERS: &[(&str, &str)] = &[
     (
         "rect",
@@ -59,6 +61,7 @@ const SHADERS: &[(&str, &str)] = &[
     ),
 ];
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn main() {
     let selected = std::env::args().nth(1);
     if let Some(name) = selected.as_deref() {
@@ -83,10 +86,12 @@ fn main() {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn compile_spirv(source: &str) -> Result<Vec<u8>, String> {
     aimer_vulkan::compile_wgsl_to_spirv(source)
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
 #[cfg(test)]
 mod tests {
     use super::{SHADERS, compile_spirv};
@@ -123,4 +128,10 @@ mod tests {
             _ => panic!("unlisted Vulkan shader {name}"),
         }
     }
+}
+
+// The WGSL to SPIR-V compiler is built only for Linux and Android.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn main() {
+    eprintln!("vulkan_shadergen runs only on Linux and Android hosts");
 }

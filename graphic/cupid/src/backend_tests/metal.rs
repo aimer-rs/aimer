@@ -1134,6 +1134,14 @@ fn cropped_opacity_groups_render_with_msaa_through_native_metal() {
 /// zoom or refraction, so a lens pixel's red reads back as twice the column it
 /// sampled. Returns the frame, or `None` without a Metal device.
 fn render_bulge_lens(bulge_radius: f32) -> Option<Vec<u8>> {
+    render_lens(|request| request.bulge_radius = bulge_radius)
+}
+
+/// [`render_bulge_lens`]'s scene, with `configure` applied to the lens request
+/// after the bulge setup, so a test can change the shape, style or bevel.
+fn render_lens(
+    configure: impl FnOnce(&mut crate::pipeline::material::MaterialRequest),
+) -> Option<Vec<u8>> {
     use std::sync::Arc;
 
     use crate::pipeline::material::{
@@ -1168,7 +1176,6 @@ fn render_bulge_lens(bulge_radius: f32) -> Option<Vec<u8>> {
     request.magnification_style = MagnificationStyle::UNIFORM | MagnificationStyle::BULGE;
     request.magnification = 1.0;
     request.bulge_strength = 1.0;
-    request.bulge_radius = bulge_radius;
     request.bevel_radius = 0.0;
     request.corner_radii = [24.0; 4];
     request.opacity = 1.0;
@@ -1181,6 +1188,7 @@ fn render_bulge_lens(bulge_radius: f32) -> Option<Vec<u8>> {
     request.specular_highlight = 0.0;
     request.distortion_strength = 0.0;
     request.chromatic_aberration = 0.0;
+    configure(&mut request);
     tree.context(lens)
         .unwrap()
         .begin_recording()
@@ -1277,6 +1285,65 @@ fn bulge_plateau_is_flat_inside_a_ring_of_the_radius_on_metal() {
     // The plateau is linear, so equal steps give equal red steps.
     let (a, b) = (red(88) - red(80), red(104) - red(96));
     assert!((a - b).abs() <= 3.0, "plateau steps {a} and {b}");
+}
+
+/// An explicit bevel width reaches past the corner radius. The derived width
+/// stops at the smallest corner radius (4 here), so 6.5 px in from the left
+/// edge, on the center row, nothing bends. An explicit width of 16 is measured
+/// against an inner contour that keeps the corner radius, so the same pixel is
+/// inside the band and the lens shows displaced content.
+#[test]
+fn explicit_bevel_width_is_not_capped_by_the_corner_radius_on_metal() {
+    use crate::pipeline::material::MagnificationStyle;
+    let lens = |width: f32| {
+        render_lens(|request| {
+            request.magnification_style = MagnificationStyle::UNIFORM | MagnificationStyle::REFRACTION;
+            request.bulge_strength = 0.0;
+            request.bevel_radius = 24.0;
+            request.corner_radii = [4.0; 4];
+            request.bevel_width = width;
+        })
+    };
+    let (Some(derived), Some(explicit)) = (lens(0.0), lens(16.0)) else { return };
+    let red = |frame: &[u8], x: u32| f32::from(pixel_with_stride(frame, 128 * 4, x, 48)[0]);
+    // The gradient reads twice the column, and column 14.5 is undisplaced.
+    assert!((red(&derived, 14) - 29.0).abs() <= 4.0, "derived: red {}", red(&derived, 14));
+    assert!(
+        (red(&explicit, 14) - red(&derived, 14)).abs() >= 8.0,
+        "explicit: red {} against derived {}",
+        red(&explicit, 14),
+        red(&derived, 14)
+    );
+    // Deep inside either, nothing bends.
+    assert!((red(&explicit, 64) - red(&derived, 64)).abs() <= 3.0);
+}
+
+/// The radial pull displaces smoothly across the whole lens: nothing at the
+/// center, growing toward the rim, always toward the middle. On the center row of
+/// a capsule with 20 px of thickness the pull at a pixel with inset t across the
+/// 24 px band is 20 * (1 - t / 24)^2, so 1.5 px from the right edge it is about
+/// 17.6 px and the lens shows content that far inward; at the middle it is zero.
+#[test]
+fn radial_pull_grows_from_nothing_at_the_middle_to_the_thickness_at_the_rim_on_metal() {
+    use crate::pipeline::material::MagnificationStyle;
+    let Some(frame) = render_lens(|request| {
+        request.magnification_style = MagnificationStyle::UNIFORM | MagnificationStyle::RADIAL;
+        request.bulge_strength = 0.0;
+        request.bevel_radius = 20.0;
+    }) else {
+        return;
+    };
+    let red = |x: u32| f32::from(pixel_with_stride(&frame, 128 * 4, x, 48)[0]);
+    // Undisplaced, a pixel reads twice its own column (+1 for its center).
+    assert!((red(64) - 129.0).abs() <= 3.0, "middle: red {}", red(64));
+    // Near the right rim the content comes from further in: 118.5 - 17.6 = column 100.9.
+    assert!((red(118) - 202.0).abs() <= 8.0, "rim: red {}", red(118));
+    assert!(red(118) < 2.0 * 118.5 - 20.0, "pulled inward, not out: red {}", red(118));
+    // Mirror image on the left: 9.5 + 17.6 = column 27.1 (red 54), pulled inward too.
+    assert!((red(9) - 54.0).abs() <= 8.0, "left rim: red {}", red(9));
+    // The pull is monotonic: more displacement closer to the rim.
+    let shift = |x: u32| (2.0 * (x as f32 + 0.5) - red(x)).abs();
+    assert!(shift(100) < shift(110) && shift(110) < shift(116), "{} {} {}", shift(100), shift(110), shift(116));
 }
 
 /// Timing probe: `cargo nextest run -p aimer_cupid --run-ignored only --no-capture`.

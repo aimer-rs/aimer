@@ -64,9 +64,16 @@ mod tests {
     }
 
     #[test]
-    fn wgsl_declares_both_entry_points_and_compiles_for_vulkan() {
+    fn wgsl_declares_both_entry_points() {
         let wgsl = text(ShaderLanguage::Wgsl);
         assert!(wgsl.contains("fn vs_main") && wgsl.contains("fn fs_main"));
+    }
+
+    // The Vulkan compiler is built only for Linux and Android.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn wgsl_compiles_for_vulkan() {
+        let wgsl = text(ShaderLanguage::Wgsl);
         // The Vulkan backend turns this very text into SPIR-V at run time.
         let spirv = aimer_vulkan::compile_wgsl_to_spirv(&wgsl).unwrap();
         assert_eq!(&spirv[..4], 0x0723_0203_u32.to_le_bytes());

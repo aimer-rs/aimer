@@ -41,8 +41,9 @@ struct MaterialUniform {
     // Magnification: x/y physical anchor, z uniform zoom, w bulge strength.
     liquid: [f32; 4],
     // x: chromatic aberration, y: bevel radius/depth, z/w: Gaussian recurrence
-    // Magnification reuses z for its corner-bounded bevel width and w for the
-    // bulge shoulder radius, which no lens pass uses for blur.
+    // Magnification reuses z for its bevel width (negative when explicit, see
+    // `lens_bevel_width_pixels`) and w for the bulge shoulder radius, which no
+    // lens pass uses for blur.
     liquid2: [f32; 4],
 }
 
@@ -181,6 +182,11 @@ impl MaterialUniform {
                 }
             },
         };
+        if request.kind == MaterialKind::Magnification {
+            // A lens never reads `tint`, so the refraction profile rides there:
+            // 0 is the rim bevel, 1 the radial pull.
+            uniform.tint = [if is_radial_lens(&request) { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0];
+        }
         if request.kind == MaterialKind::Gradient {
             uniform.apply_gradient(&request.gradient);
         }
@@ -844,7 +850,7 @@ fn replaces_backdrop(kind: MaterialKind) -> bool {
 fn lens_thickness_pixels(request: &MaterialRequest) -> f32 {
     if !request
         .magnification_style
-        .contains(MagnificationStyle::REFRACTION)
+        .intersects(MagnificationStyle::REFRACTION | MagnificationStyle::RADIAL)
     {
         return 0.0;
     }
@@ -875,12 +881,38 @@ fn lens_bulge_radius_pixels(request: &MaterialRequest) -> f32 {
         .min(request.bounds[2].min(request.bounds[3]) * 0.5)
 }
 
+/// Whether the lens pulls radially across the box instead of bending a rim band.
+#[inline]
+fn is_radial_lens(request: &MaterialRequest) -> bool {
+    request.kind == MaterialKind::Magnification
+        && request.magnification_style.contains(MagnificationStyle::RADIAL)
+}
+
+/// The lens's bevel width for the shader, in device pixels.
+///
+/// Positive is the width derived from the depth, bounded by the corner radii:
+/// an inset beyond a rounded corner's radius crosses the SDF's medial axis,
+/// where the nearest-edge normal jumps, so the bevel is flattened before that
+/// axis while the optical depth stays for Snell displacement. Zero radii
+/// describe deliberately sharp corners and impose no limit.
+///
+/// Negative is an explicit [`MaterialRequest::bevel_width`], the width negated.
+/// The shader measures that one against an inner contour that keeps the corner
+/// radius, which has no medial axis to cross, so the corners do not bound it.
+/// It stays zero without depth, as there is no refraction to shape.
 #[inline]
 fn lens_bevel_width_pixels(request: &MaterialRequest, depth: f32) -> f32 {
-    // An inset beyond a rounded corner's radius crosses the SDF's medial
-    // axis, where the nearest-edge normal jumps. Flatten the bevel before
-    // that axis while retaining optical depth for Snell displacement.
-    // Zero radii describe deliberately sharp corners and impose no limit.
+    let half_shorter_side = request.bounds[2].min(request.bounds[3]) * 0.5;
+    if request.bevel_width > 0.0 && depth > 0.0 {
+        let m = &request.transform;
+        let scale_x = (m[0] * m[0] + m[1] * m[1]).sqrt();
+        let scale_y = (m[3] * m[3] + m[4] * m[4]).sqrt();
+        return -(request.bevel_width * (scale_x + scale_y) * 0.5).min(half_shorter_side);
+    }
+    // The radial pull has no depth-derived width: unset, its band is the whole box.
+    if is_radial_lens(request) {
+        return if depth > 0.0 { -half_shorter_side } else { 0.0 };
+    }
     request
         .corner_radii
         .iter()

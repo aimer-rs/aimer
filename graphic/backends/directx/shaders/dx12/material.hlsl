@@ -456,6 +456,27 @@ float3 lens_bevel_normal(float2 position, float2 half_size, float4 radii, float 
     return normalize(float3(outward * slope, 1.0));
 }
 
+// Position across a band of `width` inside the lens edge, and which way it
+// faces: z is 0 at the edge and 1 from the inner contour inward, xy is the
+// outward direction away from that contour. The inner contour is the lens shape
+// pulled in by `width` that keeps the corner radius (as far as it fits), so a
+// band wider than the corner radius still has round corners, where a plain
+// distance to the edge goes square, and has no medial axis for a normal to jump on.
+float3 lens_band(float2 point, float2 half_size, float4 radii, float width) {
+    float radius = min(selected_radius(point, radii), min(half_size.x, half_size.y));
+    float2 edge_q = abs(point) - half_size + radius;
+    float inset = max(-(length(max(edge_q, float2(0.0, 0.0))) + min(max(edge_q.x, edge_q.y), 0.0) - radius), 0.0);
+    float2 inner_half = max(half_size - width, float2(0.0, 0.0));
+    float inner_radius = min(radius, min(inner_half.x, inner_half.y));
+    float2 q = abs(point) - inner_half + inner_radius;
+    float2 outer = max(q, float2(0.0, 0.0));
+    float gap = max(length(outer) + min(max(q.x, q.y), 0.0) - inner_radius, 0.0);
+    float2 outward = q.x > q.y ? float2(1.0, 0.0) : float2(0.0, 1.0);
+    if (dot(outer, outer) > 0.0) outward = normalize(outer);
+    outward *= sign(point);
+    return float3(outward, inset / max(inset + gap, 0.0001));
+}
+
 float4 light_edge(float2 pixel) {
     float2 half_size = material.bounds.zw * 0.5;
     float2 position = pixel - material.bounds.xy - half_size;
@@ -566,24 +587,43 @@ float4 fs_main(MaterialVaryings input) : SV_Target0 {
         float depth = material.liquid2.y;
         float bevel_width = material.liquid2.z;
         float2 offset = float2(0.0, 0.0);
-        if (bevel_width > 0.0 && -distance < bevel_width) {
-            float3 normal = lens_bevel_normal(input.pixel_pos - center, material.bounds.zw * 0.5, material.radii, distance, bevel_width);
-            offset = liquid_bevel_refract_offset(normal, 2.0 / 3.0, depth);
+        if (material.tint.x > 0.5) {
+            // Radial pull: the inward displacement grows with the square of the position
+            // across the band, from nothing at its inner edge to `depth` at the rim.
+            if (bevel_width < 0.0) {
+                float3 band = lens_band(input.pixel_pos - center, material.bounds.zw * 0.5, material.radii, -bevel_width);
+                float pull = 1.0 - band.z;
+                offset = -band.xy * (depth * pull * pull);
+            }
+        } else {
+            if (bevel_width > 0.0 && -distance < bevel_width) {
+                float3 normal = lens_bevel_normal(input.pixel_pos - center, material.bounds.zw * 0.5, material.radii, distance, bevel_width);
+                offset = liquid_bevel_refract_offset(normal, 2.0 / 3.0, depth);
+            } else if (bevel_width < 0.0) {
+                // An explicit width, negated: measured against an inner contour that keeps the corner radius.
+                float explicit_width = -bevel_width;
+                float3 band = lens_band(input.pixel_pos - center, material.bounds.zw * 0.5, material.radii, explicit_width);
+                if (band.z < 1.0) {
+                    float slope = liquid_bevel_slope(band.z * explicit_width, explicit_width);
+                    float3 normal = normalize(float3(band.xy * slope, 1.0));
+                    offset = liquid_bevel_refract_offset(normal, 2.0 / 3.0, depth);
+                }
+            }
         }
         float2 origin = material.liquid.xy;
         float2 axes = material.effect.zw;
         float bulge = 1.0;
         if (material.liquid.w > 0.0) {
             // A positive shoulder radius reshapes the bulge from a bell into a slab: full
-            // swell across the middle, rolled off along a quarter circle over that distance
-            // from the edge. `inset` is the distance to the edge, by the box's own shape on
-            // both axes and along the enabled axis alone otherwise.
+            // swell across the middle, rolled off along a quarter circle across a band of
+            // that width inside the edge. On both axes the band is `lens_band`, which
+            // follows the box's own rounded shape; on one axis it is the distance to the
+            // edge along that axis.
             if (material.liquid2.w > 0.0) {
+                float rise = 1.0 - lens_band(input.pixel_pos - center, material.bounds.zw * 0.5, material.radii, material.liquid2.w).z;
                 float2 edge_gap = material.bounds.zw * 0.5 - abs(input.pixel_pos - center);
-                float inset = max(-distance, 0.0);
-                if (axes.x < 0.5) { inset = max(edge_gap.y, 0.0); }
-                if (axes.y < 0.5) { inset = max(edge_gap.x, 0.0); }
-                float rise = 1.0 - clamp(inset / material.liquid2.w, 0.0, 1.0);
+                if (axes.x < 0.5) { rise = 1.0 - clamp(max(edge_gap.y, 0.0) / material.liquid2.w, 0.0, 1.0); }
+                if (axes.y < 0.5) { rise = 1.0 - clamp(max(edge_gap.x, 0.0) / material.liquid2.w, 0.0, 1.0); }
                 bulge += material.liquid.w * sqrt(max(1.0 - rise * rise, 0.0));
             } else {
                 float2 extent = max(max(origin - material.bounds.xy, material.bounds.xy + material.bounds.zw - origin), float2(0.001, 0.001));

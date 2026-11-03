@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::time::Duration;
 
+use aimer_widget::base::Color;
 use aimer_animation::{
     AnyCurve, Curve, ElementBounds, ExpandSpec, curves, last_shared_element, last_shared_element_bounds,
 };
@@ -45,6 +46,9 @@ use crate::transition::{
 /// as wide as the host, such as a row of a feed, has something to grow into; with
 /// [`stretch`](Self::stretch) it is scaled to fill the window instead, as the item's
 /// copy is.
+/// "Opaque" is the page's opacity, not a background: a page that paints none of
+/// its own is see-through, and the page beneath shows in the window, blur and all.
+/// Give the window one with [`background`](Self::background).
 /// Unlike [`ContainerTransition`](crate::ContainerTransition), nothing here
 /// waits for anything.
 ///
@@ -72,6 +76,7 @@ pub struct ExpandTransition<R> {
     /// frame with [`ExpandSpec::retargeted`].
     motion: ExpandSpec,
     blur: f32,
+    background: Option<Color>,
 }
 
 impl<R> Default for ExpandTransition<R> {
@@ -94,6 +99,7 @@ impl<R> ExpandTransition<R> {
             curve: curves::LINEAR.into_any(),
             motion,
             blur: 0.0,
+            background: None,
         }
     }
     /// Names the item a route is opened from, or `None` for a route that has no
@@ -170,6 +176,20 @@ impl<R> ExpandTransition<R> {
         self.blur = if radius.is_finite() { radius.max(0.0) } else { 0.0 };
         self
     }
+    /// Fills the window with `color` beneath the page, from the first frame to
+    /// the last. The default is no fill.
+    ///
+    /// The page is revealed through the window, and a page that paints no
+    /// background of its own is see-through: the page it grows over, the other
+    /// items of a grid or feed, would show in the window, and a [`blur`](Self::blur)
+    /// would blur them along with it. The fill is the page's missing background:
+    /// it is moved, clipped and rounded exactly as the window is, and takes the
+    /// page's opacity, so with a [`crossfade`](Self::crossfade) it rises with the
+    /// page. Give it the colour the page paints, so that the page replaces it
+    /// unseen. It applies to the growing window only; a route with nothing to grow
+    /// from still zooms without it.
+    #[inline]
+    pub fn background(mut self, color: impl Into<Color>) -> Self { self.background = Some(color.into()); self }
     /// Holds the blur at its peak through the middle of the dissolve, by
     /// `fraction` of it in `0.0..=0.95`, instead of a single swell. See
     /// [`ExpandSpec::blur_held`].
@@ -212,6 +232,16 @@ impl<R> ExpandTransition<R> {
                 blur_veil(blur * motion.blur(expansion))
             })
             .veil_follows(if reverse { TransitionPage::Outgoing } else { TransitionPage::Incoming })
+    }
+
+    /// `effect` with the background of the window, if one was set. The window is
+    /// the page painted on top: the arriving one on a push, the departing one on
+    /// a pop.
+    fn backed(&self, effect: ResolvedNavigationTransition, reverse: bool) -> ResolvedNavigationTransition {
+        match self.background {
+            Some(color) => effect.with_backing(color, if reverse { TransitionPage::Outgoing } else { TransitionPage::Incoming }),
+            None => effect,
+        }
     }
 
     /// A zoom with the blur, for a route with nothing to grow from.
@@ -274,6 +304,6 @@ impl<R: Route> NavigationTransition<R> for ExpandTransition<R> {
                 self.duration, self.curve.clone(),
                 move |p, size, origin| sample(p, size, origin).frame),
         };
-        effect.map(|effect| self.veiled(effect.outgoing_on_top(reverse), reverse))
+        effect.map(|effect| self.backed(self.veiled(effect.outgoing_on_top(reverse), reverse), reverse))
     }
 }

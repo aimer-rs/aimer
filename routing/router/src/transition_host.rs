@@ -10,6 +10,7 @@ use aimer_widget::{AnyElement, AnyWidget, ChildBuilder, Drawable, Element, Event
 
 use aimer_attribute::Dimension;
 use aimer_container::SizedBox;
+use aimer_decoration::{BoxDecoration, DecorationBox};
 
 use crate::outlet::RouteChildContext;
 use crate::swipe_back::SwipeLink;
@@ -366,12 +367,23 @@ impl Widget for NavigationFrame {
                     .live(playback.swipe.is_some())
                     .to_element(ctx))
             });
+        // The solid layer under the page on top, which the page's own transparency
+        // would otherwise leave the page beneath showing through.
+        let backing = self.playback.as_ref().filter(|_| outgoing.is_some())
+            .and_then(|playback| playback.effect.backing())
+            .map(|(color, _)| {
+                DecorationBox::new()
+                    .decoration(BoxDecoration::new().background_color(color))
+                    .child(SizedBox::new().width(Dimension::Percent(100.0)).height(Dimension::Percent(100.0)))
+                    .to_element(ctx)
+            });
         NavigationFrameElement {
             incoming: self.child.build(ctx), outgoing: UnsafeCell::new(outgoing), anchor: UnsafeCell::new(anchor),
-            veil: UnsafeCell::new(veil),
+            veil: UnsafeCell::new(veil), backing: UnsafeCell::new(backing),
             playback: self.playback, swipe: self.swipe,
             incoming_clip: PresentationClip::default(), outgoing_clip: PresentationClip::default(),
             anchor_clip: PresentationClip::default(), veil_clip: PresentationClip::default(),
+            backing_clip: PresentationClip::default(),
         }.boxed()
     }
 }
@@ -395,6 +407,8 @@ struct Ordinals {
     anchor: usize,
     /// The veil, wherever it is painted; meaningful only while there is one.
     veil: usize,
+    /// The backing under the page on top; meaningful only while there is one.
+    backing: usize,
 }
 
 struct NavigationFrameElement {
@@ -404,6 +418,8 @@ struct NavigationFrameElement {
     anchor: UnsafeCell<Option<AnyElement>>,
     /// An inert layer painted between the two pages while the effect runs.
     veil: UnsafeCell<Option<AnyElement>>,
+    /// An inert solid layer painted directly under the page on top while the effect runs.
+    backing: UnsafeCell<Option<AnyElement>>,
     playback: Option<Rc<Playback>>,
     swipe: Option<Rc<SwipeLink>>,
     /// Which pages this host has put a rounded clip on, so a radius that
@@ -412,6 +428,7 @@ struct NavigationFrameElement {
     outgoing_clip: PresentationClip,
     anchor_clip: PresentationClip,
     veil_clip: PresentationClip,
+    backing_clip: PresentationClip,
 }
 
 // Safety: element traversal and structural mutation run exclusively on the
@@ -433,35 +450,44 @@ impl NavigationFrameElement {
         unsafe { (&*self.veil.get()).as_ref() }
     }
 
+    fn backing(&self) -> Option<&AnyElement> {
+        // Safety: as for `outgoing`.
+        unsafe { (&*self.backing.get()).as_ref() }
+    }
+
     /// Whether the veil is painted above the pages and the copy of the item.
     fn veil_above(&self) -> bool {
         self.playback.as_ref().is_some_and(|playback| playback.effect.veil_above())
     }
 
-    /// The retained paint ordinals of the pages, the veil between them and the
-    /// copy above them, which are painted in that order: the page below, the
-    /// veil, the page on top, the copy. A page or layer that is not there takes
-    /// no ordinal.
+    /// The retained paint ordinals of the layers, which are painted in this
+    /// order: the page below, the veil between the pages, the backing, the page on
+    /// top, the copy, the veil above everything. A page or layer that is not there
+    /// takes no ordinal.
     fn ordinals(&self) -> Ordinals {
         let has_old = self.outgoing().is_some();
-        // A veil above everything takes the last ordinal and moves no other.
-        let veil = has_old && self.veil().is_some() && !self.veil_above();
+        let between = has_old && self.veil().is_some() && !self.veil_above();
+        let backing = has_old && self.backing().is_some();
+        // The page on top follows everything painted between it and the page below.
+        let top = usize::from(has_old) * (1 + usize::from(between) + usize::from(backing));
         let (incoming, outgoing) = match (has_old, self.outgoing_on_top()) {
             (false, _) => (0, 0),
-            (true, false) => (1 + usize::from(veil), 0),
-            (true, true) => (0, 1 + usize::from(veil)),
+            (true, false) => (top, 0),
+            (true, true) => (0, top),
         };
         Ordinals {
             incoming,
             outgoing,
-            anchor: usize::from(has_old) + usize::from(veil) + 1,
+            anchor: top + 1,
             // Between the pages it is the second node painted; above everything it
             // follows the pages and the item's copy.
             veil: if self.veil_above() {
-                1 + usize::from(has_old) + usize::from(self.anchor().is_some())
+                top + 1 + usize::from(self.anchor().is_some())
             } else {
                 1
             },
+            // Directly under the page on top, and over the veil between the pages.
+            backing: top.saturating_sub(1),
         }
     }
 
@@ -506,12 +532,14 @@ impl NavigationFrameElement {
         }
         if self.playback.as_ref().is_some_and(|playback| playback.holds_pages_for_rebuild()) { return; }
         let finished = self.playback.as_ref().is_some_and(|playback| playback.finished.get());
-        if finished && (self.outgoing().is_some() || self.anchor().is_some() || self.veil().is_some()) {
+        if finished && (self.outgoing().is_some() || self.anchor().is_some() || self.veil().is_some()
+            || self.backing().is_some()) {
             // Safety: no child traversal or callbacks are active at this point.
             unsafe {
                 (*self.outgoing.get()).take();
                 (*self.anchor.get()).take();
                 (*self.veil.get()).take();
+                (*self.backing.get()).take();
             }
             aimer_widget::notify_hosted_element_tree_changed();
             aimer_events::window::request_animation_frame();
@@ -527,12 +555,13 @@ impl VisitorElement for NavigationFrameElement {
         if let Some(child) = self.outgoing() { visitor(child.as_ref()); }
         if let Some(child) = self.anchor() { visitor(child.as_ref()); }
         if let Some(child) = self.veil() { visitor(child.as_ref()); }
+        if let Some(child) = self.backing() { visitor(child.as_ref()); }
     }
     fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         // Later is painted above. The structural slot is fixed (arriving page 0,
-        // departing page 1, item copy 2, veil 3); only the paint order changes:
-        // the page below, the veil, the page on top. The copy always leads, so
-        // it is always last.
+        // departing page 1, item copy 2, veil 3, backing 4); only the paint order
+        // changes: the page below, the veil, the backing, the page on top. The
+        // copy always leads, so it is above them.
         let outgoing = self.outgoing();
         let on_top = self.outgoing_on_top();
         let veil = self.veil().filter(|_| outgoing.is_some());
@@ -540,6 +569,7 @@ impl VisitorElement for NavigationFrameElement {
         if let Some(child) = outgoing.filter(|_| !on_top) { visitor(1, child.as_ref()); }
         if on_top { visitor(0, self.incoming.as_ref()); }
         if let Some(child) = between { visitor(3, child.as_ref()); }
+        if let Some(child) = outgoing.and(self.backing()) { visitor(4, child.as_ref()); }
         if !on_top { visitor(0, self.incoming.as_ref()); }
         if let Some(child) = outgoing.filter(|_| on_top) { visitor(1, child.as_ref()); }
         if let Some(child) = self.anchor() { visitor(2, child.as_ref()); }
@@ -588,6 +618,18 @@ impl Drawable for NavigationFrameElement {
                 if !veil.apply_to_child(ctx, ordinals.veil, size, &self.veil_clip) { return false; }
             }
         }
+        // The backing is shown as the page it backs is, and as opaque: it rises
+        // and falls with the page, so a page that fades in does not do it over
+        // a hole.
+        if let Some((_, page)) = self.playback.as_ref().and_then(|playback| playback.effect.backing()) {
+            if has_old && self.backing().is_some() {
+                let followed = match page {
+                    TransitionPage::Incoming => frame.frame.incoming,
+                    TransitionPage::Outgoing => frame.frame.outgoing,
+                };
+                if !followed.apply_to_child(ctx, ordinals.backing, size, &self.backing_clip) { return false; }
+            }
+        }
         // The item copy is last, and is as large as the item was.
         let Some(anchor) = self.playback.as_ref().and_then(|playback| playback.effect.anchor()) else { return true; };
         if self.anchor().is_none() { return true; }
@@ -612,6 +654,7 @@ impl Drawable for NavigationFrameElement {
         self.incoming.update(ctx);
         if let Some(child) = self.anchor() { child.update(ctx); }
         if let Some(child) = self.veil() { child.update(ctx); }
+        if let Some(child) = self.backing() { child.update(ctx); }
         if self.playback.as_ref().is_some_and(|playback| !playback.finished.get()) {
             aimer_events::window::request_animation_frame();
         }
@@ -622,6 +665,7 @@ impl Drawable for NavigationFrameElement {
         self.incoming.update(ctx);
         if let Some(child) = self.anchor() { child.update(ctx); }
         if let Some(child) = self.veil() { child.update(ctx); }
+        if let Some(child) = self.backing() { child.update(ctx); }
         self.cleanup();
     }
 }

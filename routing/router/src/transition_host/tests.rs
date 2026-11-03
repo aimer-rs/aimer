@@ -1507,4 +1507,123 @@ mod presentation {
         element.visit_retained_v2_children(&mut |index, _| remaining.push(index));
         assert_eq!(remaining, [0]);
     }
+
+    const BACKING: aimer_widget::base::Color = aimer_widget::base::Color::Rgba(10, 20, 30, 255);
+
+    fn backed_effect(
+        page: crate::TransitionPage,
+        outgoing_on_top: bool,
+    ) -> ResolvedNavigationTransition {
+        ResolvedNavigationTransition::new(Duration::from_millis(100), curves::LINEAR, |_, _| {
+            NavigationTransitionFrame { outgoing: opacity(0.25), incoming: window() }
+        })
+        .unwrap()
+        .outgoing_on_top(outgoing_on_top)
+        .with_backing(BACKING, page)
+    }
+
+    #[test]
+    fn a_backing_sits_directly_under_the_page_on_top() {
+        let context = context();
+        for (on_top, expected) in [(false, [1, 4, 0]), (true, [0, 4, 1])] {
+            let element = host(backed_effect(crate::TransitionPage::Incoming, on_top), &context);
+            let mut visited = Vec::new();
+
+            element.visit_retained_v2_children(&mut |index, _| visited.push(index));
+
+            // Structural slot 4 is the backing: above the page below, below the page on top.
+            assert_eq!(visited, expected, "outgoing_on_top = {on_top}");
+        }
+    }
+
+    #[test]
+    fn a_backing_follows_the_page_it_backs_so_nothing_behind_shows_through_its_window() {
+        let context = context();
+        let element = host(backed_effect(crate::TransitionPage::Incoming, false), &context);
+        let (tree, root, nodes) = veiled_tree();
+
+        assert!(sync(&element, &tree, root, &context));
+
+        // Paint order: the departing page, the backing, the arriving page.
+        let backing = nodes[1];
+        let (transform, opacity) = tree.presentation(backing).unwrap();
+        assert_eq!(transform, Mat3::translate(10.0, 20.0), "moved with the window");
+        assert_eq!(opacity, 0.75, "and as opaque as the page, so it rises with it");
+        assert_eq!(
+            clip_of(&tree, backing),
+            (Some(Rect::new(10.0, 20.0, 40.0, 30.0)), [8.0; 4]),
+            "clipped to the window, with its corners"
+        );
+        assert_eq!(tree.presentation(nodes[0]).unwrap().1, 0.25, "the page below is untouched");
+        assert_eq!(tree.presentation(nodes[2]).unwrap().1, 0.75, "and so is the page on top");
+    }
+
+    #[test]
+    fn a_backing_can_follow_the_departing_page_when_that_is_the_one_on_top() {
+        let context = context();
+        let effect = ResolvedNavigationTransition::new(Duration::from_millis(100), curves::LINEAR, |_, _| {
+            NavigationTransitionFrame { outgoing: window(), incoming: opacity(0.5) }
+        })
+        .unwrap()
+        .outgoing_on_top(true)
+        .with_backing(BACKING, crate::TransitionPage::Outgoing);
+        let element = host(effect, &context);
+        let (tree, root, nodes) = veiled_tree();
+
+        assert!(sync(&element, &tree, root, &context));
+
+        // Paint order: the arriving page, the backing, the departing page.
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75));
+    }
+
+    #[test]
+    fn a_backing_goes_between_the_pages_with_a_veil_above_and_the_copy_over_all() {
+        let context = context();
+        let content = aimer_animation::SharedContent::new(|| ErrorWidget::new("copy").boxed());
+        let effect = ResolvedNavigationTransition::anchored(
+            Duration::from_millis(100),
+            curves::LINEAR,
+            AnchorContent::new(content, ResolvedSize { width: 40.0, height: 30.0 }),
+            |_, _, _| AnchoredFrame {
+                frame: NavigationTransitionFrame { outgoing: opacity(0.25), incoming: window() },
+                anchor: opacity(0.5),
+            },
+        )
+        .unwrap()
+        .with_backing(BACKING, crate::TransitionPage::Incoming)
+        .with_veil_above(|_| SizedBox::new().boxed())
+        .veil_follows(crate::TransitionPage::Incoming);
+        let element = host(effect, &context);
+        let tree = RenderTree::new();
+        let root = tree.add_root(Rect::new(0.0, 0.0, 100.0, 100.0)).unwrap();
+        let nodes: Vec<_> = (0..5)
+            .map(|_| tree.add_child(root, Rect::new(0.0, 0.0, 100.0, 100.0)).unwrap())
+            .collect();
+
+        assert!(sync(&element, &tree, root, &context));
+
+        // Painted: departing page, backing, arriving page, the item's copy, the veil.
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75), "backing");
+        assert_eq!(tree.presentation(nodes[3]).unwrap().1, 0.5, "the copy keeps its own presentation");
+        assert_eq!(tree.presentation(nodes[4]).unwrap(), (Mat3::translate(10.0, 20.0), 1.0), "veil");
+    }
+
+    #[test]
+    fn a_backing_takes_no_input_and_is_dropped_when_the_transition_ends() {
+        let context = context();
+        let (element, playback) = host_with_playback(backed_effect(crate::TransitionPage::Incoming, false), &context);
+        let mut events = 0;
+        element.event_children(&mut |_| events += 1);
+        assert_eq!(events, 1, "only the arriving page takes input");
+        let mut structural = 0;
+        element.structural_children(&mut |_| structural += 1);
+        assert_eq!(structural, 3, "the backing takes part in reconciliation with the pages");
+
+        playback.finish();
+        element.update(&context);
+
+        let mut remaining = Vec::new();
+        element.visit_retained_v2_children(&mut |index, _| remaining.push(index));
+        assert_eq!(remaining, [0]);
+    }
 }

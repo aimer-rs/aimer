@@ -6,11 +6,10 @@ description = "The native Vulkan backend for the Cupid rendering engine"
 
 [dependencies]
 aimer_cupid_gpu.workspace = true
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 # Compiles runtime-supplied WGSL to SPIR-V (`wgsl_spirv`). Only the two
 # front/back ends the backend needs are enabled.
 naga = { workspace = true, features = ["spv-out"] }
-
-[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 ash.workspace = true
 ash-window.workspace = true
 raw-window-handle.workspace = true

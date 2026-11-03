@@ -10,6 +10,6 @@ aimer_pipeline_core.workspace = true
 # Translates an effect's `.aimer` source for whichever backend renders it.
 aimer_transpiler.workspace = true
 
-[dev-dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dev-dependencies]
 # The Vulkan backend's run-time WGSL compiler, to check effects compile for it.
 aimer_vulkan.workspace = true

@@ -38,6 +38,7 @@ pub struct Magnification {
     style: MagnificationStyle,
     bulge: f32,
     bulge_radius: f32,
+    bevel_width: f32,
 }
 
 impl Default for Magnification {
@@ -58,6 +59,7 @@ impl Magnification {
             style: MagnificationStyle::DEFAULT,
             bulge: 0.25,
             bulge_radius: 0.0,
+            bevel_width: 0.0,
         }
     }
 
@@ -91,6 +93,30 @@ impl Magnification {
         self
     }
 
+    /// Sets how far in from the edge the refraction reaches, in logical
+    /// pixels, clamped to `0.0..=512.0`. Nonfinite values use `0.0`.
+    ///
+    /// [`thickness`](Self::thickness) is how deep the glass is, which sets how
+    /// strongly the rim bends the content; the width is how wide the bent band
+    /// is. At the default `0.0` the width follows the depth, so a thicker lens
+    /// also has a wider rim. Set it to narrow the band under a deep lens, or to
+    /// widen a shallow one. At paint time it is limited to half the box's
+    /// shorter side. An explicit width may be wider than the corner radius: the
+    /// band is measured against an inner contour that keeps the border radius,
+    /// so its corners stay round. The derived width, by contrast, stops at the
+    /// smallest corner radius. Requires the `REFRACTION` style flag and a
+    /// nonzero thickness.
+    ///
+    /// ```
+    /// use aimer_decoration::Magnification;
+    /// let rim = Magnification::new().thickness(24.0).bevel_width(8.0);
+    /// ```
+    #[inline]
+    pub fn bevel_width(mut self, width: f32) -> Self {
+        self.bevel_width = normalize(width, 0.0, 512.0);
+        self
+    }
+
     /// Sets the radius of the bulge's rounded shoulders in logical pixels,
     /// clamped to `0.0..=512.0`. Nonfinite values use `0.0`.
     ///
@@ -103,9 +129,11 @@ impl Magnification {
     /// limited to half the box's shorter side, where the shoulders meet and the
     /// slab becomes a dome.
     ///
-    /// The shoulders follow the box's own shape, rounded corners included, when
-    /// both axes are enabled, and the distance to the nearest edge along the
-    /// enabled axis otherwise. Anchors still choose where the enlargement is
+    /// With both axes enabled the shoulders follow the box's own shape: the flat
+    /// top is the box pulled in by the radius, keeping the border radius on its
+    /// corners (as far as it fits), so it stays round even when the radius is
+    /// larger than the border radius. With one axis it is the distance to the
+    /// nearest edge along that axis. Anchors still choose where the enlargement is
     /// centered. Requires the `BULGE` style flag.
     ///
     /// ```
@@ -132,7 +160,8 @@ impl Magnification {
     }
 
     /// Sets glass depth in logical pixels, clamped to `0.0..=512.0`.
-    /// Nonfinite values use `16.0`. Requires the `REFRACTION` style flag.
+    /// Nonfinite values use `16.0`. Requires the `REFRACTION` or `RADIAL` style
+    /// flag; with `RADIAL` it is how far the rim pulls content toward the middle.
     /// Zero disables edge refraction. At paint
     /// time depth is limited to half the box's shorter side. The bevel width
     /// fits the rounded corners independently of this optical depth.
@@ -147,7 +176,10 @@ impl Decoration for Magnification {
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, _scale: f32) {
         let active = (self.style.contains(MagnificationStyle::UNIFORM) && self.zoom != 1.0)
             || (self.style.contains(MagnificationStyle::BULGE) && self.bulge > 0.0)
-            || (self.style.contains(MagnificationStyle::REFRACTION) && self.thickness > 0.0);
+            || (self
+                .style
+                .intersects(MagnificationStyle::REFRACTION | MagnificationStyle::RADIAL)
+                && self.thickness > 0.0);
         if size.width <= 0.0 || size.height <= 0.0 || !active {
             return;
         }
@@ -158,6 +190,7 @@ impl Decoration for Magnification {
         request.magnification_style = self.style;
         request.bulge_strength = self.bulge;
         request.bulge_radius = self.bulge_radius;
+        request.bevel_width = self.bevel_width;
         request.corner_radii =
             declared_corner_radii(canvas, MaterialDrawRequest::MAX_CORNER_RADIUS);
         request.blur_radius = 0.0;

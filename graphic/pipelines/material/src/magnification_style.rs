@@ -3,8 +3,9 @@ use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
 /// Composable optical effects, axes, and anchors for a magnifying decoration.
 ///
 /// Combine flags with `|`. At least one optical effect must be selected:
-/// [`UNIFORM`](Self::UNIFORM), [`BULGE`](Self::BULGE), or
-/// [`REFRACTION`](Self::REFRACTION). Axis and anchor flags alone paint nothing.
+/// [`UNIFORM`](Self::UNIFORM), [`BULGE`](Self::BULGE),
+/// [`REFRACTION`](Self::REFRACTION), or [`RADIAL`](Self::RADIAL). Axis and
+/// anchor flags alone paint nothing.
 /// No axis flags means both axes; no anchors means center. Opposing anchors
 /// cancel to center on their axis, independently of flag ordering.
 ///
@@ -41,10 +42,17 @@ impl MagnificationStyle {
     pub const TOP: Self = Self(1 << 7);
     /// Anchors enlargement to the bottom edge, unless `TOP` is also selected.
     pub const BOTTOM: Self = Self(1 << 8);
+    /// Pulls backdrop samples toward the middle of the box, smoothly across the
+    /// whole of it: nothing at the center, growing toward the rim, where the pull
+    /// is the glass thickness. Where [`REFRACTION`](Self::REFRACTION) bends only
+    /// a band at the rim and leaves the middle flat, this is a continuous field,
+    /// so content near the rim is compressed and then folded over. Select one or
+    /// the other; selecting both lets this one decide.
+    pub const RADIAL: Self = Self(1 << 9);
     /// Centered uniform zoom and edge refraction on both axes.
     pub const DEFAULT: Self = Self(Self::UNIFORM.0 | Self::REFRACTION.0);
     /// All known flags. Opposing anchors resolve to center.
-    pub const ALL: Self = Self((1 << 9) - 1);
+    pub const ALL: Self = Self((1 << 10) - 1);
 
     /// Returns the stable flag bits.
     #[inline]
@@ -66,6 +74,12 @@ impl MagnificationStyle {
     #[inline]
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
+    }
+
+    /// Returns whether any flag in `other` is present.
+    #[inline]
+    pub const fn intersects(self, other: Self) -> bool {
+        self.0 & other.0 != 0
     }
 
     /// Returns whether no flags are present.
@@ -150,7 +164,9 @@ mod tests {
         assert_eq!(style & S::BULGE, S::NONE);
         assert_eq!(style | !style, S::ALL);
         assert_eq!(S::from_bits(style.bits()), Some(style));
-        assert_eq!(S::from_bits(1 << 9), None);
+        assert_eq!(S::from_bits(1 << 10), None);
+        assert_eq!(S::from_bits(S::RADIAL.bits()), Some(S::RADIAL));
+        assert!(S::ALL.contains(S::RADIAL));
         assert_eq!(S::from_bits(u32::MAX), None);
         assert!(S::NONE.is_empty());
         assert_eq!(S::default(), S::UNIFORM | S::REFRACTION);
