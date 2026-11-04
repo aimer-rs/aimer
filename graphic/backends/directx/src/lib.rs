@@ -657,6 +657,12 @@ impl GpuBackend for Dx12Backend {
         Some(self.texture_view(&texture, None))
     }
 
+    fn prune_native_textures(&self) {
+        if let Ok(mut imports) = self.shared.imports.lock() {
+            imports.prune();
+        }
+    }
+
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler {
         let lease = self.shared.sampler_heap.allocate();
         let sampler = windows::Win32::Graphics::Direct3D12::D3D12_SAMPLER_DESC {

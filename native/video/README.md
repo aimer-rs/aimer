@@ -108,16 +108,46 @@ your own frame-by-frame UI (a position readout, say) the same way.
 | macOS         | `AVPlayer` + `AVPlayerItemVideoOutput`, frames as Metal textures |
 | iOS           | the same, with a *playback* audio session                       |
 | Windows       | `MediaPlayer` (Media Foundation), frames as shared Direct3D textures |
+| Android       | `MediaPlayer` into a `SurfaceTexture`, converted to RGBA on the GPU, shared as hardware buffers |
 | Linux         | `ffmpeg` decodes (software), pictures uploaded once each; sound through `aimer_audio` |
 | web           | `HTMLVideoElement`, its picture copied into a texture on the GPU |
 | others        | none yet: loads fail with `VideoError::Unsupported`; see `is_supported()` |
 
-Android is planned, and so is hardware-decoded zero-copy video on Linux.
+Hardware-decoded zero-copy video on Linux is planned.
 The player core is platform independent and talks to a small `PlatformVideo`
 trait; a backend also needs its renderer to import its texture kind, through
 `GpuBackend::import_native_texture`.
 
 The macOS and iOS backend has been compiled but not yet run on a device.
+
+### On Android
+
+`MediaPlayer` decodes into a `Surface` made from a `SurfaceTexture`, which shows
+the picture as an OpenGL ES external texture in the decoder's own (often YUV)
+format. The image pipeline samples plain RGBA, so a small GL pass draws that
+texture into an `AHardwareBuffer` of RGBA pixels, once per picture, on the GPU;
+the Vulkan backend imports the buffer and samples it where it lies. No pixel
+reaches the CPU.
+
+- One worker thread per player owns the EGL context, the `SurfaceTexture` and
+  the `MediaPlayer`; the handle only sends commands and reads a snapshot, so
+  nothing on the UI thread waits on JNI or the GPU. EGL, OpenGL ES and
+  `AHardwareBuffer` are opened with `dlopen`, so building needs nothing from
+  the NDK.
+- No Java listener can be installed (a Rust library cannot ship a Java class),
+  so the worker polls: a new picture shows as the `SurfaceTexture`'s timestamp
+  changing, and the end as `isPlaying()` turning false near the end. A stream
+  that stops early is reported as failed. A stream's buffered range is unknown.
+- Pictures are drawn into a ring of six buffers; a buffer is drawn into again
+  only when no frame holds it. When the renderer is slower than the video the
+  newest pictures are dropped.
+- It needs the Vulkan renderer with `VK_ANDROID_external_memory_android_hardware_buffer`
+  (every device with Android 8 and Vulkan 1.0 has it). On the OpenGL renderer
+  the video draws nothing.
+- A bundled video is read from the APK in place when it is stored uncompressed
+  (the usual for `.mp4`) and copied to the cache directory otherwise.
+- This backend has been compiled for `aarch64-linux-android` but not yet run on
+  a device.
 
 ### On Linux
 

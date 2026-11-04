@@ -53,6 +53,23 @@ pub enum NativeTexture {
         /// The fence value that is reached once the texture is written.
         value: u64,
     },
+    /// An `AHardwareBuffer` of `R8G8B8A8` pixels, written by the producer's GL
+    /// context, which has finished (the producer waits for the GPU before it
+    /// hands the frame over).
+    ///
+    /// The buffer is only borrowed: the producer keeps it alive for as long as
+    /// the frame lives (see [`NativeFrame::new`]), and writes it again only
+    /// once no frame holds it.
+    AndroidHardwareBuffer {
+        /// The producer's pool id; never reused within a process.
+        pool: u32,
+        /// Which buffer of the pool this is.
+        slot: u32,
+        /// The `AHardwareBuffer*`, as an integer.
+        buffer: usize,
+        /// Changes whenever the buffer's pixels do.
+        serial: u64,
+    },
     /// Straight-alpha `R8G8B8A8` pixels in system memory, `width * 4` bytes a
     /// row with no padding.
     ///

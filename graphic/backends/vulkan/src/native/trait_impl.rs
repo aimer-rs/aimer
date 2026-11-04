@@ -13,8 +13,12 @@ impl Drop for VulkanBufferInner {
 
 impl Drop for VulkanTextureInner {
     fn drop(&mut self) {
-        if self.allocation.is_some() {
+        // Swapchain images have neither: the swapchain owns them.
+        if self.allocation.is_some() || self.imported_memory.is_some() {
             unsafe { self.core.device.destroy_image(self.raw, None) };
+        }
+        if let Some(memory) = self.imported_memory {
+            unsafe { self.core.device.free_memory(memory, None) };
         }
     }
 }
@@ -209,6 +213,23 @@ impl GpuBackend for VulkanBackend {
             raw,
             texture: texture.clone(),
         }))
+    }
+
+    unsafe fn import_native_texture(&self, handle: NativeTextureHandle) -> Option<Self::TextureView> {
+        match handle {
+            #[cfg(target_os = "android")]
+            NativeTextureHandle::AndroidHardwareBuffer { pool, slot, buffer, serial, width, height } => {
+                // SAFETY: the caller guarantees the buffer's validity.
+                unsafe { self.import_hardware_buffer(pool, slot, buffer, serial, (width, height)) }
+            }
+            _ => None,
+        }
+    }
+
+    fn prune_native_textures(&self) {
+        if let Ok(mut imports) = self.imports.lock() {
+            imports.prune();
+        }
     }
 
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler {

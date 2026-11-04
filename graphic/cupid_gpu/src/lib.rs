@@ -13,6 +13,7 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
+pub mod external_pool;
 pub mod glsl_package;
 pub mod web_video;
 
@@ -870,6 +871,28 @@ pub enum NativeTextureHandle {
         /// The picture's size in pixels.
         height: u32,
     },
+    /// An `AHardwareBuffer` holding `R8G8B8A8` pixels that the producer's GL
+    /// context has finished writing (it waits for the GPU before handing the
+    /// frame over).
+    ///
+    /// The backend imports it (cached under `pool` and `slot`) and acquires it
+    /// from the foreign queue family when `serial` is not the picture it last
+    /// acquired. The buffer stays valid until the GPU has finished with the
+    /// frame.
+    AndroidHardwareBuffer {
+        /// The producer's pool, from [`external_pool::register`].
+        pool: u32,
+        /// Which buffer of the pool this is.
+        slot: u32,
+        /// The `AHardwareBuffer*`, as an integer.
+        buffer: usize,
+        /// Changes whenever the buffer's pixels do.
+        serial: u64,
+        /// The picture's size in pixels.
+        width: u32,
+        /// The picture's size in pixels.
+        height: u32,
+    },
 }
 
 pub trait GpuBackend: Sized + 'static {
@@ -993,6 +1016,13 @@ pub trait GpuBackend: Sized + 'static {
     unsafe fn import_native_texture(&self, _handle: NativeTextureHandle) -> Option<Self::TextureView> {
         None
     }
+
+    /// Lets go of what [`import_native_texture`](Self::import_native_texture)
+    /// cached for producers that no longer exist (see [`external_pool`]).
+    ///
+    /// The renderer calls this once per render; the default does nothing.
+    #[inline]
+    fn prune_native_textures(&self) {}
 
     /// Create a texture sampler.
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler;

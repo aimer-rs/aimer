@@ -21,7 +21,7 @@
 
 use std::any::Any;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use aimer_cupid::external_texture::NativeTexture;
@@ -299,7 +299,8 @@ unsafe impl Sync for Slot {}
 
 /// The textures for one picture size, and the fence that orders them.
 struct Pool {
-    id: u32,
+    /// Keeps the pool id live for the renderer's caches.
+    registration: aimer_cupid_gpu::external_pool::PoolRegistration,
     size: (u32, u32),
     fence: ID3D11Fence,
     fence_handle: Arc<OwnedHandle>,
@@ -313,7 +314,6 @@ unsafe impl Send for Pool {}
 
 impl Pool {
     fn new(gfx: &Gfx, size: (u32, u32)) -> windows::core::Result<Self> {
-        static NEXT: AtomicU32 = AtomicU32::new(1);
         // SAFETY: valid device; the fence is created shared so another
         // device can open it.
         let mut fence: Option<ID3D11Fence> = None;
@@ -322,7 +322,7 @@ impl Pool {
         // SAFETY: valid fence; no security attributes and no name.
         let handle = unsafe { fence.CreateSharedHandle(None, GENERIC_ALL.0, None)? };
         Ok(Self {
-            id: NEXT.fetch_add(1, Ordering::Relaxed),
+            registration: aimer_cupid_gpu::external_pool::register(),
             size,
             fence,
             fence_handle: Arc::new(OwnedHandle(handle)),
@@ -576,7 +576,7 @@ impl PlatformVideo for WindowsVideo {
             return false;
         }
         let texture = NativeTexture::Dxgi {
-            pool: pool.id,
+            pool: pool.registration.id(),
             slot: slot.index,
             texture: slot.handle.0.0 as usize,
             fence: pool.fence_handle.0.0 as usize,

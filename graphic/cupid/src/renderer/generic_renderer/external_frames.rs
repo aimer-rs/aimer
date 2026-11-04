@@ -34,6 +34,16 @@ fn handle_of(frame: &NativeFrame) -> Option<NativeTextureHandle> {
             width: frame.width(),
             height: frame.height(),
         },
+        NativeTexture::AndroidHardwareBuffer { pool, slot, buffer, serial } => {
+            NativeTextureHandle::AndroidHardwareBuffer {
+                pool,
+                slot,
+                buffer,
+                serial,
+                width: frame.width(),
+                height: frame.height(),
+            }
+        }
         // Uploaded by the renderer, not imported by the backend.
         NativeTexture::Rgba8 { .. } => return None,
         #[allow(unreachable_patterns)]
@@ -166,6 +176,24 @@ mod tests {
                 value: 7,
                 width: 1920,
                 height: 1080,
+            })
+        );
+    }
+
+    #[test]
+    fn a_hardware_buffer_frame_names_its_buffer_and_picture() {
+        let texture = NativeTexture::AndroidHardwareBuffer { pool: 4, slot: 2, buffer: 0x1000, serial: 9 };
+        // SAFETY: the buffer is an integer; nothing is dereferenced.
+        let frame = unsafe { NativeFrame::new(texture, 640, 360, Arc::new(())) };
+        assert_eq!(
+            handle_of(&frame),
+            Some(NativeTextureHandle::AndroidHardwareBuffer {
+                pool: 4,
+                slot: 2,
+                buffer: 0x1000,
+                serial: 9,
+                width: 640,
+                height: 360,
             })
         );
     }

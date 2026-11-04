@@ -48,10 +48,20 @@ objc2-avf-audio = { workspace = true, features = ["std", "AVAudioSession", "AVAu
 [target.'cfg(target_os = "linux")'.dependencies]
 aimer_audio.workspace = true
 
+# `android.media.MediaPlayer` over JNI into a `SurfaceTexture`; EGL and OpenGL ES
+# (loaded at run time) convert each picture into an `AHardwareBuffer` that the
+# renderer's Vulkan backend imports.
+[target.'cfg(target_os = "android")'.dependencies]
+aimer_cupid_gpu.workspace = true
+jni.workspace = true
+libc.workspace = true
+ndk-context.workspace = true
+
 # WinRT `MediaPlayer` in frame-server mode; Media Foundation decodes and
 # streams, and each picture is copied into a shared Direct3D 11 texture that the
 # renderer's Direct3D 12 backend opens.
 [target.'cfg(target_os = "windows")'.dependencies]
+aimer_cupid_gpu.workspace = true
 windows = { workspace = true, features = [
     "std",
     "Foundation",

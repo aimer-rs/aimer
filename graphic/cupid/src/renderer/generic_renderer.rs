@@ -623,6 +623,7 @@ impl<B: GpuBackend> Renderer<B> {
         self.frame_index = self.frame_index.wrapping_add(1);
         self.external_frames.begin_render(self.frame_index);
         self.pixel_uploads.begin_render(self.frame_index);
+        backend.prune_native_textures();
 
         let retained_started = dx12_stage_start!(startup_timing);
         self.prepare_retained_layers(backend, draw_list, is_srgb);
@@ -1057,6 +1058,7 @@ impl<B: GpuBackend> Renderer<B> {
         self.frame_index = self.frame_index.wrapping_add(1);
         self.external_frames.begin_render(self.frame_index);
         self.pixel_uploads.begin_render(self.frame_index);
+        backend.prune_native_textures();
         self.prepare_retained_layers(backend, draw_list, is_srgb);
         let key = opacity_target_key;
         let result = self.scene_target.ensure(backend, self.format, key);

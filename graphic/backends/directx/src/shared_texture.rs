@@ -7,8 +7,8 @@
 //!
 //! What was opened is kept under (`pool`, `slot`), which names one texture for
 //! the life of the process, so a playing video opens each of its few textures
-//! once. Entries nobody has asked for in a while are dropped, which is also how
-//! a finished video's textures are released.
+//! once. When a video's pool is gone (see `aimer_cupid_gpu::external_pool`) its
+//! textures are dropped.
 
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -23,17 +23,11 @@ use windows::core::Interface;
 use crate::backend::TextureUsage;
 use crate::resource::{Dx12Texture, Dx12TextureFormat};
 
-/// Imports after which an entry nobody asked for is dropped. A playing video
-/// asks for one of its textures every render, so only the dead go.
-const KEEP_FOR: u64 = 600;
-
 /// What has been opened, by producer pool and slot.
 #[derive(Default)]
 pub(crate) struct SharedImports {
     textures: HashMap<(u32, u32), Imported>,
     fences: HashMap<u32, ImportedFence>,
-    /// Counts imports; the clock for [`KEEP_FOR`].
-    tick: u64,
 }
 
 struct Imported {
@@ -41,13 +35,11 @@ struct Imported {
     /// The handle it was opened from, to notice a changed texture.
     handle: usize,
     size: (u32, u32),
-    last_used: u64,
 }
 
 struct ImportedFence {
     fence: ID3D12Fence,
     handle: usize,
-    last_used: u64,
 }
 
 /// Opens the NT handle `value` on `device` as an `T`.
@@ -76,13 +68,10 @@ impl SharedImports {
         texture_handle: usize,
         size: (u32, u32),
     ) -> Option<Dx12Texture> {
-        self.tick += 1;
-        let tick = self.tick;
-        if let Some(entry) = self.textures.get_mut(&(pool, slot))
+        if let Some(entry) = self.textures.get(&(pool, slot))
             && entry.handle == texture_handle
             && entry.size == size
         {
-            entry.last_used = tick;
             return Some(entry.texture.clone());
         }
         // SAFETY: the producer keeps `texture_handle` open until the GPU has
@@ -101,20 +90,16 @@ impl SharedImports {
                 texture: texture.clone(),
                 handle: texture_handle,
                 size,
-                last_used: tick,
             },
         );
-        self.prune();
         Some(texture)
     }
 
     /// The shared fence of `pool`, opening it from `fence_handle` the first time.
     pub(crate) fn fence(&mut self, device: &ID3D12Device, pool: u32, fence_handle: usize) -> Option<ID3D12Fence> {
-        let tick = self.tick;
-        if let Some(entry) = self.fences.get_mut(&pool)
+        if let Some(entry) = self.fences.get(&pool)
             && entry.handle == fence_handle
         {
-            entry.last_used = tick;
             return Some(entry.fence.clone());
         }
         // SAFETY: as for the texture: the producer keeps the handle open.
@@ -124,16 +109,14 @@ impl SharedImports {
             ImportedFence {
                 fence: fence.clone(),
                 handle: fence_handle,
-                last_used: tick,
             },
         );
         Some(fence)
     }
 
-    /// Drops what nobody has asked for in [`KEEP_FOR`] imports.
-    fn prune(&mut self) {
-        let oldest = self.tick.saturating_sub(KEEP_FOR);
-        self.textures.retain(|_, entry| entry.last_used >= oldest);
-        self.fences.retain(|_, entry| entry.last_used >= oldest);
+    /// Drops what belongs to pools that no longer exist.
+    pub(crate) fn prune(&mut self) {
+        self.textures.retain(|(pool, _), _| aimer_cupid_gpu::external_pool::is_live(*pool));
+        self.fences.retain(|pool, _| aimer_cupid_gpu::external_pool::is_live(*pool));
     }
 }
