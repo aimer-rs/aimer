@@ -14,7 +14,7 @@
 use std::hint::black_box;
 
 use aimer_cupid::backend::wgpu::WgpuBackend;
-use aimer_cupid::draw_cmd::DrawList;
+use aimer_cupid::render_list::DrawList;
 use aimer_cupid::renderer::{Renderer, RendererMemoryStats};
 use aimer_cupid::utilities::Rect;
 use aimer_utils::SyncFuture;

@@ -417,9 +417,9 @@ mod tests {
     /// The color of the last rectangle `caret` records in its own list.
     fn recorded_fill_color(caret: &AnyElement, context: &BuildContext<'_>) -> Option<[u8; 4]> {
         let caret = innermost(caret.as_ref());
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let root = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 240.0, 60.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 240.0, 60.0))
             .unwrap();
         let node_context = tree.context(root).unwrap();
         context.with_local_v2_paint_context(node_context, |context| {
@@ -432,7 +432,7 @@ mod tests {
             .iter()
             .rev()
             .find_map(|command| match command {
-                aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { color, .. } => {
+                aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. } => {
                     Some(color.to_rgba8().0)
                 }
                 _ => None,

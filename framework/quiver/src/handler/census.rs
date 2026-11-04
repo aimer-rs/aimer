@@ -10,7 +10,7 @@
 #![cfg_attr(not(any(test, feature = "frame-stats")), allow(dead_code))]
 
 use super::WindowRenderTree;
-use aimer_cupid::draw_cmd_v2::RenderPaintSource;
+use aimer_cupid::draw_cmd::RenderPaintSource;
 use aimer_widget::{Element, ElementId};
 
 /// One element a census entry points at, with its type for diagnostics.

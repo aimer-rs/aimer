@@ -8,7 +8,7 @@ use super::*;
 use aimer::HeadlessOptions;
 use aimer::quiver::winit::dpi::PhysicalSize;
 use aimer::quiver::winit::event::WindowEvent;
-use aimer_cupid::draw_cmd_v2::RenderOp;
+use aimer_cupid::draw_cmd::RenderOp;
 
 struct Page(&'static str);
 impl Widget for Page {

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use super::*;
 use crate::SizedBox;
-use aimer_cupid::draw_cmd::DrawCommand;
+use aimer_cupid::render_list::DrawCommand;
 use aimer_widget::base::WindowHandle;
 use aimer_widget::{Drawable, EventElement, LayoutElement, Rebuildable, VisitorElement};
 
@@ -36,7 +36,7 @@ async fn container_accepts_a_backdrop_decoration_without_changing_layout() {
         }
     );
     let commands = record_local_v2(&element, &ctx);
-    let [aimer_cupid::draw_cmd_v2::DrawCommand::DrawCustom { data, .. }] = commands.as_ref() else {
+    let [aimer_cupid::draw_cmd::DrawCommand::DrawCustom { data, .. }] = commands.as_ref() else {
         panic!("the container must record one backdrop filter");
     };
     let request = MaterialRequest::decode(data).unwrap();
@@ -177,7 +177,7 @@ async fn retained_container_paint_includes_its_decoration() {
 
     assert!(commands.iter().any(|command| matches!(
         command,
-        aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { .. }
+        aimer_cupid::draw_cmd::DrawCommand::FillRect { .. }
     )));
     assert!(
         inner.draw_list().commands().is_empty(),
@@ -288,10 +288,10 @@ fn recording_context() -> (BuildContext<'static>, &'static aimer_canvas::InnerCa
 fn record_local_v2(
     element: &impl Drawable,
     ctx: &BuildContext<'_>,
-) -> std::sync::Arc<[aimer_cupid::draw_cmd_v2::DrawCommand]> {
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+) -> std::sync::Arc<[aimer_cupid::draw_cmd::DrawCommand]> {
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let root = tree
-        .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 400.0, 300.0))
+        .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 400.0, 300.0))
         .unwrap();
     let node_context = tree.context(root).unwrap();
     ctx.with_local_v2_paint_context(node_context, |ctx| {
@@ -354,7 +354,7 @@ async fn margin_keeps_outline_and_border_inside_the_decorated_box() {
     // margin, so the margin itself is never filled.
     let recorded = record_local_v2(&element, &ctx);
     let fill = recorded.iter().find_map(|command| match command {
-        aimer_cupid::draw_cmd_v2::DrawCommand::FillRect {
+        aimer_cupid::draw_cmd::DrawCommand::FillRect {
             rect,
             border_width,
             outline_width,
@@ -472,7 +472,7 @@ async fn the_child_clip_radius_is_reported_in_logical_pixels_at_any_scale() {
 /// the given way, plus what its v2 geometry reports for its child.
 struct UnboundedProbe {
     can_paint: bool,
-    clip: Option<aimer_cupid::draw_cmd_v2::Rect>,
+    clip: Option<aimer_cupid::draw_cmd::Rect>,
     child_max: Option<(f32, f32)>,
     outsets: Option<[f32; 4]>,
 }
@@ -604,7 +604,7 @@ fn painted_fill(fit: bool, max_width: f32, max_height: f32) -> (f32, f32, f32, f
     let fill = record_local_v2(&element, &ctx)
         .iter()
         .find_map(|command| match command {
-            aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { rect, .. } => Some(*rect),
+            aimer_cupid::draw_cmd::DrawCommand::FillRect { rect, .. } => Some(*rect),
             _ => None,
         })
         .expect("a decorated container records one fill rectangle");
@@ -876,7 +876,7 @@ impl Decoration for CustomDecoration {
 
 #[tokio::test]
 async fn custom_decoration_geometry_is_applied_in_logical_pixels_through_trait_objects() {
-    use aimer_cupid::draw_cmd_v2::Rect;
+    use aimer_cupid::draw_cmd::Rect;
     let (mut ctx, _) = recording_context();
     ctx.scale = 2.0;
     let decoration: Rc<dyn Decoration> = Rc::new(CustomDecoration {
@@ -953,7 +953,7 @@ async fn custom_decoration_revisions_refresh_paint_and_invalid_insets_are_saniti
         let commands = record_local_v2(&element, &ctx);
         let expected = if next == 0 { (255, 0) } else { (0, 255) };
         assert!(
-            matches!(commands.as_ref(), [aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { color, .. }]
+            matches!(commands.as_ref(), [aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. }]
             if (color.r, color.b) == expected)
         );
         assert!(!element.local_v2_paint_needs_recording(&ctx));
@@ -989,7 +989,7 @@ async fn decoration_method_preserves_box_borders_clipping_and_fallback_color() {
     });
     let commands = record_local_v2(&element, &ctx);
     assert!(
-        matches!(commands.as_ref(), [aimer_cupid::draw_cmd_v2::DrawCommand::FillRect {
+        matches!(commands.as_ref(), [aimer_cupid::draw_cmd::DrawCommand::FillRect {
         color, border_radius, border_width, ..
     }] if color.b == 255 && color.a == 255 && *border_radius == [12.0; 4] && *border_width == [4.0; 4])
     );

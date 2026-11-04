@@ -1,5 +1,5 @@
 use aimer_canvas::{Canvas, FrameCanvas, Mat3};
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_cupid::utilities::Color as V2Color;
 
 struct LocalFieldDecoration {

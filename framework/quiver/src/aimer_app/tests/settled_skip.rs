@@ -183,7 +183,7 @@ impl Scene {
             .render_all()
             .into_iter()
             .map(|operation| match operation {
-                aimer_cupid::draw_cmd_v2::RenderOp::Draw(item) => format!(
+                aimer_cupid::draw_cmd::RenderOp::Draw(item) => format!(
                     "{:?} {:?} {:?} {:?} {:?}",
                     item.element,
                     item.bounds,
@@ -191,7 +191,7 @@ impl Scene {
                     item.clip,
                     item.snapshot().commands
                 ),
-                aimer_cupid::draw_cmd_v2::RenderOp::BeginOpacityGroup {
+                aimer_cupid::draw_cmd::RenderOp::BeginOpacityGroup {
                     element,
                     bounds,
                     opacity,
@@ -199,7 +199,7 @@ impl Scene {
                     masked,
                     ..
                 } => format!("begin {element:?} {bounds:?} {opacity} {clip:?} {masked}"),
-                aimer_cupid::draw_cmd_v2::RenderOp::EndOpacityGroup { element } => {
+                aimer_cupid::draw_cmd::RenderOp::EndOpacityGroup { element } => {
                     format!("end {element:?}")
                 }
             })

@@ -345,7 +345,7 @@ impl<P: ImageProvider> RawImageWidget<P> {
                 if width > 0.0 && height > 0.0 {
                     let (red, green, blue, alpha) = color.to_rgba();
                     canvas.fill_rect(
-                        aimer_cupid::draw_cmd_v2::Rect::new(
+                        aimer_cupid::draw_cmd::Rect::new(
                             x / scale,
                             y / scale,
                             width / scale,
@@ -382,7 +382,7 @@ impl<P: ImageProvider> RawImageWidget<P> {
         u32,
         ResolvedSize,
         ImagePaintGeometry,
-        Option<std::sync::Arc<aimer_cupid::draw_cmd_v2::ImageResource>>,
+        Option<std::sync::Arc<aimer_cupid::draw_cmd::ImageResource>>,
     )> {
         let resource = self
             .animation
@@ -517,7 +517,7 @@ impl<P: ImageProvider> Drawable for RawImageWidget<P> {
         if let Some((id, target, geometry, resource)) = self.local_v2_image_paint(ctx) {
             if geometry.use_cover {
                 canvas.push_clip(
-                    aimer_cupid::draw_cmd_v2::Rect::new(
+                    aimer_cupid::draw_cmd::Rect::new(
                         0.0,
                         0.0,
                         target.width / scale,
@@ -526,7 +526,7 @@ impl<P: ImageProvider> Drawable for RawImageWidget<P> {
                     [0.0; 4],
                 );
             }
-            let destination = aimer_cupid::draw_cmd_v2::Rect::new(
+            let destination = aimer_cupid::draw_cmd::Rect::new(
                 geometry.pos.x / scale,
                 geometry.pos.y / scale,
                 geometry.size.width / scale,
@@ -560,7 +560,7 @@ mod tests {
 
     use super::*;
     use aimer_container::ZeroSizedBox;
-    use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderPaintSource, RenderTree};
+    use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderPaintSource, RenderTree};
 
     #[derive(Clone, Debug)]
     struct LoadingThenError {
@@ -876,7 +876,7 @@ mod tests {
     fn record_paint<P: ImageProvider>(
         image: &RawImageWidget<P>,
         ctx: &BuildContext,
-    ) -> aimer_cupid::draw_cmd_v2::DrawListSnapshot {
+    ) -> aimer_cupid::draw_cmd::DrawListSnapshot {
         let tree = RenderTree::new();
         let node = tree.add_root(Rect::new(0.0, 0.0, 16.0, 16.0)).unwrap();
         let node_context = tree.context(node).unwrap();

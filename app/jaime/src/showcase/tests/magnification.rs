@@ -1,6 +1,6 @@
 use super::*;
 
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect};
+use aimer_cupid::draw_cmd::{DrawCommand, Rect};
 use aimer_cupid::material::{MagnificationStyle as Style, MaterialKind, MaterialRequest};
 use aimer::quiver::winit::dpi::PhysicalSize;
 use aimer::{

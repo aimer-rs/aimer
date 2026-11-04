@@ -1134,7 +1134,7 @@ mod presentation {
     use std::sync::OnceLock;
 
     use aimer_attribute::BoxConstraint;
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderNodeId, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderNodeId, RenderTree};
     use aimer_widget::base::WindowHandle;
 
     use super::*;
@@ -1356,7 +1356,7 @@ mod presentation {
         tree.render_all()
             .into_iter()
             .find_map(|operation| match operation {
-                aimer_cupid::draw_cmd_v2::RenderOp::Draw(item) if item.element == node => {
+                aimer_cupid::draw_cmd::RenderOp::Draw(item) if item.element == node => {
                     Some((item.clip, item.clip_radius))
                 }
                 _ => None,

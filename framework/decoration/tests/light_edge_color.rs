@@ -5,7 +5,7 @@ use aimer_attribute::{BoxConstraint, ResolvedSize, Vec2d};
 use aimer_canvas::{FrameCanvas, InnerCanvas};
 use aimer_color::prelude::Color;
 use aimer_container::{Container, SizedBox};
-use aimer_cupid::draw_cmd_v2::DrawCommand;
+use aimer_cupid::draw_cmd::DrawCommand;
 use aimer_cupid::material::{MaterialKind, MaterialRequest};
 use aimer_decoration::{BoxDecoration, Decoration, DecorationBox, LightEdge, MultiDecorationBox};
 use aimer_widget::base::{BuildContext, WindowHandle};

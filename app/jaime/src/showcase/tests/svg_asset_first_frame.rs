@@ -11,7 +11,7 @@ use aimer::style::BoxFit;
 use aimer::{
     AimerApp, AssetImage, Container, Dimension, HeadlessOptions, Row, SizedBox, SvgAsset, Widget,
 };
-use aimer_cupid::draw_cmd_v2::{DrawCommand, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand, RenderOp};
 
 use crate::Assets;
 

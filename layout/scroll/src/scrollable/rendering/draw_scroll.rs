@@ -1,7 +1,7 @@
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_events::element::ElementEvent;
 use aimer_events::pointer::{PointerButton, PointerInfo};
 use aimer_widget::base::BuildContext;

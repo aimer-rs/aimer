@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use aimer_attribute::BoxConstraint;
 use aimer_attribute::position::Vec2d;
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 
 use crate::base::BuildContext;
 use crate::Element;

@@ -1,6 +1,6 @@
 use aimer::canvas::Canvas;
 use aimer_cupid::damage_region::DamageSet;
-use aimer_cupid::draw_cmd_v2::{Rect, RenderFrame, RenderPaintSource, RenderTree};
+use aimer_cupid::draw_cmd::{Rect, RenderFrame, RenderPaintSource, RenderTree};
 use aimer_cupid::frame::{FramePacket, FrameRenderMetadata};
 use aimer::{ ResolvedSize, Vec2d};
 use aimer_decoration::{BackdropFilter, Decoration};

@@ -842,7 +842,7 @@ mod tests {
 
     use aimer_attribute::{BoxConstraint, ResolvedSize};
     use aimer_canvas::{FrameCanvas, InnerCanvas};
-    use aimer_cupid::draw_cmd::DrawCommand;
+    use aimer_cupid::render_list::DrawCommand;
     use aimer_style::{TextAlign, TextDecorationLine, TextStyle};
     use aimer_widget::VisitorElement;
     use aimer_widget::base::{BuildContext, WindowHandle};
@@ -1122,8 +1122,8 @@ mod tests {
         let text = commands
             .iter()
             .flat_map(|command| match command {
-                aimer_cupid::draw_cmd_v2::DrawCommand::DrawText { text, .. } => vec![text.as_ref()],
-                aimer_cupid::draw_cmd_v2::DrawCommand::DrawRichText { spans, .. } => {
+                aimer_cupid::draw_cmd::DrawCommand::DrawText { text, .. } => vec![text.as_ref()],
+                aimer_cupid::draw_cmd::DrawCommand::DrawRichText { spans, .. } => {
                     spans.iter().map(|span| span.text.as_ref()).collect()
                 }
                 _ => Vec::new(),
@@ -1139,14 +1139,14 @@ mod tests {
     fn recorded_commands(
         element: &dyn aimer_widget::Element,
         ctx: &BuildContext<'_>,
-        commands: &mut Vec<aimer_cupid::draw_cmd_v2::DrawCommand>,
+        commands: &mut Vec<aimer_cupid::draw_cmd::DrawCommand>,
     ) {
         let mut node_ctx = ctx.clone();
         node_ctx.parent_size = element.computed_size(ctx);
         if element.can_paint_local_v2(&node_ctx) {
-            let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+            let tree = aimer_cupid::draw_cmd::RenderTree::new();
             let root = tree
-                .add_root(aimer_cupid::draw_cmd_v2::Rect::new(
+                .add_root(aimer_cupid::draw_cmd::Rect::new(
                     0.0, 0.0, 1_000.0, 1_000.0,
                 ))
                 .unwrap();
@@ -1187,13 +1187,13 @@ mod tests {
         assert!(commands.iter().any(|command| {
             matches!(
                 command,
-                aimer_cupid::draw_cmd_v2::DrawCommand::DrawText { text, .. }
+                aimer_cupid::draw_cmd::DrawCommand::DrawText { text, .. }
                     if text.as_ref() == "A plain Markdown paragraph"
             )
         }));
         assert!(!commands.iter().any(|command| matches!(
             command,
-            aimer_cupid::draw_cmd_v2::DrawCommand::DrawRichText { .. }
+            aimer_cupid::draw_cmd::DrawCommand::DrawRichText { .. }
         )));
     }
 

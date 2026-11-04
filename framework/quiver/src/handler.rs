@@ -46,7 +46,7 @@ use aimer_attribute::BoxConstraint;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_cupid::damage_region::DamageSet;
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     DrawCommand as V2DrawCommand, Rect as RenderRect, RenderFrame, RenderNodeId, RenderNodeSpec,
     RenderOp, RenderPaintSource, RenderTree, RenderTreeError,
 };
@@ -2376,7 +2376,7 @@ mod tests {
     use aimer_attribute::position::Vec2d;
     use aimer_attribute::size::{ResolvedSize, Size};
     use aimer_container::Container;
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderOp, RenderPaintSource};
+    use aimer_cupid::draw_cmd::{Rect, RenderOp, RenderPaintSource};
     use aimer_flex::Column;
     use aimer_scroll::{ScrollController, Scrollable};
     use aimer_widget::base::{BuildContext, Color, WindowHandle};
@@ -3568,7 +3568,7 @@ mod tests {
         assert_eq!(background_before.revision, 1);
         assert!(matches!(
             background_before.commands.as_ref(),
-            [aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { color, .. }]
+            [aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. }]
                 if (color.r, color.g, color.b, color.a) == (0, 0, 255, 255)
         ));
         let child_clip =

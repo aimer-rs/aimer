@@ -1,6 +1,6 @@
 use super::*;
 
-use aimer_cupid::draw_cmd_v2::{DrawCommand as LocalCommand, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand as LocalCommand, RenderOp};
 use aimer_decoration::{Gradient, MaskedDecorationBox};
 use aimer_space::{Positioned, Stack};
 

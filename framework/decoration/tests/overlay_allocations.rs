@@ -8,7 +8,7 @@ use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::{FrameCanvas, InnerCanvas};
 use aimer_color::prelude::Color;
 use aimer_container::SizedBox;
-use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+use aimer_cupid::draw_cmd::{Rect, RenderTree};
 use aimer_decoration::{
     DecorationBox, ForegroundDecorationBox, Gradient, MaskedDecorationBox, OpacityGradient,
 };

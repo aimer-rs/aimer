@@ -1,7 +1,7 @@
 //! A node whose list opens with the coverage-mask marker is planned as a group
 //! whose descendants provide the coverage its own commands show through.
 
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     COVERAGE_MASK_PIPELINE_NAME, DrawCommand, Rect, RenderNodeId, RenderOp, RenderTree,
 };
 use aimer_cupid::utilities::Color;

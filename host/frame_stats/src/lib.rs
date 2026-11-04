@@ -51,7 +51,7 @@ pub use pipeline::{PipelineTiming, pipeline_timing};
 pub enum FramePhase {
     /// The widget walk: build, layout and paint into a [`DrawList`].
     ///
-    /// [`DrawList`]: aimer_cupid::draw_cmd::DrawList
+    /// [`DrawList`]: aimer_cupid::render_list::DrawList
     Build,
     /// Encoding the recorded draw list and submitting GPU work.
     Encode,
@@ -593,7 +593,7 @@ impl FrameContentAccumulator {
     fn record(
         &self,
         drawn_nodes: u64,
-        draw_list: aimer_cupid::draw_cmd::DrawListStats,
+        draw_list: aimer_cupid::render_list::DrawListStats,
         text_cache_hits: u64,
         text_cache_misses: u64,
         rebuild: aimer_widget::RebuildStats,
@@ -854,7 +854,7 @@ pub fn record_display_tick() {
 #[inline]
 pub fn record_frame_content(
     drawn_nodes: u64,
-    draw_list: aimer_cupid::draw_cmd::DrawListStats,
+    draw_list: aimer_cupid::render_list::DrawListStats,
     text_cache_hits: u64,
     text_cache_misses: u64,
     rebuild: aimer_widget::RebuildStats,
@@ -1094,7 +1094,7 @@ mod tests {
 
         accumulator.record(
             10,
-            aimer_cupid::draw_cmd::DrawListStats {
+            aimer_cupid::render_list::DrawListStats {
                 commands: 20,
                 retained_layers: 3,
                 text_commands: 8,
@@ -1127,7 +1127,7 @@ mod tests {
         );
         accumulator.record(
             6,
-            aimer_cupid::draw_cmd::DrawListStats {
+            aimer_cupid::render_list::DrawListStats {
                 commands: 10,
                 retained_layers: 0,
                 text_commands: 2,

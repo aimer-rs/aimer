@@ -1028,7 +1028,7 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
     /// Every render node in paint order, as the renderer would be handed them
     /// without damage culling, for tests that check what a frame draws and where.
     #[doc(hidden)]
-    pub fn render_ops(&self) -> Vec<aimer_cupid::draw_cmd_v2::RenderOp> {
+    pub fn render_ops(&self) -> Vec<aimer_cupid::draw_cmd::RenderOp> {
         self.app.render_tree().render_all()
     }
 
@@ -1672,8 +1672,8 @@ mod tests {
     use aimer_attribute::size::{ResolvedSize, Size};
     use aimer_canvas::Canvas;
     use aimer_container::SizedBox;
-    use aimer_cupid::draw_cmd::DrawCommand;
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderNodeId};
+    use aimer_cupid::render_list::DrawCommand;
+    use aimer_cupid::draw_cmd::{Rect, RenderNodeId};
     use aimer_cupid::frame::{Frame, FramePacket, FrameRenderMetadata, RetainedRenderPlan};
     use aimer_events::element::{ElementEvent, ScrollDeltaKind};
     use aimer_events::pointer::{PointerButton, PointerInfo};
@@ -2474,7 +2474,7 @@ mod tests {
             retained_text_field_node(&app, &focused_packet);
         assert_eq!(
             app.app.render_tree().paint_source(field_node).unwrap(),
-            aimer_cupid::draw_cmd_v2::RenderPaintSource::LocalV2
+            aimer_cupid::draw_cmd::RenderPaintSource::LocalV2
         );
         let caret = caret_slot
             .borrow()
@@ -2503,7 +2503,7 @@ mod tests {
         assert_eq!(updated_node, field_node);
         assert_eq!(
             app.app.render_tree().paint_source(field_node).unwrap(),
-            aimer_cupid::draw_cmd_v2::RenderPaintSource::LocalV2
+            aimer_cupid::draw_cmd::RenderPaintSource::LocalV2
         );
         assert!(
             controller.value().selection().focus() < text.len(),
@@ -2529,7 +2529,7 @@ mod tests {
         assert_eq!(preedit_node, field_node);
         assert_eq!(
             app.app.render_tree().paint_source(field_node).unwrap(),
-            aimer_cupid::draw_cmd_v2::RenderPaintSource::LocalV2
+            aimer_cupid::draw_cmd::RenderPaintSource::LocalV2
         );
         assert!(controller.value().composing().is_some());
         assert!(caret.is_composing());
@@ -2600,7 +2600,7 @@ mod tests {
         assert!(caret.is_composing());
         assert_eq!(
             app.app.render_tree().paint_source(field_node).unwrap(),
-            aimer_cupid::draw_cmd_v2::RenderPaintSource::LocalV2
+            aimer_cupid::draw_cmd::RenderPaintSource::LocalV2
         );
         assert_ne!(preedit_revision, focused_revision);
         let geometry = caret.geometry();
@@ -2659,7 +2659,7 @@ mod tests {
         assert!(!controller.value().selection().is_collapsed());
         assert_eq!(
             app.app.render_tree().paint_source(field_node).unwrap(),
-            aimer_cupid::draw_cmd_v2::RenderPaintSource::LocalV2
+            aimer_cupid::draw_cmd::RenderPaintSource::LocalV2
         );
 
         let panel_id = retained_element_id_named(&app, "ContextMenu")
@@ -3004,7 +3004,7 @@ mod tests {
             self.paints.set(self.paints.get() + 1);
             let canvas = aimer_canvas::Canvas::of(ctx);
             canvas.fill_rect(
-                aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 20.0, 10.0),
+                aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 20.0, 10.0),
                 [220, 20, 20, 255],
             );
             canvas.finish();
@@ -3105,7 +3105,7 @@ mod tests {
                 .tree()
                 .paint_source(render_node)
                 .unwrap(),
-            aimer_cupid::draw_cmd_v2::RenderPaintSource::LocalV2
+            aimer_cupid::draw_cmd::RenderPaintSource::LocalV2
         );
 
         let colors = app
@@ -3114,7 +3114,7 @@ mod tests {
             .commands()
             .iter()
             .filter_map(|command| match command {
-                aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. } => Some(*color),
+                aimer_cupid::render_list::DrawCommand::FillRect { color, .. } => Some(*color),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -3390,7 +3390,7 @@ mod tests {
                 .render_tree()
                 .render_all()
                 .iter()
-                .filter(|op| matches!(op, aimer_cupid::draw_cmd_v2::RenderOp::Draw(_)))
+                .filter(|op| matches!(op, aimer_cupid::draw_cmd::RenderOp::Draw(_)))
                 .count()
         };
         let single = draws(&app);
@@ -3584,7 +3584,7 @@ mod tests {
             .commands()
             .iter()
             .filter_map(|command| match command {
-                aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. } => Some(*color),
+                aimer_cupid::render_list::DrawCommand::FillRect { color, .. } => Some(*color),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -6018,14 +6018,14 @@ mod tests {
             .expect("frame drawer synchronizes the retained render tree");
         assert_eq!(
             app.app.render_tree().element_bounds(render_node).unwrap(),
-            aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 1150.0, 800.0)
+            aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 1150.0, 800.0)
         );
         assert!(app
             .app
             .render_tree()
             .render_all()
             .iter()
-            .any(|operation| matches!(operation, aimer_cupid::draw_cmd_v2::RenderOp::Draw(item) if item.element == render_node)));
+            .any(|operation| matches!(operation, aimer_cupid::draw_cmd::RenderOp::Draw(item) if item.element == render_node)));
     }
 
     #[test]

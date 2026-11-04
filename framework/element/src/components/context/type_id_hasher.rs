@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 
-use aimer_cupid::draw_cmd_v2::CurrentBuildContext;
+use aimer_cupid::draw_cmd::CurrentBuildContext;
 
 /// The hasher for the type-keyed state map.
 ///

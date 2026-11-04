@@ -1004,12 +1004,12 @@ impl Drawable for RawFlex {
 
     fn paint_local_v2(&self, _ctx: &BuildContext) {}
 
-    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
+    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
         if !self.can_paint_local_v2(ctx) || self.overflow_behavior != OverflowBehavior::Hidden {
             return None;
         }
 
-        Some(aimer_cupid::draw_cmd_v2::Rect::new(
+        Some(aimer_cupid::draw_cmd::Rect::new(
             0.0,
             0.0,
             ctx.box_constraint.max_width / ctx.scale,
@@ -1033,8 +1033,8 @@ impl Drawable for RawFlex {
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         let (offset, child_ctx) = self.retained_child_layout(ctx, child, child_index)?;
         let size = child
@@ -1043,7 +1043,7 @@ impl Drawable for RawFlex {
         let position = child.pos().unwrap_or_default();
         let scale = ctx.scale;
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 (offset.x + position.x) / scale,
                 (offset.y + position.y) / scale,
                 size.width / scale,

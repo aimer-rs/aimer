@@ -1244,10 +1244,10 @@ mod tests {
     fn record_overlay(
         overlay: &super::RawModalOverlay,
         ctx: &BuildContext<'_>,
-    ) -> std::sync::Arc<[aimer_cupid::draw_cmd_v2::DrawCommand]> {
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    ) -> std::sync::Arc<[aimer_cupid::draw_cmd::DrawCommand]> {
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let root = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 200.0, 100.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 200.0, 100.0))
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
@@ -1270,7 +1270,7 @@ mod tests {
 
         let handle = super::OverlayLayer::install(Rc::new(|_ctx, canvas| {
             canvas.fill_rect(
-                aimer_cupid::draw_cmd_v2::Rect::new(10.0, 10.0, 20.0, 20.0),
+                aimer_cupid::draw_cmd::Rect::new(10.0, 10.0, 20.0, 20.0),
                 [255, 0, 0, 255],
             );
             true
@@ -1279,7 +1279,7 @@ mod tests {
         let commands = record_overlay(&overlay, &ctx);
         assert!(commands.iter().any(|command| matches!(
             command,
-            aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { .. }
+            aimer_cupid::draw_cmd::DrawCommand::FillRect { .. }
         )));
         assert!(
             overlay.local_v2_paint_needs_recording(&ctx),

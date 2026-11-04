@@ -2,7 +2,7 @@ use super::Renderer;
 use crate::backend::metal::MetalBackend;
 use crate::backend::{GpuBackend, TextureDescriptor, TextureDimension, TextureUsage};
 use crate::damage_region::{DamageRect, DamageSet};
-use crate::draw_cmd::DrawList;
+use crate::render_list::DrawList;
 use crate::frame::{Frame, FramePacket, FrameRenderMetadata};
 use objc2_metal::MTLPixelFormat;
 

@@ -3,7 +3,7 @@ use aimer_material_pipeline::{
     MaterialRequest,
 };
 use crate::backend::{metal::MetalBackend, *};
-use crate::draw_cmd::DrawList;
+use crate::render_list::DrawList;
 use crate::renderer::RendererImpl;
 use objc2_metal::MTLPixelFormat;
 
@@ -195,7 +195,7 @@ fn the_coverage_mask_marker_is_skipped_until_the_renderer_composites_masks() {
 
     let mut marked = DrawList::new();
     marked.draw_custom(
-        crate::draw_cmd_v2::COVERAGE_MASK_PIPELINE_NAME,
+        crate::draw_cmd::COVERAGE_MASK_PIPELINE_NAME,
         Vec::<u8>::new(),
     );
     marked.draw_custom(MATERIAL_PIPELINE_NAME, request.encode_for_test());

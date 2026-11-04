@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::mask_group_tests::{SIZE, near, pixel, record, render};
 use crate::AntiAlias;
-use crate::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use crate::draw_cmd::{DrawCommand, Rect, RenderTree};
 use crate::pipeline::material::{MATERIAL_PIPELINE_NAME, MaterialKind, MaterialRequest};
 use crate::utilities::Color;
 

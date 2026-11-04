@@ -8,7 +8,7 @@ use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_canvas::{CanvasContext, FrameCanvas};
 use aimer_color::prelude::Color;
-use aimer_cupid::draw_cmd_v2::CurrentBuildContext;
+use aimer_cupid::draw_cmd::CurrentBuildContext;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::runtime::Handle;
 
@@ -440,7 +440,7 @@ impl<'a> BuildContext<'a> {
         clip: Option<(f32, f32, f32, f32)>,
         radius: [f32; 4],
     ) -> bool {
-        let clip = clip.map(|(x, y, width, height)| aimer_cupid::draw_cmd_v2::Rect::new(x, y, width, height));
+        let clip = clip.map(|(x, y, width, height)| aimer_cupid::draw_cmd::Rect::new(x, y, width, height));
         self.local_paint()
             .is_some_and(|context| context.set_child_clip_at(child_index, clip, radius))
     }
@@ -690,8 +690,8 @@ mod tests {
     }
 
     /// A render node to hand to `with_local_v2_paint_context`, and its handle.
-    fn paint_scope() -> (aimer_cupid::draw_cmd_v2::RenderTree, [CurrentBuildContext; 2]) {
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    fn paint_scope() -> (aimer_cupid::draw_cmd::RenderTree, [CurrentBuildContext; 2]) {
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
         let tree = RenderTree::new();
         let first = tree.add_root(Rect::new(1.0, 2.0, 10.0, 10.0)).unwrap();

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use aimer_cupid::draw_cmd_v2::DrawCommand;
+use aimer_cupid::draw_cmd::DrawCommand;
 use aimer_cupid::svg::SvgScene;
 use aimer::quiver::winit::dpi::PhysicalSize;
 use aimer::{

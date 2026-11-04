@@ -295,8 +295,8 @@ macro_rules! impl_spacing_element {
                 ctx: &BuildContext,
                 child: &dyn Element,
             ) -> Option<(
-                aimer_cupid::draw_cmd_v2::Rect,
-                Option<aimer_cupid::draw_cmd_v2::Rect>,
+                aimer_cupid::draw_cmd::Rect,
+                Option<aimer_cupid::draw_cmd::Rect>,
             )> {
                 if !ctx.scale.is_finite() || ctx.scale <= 0.0 {
                     return None;
@@ -307,7 +307,7 @@ macro_rules! impl_spacing_element {
                     .retained_v2_bounds(&child_ctx)
                     .unwrap_or_else(|| child.content_size(&child_ctx));
                 let position = child.pos().unwrap_or_default();
-                let bounds = aimer_cupid::draw_cmd_v2::Rect::new(
+                let bounds = aimer_cupid::draw_cmd::Rect::new(
                     (spacing.left + position.x) / ctx.scale,
                     (spacing.top + position.y) / ctx.scale,
                     size.width / ctx.scale,

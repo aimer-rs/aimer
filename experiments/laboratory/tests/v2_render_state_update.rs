@@ -1,6 +1,6 @@
 use aimer_cupid::damage_region::DamageSet;
-use aimer_cupid::draw_cmd::DrawList;
-use aimer_cupid::draw_cmd_v2::DrawCommand as V2DrawCommand;
+use aimer_cupid::render_list::DrawList;
+use aimer_cupid::draw_cmd::DrawCommand as V2DrawCommand;
 use aimer_cupid::frame::{Frame, FramePacket, FrameRenderMetadata};
 use aimer_laboratory::v2_render::{CounterSimulation, RenderOp};
 

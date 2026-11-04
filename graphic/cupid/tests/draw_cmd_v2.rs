@@ -1,4 +1,4 @@
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     DrawCommand, LocalVisibleRegion, Rect, RenderNodeSpec, RenderOp, RenderPaintSource, RenderTree,
 };
 use aimer_cupid::utilities::{Color, Mat3};
@@ -207,7 +207,7 @@ fn compositor_transform_rejects_non_finite_values_and_culls_zero_area_content() 
 
     assert_eq!(
         tree.set_transform(root, Mat3::scale(f32::NAN, 1.0)),
-        Err(aimer_cupid::draw_cmd_v2::RenderTreeError::InvalidTransform)
+        Err(aimer_cupid::draw_cmd::RenderTreeError::InvalidTransform)
     );
     assert!(tree.take_damage().is_empty());
 
@@ -224,18 +224,18 @@ fn invalid_geometry_and_opacity_are_rejected_without_adding_damage() {
     let tree = RenderTree::new();
     assert_eq!(
         tree.add_root(Rect::new(0.0, 0.0, -1.0, 10.0)),
-        Err(aimer_cupid::draw_cmd_v2::RenderTreeError::InvalidBounds)
+        Err(aimer_cupid::draw_cmd::RenderTreeError::InvalidBounds)
     );
 
     let root = tree.add_root(Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
     tree.take_damage();
     assert_eq!(
         tree.set_opacity(root, f32::NAN),
-        Err(aimer_cupid::draw_cmd_v2::RenderTreeError::InvalidOpacity)
+        Err(aimer_cupid::draw_cmd::RenderTreeError::InvalidOpacity)
     );
     assert_eq!(
         tree.set_opacity(root, 1.1),
-        Err(aimer_cupid::draw_cmd_v2::RenderTreeError::InvalidOpacity)
+        Err(aimer_cupid::draw_cmd::RenderTreeError::InvalidOpacity)
     );
     assert!(tree.take_damage().is_empty());
 }
@@ -360,7 +360,7 @@ fn structure_sync_rejects_clips_that_do_not_match_the_node_list() {
             )],
             &[],
         ),
-        Err(aimer_cupid::draw_cmd_v2::RenderTreeError::InvalidBounds)
+        Err(aimer_cupid::draw_cmd::RenderTreeError::InvalidBounds)
     );
     assert_eq!(
         tree.element_bounds(node).unwrap(),
@@ -448,8 +448,8 @@ fn structure_sync_that_resizes_a_node_marks_its_recorded_list_stale() {
 /// the viewport.
 fn viewport_content() -> (
     RenderTree,
-    aimer_cupid::draw_cmd_v2::RenderNodeId,
-    aimer_cupid::draw_cmd_v2::RenderNodeId,
+    aimer_cupid::draw_cmd::RenderNodeId,
+    aimer_cupid::draw_cmd::RenderNodeId,
 ) {
     let tree = RenderTree::new();
     let viewport = tree.add_root(Rect::new(0.0, 0.0, 100.0, 100.0)).unwrap();
@@ -792,7 +792,7 @@ fn image_command(texture_id: u32) -> DrawCommand {
 }
 
 fn resource_image_command(texture_id: u32) -> DrawCommand {
-    let resource = aimer_cupid::draw_cmd_v2::ImageResource::rgba8(
+    let resource = aimer_cupid::draw_cmd::ImageResource::rgba8(
         texture_id,
         1,
         1,
@@ -808,7 +808,7 @@ fn resource_image_command(texture_id: u32) -> DrawCommand {
 
 fn record(
     tree: &RenderTree,
-    node: aimer_cupid::draw_cmd_v2::RenderNodeId,
+    node: aimer_cupid::draw_cmd::RenderNodeId,
     commands: Vec<DrawCommand>,
 ) {
     tree.context(node)
@@ -934,7 +934,7 @@ fn a_planned_item_carries_its_listed_textures() {
     assert_eq!(textures, vec![(root, vec![1]), (child, vec![2, 4])]);
 }
 
-fn record_fill(tree: &RenderTree, node: aimer_cupid::draw_cmd_v2::RenderNodeId) {
+fn record_fill(tree: &RenderTree, node: aimer_cupid::draw_cmd::RenderNodeId) {
     tree.context(node)
         .unwrap()
         .begin_recording()

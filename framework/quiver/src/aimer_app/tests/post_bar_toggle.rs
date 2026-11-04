@@ -12,7 +12,7 @@ use super::*;
 use std::cell::RefCell;
 
 use aimer_cupid::damage_region::DamageSet;
-use aimer_cupid::draw_cmd_v2::RenderOp;
+use aimer_cupid::draw_cmd::RenderOp;
 use aimer_decoration::{BackdropFilter, Decoration, DecorationBox};
 use aimer_widget::StateUpdater;
 
@@ -398,7 +398,7 @@ fn filter_is_drawn(app: &HeadlessAimerApp<ModalHost<Host>>) -> bool {
             .snapshot()
             .commands
             .iter()
-            .any(|command| matches!(command, aimer_cupid::draw_cmd_v2::DrawCommand::DrawCustom { .. })),
+            .any(|command| matches!(command, aimer_cupid::draw_cmd::DrawCommand::DrawCustom { .. })),
         _ => false,
     })
 }

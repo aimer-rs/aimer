@@ -624,8 +624,8 @@ impl Drawable for RawColorPicker {
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         let child_ctx = self.retained_v2_child_context_at(ctx, child, child_index)?;
         let offset = super::color_slider_offset(child_index, ctx.scale);
@@ -634,7 +634,7 @@ impl Drawable for RawColorPicker {
             .retained_v2_bounds(&child_ctx)
             .unwrap_or_else(|| child.content_size(&child_ctx));
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 (offset.x + position.x) / ctx.scale,
                 (offset.y + position.y) / ctx.scale,
                 size.width / ctx.scale,

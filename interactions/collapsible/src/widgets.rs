@@ -265,13 +265,13 @@ impl Drawable for AnimatedCollapseElement {
         }
     }
 
-    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
+    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
         let natural = self.natural_size(ctx);
         let size = ResolvedSize {
             width: nonnegative_extent(natural.width),
             height: collapsed_height(natural.height, self.progress()),
         };
-        Some(aimer_cupid::draw_cmd_v2::Rect::new(
+        Some(aimer_cupid::draw_cmd::Rect::new(
             0.0,
             0.0,
             size.width,

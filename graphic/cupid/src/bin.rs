@@ -332,7 +332,7 @@ fn main() {
 mod tests {
     use super::record_demo_frame;
     use aimer_cupid::canvas::CupidCanvas;
-    use aimer_cupid::draw_cmd::DrawCommand;
+    use aimer_cupid::render_list::DrawCommand;
 
     #[test]
     fn demo_records_an_opaque_background_before_text() {

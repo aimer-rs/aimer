@@ -550,14 +550,14 @@ fn render_extent(device_extent: f32, scale: f32) -> f32 {
 
 #[inline]
 fn intersect_retained_clip(
-    left: aimer_cupid::draw_cmd_v2::Rect,
-    right: aimer_cupid::draw_cmd_v2::Rect,
-) -> aimer_cupid::draw_cmd_v2::Rect {
+    left: aimer_cupid::draw_cmd::Rect,
+    right: aimer_cupid::draw_cmd::Rect,
+) -> aimer_cupid::draw_cmd::Rect {
     let x = left.x.max(right.x);
     let y = left.y.max(right.y);
     let right_edge = (left.x + left.width).min(right.x + right.width);
     let bottom_edge = (left.y + left.height).min(right.y + right.height);
-    aimer_cupid::draw_cmd_v2::Rect::new(x, y, (right_edge - x).max(0.0), (bottom_edge - y).max(0.0))
+    aimer_cupid::draw_cmd::Rect::new(x, y, (right_edge - x).max(0.0), (bottom_edge - y).max(0.0))
 }
 
 mod painting;
@@ -649,7 +649,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
             || state.revision != self.decoration().revision()
     }
 
-    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
+    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
         let _ = ctx;
         None
     }
@@ -713,8 +713,8 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         ctx: &BuildContext,
         child: &dyn Element,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         if !std::ptr::eq(child, &self.child as &dyn Element) {
             return None;
@@ -726,13 +726,13 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         let position = child.pos().unwrap_or_default();
         let x = geometry.child_origin.x + position.x;
         let y = geometry.child_origin.y + position.y;
-        let bounds = aimer_cupid::draw_cmd_v2::Rect::new(
+        let bounds = aimer_cupid::draw_cmd::Rect::new(
             x / scale,
             y / scale,
             child_size.width / scale,
             child_size.height / scale,
         );
-        let clip = aimer_cupid::draw_cmd_v2::Rect::new(
+        let clip = aimer_cupid::draw_cmd::Rect::new(
             (geometry.clip_origin.x - x) / scale,
             (geometry.clip_origin.y - y) / scale,
             render_extent(geometry.clip_size.width, scale) / scale,

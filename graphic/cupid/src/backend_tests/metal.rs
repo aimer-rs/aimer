@@ -20,8 +20,8 @@ use crate::backend::{
     VertexAttribute, VertexState,
 };
 use crate::damage_region::DamageSet;
-use crate::draw_cmd::DrawList;
-use crate::draw_cmd_v2::{DrawCommand as V2DrawCommand, RenderFrame, RenderTree};
+use crate::render_list::DrawList;
+use crate::draw_cmd::{DrawCommand as V2DrawCommand, RenderFrame, RenderTree};
 use crate::frame::{Frame, FramePacket, FrameRenderMetadata};
 use crate::rect_pipeline::RectInstance;
 use crate::renderer::RendererImpl;
@@ -128,7 +128,7 @@ fn assert_pixel_near(data: &[u8], row_bytes: u32, x: u32, y: u32, expected: [u8;
 
 fn record_v2_fill(
     tree: &RenderTree,
-    node: crate::draw_cmd_v2::RenderNodeId,
+    node: crate::draw_cmd::RenderNodeId,
     rect: Rect,
     color: Color,
 ) {

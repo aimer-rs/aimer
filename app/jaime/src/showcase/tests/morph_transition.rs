@@ -12,7 +12,7 @@ use aimer::quiver::winit::event::{DeviceId, ElementState, MouseButton, WindowEve
 use aimer::{
     Drawable, Element, EventElement, HeadlessOptions, LayoutElement, Rebuildable, VisitorElement,
 };
-use aimer_cupid::draw_cmd_v2::{MorphGroup, MorphParams, MorphStyle, Rect, RenderOp};
+use aimer_cupid::draw_cmd::{MorphGroup, MorphParams, MorphStyle, Rect, RenderOp};
 
 #[derive(Default)]
 struct Snapshot {
@@ -259,7 +259,7 @@ fn capture(
 ) {
     use aimer_cupid::backend::*;
     use aimer_cupid::damage_region::DamageSet;
-    use aimer_cupid::draw_cmd_v2::RenderFrame;
+    use aimer_cupid::draw_cmd::RenderFrame;
     use aimer_cupid::frame::{FramePacket, FrameRenderMetadata};
 
     let format = <aimer_cupid::backend::metal::MetalBackend as GpuBackend>::rgba8_unorm_format();

@@ -1,6 +1,6 @@
 use aimer_attribute::dimension::Dimension;
 use aimer_attribute::size::{ResolvedSize, Size};
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_macro::{Rebuildable};
 use aimer_widget::base::{Color, *};
 use aimer_widget::{
@@ -288,7 +288,7 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
-    use aimer_cupid::draw_cmd_v2::{
+    use aimer_cupid::draw_cmd::{
         DrawCommand, Rect as RenderRect, RenderPaintSource, RenderTree,
     };
     use aimer_widget::base::WindowHandle;

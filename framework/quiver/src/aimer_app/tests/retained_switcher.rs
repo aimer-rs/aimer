@@ -6,7 +6,7 @@ use std::time::Duration;
 use aimer_animation::{AnimatedSwitcher, curves};
 use aimer_assets::img_widget::image_widget::RawImageWidget;
 use aimer_assets::{ImageProvider, ImageResult};
-use aimer_cupid::draw_cmd_v2::{DrawCommand as LocalCommand, ImageResource, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand as LocalCommand, ImageResource, RenderOp};
 use aimer_style::BoxFit;
 use aimer_widget::LayoutCache;
 
@@ -167,7 +167,7 @@ impl Drawable for SwitchDuringDrawElement {
     }
 }
 
-fn presented_images(tree: &aimer_cupid::draw_cmd_v2::RenderTree) -> Vec<(u32, f32, Rect)> {
+fn presented_images(tree: &aimer_cupid::draw_cmd::RenderTree) -> Vec<(u32, f32, Rect)> {
     let mut opacity = vec![1.0];
     let mut images = Vec::new();
     for operation in tree.render_order(&[Rect::new(0.0, 0.0, 320.0, 240.0)]) {

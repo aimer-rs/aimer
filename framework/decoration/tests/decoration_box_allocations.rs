@@ -116,9 +116,9 @@ async fn decoration_box_unchanged_paint_checks_allocate_nothing() {
         .decoration(BoxDecoration::new().background_color(Color::RED))
         .child(SizedBox::new().width(24.0).height(12.0))
         .to_element(&ctx);
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let root = tree
-        .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 24.0, 12.0))
+        .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 24.0, 12.0))
         .unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
         element.paint_local_v2(ctx)
@@ -151,9 +151,9 @@ async fn backdrop_filter_reuses_its_recording_without_allocating() {
         .decoration(BackdropFilter::new().saturation(0.5))
         .child(SizedBox::new().width(24.0).height(12.0))
         .to_element(&ctx);
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let root = tree
-        .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 24.0, 12.0))
+        .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 24.0, 12.0))
         .unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
         element.paint_local_v2(ctx)
@@ -189,9 +189,9 @@ async fn magnification_reuses_its_recording_without_allocating() {
         .decoration(aimer_decoration::Magnification::new().zoom(2.0))
         .child(SizedBox::new().width(24.0).height(12.0))
         .to_element(&ctx);
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let root = tree
-        .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 24.0, 12.0))
+        .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 24.0, 12.0))
         .unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
         element.paint_local_v2(ctx)
@@ -227,9 +227,9 @@ async fn light_edge_reuses_its_recording_without_allocating() {
         .decoration(aimer_decoration::LightEdge::new())
         .child(SizedBox::new().width(24.0).height(12.0))
         .to_element(&ctx);
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let root = tree
-        .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 24.0, 12.0))
+        .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 24.0, 12.0))
         .unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
         element.paint_local_v2(ctx)
@@ -266,9 +266,9 @@ async fn light_edge_auto_color_reuses_inherited_background_without_allocating() 
         .decoration(aimer_decoration::LightEdge::new())
         .child(SizedBox::new().width(40).height(20))
         .to_element(&ctx);
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let root = tree
-        .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 40.0, 20.0))
+        .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 40.0, 20.0))
         .unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
         element.paint_local_v2(ctx)
@@ -315,9 +315,9 @@ async fn multi_decoration_typed_and_runtime_stacks_reuse_recording_without_alloc
         .child(SizedBox::new().width(40).height(20))
         .to_element(&ctx);
     for element in [typed, runtime] {
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let root = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 40.0, 20.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 40.0, 20.0))
             .unwrap();
         ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
             element.paint_local_v2(ctx)
@@ -350,8 +350,8 @@ async fn standalone_style_components_reuse_recording_and_geometry_without_alloca
     for decoration in decorations {
         let element = DecorationBox::new().decoration(decoration.clone())
             .child(SizedBox::new().width(40).height(20)).to_element(&ctx);
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
-        let node = tree.add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 80.0, 40.0)).unwrap();
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
+        let node = tree.add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 80.0, 40.0)).unwrap();
         ctx.with_local_v2_paint_context(tree.context(node).unwrap(), |ctx| element.paint_local_v2(ctx));
         let before = ALLOCATIONS.with(Cell::get);
         for _ in 0..1_024 {

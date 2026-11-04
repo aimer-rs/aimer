@@ -818,7 +818,7 @@ mod tests {
     // move.
     #[test]
     fn the_render_tree_rectangle_becomes_the_hover_area() {
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
         let bounds = InteractionBounds::new();
         bounds.save(1.0, 0.0, 0.0, 100.0, 100.0);

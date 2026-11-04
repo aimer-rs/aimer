@@ -1,6 +1,6 @@
 use super::*;
 
-use aimer_cupid::draw_cmd_v2::{COVERAGE_MASK_PIPELINE_NAME, DrawCommand};
+use aimer_cupid::draw_cmd::{COVERAGE_MASK_PIPELINE_NAME, DrawCommand};
 use aimer_cupid::material::{GradientShape, MaterialKind, MaterialRequest};
 use aimer::quiver::winit::dpi::PhysicalSize;
 use aimer::{

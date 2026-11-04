@@ -1,7 +1,7 @@
 use super::*;
 use aimer_attribute::Dimension;
 use aimer_color::prelude::Color;
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 use crate::{BorderRadius, BorderSlice, BorderStyle, BoxBorder, BoxOutline, BoxShadow, ShadowSide};
 
 fn size() -> ResolvedSize {

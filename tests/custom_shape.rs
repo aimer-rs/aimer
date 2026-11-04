@@ -4,7 +4,7 @@ use aimer::{
     BuildContext, Color, CustomShape, Glass, LayoutElement, Liquid, ResolvedSize, Scalable,
     SizedBox, Vec2d, Widget,
 };
-use aimer_cupid::draw_cmd_v2::{DrawCommand as V2DrawCommand, Rect, RenderPaintSource, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand as V2DrawCommand, Rect, RenderPaintSource, RenderTree};
 use aimer_shape::*;
 
 fn context<'a>(canvas: FrameCanvas<'a>, runtime: &tokio::runtime::Runtime) -> BuildContext<'a> {

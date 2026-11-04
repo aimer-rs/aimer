@@ -234,8 +234,8 @@ fn retained_panel_commands(
     decoration: &BoxDecoration,
     metrics: RetainedPanelMetrics,
     scale: f32,
-) -> Vec<aimer_cupid::draw_cmd_v2::DrawCommand> {
-    use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect};
+) -> Vec<aimer_cupid::draw_cmd::DrawCommand> {
+    use aimer_cupid::draw_cmd::{DrawCommand, Rect};
 
     let mut commands = Vec::with_capacity(decoration.box_shadow.len() + 1);
     for shadow in decoration.box_shadow.iter().filter(|shadow| !shadow.inset) {
@@ -274,8 +274,8 @@ fn retained_shadow_command(
     shadow: &BoxShadow,
     metrics: RetainedPanelMetrics,
     scale: f32,
-) -> Option<aimer_cupid::draw_cmd_v2::DrawCommand> {
-    use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect};
+) -> Option<aimer_cupid::draw_cmd::DrawCommand> {
+    use aimer_cupid::draw_cmd::{DrawCommand, Rect};
 
     if shadow.color == Color::Transparent {
         return None;
@@ -396,8 +396,8 @@ impl Drawable for RawContextMenuPanel {
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         if child_index != 0 || !std::ptr::eq(child, self.child.as_ref()) {
             return None;
@@ -405,7 +405,7 @@ impl Drawable for RawContextMenuPanel {
         let (offset, child_size, _) = self.retained_child_layout(ctx);
         let scale = if ctx.scale > 0.0 { ctx.scale } else { 1.0 };
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 offset.x / scale,
                 offset.y / scale,
                 child_size.width / scale,
@@ -494,7 +494,7 @@ mod tests {
 
         let commands = retained_panel_commands(&decoration, metrics, 2.0);
         assert_eq!(commands.len(), 3);
-        let aimer_cupid::draw_cmd_v2::DrawCommand::DrawShadowRect {
+        let aimer_cupid::draw_cmd::DrawCommand::DrawShadowRect {
             rect: shadow_rect,
             shadow_color,
             shadow_params,
@@ -512,7 +512,7 @@ mod tests {
         assert_eq!(shadow_rect.y, 5.5);
         assert_eq!(*shadow_params, [1.5, -2.0, 2.5, 1.0]);
         assert!(!inset);
-        let aimer_cupid::draw_cmd_v2::DrawCommand::FillRect {
+        let aimer_cupid::draw_cmd::DrawCommand::FillRect {
             rect,
             color,
             border_radius,
@@ -541,7 +541,7 @@ mod tests {
             *outline_color,
             aimer_cupid::utilities::Color::rgba8(40, 50, 60, 255)
         );
-        let aimer_cupid::draw_cmd_v2::DrawCommand::DrawShadowRect { inset, .. } = &commands[2]
+        let aimer_cupid::draw_cmd::DrawCommand::DrawShadowRect { inset, .. } = &commands[2]
         else {
             panic!("inset shadow is recorded after the panel");
         };

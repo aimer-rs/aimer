@@ -185,8 +185,8 @@ impl Drawable for RawScalable {
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         if child_index != 0 || !std::ptr::eq(child, self.child.as_ref()) {
             return None;
@@ -198,7 +198,7 @@ impl Drawable for RawScalable {
         let position = child.pos().unwrap_or_default();
         let scale = ctx.scale;
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 position.x / scale,
                 position.y / scale,
                 size.width / scale,

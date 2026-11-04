@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::AntiAlias;
 use crate::backend::{metal::MetalBackend, *};
 use crate::damage_region::DamageSet;
-use crate::draw_cmd_v2::{
+use crate::draw_cmd::{
     COVERAGE_MASK_PIPELINE_NAME, DrawCommand, Rect, RenderFrame, RenderNodeId, RenderTree,
 };
 use crate::frame::{FramePacket, FrameRenderMetadata};
@@ -184,7 +184,7 @@ fn a_masked_node_leaves_its_unmasked_siblings_alone() {
         .render_all()
         .iter()
         .find_map(|operation| match operation {
-            crate::draw_cmd_v2::RenderOp::Draw(item) => Some(item.element),
+            crate::draw_cmd::RenderOp::Draw(item) => Some(item.element),
             _ => None,
         })
         .expect("the scene draws its root");
@@ -224,7 +224,7 @@ fn glyph_coverage_cuts_the_content_to_the_shape_of_the_text() {
         &tree,
         text,
         vec![DrawCommand::DrawText {
-            position: crate::draw_cmd_v2::Vec2d { x: 4.0, y: 100.0 },
+            position: crate::draw_cmd::Vec2d { x: 4.0, y: 100.0 },
             text: Arc::from("I"),
             font_size: 120.0,
             // Opaque white: only its coverage may matter.

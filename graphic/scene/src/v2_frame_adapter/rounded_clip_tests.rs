@@ -1,8 +1,8 @@
 //! Corner radii on a retained clip must survive lowering to the renderer's
 //! `PushClip`.
 
-use crate::draw_cmd::DrawCommand as LegacyDrawCommand;
-use crate::draw_cmd_v2::{
+use crate::render_list::DrawCommand as LegacyDrawCommand;
+use crate::draw_cmd::{
     DrawCommand, Rect, RenderNodeId, RenderNodeSpec, RenderOp, RenderPaintSource, RenderTree,
 };
 use crate::frame::RetainedV2Item;

@@ -16,7 +16,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::Rc;
 
 use aimer_attribute::{Bounds, CacheBounds, Vec2d};
-use aimer_cupid::draw_cmd_v2::{RenderNodeId, RenderTree};
+use aimer_cupid::draw_cmd::{RenderNodeId, RenderTree};
 use aimer_events::pointer::{PointerSource, last_pointer_source, min_touch_target};
 
 /// Largest disagreement, in logical pixels, that still counts as the same box.
@@ -346,7 +346,7 @@ impl InteractionBounds {
 
 #[cfg(test)]
 mod tests {
-    use aimer_cupid::draw_cmd_v2::Rect;
+    use aimer_cupid::draw_cmd::Rect;
 
     use super::*;
 

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use aimer_animation::{AnimInstant, AnimationController, curves};
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,

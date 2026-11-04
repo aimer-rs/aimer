@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 
 use aimer::cupid::WgpuBackend;
 use aimer::cupid::damage_region::DamageSet;
-use aimer::cupid::draw_cmd_v2::{Rect as V2Rect, RenderNodeSpec, RenderTree};
+use aimer::cupid::draw_cmd::{Rect as V2Rect, RenderNodeSpec, RenderTree};
 use aimer::cupid::frame::{Frame, FramePacket, FrameRenderMetadata};
 use aimer::cupid::renderer::Renderer;
 use aimer_laboratory::v2_render::Canvas as V2Canvas;
@@ -187,7 +187,7 @@ fn assert_pixel_sized(pixels: &[u8], width: u32, x: u32, y: u32, expected: [u8; 
 
 fn record_v2_fill(
     tree: &RenderTree,
-    element: aimer::cupid::draw_cmd_v2::RenderNodeId,
+    element: aimer::cupid::draw_cmd::RenderNodeId,
     rect: V2Rect,
     color: [u8; 4],
 ) {
@@ -199,12 +199,12 @@ fn record_v2_fill(
 
 fn direct_v2_packet(tree: &RenderTree, damage: Vec<V2Rect>) -> FramePacket {
     FramePacket::from_v2_direct_with_frame(
-        aimer::cupid::draw_cmd_v2::RenderFrame {
+        aimer::cupid::draw_cmd::RenderFrame {
             damage,
             operations: tree.render_all(),
         },
         FrameRenderMetadata::new(1.0, 84, 1, 1, 1, DamageSet::new(WIDTH, HEIGHT)),
-        Frame::new(aimer::cupid::draw_cmd::DrawList::new(), WIDTH, HEIGHT),
+        Frame::new(aimer::cupid::render_list::DrawList::new(), WIDTH, HEIGHT),
     )
     .expect("build a complete virtualized-scroll packet")
 }
@@ -260,12 +260,12 @@ fn direct_retained_packet_interleaves_clipped_local_v2_lists_on_metal() {
     );
 
     let packet = FramePacket::from_v2_direct_with_frame(
-        aimer::cupid::draw_cmd_v2::RenderFrame {
+        aimer::cupid::draw_cmd::RenderFrame {
             damage: vec![V2Rect::new(0.0, 0.0, 64.0, 64.0)],
             operations: tree.render_all(),
         },
         FrameRenderMetadata::new(1.0, 72, 1, 1, 1, DamageSet::new(WIDTH, HEIGHT)),
-        Frame::new(aimer::cupid::draw_cmd::DrawList::new(), WIDTH, HEIGHT),
+        Frame::new(aimer::cupid::render_list::DrawList::new(), WIDTH, HEIGHT),
     )
     .expect("build a retained packet without flattening local v2 commands");
     assert!(packet.render_plan().unwrap().is_complete());
@@ -362,7 +362,7 @@ fn retained_v2_packet_updates_only_its_damaged_pixels_on_metal() {
     let mut renderer = Renderer::new(&backend, FORMAT);
     let metadata = |damage| FrameRenderMetadata::new(1.0, 42, 1, 1, 1, damage);
     let first_packet = FramePacket::from_v2_direct(
-        aimer::cupid::draw_cmd_v2::RenderFrame {
+        aimer::cupid::draw_cmd::RenderFrame {
             damage: vec![V2Rect::new(0.0, 0.0, WIDTH as f32, HEIGHT as f32)],
             operations: tree.render_all(),
         },
@@ -386,12 +386,12 @@ fn retained_v2_packet_updates_only_its_damaged_pixels_on_metal() {
     let update_damage = tree.take_damage();
     assert_eq!(update_damage, vec![V2Rect::new(16.0, 16.0, 32.0, 32.0)]);
     let second_packet = FramePacket::from_v2_direct_with_frame(
-        aimer::cupid::draw_cmd_v2::RenderFrame {
+        aimer::cupid::draw_cmd::RenderFrame {
             damage: update_damage,
             operations: tree.render_all(),
         },
         metadata(DamageSet::new(WIDTH, HEIGHT)),
-        Frame::new(aimer::cupid::draw_cmd::DrawList::new(), WIDTH, HEIGHT),
+        Frame::new(aimer::cupid::render_list::DrawList::new(), WIDTH, HEIGHT),
     )
     .expect("lower incremental v2 render plan");
     assert!(second_packet.frame().draw_list.commands().is_empty());
@@ -482,7 +482,7 @@ fn nested_opacity_groups_composite_overlapping_children_and_clip_damage_on_avail
     let mut renderer = Renderer::new(&backend, FORMAT);
     let metadata = |damage| FrameRenderMetadata::new(1.0, 93, 1, 1, 1, damage);
     let first_packet = FramePacket::from_v2_direct(
-        aimer::cupid::draw_cmd_v2::RenderFrame {
+        aimer::cupid::draw_cmd::RenderFrame {
             damage: vec![V2Rect::new(0.0, 0.0, WIDTH as f32, HEIGHT as f32)],
             operations: tree.render_all(),
         },
@@ -512,12 +512,12 @@ fn nested_opacity_groups_composite_overlapping_children_and_clip_damage_on_avail
             && rect.y + rect.height <= 48.0
     }));
     let second_packet = FramePacket::from_v2_direct_with_frame(
-        aimer::cupid::draw_cmd_v2::RenderFrame {
+        aimer::cupid::draw_cmd::RenderFrame {
             damage: update_damage,
             operations: tree.render_all(),
         },
         metadata(DamageSet::new(WIDTH, HEIGHT)),
-        Frame::new(aimer::cupid::draw_cmd::DrawList::new(), WIDTH, HEIGHT),
+        Frame::new(aimer::cupid::render_list::DrawList::new(), WIDTH, HEIGHT),
     )
     .expect("lower the opacity-only update");
     let second_plan = second_packet.render_plan().unwrap();
@@ -547,12 +547,12 @@ fn nested_opacity_groups_composite_overlapping_children_and_clip_damage_on_avail
         "edge group damage reaches both target edges: {edge_damage:?}"
     );
     let edge_packet = FramePacket::from_v2_direct_with_frame(
-        aimer::cupid::draw_cmd_v2::RenderFrame {
+        aimer::cupid::draw_cmd::RenderFrame {
             damage: edge_damage,
             operations: tree.render_all(),
         },
         metadata(DamageSet::new(WIDTH, HEIGHT)),
-        Frame::new(aimer::cupid::draw_cmd::DrawList::new(), WIDTH, HEIGHT),
+        Frame::new(aimer::cupid::render_list::DrawList::new(), WIDTH, HEIGHT),
     )
     .expect("lower opacity change at the target edge");
     let edge_plan = edge_packet.render_plan().unwrap();
@@ -613,7 +613,7 @@ fn nested_opacity_groups_composite_overlapping_children_and_clip_damage_on_avail
     tree.set_clip(edge_group, Some(V2Rect::new(0.0, 0.0, 32.0, 32.0)))
         .unwrap();
     let expanded_packet = FramePacket::from_v2_direct(
-        aimer::cupid::draw_cmd_v2::RenderFrame {
+        aimer::cupid::draw_cmd::RenderFrame {
             damage: vec![V2Rect::new(0.0, 0.0, 80.0, 80.0)],
             operations: tree.render_all(),
         },

@@ -446,7 +446,7 @@ mod tests {
     use std::sync::OnceLock;
 
     use aimer_attribute::BoxConstraint;
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderNodeId, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderNodeId, RenderTree};
 
     use super::*;
 

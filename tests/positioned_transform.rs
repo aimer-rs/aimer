@@ -1,5 +1,5 @@
 use aimer::canvas::{FrameCanvas, InnerCanvas};
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     DrawCommand as V2DrawCommand, Rect, RenderOp, RenderPaintSource, RenderTree,
 };
 use aimer::widget::base::WindowHandle;

@@ -1,6 +1,6 @@
 //! Detect backdrop consumers before allocating an offscreen frame target.
 
-use crate::draw_cmd::{DrawCommand, DrawList};
+use crate::render_list::{DrawCommand, DrawList};
 use crate::frame::{RetainedRenderOperation, RetainedRenderOperationKind, RetainedRenderPlan};
 use crate::pipeline::material::{
     MATERIAL_GRADIENT_PACKET_LEN, MATERIAL_GRADIENT_PACKET_VERSION, MATERIAL_PACKET_LEN,
@@ -66,7 +66,7 @@ pub(super) fn render_plan_uses_material(
         .any(|operation| match &operation.kind {
             crate::frame::RetainedRenderOperationKind::LocalV2(item) => item.commands.iter().any(
                 |command| matches!(command,
-                    crate::draw_cmd_v2::DrawCommand::DrawCustom { pipeline_name, data }
+                    crate::draw_cmd::DrawCommand::DrawCustom { pipeline_name, data }
                         if custom_samples_backdrop(pipeline_name, || packet_needs_backdrop(data))),
             ),
             crate::frame::RetainedRenderOperationKind::OpacityGroupBegin { .. }
@@ -93,7 +93,7 @@ pub(super) fn groups_sampling_backdrop(
             RetainedRenderOperationKind::LocalV2(item) => {
                 let samples = item.commands.iter().any(|command| {
                     matches!(command,
-                        crate::draw_cmd_v2::DrawCommand::DrawCustom { pipeline_name, data }
+                        crate::draw_cmd::DrawCommand::DrawCustom { pipeline_name, data }
                             if custom_samples_backdrop(pipeline_name, || packet_needs_backdrop(data)))
                 });
                 if samples {

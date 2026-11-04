@@ -3,7 +3,7 @@ use aimer::canvas::{
 };
 use aimer_cupid::WgpuBackend;
 use aimer_cupid::damage_region::DamageSet;
-use aimer_cupid::draw_cmd_v2::{Rect, RenderFrame, RenderNodeId, RenderPaintSource, RenderTree};
+use aimer_cupid::draw_cmd::{Rect, RenderFrame, RenderNodeId, RenderPaintSource, RenderTree};
 use aimer_cupid::frame::{FramePacket, FrameRenderMetadata};
 use aimer_cupid::renderer::Renderer;
 use aimer::widget::base::WindowHandle;
@@ -31,7 +31,7 @@ fn gpu() -> Option<(wgpu::Device, wgpu::Queue)> {
         .ok()
 }
 
-fn glass_frame(blur_radius: f32) -> aimer_cupid::draw_cmd::DrawList {
+fn glass_frame(blur_radius: f32) -> aimer_cupid::render_list::DrawList {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .expect("test runtime");
@@ -104,7 +104,7 @@ fn glass_frame(blur_radius: f32) -> aimer_cupid::draw_cmd::DrawList {
     inner.take_draw_list()
 }
 
-fn tinted_glass_frame() -> aimer_cupid::draw_cmd::DrawList {
+fn tinted_glass_frame() -> aimer_cupid::render_list::DrawList {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .expect("test runtime");
@@ -173,7 +173,7 @@ fn render_and_read(
     queue: &wgpu::Queue,
     backend: &WgpuBackend,
     renderer: &mut Renderer,
-    draw_list: &aimer_cupid::draw_cmd::DrawList,
+    draw_list: &aimer_cupid::render_list::DrawList,
 ) -> Vec<u8> {
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("glass widget regression target"),
@@ -320,7 +320,7 @@ fn retained_v2_glass_packet(
             .iter()
             .any(|command| matches!(
                 command,
-                aimer_cupid::draw_cmd_v2::DrawCommand::DrawCustom { pipeline_name, data }
+                aimer_cupid::draw_cmd::DrawCommand::DrawCustom { pipeline_name, data }
                     if pipeline_name.as_ref() == "aimer.material"
                         && data.len() == MaterialDrawRequest::PACKET_LEN
             ))

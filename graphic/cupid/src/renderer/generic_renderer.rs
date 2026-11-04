@@ -21,7 +21,7 @@ use crate::custom_pipeline::{
     CommandContext, CustomPipelineGeneric, CustomPipelineSlotGeneric, RenderContextGeneric,
 };
 use crate::damage_region::DamageRect;
-use crate::draw_cmd::{DrawCommand, DrawList, RetainedLayerContent};
+use crate::render_list::{DrawCommand, DrawList, RetainedLayerContent};
 use crate::frame::{
     FramePacket, FrameRenderMetadata, RetainedRenderOperationKind, RetainedRenderPlan,
     RetainedV2Item,
@@ -1341,7 +1341,7 @@ impl<B: GpuBackend> Renderer<B> {
                         region,
                     );
 
-                    if let Some(crate::draw_cmd_v2::MorphGroup::Host(params)) = morph {
+                    if let Some(crate::draw_cmd::MorphGroup::Host(params)) = morph {
                         // The host owns no pixels: it only waits for its sources.
                         morph_frames.push(MorphFrame {
                             element,
@@ -3413,7 +3413,7 @@ fn render_plan_uses_custom_pipeline(plan: &RetainedRenderPlan, width: u32, heigh
         .any(|operation| match &operation.kind {
             crate::frame::RetainedRenderOperationKind::LocalV2(item) => {
                 item.commands.iter().any(|command| {
-                    matches!(command, crate::draw_cmd_v2::DrawCommand::DrawCustom { .. })
+                    matches!(command, crate::draw_cmd::DrawCommand::DrawCustom { .. })
                 })
             }
             crate::frame::RetainedRenderOperationKind::OpacityGroupBegin { .. }
@@ -3433,7 +3433,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::damage_region::DamageSet;
-    use crate::draw_cmd_v2::{DrawCommand, Rect, RenderFrame, RenderPaintSource, RenderTree};
+    use crate::draw_cmd::{DrawCommand, Rect, RenderFrame, RenderPaintSource, RenderTree};
     use crate::frame::{FramePacket, FrameRenderMetadata};
     use crate::utilities::Mat3;
 

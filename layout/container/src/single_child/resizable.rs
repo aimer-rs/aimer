@@ -783,12 +783,12 @@ impl<E: Element> Drawable for RawResizable<E> {
             && size.height <= 1_000_000.0
     }
 
-    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
+    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
         if !self.can_paint_local_v2(ctx) {
             return None;
         }
         let size = self.effective_size(ctx);
-        Some(aimer_cupid::draw_cmd_v2::Rect::new(
+        Some(aimer_cupid::draw_cmd::Rect::new(
             0.0,
             0.0,
             size.width / ctx.scale,

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use aimer_animation::{curves, ImplicitAnimatedBuilder};
 use aimer_container::{Container, Scalable};
-use aimer_cupid::draw_cmd_v2::{DrawCommand, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand, RenderOp};
 use aimer_widget::StateUpdater;
 
 struct RootState {

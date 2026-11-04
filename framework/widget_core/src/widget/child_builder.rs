@@ -582,7 +582,7 @@ impl Drawable for RetainedChildElement {
     }
 
     #[inline]
-    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
+    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
         self.child().and_then(|child| child.retained_clip(ctx))
     }
 
@@ -629,8 +629,8 @@ impl Drawable for RetainedChildElement {
         ctx: &BuildContext,
         child: &dyn Element,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         self.child()
             .and_then(|retained| retained.retained_v2_child_geometry(ctx, child))
@@ -643,8 +643,8 @@ impl Drawable for RetainedChildElement {
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         self.child().and_then(|retained| {
             retained.retained_v2_child_geometry_at(ctx, child, child_index)

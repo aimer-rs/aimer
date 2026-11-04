@@ -309,8 +309,8 @@ impl Drawable for RawOverflowIndicator {
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         let child_ctx = self.retained_v2_child_context_at(ctx, child, child_index)?;
         let scale = ctx.scale;
@@ -324,14 +324,14 @@ impl Drawable for RawOverflowIndicator {
                 .unwrap_or_else(|| child.content_size(&child_ctx));
             let position = child.pos().unwrap_or_default();
             return Some((
-                aimer_cupid::draw_cmd_v2::Rect::new(
+                aimer_cupid::draw_cmd::Rect::new(
                     position.x / scale,
                     position.y / scale,
                     size.width / scale,
                     size.height / scale,
                 ),
                 self.clip.then(|| {
-                    aimer_cupid::draw_cmd_v2::Rect::new(
+                    aimer_cupid::draw_cmd::Rect::new(
                         0.0,
                         0.0,
                         paint.bounds.width / scale,
@@ -341,7 +341,7 @@ impl Drawable for RawOverflowIndicator {
             ));
         }
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 0.0,
                 0.0,
                 paint.bounds.width / scale,
@@ -611,9 +611,9 @@ mod tests {
             tokio::runtime::Handle::current(),
         );
 
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let root = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 800.0, 600.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 800.0, 600.0))
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
@@ -627,7 +627,7 @@ mod tests {
             .commands
             .iter()
             .find_map(|command| match command {
-                aimer_cupid::draw_cmd_v2::DrawCommand::DrawText { font_family, .. } => {
+                aimer_cupid::draw_cmd::DrawCommand::DrawText { font_family, .. } => {
                     Some(*font_family)
                 }
                 _ => None,

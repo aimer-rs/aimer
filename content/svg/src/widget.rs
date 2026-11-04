@@ -1070,7 +1070,7 @@ impl Drawable for RawSvg {
         let size = self.resolved_size(ctx);
         let scale = ctx.scale;
         let destination =
-            aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, size.width / scale, size.height / scale);
+            aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, size.width / scale, size.height / scale);
         let canvas = aimer_canvas::Canvas::of(ctx);
         if !self.paint_bounded {
             canvas.push_clip(destination, [0.0; 4]);
@@ -1659,8 +1659,8 @@ mod tests {
     fn recorded_commands(
         element: &dyn Element,
         context: &BuildContext,
-    ) -> aimer_cupid::draw_cmd_v2::DrawListSnapshot {
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    ) -> aimer_cupid::draw_cmd::DrawListSnapshot {
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
         let tree = RenderTree::new();
         let node = tree.add_root(Rect::new(0.0, 0.0, 32.0, 32.0)).unwrap();
@@ -1672,7 +1672,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn svg_with_geometry_outside_the_viewport_is_clipped_to_its_box() {
-        use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect};
+        use aimer_cupid::draw_cmd::{DrawCommand, Rect};
 
         let document = SvgDocument::from_svg(
             br#"<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><path d="M-1 0h2v2H-1z"/></svg>"#,
@@ -1698,7 +1698,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_provably_bounded_svg_is_recorded_without_a_clip() {
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
 
         let document = SvgDocument::from_svg(
             br#"<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h32v32H0z"/></svg>"#,

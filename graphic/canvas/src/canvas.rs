@@ -5,11 +5,6 @@ use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_color::prelude::Color;
 pub use aimer_cupid::canvas::TextMetrics;
-pub use aimer_cupid::draw_cmd::{
-    RETAINED_LAYER_MAX_BYTES, RETAINED_LAYER_MAX_DIMENSION, RETAINED_LAYER_MAX_TILES_PER_FRAME,
-    RETAINED_LAYER_TILE_SIZE, RetainedDrawList, RetainedLayerContent, RetainedLayerPadding,
-    next_retained_layer_id,
-};
 pub use aimer_cupid::font::TextLanguage;
 pub use aimer_cupid::font::{FontFamily, FontStyle};
 pub use aimer_cupid::text_pipeline::TextOverflowMode;
@@ -18,7 +13,7 @@ pub use aimer_cupid::text_pipeline::text_layout::TextInteractionLayout;
 pub use aimer_cupid::utilities::Mat3;
 /// The look of a shader transition between an element's two children; see
 /// [`Canvas::morph_children`].
-pub use aimer_cupid::draw_cmd_v2::{MorphParams, MorphStyle};
+pub use aimer_cupid::draw_cmd::{MorphParams, MorphStyle};
 /// A rectangle in the canvas's own coordinates, as [`Canvas`] draws and clips with.
 pub use aimer_cupid::utilities::Rect;
 /// The renderer's colour, which [`Canvas`] paints with.
@@ -449,8 +444,8 @@ impl<'a> FrameCanvas<'a> {
 /// retained list dirty, avoiding a second panic from `Drop`. A commit error
 /// during an ordinary drop panics.
 pub struct Canvas {
-    writer: Option<aimer_cupid::draw_cmd_v2::DrawListWriter>,
-    commands: RefCell<Vec<aimer_cupid::draw_cmd_v2::DrawCommand>>,
+    writer: Option<aimer_cupid::draw_cmd::DrawListWriter>,
+    commands: RefCell<Vec<aimer_cupid::draw_cmd::DrawCommand>>,
     background: Cell<Color>,
     corner_radii: Cell<Option<[f32; 4]>>,
 }
@@ -459,7 +454,7 @@ pub struct Canvas {
 #[doc(hidden)]
 pub trait CanvasContext {
     /// Returns the retained paint context active for this framework context.
-    fn current_canvas_context(&self) -> aimer_cupid::draw_cmd_v2::CurrentBuildContext;
+    fn current_canvas_context(&self) -> aimer_cupid::draw_cmd::CurrentBuildContext;
 
     /// Returns the declared solid surface behind this recorder, if known.
     #[doc(hidden)]
@@ -469,9 +464,9 @@ pub trait CanvasContext {
     }
 }
 
-impl CanvasContext for aimer_cupid::draw_cmd_v2::CurrentBuildContext {
+impl CanvasContext for aimer_cupid::draw_cmd::CurrentBuildContext {
     #[inline]
-    fn current_canvas_context(&self) -> aimer_cupid::draw_cmd_v2::CurrentBuildContext {
+    fn current_canvas_context(&self) -> aimer_cupid::draw_cmd::CurrentBuildContext {
         self.clone()
     }
 }
@@ -585,7 +580,7 @@ impl Canvas {
     ) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::FillRect {
+            .push(aimer_cupid::draw_cmd::DrawCommand::FillRect {
                 rect,
                 color,
                 border_radius,
@@ -662,7 +657,7 @@ impl Canvas {
     ) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::DrawText {
+            .push(aimer_cupid::draw_cmd::DrawCommand::DrawText {
                 position,
                 text: text.into(),
                 font_size,
@@ -683,7 +678,7 @@ impl Canvas {
     pub fn draw_rich_text(
         &self,
         position: aimer_cupid::utilities::Vec2d,
-        spans: Vec<aimer_cupid::draw_cmd_v2::RichTextSegment>,
+        spans: Vec<aimer_cupid::draw_cmd::RichTextSegment>,
         font_size: f32,
         color: aimer_cupid::utilities::Color,
         bounds_width: Option<f32>,
@@ -692,7 +687,7 @@ impl Canvas {
     ) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::DrawRichText {
+            .push(aimer_cupid::draw_cmd::DrawCommand::DrawRichText {
                 position,
                 spans,
                 font_size,
@@ -713,7 +708,7 @@ impl Canvas {
         period: f32,
     ) {
         self.commands.borrow_mut().push(
-            aimer_cupid::draw_cmd_v2::DrawCommand::DrawTextDecoration {
+            aimer_cupid::draw_cmd::DrawCommand::DrawTextDecoration {
                 rect,
                 color,
                 style,
@@ -728,7 +723,7 @@ impl Canvas {
     pub fn draw_image(&self, rect: aimer_cupid::utilities::Rect, texture_id: u32) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::DrawImage { rect, texture_id });
+            .push(aimer_cupid::draw_cmd::DrawCommand::DrawImage { rect, texture_id });
     }
 
     /// Adds a draw that retains the image pixels for renderer-side upload.
@@ -736,11 +731,11 @@ impl Canvas {
     pub fn draw_image_with_resource(
         &self,
         rect: aimer_cupid::utilities::Rect,
-        resource: std::sync::Arc<aimer_cupid::draw_cmd_v2::ImageResource>,
+        resource: std::sync::Arc<aimer_cupid::draw_cmd::ImageResource>,
     ) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::DrawImageWithResource { rect, resource });
+            .push(aimer_cupid::draw_cmd::DrawCommand::DrawImageWithResource { rect, resource });
     }
 
     /// Adds a draw of an SVG scene.
@@ -752,7 +747,7 @@ impl Canvas {
     ) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::Svg {
+            .push(aimer_cupid::draw_cmd::DrawCommand::Svg {
                 scene,
                 destination,
                 overrides,
@@ -766,7 +761,7 @@ impl Canvas {
         pipeline_name: impl Into<std::sync::Arc<str>>,
         data: std::sync::Arc<[u8]>,
     ) {
-        self.push_command(aimer_cupid::draw_cmd_v2::DrawCommand::DrawCustom {
+        self.push_command(aimer_cupid::draw_cmd::DrawCommand::DrawCustom {
             pipeline_name: pipeline_name.into(),
             data,
         });
@@ -781,11 +776,11 @@ impl Canvas {
     /// another, then keep the first only where the second has alpha. An element
     /// with no descendants shows nothing.
     ///
-    /// [`COVERAGE_MASK_PIPELINE_NAME`]: aimer_cupid::draw_cmd_v2::COVERAGE_MASK_PIPELINE_NAME
+    /// [`COVERAGE_MASK_PIPELINE_NAME`]: aimer_cupid::draw_cmd::COVERAGE_MASK_PIPELINE_NAME
     #[inline]
     pub fn mask_by_descendants(&self) {
         self.draw_custom(
-            aimer_cupid::draw_cmd_v2::COVERAGE_MASK_PIPELINE_NAME,
+            aimer_cupid::draw_cmd::COVERAGE_MASK_PIPELINE_NAME,
             std::sync::Arc::<[u8]>::from(Vec::new()),
         );
     }
@@ -800,11 +795,11 @@ impl Canvas {
     /// element's own colors are never shown. An element with no descendants shows
     /// nothing.
     ///
-    /// [`FADE_MASK_PIPELINE_NAME`]: aimer_cupid::draw_cmd_v2::FADE_MASK_PIPELINE_NAME
+    /// [`FADE_MASK_PIPELINE_NAME`]: aimer_cupid::draw_cmd::FADE_MASK_PIPELINE_NAME
     #[inline]
     pub fn fade_descendants(&self) {
         self.draw_custom(
-            aimer_cupid::draw_cmd_v2::FADE_MASK_PIPELINE_NAME,
+            aimer_cupid::draw_cmd::FADE_MASK_PIPELINE_NAME,
             std::sync::Arc::<[u8]>::from(Vec::new()),
         );
     }
@@ -819,11 +814,11 @@ impl Canvas {
     /// and an element that does not have exactly two children paints as an
     /// ordinary one, so record it only while the transition runs.
     ///
-    /// [`MORPH_PIPELINE_NAME`]: aimer_cupid::draw_cmd_v2::MORPH_PIPELINE_NAME
+    /// [`MORPH_PIPELINE_NAME`]: aimer_cupid::draw_cmd::MORPH_PIPELINE_NAME
     #[inline]
-    pub fn morph_children(&self, params: &aimer_cupid::draw_cmd_v2::MorphParams) {
+    pub fn morph_children(&self, params: &aimer_cupid::draw_cmd::MorphParams) {
         self.draw_custom(
-            aimer_cupid::draw_cmd_v2::MORPH_PIPELINE_NAME,
+            aimer_cupid::draw_cmd::MORPH_PIPELINE_NAME,
             std::sync::Arc::<[u8]>::from(params.encode().as_slice()),
         );
     }
@@ -849,7 +844,7 @@ impl Canvas {
     ) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::DrawShadowRect {
+            .push(aimer_cupid::draw_cmd::DrawCommand::DrawShadowRect {
                 rect,
                 shadow_color,
                 shadow_params,
@@ -861,7 +856,7 @@ impl Canvas {
 
     /// Adds an explicit local command. State scopes are checked by `finish`.
     #[inline]
-    pub fn push_command(&self, command: aimer_cupid::draw_cmd_v2::DrawCommand) {
+    pub fn push_command(&self, command: aimer_cupid::draw_cmd::DrawCommand) {
         self.commands.borrow_mut().push(command);
     }
 
@@ -870,7 +865,7 @@ impl Canvas {
     pub fn push_clip(&self, rect: aimer_cupid::utilities::Rect, border_radius: [f32; 4]) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::PushClip {
+            .push(aimer_cupid::draw_cmd::DrawCommand::PushClip {
                 rect,
                 border_radius,
             });
@@ -881,7 +876,7 @@ impl Canvas {
     pub fn pop_clip(&self) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::PopClip);
+            .push(aimer_cupid::draw_cmd::DrawCommand::PopClip);
     }
 
     /// Begins a transform scope for subsequent commands in this element.
@@ -889,7 +884,7 @@ impl Canvas {
     pub fn push_transform(&self, matrix: aimer_cupid::utilities::Mat3) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::PushTransform { matrix });
+            .push(aimer_cupid::draw_cmd::DrawCommand::PushTransform { matrix });
     }
 
     /// Ends the most recent element-local transform scope.
@@ -897,7 +892,7 @@ impl Canvas {
     pub fn pop_transform(&self) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::PopTransform);
+            .push(aimer_cupid::draw_cmd::DrawCommand::PopTransform);
     }
 
     /// Sets alpha for subsequent local commands until `restore_alpha`.
@@ -905,7 +900,7 @@ impl Canvas {
     pub fn set_alpha(&self, alpha: f32) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::SetAlpha { alpha });
+            .push(aimer_cupid::draw_cmd::DrawCommand::SetAlpha { alpha });
     }
 
     /// Restores default alpha for subsequent local commands.
@@ -913,7 +908,7 @@ impl Canvas {
     pub fn restore_alpha(&self) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::RestoreAlpha);
+            .push(aimer_cupid::draw_cmd::DrawCommand::RestoreAlpha);
     }
 
     /// Sets italic styling for subsequent plain text commands.
@@ -921,7 +916,7 @@ impl Canvas {
     pub fn set_italic(&self, italic: bool) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::SetItalic { italic });
+            .push(aimer_cupid::draw_cmd::DrawCommand::SetItalic { italic });
     }
 
     /// Sets the language hint for subsequent text commands.
@@ -929,7 +924,7 @@ impl Canvas {
     pub fn set_text_language(&self, language: Option<aimer_cupid::font::TextLanguage>) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::SetTextLanguage { language });
+            .push(aimer_cupid::draw_cmd::DrawCommand::SetTextLanguage { language });
     }
 
     /// Sets the current local transform.
@@ -937,7 +932,7 @@ impl Canvas {
     pub fn set_transform(&self, matrix: aimer_cupid::utilities::Mat3) {
         self.commands
             .borrow_mut()
-            .push(aimer_cupid::draw_cmd_v2::DrawCommand::SetTransform { matrix });
+            .push(aimer_cupid::draw_cmd::DrawCommand::SetTransform { matrix });
     }
 
     /// Commits this element's local commands and returns their new revision.
@@ -957,12 +952,12 @@ impl Canvas {
     /// Returns an error if the commands have unbalanced state scopes or the
     /// retained element no longer exists. If this is not called, dropping the
     /// canvas attempts the same commit automatically.
-    pub fn try_finish(mut self) -> Result<u64, aimer_cupid::draw_cmd_v2::RenderTreeError> {
+    pub fn try_finish(mut self) -> Result<u64, aimer_cupid::draw_cmd::RenderTreeError> {
         self.commit_pending()
             .expect("Canvas recording was already finished")
     }
 
-    fn commit_pending(&mut self) -> Option<Result<u64, aimer_cupid::draw_cmd_v2::RenderTreeError>> {
+    fn commit_pending(&mut self) -> Option<Result<u64, aimer_cupid::draw_cmd::RenderTreeError>> {
         let writer = self.writer.take()?;
         let commands = std::mem::take(self.commands.get_mut());
         Some(writer.commit(commands))

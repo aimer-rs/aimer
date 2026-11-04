@@ -1,7 +1,7 @@
 use super::tests::context;
 use crate::{Gradient, LightEdge, MultiDecorationBox, OpacityGradient};
 use aimer_container::SizedBox;
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     COVERAGE_MASK_PIPELINE_NAME, DrawCommand, FADE_MASK_PIPELINE_NAME, Rect, RenderTree,
 };
 use aimer_cupid::material::{MaterialKind, MaterialRequest};

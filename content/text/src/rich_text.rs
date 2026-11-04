@@ -1063,11 +1063,11 @@ mod tests {
     fn recorded_v2(
         text: &RawRichText,
         ctx: &aimer_widget::base::BuildContext<'_>,
-    ) -> Vec<aimer_cupid::draw_cmd_v2::DrawCommand> {
+    ) -> Vec<aimer_cupid::draw_cmd::DrawCommand> {
         use aimer_widget::Drawable;
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let root = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 400.0, 400.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 400.0, 400.0))
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
@@ -1449,7 +1449,7 @@ mod tests {
     fn selection_highlight_starts_at_the_text_line_top() {
         use aimer_attribute::ResolvedSize;
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1528,7 +1528,7 @@ mod tests {
     fn selection_highlight_connects_across_adjacent_spans() {
         use aimer_attribute::ResolvedSize;
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1597,7 +1597,7 @@ mod tests {
     fn selection_highlights_touch_between_wrapped_lines() {
         use aimer_attribute::{BoxConstraint, ResolvedSize};
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1673,7 +1673,7 @@ mod tests {
     fn explicit_newlines_have_stable_hit_targets_and_connected_highlights() {
         use aimer_attribute::{BoxConstraint, ResolvedSize};
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1790,7 +1790,7 @@ mod tests {
     fn italic_span_enables_synthetic_italic_for_its_draw() {
         use aimer_attribute::ResolvedSize;
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1873,7 +1873,7 @@ mod tests {
 
         use aimer_attribute::{ResolvedSize, Vec2d};
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_style::{TextAlign, TextOverflow};
         use aimer_widget::Drawable;
         use aimer_widget::base::{BuildContext, WindowHandle};

@@ -181,7 +181,7 @@ pub trait Drawable {
     /// clipping behavior without recording the wrapper's entire subtree.
     #[doc(hidden)]
     #[inline]
-    fn retained_clip(&self, _ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
+    fn retained_clip(&self, _ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
         None
     }
 
@@ -293,7 +293,7 @@ pub trait Drawable {
         &self,
         _ctx: &BuildContext,
         _child: &dyn Element,
-    ) -> Option<(aimer_cupid::draw_cmd_v2::Rect, Option<aimer_cupid::draw_cmd_v2::Rect>)> {
+    ) -> Option<(aimer_cupid::draw_cmd::Rect, Option<aimer_cupid::draw_cmd::Rect>)> {
         None
     }
 
@@ -306,7 +306,7 @@ pub trait Drawable {
         ctx: &BuildContext,
         child: &dyn Element,
         _child_index: usize,
-    ) -> Option<(aimer_cupid::draw_cmd_v2::Rect, Option<aimer_cupid::draw_cmd_v2::Rect>)> {
+    ) -> Option<(aimer_cupid::draw_cmd::Rect, Option<aimer_cupid::draw_cmd::Rect>)> {
         self.retained_v2_child_geometry(ctx, child)
     }
 

@@ -2,7 +2,7 @@ use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::draw_cmd::{DrawList, TextureRegistry};
+use crate::render_list::{DrawList, TextureRegistry};
 use crate::font::{FontFamily, FontStyle, FontWeight, TextLanguage};
 use crate::frame::RetainedRenderPlan;
 use crate::lru_map::LruMap;
@@ -216,6 +216,7 @@ impl CupidCanvas {
     /// [`recycle_draw_list`]: CupidCanvas::recycle_draw_list
     /// [`begin_frame`]: CupidCanvas::begin_frame
     #[inline]
+    #[doc(hidden)]
     pub fn take_draw_list(&self) -> DrawList {
         let mut current = self.draw_list.borrow_mut();
         let mut next = DrawList::with_texture_registry(self.texture_registry.clone());
@@ -228,6 +229,7 @@ impl CupidCanvas {
     ///
     /// [`take_draw_list`]: CupidCanvas::take_draw_list
     #[inline]
+    #[doc(hidden)]
     pub fn recycle_draw_list(&self, draw_list: DrawList) {
         *self.draw_list.borrow_mut() = draw_list;
     }
@@ -722,6 +724,7 @@ impl CupidCanvas {
             .set_texture_size(texture_id, width, height);
     }
 
+    #[doc(hidden)]
     pub fn draw_list(&self) -> Ref<'_, DrawList> {
         self.draw_list.borrow()
     }

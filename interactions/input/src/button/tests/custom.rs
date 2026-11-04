@@ -138,7 +138,7 @@ async fn builder_receives_feedback_without_replacing_input_wrappers() {
 
 #[tokio::test]
 async fn button_accepts_light_edge_and_inherits_background_for_contrast() {
-    use aimer_cupid::draw_cmd_v2::DrawCommand;
+    use aimer_cupid::draw_cmd::DrawCommand;
     use aimer_cupid::material::{MaterialKind, MaterialRequest};
     use aimer_container::{Container, SizedBox};
     use aimer_decoration::LightEdge;

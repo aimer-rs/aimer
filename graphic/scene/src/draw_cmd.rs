@@ -1,2483 +1,2130 @@
-use std::any::Any;
-use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasher, Hash, Hasher};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+//! The framework's drawing commands and the retained render tree they live in.
+//!
+//! Every element records its paint here as element-local [`DrawCommand`]s; the
+//! [`RenderTree`] keeps them between frames with their geometry, tracks damage
+//! and decides the render order. This is the only command language the
+//! framework exposes: the renderer receives it lowered into an internal flat
+//! stream (`render_list`), which applications never build themselves.
+//!
+//! The tree and its shared handles are single-threaded recording data. A caller
+//! can snapshot each local command list into a transferable frame representation
+//! before handing work to a raster thread.
 
-use hashbrown::DefaultHashBuilder;
+mod morph;
+#[cfg(test)]
+mod morph_tests;
+mod render_order;
+mod clip_policy;
+mod command_equality;
+mod current_build_context;
+#[cfg(test)]
+mod clip_radius_tests;
+#[cfg(test)]
+mod context_bounds_tests;
+#[cfg(test)]
+mod render_order_tests;
+#[cfg(test)]
+mod sync_damage_tests;
+mod escape_index;
+mod subtree_extent;
+#[cfg(test)]
+mod subtree_extent_tests;
+mod world;
+#[cfg(test)]
+mod world_tests;
+#[cfg(test)]
+mod image_resource_tests;
 
-use crate::draw_cmd_v2::ImageResource;
+/// The custom-pipeline name of the coverage-mask marker.
+///
+/// A node whose local list begins with a `DrawCustom` of this name declares that
+/// the rest of its list is visible only where its descendants have coverage, and
+/// that the descendants themselves are not drawn. The marker carries no payload.
+///
+/// The render plan wraps such a node and its descendants in a masked
+/// [`RenderOp::BeginOpacityGroup`]. The renderer draws the node's own list into
+/// one offscreen target and the descendants into another, then keeps the first
+/// only where the second has alpha. Content that samples the backdrop, such as
+/// a backdrop filter, still sees what is behind the group. A marked node with no
+/// descendants shows nothing. The marker command itself draws nothing: the
+/// renderer skips custom commands for pipelines it has not registered.
+pub const COVERAGE_MASK_PIPELINE_NAME: &str = "aimer.coverage_mask";
+
+/// The custom-pipeline name of the fade-mask marker.
+///
+/// The mirror of [`COVERAGE_MASK_PIPELINE_NAME`]: a node whose local list begins
+/// with a `DrawCustom` of this name declares that its own commands are not
+/// shown but only provide alpha, and that its descendants are drawn through it.
+/// The marker carries no payload.
+///
+/// The render plan wraps such a node and its descendants in a `fade`
+/// [`RenderOp::BeginOpacityGroup`]. The renderer draws the node's own list into
+/// one offscreen target and the descendants into another, then scales the
+/// descendants' pixels by the first target's alpha, so a ramp from opaque to
+/// transparent fades them out. A marked node with no descendants shows nothing.
+/// The marker command itself draws nothing: the renderer skips custom commands
+/// for pipelines it has not registered.
+pub const FADE_MASK_PIPELINE_NAME: &str = "aimer.fade_mask";
+
+pub use morph::{MORPH_PIPELINE_NAME, MorphGroup, MorphParams, MorphStyle};
+
+use std::cell::RefCell;
+// `hashbrown`'s default hasher: the keys are process-local node identifiers, and
+// SipHash dominated tree synchronization in profiles.
+use hashbrown::{HashMap, HashSet};
+use std::mem;
+use std::sync::Arc;
+
+use aimer_rubick::Shared;
+
+pub use crate::render_list::RichTextSegment;
 use crate::font::{FontFamily, FontStyle, TextLanguage};
 use crate::svg::{SvgNodeStyleOverride, SvgScene};
 use crate::text_pipeline::text_layout::TextHorizontalAlign;
 use crate::text_pipeline::{TextOverflowMode, TextShadowRequest};
-#[cfg(test)]
-use crate::utilities::Rgba8;
-use crate::utilities::{Color, Mat3, Rect, TextureId, Vec2d};
+pub use crate::utilities::{Color, Mat3, Rect, TextureId, Vec2d};
 
-// Texture IDs are content identities across frames; keep one random seed so
-// identical images do not receive a new ID on every call.
-static IMAGE_TEXTURE_HASHER: OnceLock<DefaultHashBuilder> = OnceLock::new();
+/// Stable identity for one retained render node in this tree.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RenderNodeId(u64);
 
-/// Maximum texture dimensions used by a single retained scroll layer. Larger
-/// static subtrees stay on the direct path until tiled retention is available.
-pub const RETAINED_LAYER_MAX_DIMENSION: u32 = 8_192;
-
-/// Maximum allocation for one retained scroll layer.
-pub const RETAINED_LAYER_MAX_BYTES: u64 = 64 * 1024 * 1024;
-
-/// Edge length used for each retained scroll tile when one full layer is too
-/// large. Tiles are deliberately modest so the scroll cache can keep a
-/// viewport-sized working set without allocating the whole document.
-pub const RETAINED_LAYER_TILE_SIZE: u32 = 1_024;
-
-/// Maximum number of retained tiles selected for one scroll frame. A malformed
-/// or unusually large viewport falls back to direct drawing rather than
-/// turning one frame into an unbounded tile-recording job.
-pub const RETAINED_LAYER_MAX_TILES_PER_FRAME: usize = 64;
-
-/// Physical-pixel padding around a retained layer's local content.
-///
-/// The order is left, top, right, bottom. Padding is used for paint that is
-/// allowed to bleed outside the layer's logical bounds, such as a text shadow.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct RetainedLayerPadding {
-    /// Pixels kept to the left of the content origin.
-    pub left: f32,
-    /// Pixels kept above the content origin.
-    pub top: f32,
-    /// Pixels kept to the right of the content bounds.
-    pub right: f32,
-    /// Pixels kept below the content bounds.
-    pub bottom: f32,
-}
-
-impl RetainedLayerPadding {
-    /// No extra pixels around the layer.
-    pub const ZERO: Self = Self {
-        left: 0.0,
-        top: 0.0,
-        right: 0.0,
-        bottom: 0.0,
-    };
-
-    /// Creates padding in physical pixels.
+impl RenderNodeId {
+    /// Returns the numeric identity used by the v2 render tree.
     #[inline]
-    pub const fn new(left: f32, top: f32, right: f32, bottom: f32) -> Self {
-        Self {
-            left,
-            top,
-            right,
-            bottom,
-        }
-    }
-
-    #[inline]
-    fn is_valid(self) -> bool {
-        self.left.is_finite()
-            && self.top.is_finite()
-            && self.right.is_finite()
-            && self.bottom.is_finite()
-            && self.left >= 0.0
-            && self.top >= 0.0
-            && self.right >= 0.0
-            && self.bottom >= 0.0
+    pub const fn get(self) -> u64 {
+        self.0
     }
 }
 
-/// Allocates an ID for a renderer-owned retained layer.
-///
-/// IDs are process-wide because a renderer receives scroll and widget layers
-/// through the same command stream. Callers should allocate once and retain
-/// the result for the lifetime of the cached layer.
-#[inline]
-pub fn next_retained_layer_id() -> u64 {
-    static NEXT_RETAINED_LAYER_ID: AtomicU64 = AtomicU64::new(1);
-    NEXT_RETAINED_LAYER_ID.fetch_add(1, Ordering::Relaxed)
-}
-
-/// Shared state between the canvas-side draw list and the renderer.
-///
-/// A finished draw list can be moved to the raster thread while the canvas
-/// starts recording the next frame. The registry therefore carries only the
-/// small amount of cross-thread state needed to tell retained image widgets
-/// that the renderer evicted one of their GPU textures.
-#[derive(Default)]
+/// Shared RGBA8 pixels retained by an element-local image command.
 #[doc(hidden)]
-pub struct TextureRegistry {
-    cache_epoch: AtomicU64,
-    next_serial: AtomicU64,
-    textures: Mutex<HashMap<TextureId, RegistryTexture>>,
-    references: Mutex<HashMap<TextureId, u32>>,
-}
-
-struct RegistryTexture {
+#[derive(Clone, Debug)]
+pub struct ImageResource {
+    texture_id: TextureId,
+    revision: u64,
     width: u32,
     height: u32,
-    serial: u64,
-    available: bool,
+    intrinsic_width: u32,
+    intrinsic_height: u32,
+    rgba: Arc<[u8]>,
 }
 
-impl TextureRegistry {
+impl ImageResource {
+    /// Creates a retained RGBA8 resource when `rgba` exactly matches its size.
     #[inline]
-    fn cache_epoch(&self) -> u64 {
-        self.cache_epoch.load(Ordering::Acquire)
-    }
-
-    #[inline]
-    fn changed(&self) {
-        self.cache_epoch.fetch_add(1, Ordering::AcqRel);
-    }
-
-    fn record_size(
-        &self,
+    pub fn rgba8(
         texture_id: TextureId,
+        revision: u64,
         width: u32,
         height: u32,
-        force_new_serial: bool,
-    ) -> u64 {
-        let (became_available, serial) = {
-            let mut textures = self.textures.lock().unwrap();
-            match textures.get_mut(&texture_id) {
-                Some(texture)
-                    if !force_new_serial
-                        && texture.available
-                        && texture.width == width
-                        && texture.height == height =>
-                {
-                    return texture.serial;
-                }
-                Some(texture) => {
-                    let serial = self
-                        .next_serial
-                        .fetch_add(1, Ordering::Relaxed)
-                        .wrapping_add(1);
-                    let became_available = !texture.available;
-                    texture.width = width;
-                    texture.height = height;
-                    texture.serial = serial;
-                    texture.available = true;
-                    (became_available, serial)
-                }
-                None => {
-                    let serial = self
-                        .next_serial
-                        .fetch_add(1, Ordering::Relaxed)
-                        .wrapping_add(1);
-                    textures.insert(
-                        texture_id,
-                        RegistryTexture {
-                            width,
-                            height,
-                            serial,
-                            available: true,
-                        },
-                    );
-                    (false, serial)
-                }
-            }
-        };
-        if became_available {
-            self.changed();
-        }
-        serial
+        rgba: Arc<[u8]>,
+    ) -> Option<Self> {
+        Self::rgba8_with_intrinsic_size(texture_id, revision, width, height, width, height, rgba)
     }
 
-    fn texture_state(&self, texture_id: TextureId) -> Option<(u32, u32, u64, bool)> {
-        self.textures
-            .lock()
-            .unwrap()
-            .get(&texture_id)
-            .map(|texture| {
-                (
-                    texture.width,
-                    texture.height,
-                    texture.serial,
-                    texture.available,
-                )
-            })
+    /// Creates a retained RGBA8 resource with separate upload and layout sizes.
+    #[inline]
+    pub fn rgba8_with_intrinsic_size(
+        texture_id: TextureId,
+        revision: u64,
+        width: u32,
+        height: u32,
+        intrinsic_width: u32,
+        intrinsic_height: u32,
+        rgba: Arc<[u8]>,
+    ) -> Option<Self> {
+        let expected_len = u64::from(width)
+            .checked_mul(u64::from(height))?
+            .checked_mul(4)?;
+        (width > 0
+            && height > 0
+            && intrinsic_width > 0
+            && intrinsic_height > 0
+            && usize::try_from(expected_len).ok()? == rgba.len())
+        .then_some(Self {
+            texture_id,
+            revision,
+            width,
+            height,
+            intrinsic_width,
+            intrinsic_height,
+            rgba,
+        })
     }
 
-    fn is_texture_available_or_unknown(&self, texture_id: TextureId) -> bool {
-        self.textures
-            .lock()
-            .unwrap()
-            .get(&texture_id)
-            .map_or(true, |texture| texture.available)
+    /// Returns the renderer texture identifier for this resource.
+    #[inline]
+    pub const fn texture_id(&self) -> TextureId {
+        self.texture_id
     }
 
-    fn retain_reference(&self, texture_id: TextureId) {
-        *self
-            .references
-            .lock()
-            .unwrap()
-            .entry(texture_id)
-            .or_default() += 1;
+    /// Returns the generation that changes when the pixels are replaced.
+    #[inline]
+    pub const fn revision(&self) -> u64 {
+        self.revision
     }
 
-    fn release_reference(&self, texture_id: TextureId) {
-        let mut references = self.references.lock().unwrap();
-        if let Some(count) = references.get_mut(&texture_id) {
-            if *count <= 1 {
-                references.remove(&texture_id);
-            } else {
-                *count -= 1;
-            }
-        }
+    /// Returns the pixel width uploaded to the renderer.
+    #[inline]
+    pub const fn width(&self) -> u32 {
+        self.width
     }
 
-    fn is_referenced(&self, texture_id: TextureId) -> bool {
-        self.references
-            .lock()
-            .unwrap()
-            .get(&texture_id)
-            .is_some_and(|count| *count > 0)
+    /// Returns the pixel height uploaded to the renderer.
+    #[inline]
+    pub const fn height(&self) -> u32 {
+        self.height
     }
 
-    fn remove_if_current(&self, texture_id: TextureId, serial: Option<u64>) {
-        let mut textures = self.textures.lock().unwrap();
-        let removed = textures
-            .get_mut(&texture_id)
-            .filter(|texture| serial.is_none_or(|serial| texture.serial == serial))
-            .map(|texture| {
-                let was_available = texture.available;
-                texture.available = false;
-                was_available
-            })
-            .unwrap_or(false);
-        drop(textures);
-        if removed {
-            self.changed();
-        }
+    /// Returns the source width used for image fitting and layout.
+    #[inline]
+    pub const fn intrinsic_width(&self) -> u32 {
+        self.intrinsic_width
     }
 
-    fn mark_evicted_if_current(&self, texture_id: TextureId, serial: u64) {
-        let mut textures = self.textures.lock().unwrap();
-        let changed = textures
-            .get_mut(&texture_id)
-            .filter(|texture| texture.serial == serial && texture.available)
-            .map(|texture| {
-                texture.available = false;
-            })
-            .is_some();
-        drop(textures);
-        if changed {
-            self.changed();
-        }
+    /// Returns the source height used for image fitting and layout.
+    #[inline]
+    pub const fn intrinsic_height(&self) -> u32 {
+        self.intrinsic_height
+    }
+
+    /// Returns the retained unpremultiplied RGBA8 pixels.
+    #[inline]
+    pub fn rgba(&self) -> &[u8] {
+        &self.rgba
+    }
+    /// The texture id the renderer gives `width` x `height` RGBA8 pixels.
+    ///
+    /// It identifies content across frames, so the same pixels get the same id
+    /// and are uploaded once. Only a sample of the bytes is hashed, which
+    /// keeps it cheap for large images; pair it with
+    /// [`content_revision_for`](Self::content_revision_for) to tell apart
+    /// images whose samples collide.
+    #[inline]
+    pub fn texture_id_for(rgba: &[u8], width: u32, height: u32) -> TextureId {
+        crate::render_list::DrawList::image_texture_id(rgba, width, height)
+    }
+
+    /// A revision of `width` x `height` RGBA8 pixels that hashes every byte,
+    /// for [`ImageResource::rgba8`]'s `revision`.
+    #[inline]
+    pub fn content_revision_for(rgba: &[u8], width: u32, height: u32) -> u64 {
+        crate::render_list::DrawList::image_content_revision(rgba, width, height)
     }
 }
 
+/// One element-local paint or state instruction emitted by `aimer_canvas::Canvas`.
 #[derive(Clone, Debug)]
-pub struct RichTextSegment {
-    // Shared reference-counted text so cloning a segment (the draw list is
-    // rebuilt every frame) does not reallocate the string.
-    pub text: Arc<str>,
-    pub font_size: Option<f32>,
-    pub color: Option<Color>,
-    pub font_weight: Option<u16>,
-    pub italic: Option<bool>,
-}
-
-impl RichTextSegment {
-    pub fn new(text: impl Into<Arc<str>>) -> Self {
-        Self {
-            text: text.into(),
-            font_size: None,
-            color: None,
-            font_weight: None,
-            italic: None,
-        }
-    }
-
-    pub fn with_style(mut self, font_size: Option<f32>, color: Option<Color>) -> Self {
-        self.font_size = font_size;
-        self.color = color;
-        self
-    }
-}
-
 pub enum DrawCommand {
+    /// Fills a local rectangle with border and outline paint.
     FillRect {
+        /// Element-local fill rectangle.
         rect: Rect,
+        /// Interior fill color.
         color: Color,
-        /// Per-corner border radius: [top-left, top-right, bottom-right,
-        /// bottom-left]
+        /// Per-corner radii: top-left, top-right, bottom-right, bottom-left.
         border_radius: [f32; 4],
-        /// Per-side border width: [top, right, bottom, left]
+        /// Per-side border widths: top, right, bottom, left.
         border_width: [f32; 4],
+        /// Border stroke color.
         border_color: Color,
-        /// Per-side outline width: [top, right, bottom, left]
+        /// Per-side outline widths: top, right, bottom, left.
         outline_width: [f32; 4],
+        /// Outline stroke color.
         outline_color: Color,
     },
-    ClearRect {
-        rect: Rect,
-    },
+    /// Draws one local text run with fully resolved paint and layout settings.
     DrawText {
+        /// Local baseline origin.
         position: Vec2d,
+        /// Shared text payload.
         text: Arc<str>,
+        /// Font size in logical pixels.
         font_size: f32,
+        /// Glyph color.
         color: Color,
+        /// Optional text layout width.
         bounds_width: Option<f32>,
+        /// Optional text layout height.
         bounds_height: Option<f32>,
+        /// Overflow policy for the supplied bounds.
         overflow: TextOverflowMode,
+        /// Horizontal alignment inside the text bounds.
         horizontal_align: TextHorizontalAlign,
+        /// Requested font family.
         font_family: FontFamily,
+        /// Requested font style.
         font_style: FontStyle,
+        /// Numeric font weight.
         font_weight: u16,
+        /// Optional glyph shadow.
         shadow: Option<TextShadowRequest>,
+        /// Whether to draw foreground glyphs.
         draw_glyphs: bool,
     },
+    /// Draws locally positioned spans with per-span style overrides.
     DrawRichText {
+        /// Local baseline origin.
         position: Vec2d,
+        /// Ordered rich text spans.
         spans: Vec<RichTextSegment>,
+        /// Base font size.
         font_size: f32,
+        /// Base glyph color.
         color: Color,
+        /// Optional text layout width.
         bounds_width: Option<f32>,
+        /// Optional text layout height.
         bounds_height: Option<f32>,
+        /// Overflow policy for the supplied bounds.
         overflow: TextOverflowMode,
     },
-    /// A single styled text-decoration line (underline/overline/line-through).
-    /// `rect` is the decoration band in local coordinates (`rect.height` is the
-    /// band height); the text engine draws the styled stroke inside it.
+    /// Draws one local text-decoration band.
     DrawTextDecoration {
+        /// Element-local decoration bounds.
         rect: Rect,
+        /// Decoration stroke color.
         color: Color,
-        /// Style id, see `aimer_style::TextDecorationStyle::id`.
+        /// Style identifier from the text-decoration style registry.
         style: u32,
         /// Stroke thickness in logical pixels.
         thickness: f32,
-        /// Repeat period for dotted/dashed/wavy styles (logical pixels).
+        /// Repeat period for patterned styles.
         period: f32,
     },
-    PushClip {
-        rect: Rect,
-        border_radius: [f32; 4],
-    },
-    PopClip,
-    PushTransform {
-        matrix: Mat3,
-    },
-    PopTransform,
-    SetAlpha {
-        alpha: f32,
-    },
-    RestoreAlpha,
-    /// Sets the italic state applied to subsequent plain `DrawText` commands.
-    /// Rich text carries italic per span instead, so it is unaffected.
-    SetItalic {
-        italic: bool,
-    },
-    /// Sets the written language of subsequent text commands.
-    ///
-    /// Han is unified, so a run of ideographs does not say whether it wants a
-    /// Chinese or a Japanese face: `你好` is covered by both and stays on
-    /// whichever the platform's cascade prefers, until a character only one
-    /// language writes is added and the whole word changes typeface. A
-    /// producer that knows better — a text field knows the keyboard it is
-    /// edited with — announces it once here and every text it draws
-    /// afterwards is resolved, shaped and measured in that language, exactly
-    /// as [`SetItalic`] applies to the text after it.
-    ///
-    /// `None` restores the default: the run is judged on its own characters.
-    ///
-    /// [`SetItalic`]: DrawCommand::SetItalic
-    SetTextLanguage {
-        language: Option<TextLanguage>,
-    },
-    LoadImage {
-        bytes: Vec<u8>,
-        texture_id: TextureId,
-        width: u32,
-        height: u32,
-    },
-    LoadImageWithId {
-        texture_id: TextureId,
-        bytes: Vec<u8>,
-        width: u32,
-        height: u32,
-    },
-    RemoveTexture {
-        texture_id: TextureId,
-    },
+    /// Draws a previously uploaded texture by ID.
     DrawImage {
+        /// Element-local destination rectangle.
         rect: Rect,
+        /// Texture identifier from the existing image resource path.
         texture_id: TextureId,
     },
-    /// Draws an image while retaining the pixels needed to upload its texture.
+    /// Draws a texture and retains the pixels needed to upload it if it is evicted.
     DrawImageWithResource {
+        /// Element-local destination rectangle.
         rect: Rect,
+        /// Shared image pixels and their stable renderer identity.
         resource: Arc<ImageResource>,
     },
-    /// Composite a renderer-owned texture containing a retained static
-    /// subtree. The content is kept alongside the command so the renderer can
-    /// rasterize it on the first use or after invalidation, while later frames
-    /// only submit the layer quad.
-    RetainedLayer {
-        layer_id: u64,
-        rect: Rect,
-        content: Arc<RetainedLayerContent>,
-    },
+    /// Draws an SVG scene with node-style overrides.
     Svg {
+        /// Immutable retained SVG payload.
         scene: Arc<SvgScene>,
+        /// Element-local destination rectangle.
         destination: Rect,
+        /// Per-node style overrides applied during SVG preparation.
         overrides: Arc<[SvgNodeStyleOverride]>,
     },
-    SetTransform {
-        matrix: Mat3,
+    /// Dispatches a retained byte payload through an existing custom pipeline.
+    DrawCustom {
+        /// Registered Cupid custom-pipeline name.
+        pipeline_name: Arc<str>,
+        /// Immutable payload consumed by the selected pipeline.
+        data: Arc<[u8]>,
     },
+    /// Draws a shadowed rectangle.
     DrawShadowRect {
+        /// Element-local shadow rectangle.
         rect: Rect,
+        /// Shadow color.
         shadow_color: Color,
-        /// [offset_x, offset_y, blur, spread]
+        /// Offset x, offset y, blur, and spread.
         shadow_params: [f32; 4],
+        /// Per-corner radii: top-left, top-right, bottom-right, bottom-left.
         border_radius: [f32; 4],
+        /// Whether the shadow is inset.
         inset: bool,
-        /// [side_type, angle_start, angle_end]
+        /// Side type, start angle, and end angle.
         side_params: [f32; 3],
     },
-    /// Draw using a user-registered custom pipeline.
-    /// `pipeline_name` must match the name returned by
-    /// `CustomPipelineGeneric::name()`. `data` is an arbitrary payload forwarded
-    /// to `CustomPipelineGeneric::prepare_command()`.
-    Custom {
-        pipeline_name: String,
-        data: Box<dyn Any + Send>,
+    /// Begins a clip scope local to this element's command list.
+    PushClip {
+        /// Element-local clip bounds.
+        rect: Rect,
+        /// Per-corner radii: top-left, top-right, bottom-right, bottom-left.
+        border_radius: [f32; 4],
+    },
+    /// Ends the most recent local clip scope.
+    PopClip,
+    /// Begins a transform scope local to this element's command list.
+    PushTransform {
+        /// Transform composed with subsequent local draws.
+        matrix: Mat3,
+    },
+    /// Ends the most recent local transform scope.
+    PopTransform,
+    /// Changes local command alpha until [`Self::RestoreAlpha`].
+    SetAlpha {
+        /// Alpha applied to subsequent local draws.
+        alpha: f32,
+    },
+    /// Restores the default alpha for subsequent local commands.
+    RestoreAlpha,
+    /// Sets italic style for subsequent plain text commands in this list.
+    SetItalic {
+        /// Whether subsequent plain text is italic.
+        italic: bool,
+    },
+    /// Sets written language for subsequent text commands; `None` resets it.
+    SetTextLanguage {
+        /// Written-language hint for subsequent text.
+        language: Option<TextLanguage>,
+    },
+    /// Sets the current element-local transform.
+    SetTransform {
+        /// Current element-local transform.
+        matrix: Mat3,
     },
 }
 
-/// A reusable, local-coordinate draw-command stream for a static subtree.
+/// The retained local command buffer owned by one render node.
 ///
-/// The stream is deliberately a separate type instead of `Clone` on
-/// [`DrawCommand`]. Image uploads, rich-text span vectors, and custom pipeline
-/// payloads can carry large or non-cloneable state, so a snapshot containing
-/// any of them is rejected. The commands that are retained share their text,
-/// SVG, and other reference-counted payloads; replaying them therefore only
-/// copies the small command values and does not rebuild the widget subtree.
-///
-/// Commands are recorded with an identity transform. Replay composes every
-/// local transform with the caller's current canvas transform, which is what
-/// lets a scroll frame change its translation and clip without invalidating
-/// the retained content.
-pub struct RetainedDrawList {
-    commands: Box<[DrawCommand]>,
-    texture_registry: Arc<TextureRegistry>,
-    texture_ids: Box<[TextureId]>,
-}
-
-impl Clone for RetainedDrawList {
-    fn clone(&self) -> Self {
-        Self {
-            commands: self
-                .commands
-                .iter()
-                .map(|command| {
-                    command
-                        .clone_for_retention()
-                        .expect("retained draw lists contain only cloneable commands")
-                })
-                .collect(),
-            texture_registry: self.texture_registry.clone(),
-            texture_ids: self.texture_ids.clone(),
-        }
-    }
-}
-
-impl RetainedDrawList {
-    fn from_draw_list(draw_list: &DrawList) -> Option<Self> {
-        let mut transform_depth = 0_usize;
-        let mut clip_depth = 0_usize;
-        let mut commands = Vec::with_capacity(draw_list.commands.len());
-
-        for command in &draw_list.commands {
-            match command {
-                DrawCommand::PushTransform { .. } => transform_depth += 1,
-                DrawCommand::PopTransform if transform_depth > 0 => transform_depth -= 1,
-                DrawCommand::PopTransform => return None,
-                DrawCommand::PushClip { .. } => clip_depth += 1,
-                DrawCommand::PopClip if clip_depth > 0 => clip_depth -= 1,
-                DrawCommand::PopClip => return None,
-                _ => {}
-            }
-
-            commands.push(command.clone_for_retention()?);
-        }
-
-        (transform_depth == 0 && clip_depth == 0).then_some(Self {
-            commands: commands.into_boxed_slice(),
-            texture_registry: draw_list.texture_registry.clone(),
-            texture_ids: draw_list
-                .referenced_textures
-                .iter()
-                .copied()
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-        })
-    }
-
-    /// Returns the number of commands kept by this retained stream.
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.commands.len()
-    }
-
-    /// Returns whether this retained stream contains no commands.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.commands.is_empty()
-    }
-
-    #[inline]
-    fn texture_ids(&self) -> &[TextureId] {
-        &self.texture_ids
-    }
-}
-
-/// Shared payload for a compositor-style retained scroll layer.
-///
-/// The snapshot is immutable after construction. It is behind a mutex because
-/// [`DrawCommand`] also supports custom payloads that are only `Send`; keeping
-/// the retained stream in this small synchronization wrapper lets a finished
-/// frame cross to the raster thread without making the general draw-command
-/// enum `Sync`. The mutex is only taken when a layer is first rasterized or
-/// invalidated, never on a cache-hit scroll frame.
-pub struct RetainedLayerContent {
-    snapshot: Mutex<RetainedDrawList>,
-    texture_ids: Box<[TextureId]>,
-    compositor_safe: bool,
-    padding: RetainedLayerPadding,
-}
-
-impl RetainedLayerContent {
-    /// Wraps a validated retained snapshot for renderer-side layer caching.
-    #[inline]
-    pub fn from_snapshot(snapshot: RetainedDrawList) -> Self {
-        Self::from_snapshot_with_padding(snapshot, RetainedLayerPadding::ZERO)
-    }
-
-    /// Wraps a validated snapshot and records physical pixels reserved around
-    /// its logical bounds for paint that bleeds outside them.
-    ///
-    /// A shadowed text command is compositor-safe only when this padding is
-    /// large enough for its finite, sanitized offset and blur. Unsupported or
-    /// insufficiently padded content remains valid for direct replay.
-    #[inline]
-    pub fn from_snapshot_with_padding(
-        snapshot: RetainedDrawList,
-        padding: RetainedLayerPadding,
-    ) -> Self {
-        let texture_ids = snapshot.texture_ids().into();
-        let compositor_safe = padding.is_valid()
-            && snapshot.commands.iter().all(|command| match command {
-                DrawCommand::FillRect { outline_width, .. } => {
-                    outline_width.iter().all(|width| *width <= 0.0)
-                }
-                DrawCommand::DrawText { shadow, .. } => {
-                    shadow.is_none_or(|shadow| shadow_is_covered(shadow, padding))
-                }
-                DrawCommand::DrawShadowRect { .. } => false,
-                _ => true,
-            });
-        Self {
-            snapshot: Mutex::new(snapshot),
-            texture_ids,
-            compositor_safe,
-            padding,
-        }
-    }
-
-    #[inline]
-    pub(crate) fn texture_ids(&self) -> &[TextureId] {
-        &self.texture_ids
-    }
-
-    /// Returns whether the snapshot can be rasterized into a layer without
-    /// losing pixels that intentionally bleed outside its local bounds.
-    ///
-    /// Effects with unbounded or neighbouring paint semantics stay on the
-    /// ordinary retained-command path. That path is slightly more expensive,
-    /// but preserves the draw order and edge behaviour of the original tree.
-    pub fn is_compositor_safe(&self) -> bool {
-        self.compositor_safe
-    }
-
-    /// Returns the physical pixels reserved on the left, top, right, and
-    /// bottom edges of this layer.
-    #[inline]
-    pub fn padding(&self) -> RetainedLayerPadding {
-        self.padding
-    }
-
-    /// Materializes a temporary draw list for a layer refresh.
-    ///
-    /// This clones only the already-validated, retention-safe commands. It is
-    /// deliberately off the offset-only path and therefore paid only when the
-    /// layer has no GPU texture yet or its content was invalidated.
-    #[doc(hidden)]
-    pub fn to_draw_list(&self) -> DrawList {
-        let snapshot = self.snapshot.lock().unwrap();
-        let mut draw_list = DrawList::with_texture_registry(snapshot.texture_registry.clone());
-        if self.padding != RetainedLayerPadding::ZERO {
-            draw_list.translate(self.padding.left, self.padding.top);
-        }
-        let base = *draw_list.current_transform();
-        draw_list.append_retained(&snapshot, base);
-        draw_list
-    }
-
-    fn append_to_draw_list(&self, draw_list: &mut DrawList, base: Mat3) {
-        let snapshot = self.snapshot.lock().unwrap();
-        draw_list.append_retained(&snapshot, base);
-    }
-}
-
-#[inline]
-fn shadow_is_covered(shadow: TextShadowRequest, padding: RetainedLayerPadding) -> bool {
-    if shadow.color.0[3] == 0 {
-        return true;
-    }
-    let offset_x = shadow
-        .offset_x
-        .is_finite()
-        .then_some(shadow.offset_x)
-        .unwrap_or(0.0);
-    let offset_y = shadow
-        .offset_y
-        .is_finite()
-        .then_some(shadow.offset_y)
-        .unwrap_or(0.0);
-    let blur = shadow
-        .blur
-        .is_finite()
-        .then_some(shadow.blur.max(0.0))
-        .unwrap_or(0.0);
-    padding.left >= (blur - offset_x).max(0.0)
-        && padding.right >= (blur + offset_x).max(0.0)
-        && padding.top >= (blur - offset_y).max(0.0)
-        && padding.bottom >= (blur + offset_y).max(0.0)
-}
-
-#[inline]
-fn retained_layer_size_is_supported(width: f32, height: f32) -> bool {
-    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
-        return false;
-    }
-    let width = width.ceil().max(1.0) as u64;
-    let height = height.ceil().max(1.0) as u64;
-    width <= u64::from(RETAINED_LAYER_MAX_DIMENSION)
-        && height <= u64::from(RETAINED_LAYER_MAX_DIMENSION)
-        && width
-            .checked_mul(height)
-            .and_then(|pixels| pixels.checked_mul(4))
-            .is_some_and(|bytes| bytes <= RETAINED_LAYER_MAX_BYTES)
-}
-
-impl DrawCommand {
-    #[inline]
-    fn is_paint_command(&self) -> bool {
-        matches!(
-            self,
-            Self::FillRect { .. }
-                | Self::ClearRect { .. }
-                | Self::DrawText { .. }
-                | Self::DrawRichText { .. }
-                | Self::DrawTextDecoration { .. }
-                | Self::DrawImage { .. }
-                | Self::DrawImageWithResource { .. }
-                | Self::RetainedLayer { .. }
-                | Self::Svg { .. }
-                | Self::DrawShadowRect { .. }
-                | Self::Custom { .. }
-        )
-    }
-
-    /// Clones only command payloads that are safe and cheap to replay.
-    fn clone_for_retention(&self) -> Option<Self> {
-        Some(match self {
-            Self::FillRect {
-                rect,
-                color,
-                border_radius,
-                border_width,
-                border_color,
-                outline_width,
-                outline_color,
-            } => Self::FillRect {
-                rect: *rect,
-                color: *color,
-                border_radius: *border_radius,
-                border_width: *border_width,
-                border_color: *border_color,
-                outline_width: *outline_width,
-                outline_color: *outline_color,
-            },
-            Self::ClearRect { rect } => Self::ClearRect { rect: *rect },
-            Self::DrawText {
-                position,
-                text,
-                font_size,
-                color,
-                bounds_width,
-                bounds_height,
-                overflow,
-                horizontal_align,
-                font_family,
-                font_style,
-                font_weight,
-                shadow,
-                draw_glyphs,
-            } => Self::DrawText {
-                position: *position,
-                text: text.clone(),
-                font_size: *font_size,
-                color: *color,
-                bounds_width: *bounds_width,
-                bounds_height: *bounds_height,
-                overflow: *overflow,
-                horizontal_align: *horizontal_align,
-                font_family: *font_family,
-                font_style: *font_style,
-                font_weight: *font_weight,
-                shadow: *shadow,
-                draw_glyphs: *draw_glyphs,
-            },
-            // Rich text owns a span vector. Keeping it out of the retained
-            // path avoids an allocation on every scroll replay; the normal
-            // draw path still handles it correctly.
-            Self::DrawRichText { .. } => return None,
-            Self::DrawTextDecoration {
-                rect,
-                color,
-                style,
-                thickness,
-                period,
-            } => Self::DrawTextDecoration {
-                rect: *rect,
-                color: *color,
-                style: *style,
-                thickness: *thickness,
-                period: *period,
-            },
-            Self::PushClip {
-                rect,
-                border_radius,
-            } => Self::PushClip {
-                rect: *rect,
-                border_radius: *border_radius,
-            },
-            Self::PopClip => Self::PopClip,
-            Self::PushTransform { matrix } => Self::PushTransform { matrix: *matrix },
-            Self::PopTransform => Self::PopTransform,
-            Self::SetAlpha { alpha } => Self::SetAlpha { alpha: *alpha },
-            Self::RestoreAlpha => Self::RestoreAlpha,
-            Self::SetItalic { italic } => Self::SetItalic { italic: *italic },
-            Self::SetTextLanguage { language } => Self::SetTextLanguage {
-                language: *language,
-            },
-            // Upload commands own byte buffers. A static image may still be
-            // retained after it has become a stable texture draw, but a
-            // loading/upload transition must go through the provider path.
-            Self::LoadImage { .. } | Self::LoadImageWithId { .. } => return None,
-            Self::RemoveTexture { .. } => return None,
-            Self::DrawImage { rect, texture_id } => Self::DrawImage {
-                rect: *rect,
-                texture_id: *texture_id,
-            },
-            Self::DrawImageWithResource { rect, resource } => Self::DrawImageWithResource {
-                rect: *rect,
-                resource: resource.clone(),
-            },
-            Self::RetainedLayer { .. } => return None,
-            Self::Svg {
-                scene,
-                destination,
-                overrides,
-            } => Self::Svg {
-                scene: scene.clone(),
-                destination: *destination,
-                overrides: overrides.clone(),
-            },
-            Self::SetTransform { matrix } => Self::SetTransform { matrix: *matrix },
-            Self::DrawShadowRect {
-                rect,
-                shadow_color,
-                shadow_params,
-                border_radius,
-                inset,
-                side_params,
-            } => Self::DrawShadowRect {
-                rect: *rect,
-                shadow_color: *shadow_color,
-                shadow_params: *shadow_params,
-                border_radius: *border_radius,
-                inset: *inset,
-                side_params: *side_params,
-            },
-            Self::Custom { .. } => return None,
-        })
-    }
-
-    fn rebase_for_replay(&self, base: Mat3) -> Self {
-        match self {
-            Self::PushTransform { matrix } => Self::PushTransform {
-                matrix: base.mul(matrix),
-            },
-            Self::SetTransform { matrix } => Self::SetTransform {
-                matrix: base.mul(matrix),
-            },
-            _ => self
-                .clone_for_retention()
-                .expect("retained draw lists contain only commands supported by replay"),
-        }
-    }
-}
-
-/// Counts the broad kinds of work recorded in one frame's draw list.
-///
-/// The counts are intentionally derived from commands rather than renderer
-/// internals: they are available at the UI/raster boundary and make it
-/// possible to compare scroll frames without changing rendering semantics.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct DrawListStats {
-    /// Total number of commands recorded, including state and clip commands.
-    pub commands: usize,
-    /// Number of retained compositor layers recorded without expanding their
-    /// content into this frame.
-    pub retained_layers: usize,
-    /// Number of plain, rich-text, and text-decoration commands.
-    pub text_commands: usize,
-    /// Number of commands that draw an already-loaded texture.
-    pub image_draws: usize,
-    /// Number of commands that upload image bytes for a texture.
-    pub image_uploads: usize,
-}
-
+/// Commands use element-local coordinates. A backend replays the list from the
+/// node's inherited transform, clip, and opacity, then resets its state before
+/// drawing the next element list.
+#[derive(Default)]
 pub struct DrawList {
-    commands: Vec<DrawCommand>,
-    transform_stack: Vec<Mat3>,
-    current_transform: Mat3,
-    paint_command_suppression_depth: usize,
-    /// Paint commands dropped while suppression was active.
-    dropped_paint_commands: std::cell::Cell<u64>,
-    texture_sizes: HashMap<TextureId, TextureMetadata>,
-    texture_registry: Arc<TextureRegistry>,
-    referenced_textures: HashSet<TextureId>,
-}
-
-struct TextureMetadata {
-    width: u32,
-    height: u32,
-    registry_serial: u64,
-    available: AtomicBool,
-}
-
-impl TextureMetadata {
-    #[inline]
-    fn new(width: u32, height: u32, registry_serial: u64) -> Self {
-        Self {
-            width,
-            height,
-            registry_serial,
-            available: AtomicBool::new(true),
-        }
-    }
+    commands: Arc<[DrawCommand]>,
+    /// The textures `commands` draw directly, in command order, repeats kept.
+    ///
+    /// Found once, when the list is committed, because every frame that draws
+    /// the node needs them and the commands do not change in between.
+    image_textures: Arc<[TextureId]>,
+    revision: u64,
+    dirty: bool,
+    /// Set whenever the list becomes out of date, and cleared once a recording
+    /// attempt has finished since: by a commit, or by the owner reporting that
+    /// it painted nothing. Unlike `dirty`, an element that never commits (a
+    /// layout container) can clear it, so it says whether the list is *known
+    /// current*, not whether a commit is still outstanding.
+    stale: bool,
+    /// The list is stale only because its owner was rebuilt (see
+    /// [`RenderTree::refresh_paint`]), so a recording equal to the current
+    /// commands may keep the revision and damage nothing. Every other reason a
+    /// list goes stale (a resize, an explicit invalidation, an abandoned
+    /// recording) clears it: those say the pixels under the node cannot be
+    /// trusted, whatever gets recorded next.
+    refreshed: bool,
+    recording: bool,
+    /// The list opens with [`COVERAGE_MASK_PIPELINE_NAME`]: it shows only where
+    /// its node's descendants have coverage. Found once, at commit, because the
+    /// render plan reads it for every node of every frame.
+    masks_descendants: bool,
+    /// The list opens with [`FADE_MASK_PIPELINE_NAME`]: its node's descendants
+    /// are shown through the alpha of the list. Found once, at commit, for the
+    /// same reason as `masks_descendants`.
+    fades_descendants: bool,
+    /// The list opens with a decodable [`MORPH_PIPELINE_NAME`] marker: the
+    /// node's two children are the sources of a shader transition. Found once,
+    /// at commit, for the same reason as `masks_descendants`.
+    morph: Option<MorphParams>,
 }
 
 impl DrawList {
-    pub fn new() -> Self {
-        // debug("Creating draw list");
-        Self::with_texture_registry(Arc::new(TextureRegistry::default()))
-    }
-
-    #[doc(hidden)]
-    pub fn with_texture_registry(texture_registry: Arc<TextureRegistry>) -> Self {
-        Self {
-            commands: Vec::with_capacity(16),
-            transform_stack: Vec::with_capacity(16),
-            current_transform: Mat3::identity(),
-            paint_command_suppression_depth: 0,
-            dropped_paint_commands: std::cell::Cell::new(0),
-            texture_sizes: HashMap::new(),
-            texture_registry,
-            referenced_textures: HashSet::new(),
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.release_texture_references();
-        self.commands.clear();
-        self.transform_stack.clear();
-        self.current_transform = Mat3::identity();
-    }
-
+    /// Returns the revision of the last successfully completed recording.
     #[inline]
-    pub fn push(&mut self, cmd: DrawCommand) {
-        if self.paint_command_suppression_depth == 0 || !cmd.is_paint_command() {
-            self.commands.push(cmd);
-        } else {
-            self.note_dropped_paint_command();
-        }
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
+    /// Returns whether this node needs its local commands to be recorded.
     #[inline]
-    fn push_paint_command(&mut self, cmd: DrawCommand) {
-        if !self.is_suppressing_paint_commands() {
-            self.commands.push(cmd);
-        }
+    pub fn needs_recording(&self) -> bool {
+        self.dirty
     }
 
-    pub(crate) fn suppress_paint_commands(&mut self) -> usize {
-        let previous_depth = self.paint_command_suppression_depth;
-        self.paint_command_suppression_depth = previous_depth.saturating_add(1);
-        previous_depth
-    }
-
-    pub(crate) fn suspend_paint_command_suppression(&mut self) -> usize {
-        let previous_depth = self.paint_command_suppression_depth;
-        self.paint_command_suppression_depth = 0;
-        previous_depth
-    }
-
-    pub(crate) fn restore_paint_command_suppression(&mut self, depth: usize) {
-        self.paint_command_suppression_depth = depth;
-    }
-
+    /// Returns a shared immutable snapshot of the node's current local commands.
     #[inline]
-    /// Whether a paint command being recorded right now is dropped, counting it
-    /// when it is.
-    pub(crate) fn is_suppressing_paint_commands(&self) -> bool {
-        let suppressing = self.paint_command_suppression_depth != 0;
-        if suppressing {
-            self.note_dropped_paint_command();
+    pub fn snapshot(&self) -> Arc<[DrawCommand]> {
+        self.commands.clone()
+    }
+}
+
+impl RenderNode {
+    /// Replaces the node's bounds.
+    ///
+    /// A local list is authored against the node's size: a background fills it
+    /// and a border follows it. A node that grew or shrank therefore needs its
+    /// list recorded again, or the new area stays unpainted. A move keeps the
+    /// list, because it is expressed relative to the node's own origin.
+    fn assign_bounds(&mut self, bounds: Rect) {
+        if self.bounds.width != bounds.width || self.bounds.height != bounds.height {
+            let mut list = self.draw_list.borrow_mut();
+            list.dirty = true;
+            list.stale = true;
+            list.refreshed = false;
         }
-        suppressing
+        self.bounds = bounds;
     }
+}
 
-    #[inline]
-    fn note_dropped_paint_command(&self) {
-        self.dropped_paint_commands
-            .set(self.dropped_paint_commands.get().wrapping_add(1));
-    }
+struct RenderNode {
+    id: RenderNodeId,
+    parent: Option<RenderNodeId>,
+    children: Vec<RenderNodeId>,
+    bounds: Rect,
+    clip: Option<Rect>,
+    /// Corner radii of `clip`, in the clip's local logical pixels.
+    clip_radius: [f32; 4],
+    escapes_clip: bool,
+    animation_clip: Option<Rect>,
+    presentation_transform: Mat3,
+    presentation_opacity: f32,
+    transform: Mat3,
+    opacity: f32,
+    paint_source: RenderPaintSource,
+    draw_list: Shared<RefCell<DrawList>>,
+}
 
-    /// How many paint commands suppression has dropped so far.
-    pub(crate) fn dropped_paint_commands(&self) -> u64 {
-        self.dropped_paint_commands.get()
-    }
-
-    pub fn fill_rect(
-        &mut self,
-        rect: Rect,
-        color: Color,
-        border_radius: [f32; 4],
-        border_width: [f32; 4],
-        border_color: Color,
-    ) {
-        self.push_paint_command(DrawCommand::FillRect {
-            rect,
-            color,
-            border_radius,
-            border_width,
-            border_color,
-            outline_width: [0.0; 4],
-            outline_color: Color::transparent(),
-        });
-    }
-
-    /// Enqueue a draw command for a user-registered custom pipeline.
-    /// `pipeline_name` must match `CustomPipelineGeneric::name()` of a registered
-    /// pipeline. `data` is forwarded to its `prepare_command()` hook.
-    pub fn draw_custom(&mut self, pipeline_name: impl Into<String>, data: impl Any + Send) {
-        if self.is_suppressing_paint_commands() {
-            return;
+fn transform_rect(transform: Mat3, rect: Rect) -> Option<Rect> {
+    // Almost every node of an interface is placed without a transform, and
+    // mapping a rectangle through the identity hands back its own corners
+    // exactly. Skipping the four point transforms and their checks is the
+    // difference between one comparison and a few dozen calls per node.
+    if transform.is_identity() {
+        let (left, top) = (rect.x, rect.y);
+        let (right, bottom) = (rect.x + rect.width, rect.y + rect.height);
+        if !(left.is_finite() && top.is_finite() && right.is_finite() && bottom.is_finite()) {
+            return None;
         }
-        self.commands.push(DrawCommand::Custom {
-            pipeline_name: pipeline_name.into(),
-            data: Box::new(data),
-        });
+        let (min_x, max_x) = (left.min(right), left.max(right));
+        let (min_y, max_y) = (top.min(bottom), top.max(bottom));
+        let bounds = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+        return bounds.is_valid().then_some(bounds);
     }
-
-    pub fn draw_shadow_rect(
-        &mut self,
-        rect: Rect,
-        shadow_color: Color,
-        shadow_params: [f32; 4],
-        border_radius: [f32; 4],
-        inset: bool,
-        side_params: [f32; 3],
-    ) {
-        self.push_paint_command(DrawCommand::DrawShadowRect {
-            rect,
-            shadow_color,
-            shadow_params,
-            border_radius,
-            inset,
-            side_params,
-        });
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn fill_rect_with_outline(
-        &mut self,
-        rect: Rect,
-        color: Color,
-        border_radius: [f32; 4],
-        border_width: [f32; 4],
-        border_color: Color,
-        outline_width: [f32; 4],
-        outline_color: Color,
-    ) {
-        self.push_paint_command(DrawCommand::FillRect {
-            rect,
-            color,
-            border_radius,
-            border_width,
-            border_color,
-            outline_width,
-            outline_color,
-        });
-    }
-
-    pub fn clear_rect(&mut self, rect: Rect) {
-        self.push_paint_command(DrawCommand::ClearRect { rect });
-    }
-
-    pub fn draw_image(&mut self, rect: Rect, texture_id: TextureId) {
-        if self.is_suppressing_paint_commands() {
-            return;
-        }
-        self.retain_texture_reference(texture_id);
-        self.commands
-            .push(DrawCommand::DrawImage { rect, texture_id });
-    }
-
-    /// Records a draw while retaining the pixels needed to restore its texture.
-    pub fn draw_image_with_resource(&mut self, rect: Rect, resource: Arc<ImageResource>) {
-        if self.is_suppressing_paint_commands() {
-            return;
-        }
-        self.retain_texture_reference(resource.texture_id());
-        self.commands
-            .push(DrawCommand::DrawImageWithResource { rect, resource });
-    }
-
-    /// Records one compositor layer draw without expanding its retained
-    /// content into this frame's command buffer.
-    pub fn draw_retained_layer(
-        &mut self,
-        layer_id: u64,
-        rect: Rect,
-        content: Arc<RetainedLayerContent>,
-    ) {
-        if self.is_suppressing_paint_commands() {
-            return;
-        }
-        if !retained_layer_size_is_supported(rect.width, rect.height)
-            || !content.is_compositor_safe()
-        {
-            let base = *self.current_transform();
-            content.append_to_draw_list(self, base);
-            return;
-        }
-        for texture_id in content.texture_ids() {
-            self.retain_texture_reference(*texture_id);
-        }
-        self.commands.push(DrawCommand::RetainedLayer {
-            layer_id,
-            rect,
-            content,
-        });
-    }
-
-    pub fn draw_svg(
-        &mut self,
-        scene: Arc<SvgScene>,
-        destination: Rect,
-        overrides: Arc<[SvgNodeStyleOverride]>,
-    ) {
-        self.push_paint_command(DrawCommand::Svg {
-            scene,
-            destination,
-            overrides,
-        });
-    }
-
-    pub fn draw_text(
-        &mut self,
-        position: Vec2d,
-        text: Arc<str>,
-        font_size: f32,
-        color: Color,
-        font_weight: u16,
-    ) {
-        self.draw_text_styled(
-            position,
-            text,
-            font_size,
-            color,
-            FontFamily::SANS_SERIF,
-            FontStyle::Normal,
-            font_weight,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_text_styled(
-        &mut self,
-        position: Vec2d,
-        text: Arc<str>,
-        font_size: f32,
-        color: Color,
-        font_family: FontFamily,
-        font_style: FontStyle,
-        font_weight: u16,
-    ) {
-        self.draw_text_with_overflow(
-            position,
-            text,
-            font_size,
-            color,
-            None,
-            None,
-            TextOverflowMode::Clip,
-            font_family,
-            font_style,
-            font_weight,
-        );
-    }
-
-    /// Records a shadow-only styled text request. The text pipeline expands
-    /// the request into clipped glyph samples during preparation.
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_text_shadow_styled(
-        &mut self,
-        position: Vec2d,
-        text: Arc<str>,
-        font_size: f32,
-        color: Color,
-        font_family: FontFamily,
-        font_style: FontStyle,
-        font_weight: u16,
-        shadow: TextShadowRequest,
-    ) {
-        self.push_paint_command(DrawCommand::DrawText {
-            position,
-            text,
-            font_size,
-            color,
-            bounds_width: None,
-            bounds_height: None,
-            overflow: TextOverflowMode::Clip,
-            horizontal_align: TextHorizontalAlign::Left,
-            font_family,
-            font_style,
-            font_weight,
-            shadow: Some(shadow),
-            draw_glyphs: false,
-        });
-    }
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_text_with_overflow(
-        &mut self,
-        position: Vec2d,
-        text: Arc<str>,
-        font_size: f32,
-        color: Color,
-        bounds_width: Option<f32>,
-        bounds_height: Option<f32>,
-        overflow: TextOverflowMode,
-        font_family: FontFamily,
-        font_style: FontStyle,
-        font_weight: u16,
-    ) {
-        self.draw_text_aligned_with_overflow(
-            position,
-            text,
-            font_size,
-            color,
-            bounds_width,
-            bounds_height,
-            overflow,
-            TextHorizontalAlign::Left,
-            font_family,
-            font_style,
-            font_weight,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_text_aligned_with_overflow(
-        &mut self,
-        position: Vec2d,
-        text: Arc<str>,
-        font_size: f32,
-        color: Color,
-        bounds_width: Option<f32>,
-        bounds_height: Option<f32>,
-        overflow: TextOverflowMode,
-        horizontal_align: TextHorizontalAlign,
-        font_family: FontFamily,
-        font_style: FontStyle,
-        font_weight: u16,
-    ) {
-        self.push_paint_command(DrawCommand::DrawText {
-            position,
-            text,
-            font_size,
-            color,
-            bounds_width,
-            bounds_height,
-            overflow,
-            horizontal_align,
-            font_family,
-            font_style,
-            font_weight,
-            shadow: None,
-            draw_glyphs: true,
-        });
-    }
-
-    pub fn draw_rich_text(
-        &mut self,
-        position: Vec2d,
-        spans: Vec<RichTextSegment>,
-        font_size: f32,
-        color: Color,
-    ) {
-        self.draw_rich_text_with_overflow(
-            position,
-            spans,
-            font_size,
-            color,
-            None,
-            None,
-            TextOverflowMode::Clip,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_rich_text_with_overflow(
-        &mut self,
-        position: Vec2d,
-        spans: Vec<RichTextSegment>,
-        font_size: f32,
-        color: Color,
-        bounds_width: Option<f32>,
-        bounds_height: Option<f32>,
-        overflow: TextOverflowMode,
-    ) {
-        self.push_paint_command(DrawCommand::DrawRichText {
-            position,
-            spans,
-            font_size,
-            color,
-            bounds_width,
-            bounds_height,
-            overflow,
-        });
-    }
-
-    pub fn draw_text_decoration(
-        &mut self,
-        rect: Rect,
-        color: Color,
-        style: u32,
-        thickness: f32,
-        period: f32,
-    ) {
-        self.push_paint_command(DrawCommand::DrawTextDecoration {
-            rect,
-            color,
-            style,
-            thickness,
-            period,
-        });
-    }
-
-    pub fn push_clip(&mut self, rect: Rect) {
-        self.commands.push(DrawCommand::PushClip {
-            rect,
-            border_radius: [0.0; 4],
-        });
-    }
-
-    pub fn push_clip_rounded(&mut self, rect: Rect, border_radius: [f32; 4]) {
-        self.commands.push(DrawCommand::PushClip {
-            rect,
-            border_radius,
-        });
-    }
-
-    pub fn pop_clip(&mut self) {
-        self.commands.push(DrawCommand::PopClip);
-    }
-
-    pub fn set_alpha(&mut self, alpha: f32) {
-        self.commands.push(DrawCommand::SetAlpha { alpha });
-    }
-
-    pub fn set_italic(&mut self, italic: bool) {
-        self.commands.push(DrawCommand::SetItalic { italic });
-    }
-
-    /// Records the language subsequent text commands are written in — see
-    /// [`DrawCommand::SetTextLanguage`].
-    pub fn set_text_language(&mut self, language: Option<TextLanguage>) {
-        self.commands
-            .push(DrawCommand::SetTextLanguage { language });
-    }
-
-    pub fn restore_alpha(&mut self) {
-        self.commands.push(DrawCommand::RestoreAlpha);
-    }
-
-    /// Returns the content-based texture ID used by [`Self::load_image`].
-    #[doc(hidden)]
-    pub fn image_texture_id(bytes: &[u8], width: u32, height: u32) -> TextureId {
-        // Hash only a small sample of the buffer to avoid O(n) cost on large images.
-        let mut hasher = IMAGE_TEXTURE_HASHER
-            .get_or_init(DefaultHashBuilder::default)
-            .build_hasher();
-        width.hash(&mut hasher);
-        height.hash(&mut hasher);
-        let sample_len = 256.min(bytes.len());
-        if sample_len > 0 {
-            bytes[..sample_len].hash(&mut hasher);
-            bytes[bytes.len() - sample_len..].hash(&mut hasher);
-        }
-        hasher.finish() as u32
-    }
-
-    /// Returns a content revision for retained resources, hashing every pixel.
-    #[doc(hidden)]
-    pub fn image_content_revision(bytes: &[u8], width: u32, height: u32) -> u64 {
-        let mut hasher = IMAGE_TEXTURE_HASHER
-            .get_or_init(DefaultHashBuilder::default)
-            .build_hasher();
-        width.hash(&mut hasher);
-        height.hash(&mut hasher);
-        bytes.hash(&mut hasher);
-        hasher.finish()
-    }
-
-    pub fn load_image(&mut self, bytes: &[u8], width: u32, height: u32) -> TextureId {
-        let texture_id = Self::image_texture_id(bytes, width, height);
-        if self.has_queued_image(texture_id) {
-            return texture_id;
-        }
-        // A content-stable ID can be uploaded again after the renderer evicts
-        // its GPU texture. Publish a new serial even when the registry still
-        // reports the old dimensions as available, so an older submitted
-        // frame cannot invalidate this upload after the fact.
-        self.set_texture_size_internal(texture_id, width, height, true);
-        // The ID is content-stable, but the upload payload is still a mutable
-        // cache value. Retained paint must be retired when an image with the
-        // same dimensions is uploaded again.
-        self.texture_registry.changed();
-        self.commands.push(DrawCommand::LoadImage {
-            bytes: bytes.to_vec(),
-            texture_id,
-            width,
-            height,
-        });
-        texture_id
-    }
-
-    pub fn load_image_with_id(
-        &mut self,
-        texture_id: TextureId,
-        bytes: &[u8],
-        width: u32,
-        height: u32,
-    ) {
-        // Explicit IDs can carry a new payload without changing dimensions;
-        // publish a new serial so an eviction from an older submitted frame
-        // cannot invalidate this upload.
-        self.set_texture_size_internal(texture_id, width, height, true);
-        // Explicit IDs are commonly used for dynamic image sources; changing
-        // their bytes must invalidate any retained draw stream that references
-        // the ID even when the intrinsic dimensions stay the same.
-        self.texture_registry.changed();
-        self.commands.push(DrawCommand::LoadImageWithId {
-            texture_id,
-            bytes: bytes.to_vec(),
-            width,
-            height,
-        });
-    }
-
-    pub fn set_texture_size(&mut self, texture_id: TextureId, width: u32, height: u32) {
-        self.set_texture_size_internal(texture_id, width, height, false);
-    }
-
-    fn set_texture_size_internal(
-        &mut self,
-        texture_id: TextureId,
-        width: u32,
-        height: u32,
-        force_new_serial: bool,
-    ) {
-        let registry_needs_update = match self.texture_registry.texture_state(texture_id) {
-            Some((registry_width, registry_height, _, available)) => {
-                !available || registry_width != width || registry_height != height
-            }
-            None => true,
-        };
-        let update_registry = if let Some(metadata) = self.texture_sizes.get_mut(&texture_id) {
-            let update_registry = force_new_serial
-                || metadata.width != width
-                || metadata.height != height
-                || !metadata.available.swap(true, Ordering::AcqRel)
-                || registry_needs_update;
-            metadata.width = width;
-            metadata.height = height;
-            update_registry
-        } else {
-            self.texture_sizes
-                .insert(texture_id, TextureMetadata::new(width, height, 0));
-            true
-        };
-        if update_registry {
-            let registry_serial =
-                self.texture_registry
-                    .record_size(texture_id, width, height, force_new_serial);
-            if let Some(metadata) = self.texture_sizes.get_mut(&texture_id) {
-                metadata.registry_serial = registry_serial;
-            }
-        }
-    }
-
-    pub fn remove_texture(&mut self, texture_id: TextureId) {
-        if let Some(metadata) = self.texture_sizes.remove(&texture_id) {
-            self.texture_registry
-                .remove_if_current(texture_id, Some(metadata.registry_serial));
-        } else {
-            self.texture_registry.remove_if_current(texture_id, None);
-        }
-        self.commands
-            .push(DrawCommand::RemoveTexture { texture_id });
-    }
-
-    pub fn save(&mut self) {
-        self.transform_stack.push(self.current_transform);
-        self.commands.push(DrawCommand::PushTransform {
-            matrix: self.current_transform,
-        });
-    }
-
-    pub fn restore(&mut self) {
-        if let Some(prev) = self.transform_stack.pop() {
-            self.current_transform = prev;
-            self.commands.push(DrawCommand::PopTransform);
-        }
-    }
-
-    pub fn translate(&mut self, x: f32, y: f32) {
-        let t = Mat3::translate(x, y);
-        self.current_transform = self.current_transform.mul(&t);
-        self.commands.push(DrawCommand::SetTransform {
-            matrix: self.current_transform,
-        });
-    }
-
-    pub fn scale(&mut self, sx: f32, sy: f32) {
-        let s = Mat3::scale(sx, sy);
-        self.current_transform = self.current_transform.mul(&s);
-        self.commands.push(DrawCommand::SetTransform {
-            matrix: self.current_transform,
-        });
-    }
-
-    pub fn rotate(&mut self, radians: f32) {
-        let r = Mat3::rotate(radians);
-        self.current_transform = self.current_transform.mul(&r);
-        self.commands.push(DrawCommand::SetTransform {
-            matrix: self.current_transform,
-        });
-    }
-
-    pub fn current_transform(&self) -> &Mat3 {
-        &self.current_transform
-    }
-
-    pub fn commands(&self) -> &[DrawCommand] {
-        &self.commands
-    }
-
-    /// Moves the current command stream out while preserving its resource
-    /// registry and texture references for mixed v2/legacy frame composition.
-    pub(crate) fn take_commands_for_composition(&mut self) -> Vec<DrawCommand> {
-        self.transform_stack.clear();
-        self.current_transform = Mat3::identity();
-        std::mem::take(&mut self.commands)
-    }
-
-    /// Reconciles texture retention with the command stream after composition.
-    pub(crate) fn sync_composed_texture_references(&mut self) {
-        self.sync_composed_texture_references_with_ids(std::iter::empty());
-    }
-
-    /// Reconciles texture retention after composition and keeps IDs referenced
-    /// by element-local v2 lists alive even though they are not in this legacy
-    /// command stream.
-    /// The textures this list currently holds a reference to.
     #[cfg(test)]
-    pub(crate) fn referenced_texture_ids(&self) -> Vec<TextureId> {
-        let mut ids = self.referenced_textures.iter().copied().collect::<Vec<_>>();
-        ids.sort_unstable();
-        ids
-    }
-
-    pub(crate) fn sync_composed_texture_references_with_ids(
-        &mut self,
-        additional_texture_ids: impl IntoIterator<Item = TextureId>,
-    ) {
-        let mut needed = HashSet::new();
-        for command in &self.commands {
-            match command {
-                DrawCommand::DrawImage { texture_id, .. } => {
-                    needed.insert(*texture_id);
-                }
-                DrawCommand::DrawImageWithResource { resource, .. } => {
-                    needed.insert(resource.texture_id());
-                }
-                DrawCommand::RetainedLayer { content, .. } => {
-                    needed.extend(content.texture_ids().iter().copied());
-                }
-                _ => {}
-            }
+    GENERAL_RECT_TRANSFORMS.with(|count| count.set(count.get() + 1));
+    let corners = [
+        transform.transform_point(rect.x, rect.y),
+        transform.transform_point(rect.x + rect.width, rect.y),
+        transform.transform_point(rect.x, rect.y + rect.height),
+        transform.transform_point(rect.x + rect.width, rect.y + rect.height),
+    ];
+    let (mut min_x, mut max_x) = (f32::INFINITY, f32::NEG_INFINITY);
+    let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
+    for (x, y) in corners {
+        if !x.is_finite() || !y.is_finite() {
+            return None;
         }
-        needed.extend(additional_texture_ids);
-
-        let previous = std::mem::take(&mut self.referenced_textures);
-        for texture_id in previous {
-            if needed.contains(&texture_id) {
-                self.referenced_textures.insert(texture_id);
-            } else {
-                self.texture_registry.release_reference(texture_id);
-            }
-        }
-        for texture_id in needed {
-            self.retain_texture_reference(texture_id);
-        }
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
     }
+    let bounds = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+    bounds.is_valid().then_some(bounds)
+}
 
-    /// Takes a snapshot when every command in this list can be replayed
-    /// without cloning owned byte buffers or custom pipeline state.
-    ///
-    /// The snapshot is local to the list's coordinate system. Callers should
-    /// replay it while the canvas is translated/clipped for the subtree that
-    /// produced it.
-    pub fn retained_snapshot(&self) -> Option<RetainedDrawList> {
-        RetainedDrawList::from_draw_list(self)
-    }
+#[derive(Clone, Copy, PartialEq)]
+enum ClipState {
+    Unclipped,
+    Clipped(Rect),
+    Empty,
+}
 
-    /// Appends a retained local-coordinate stream under the current transform.
-    ///
-    /// The draw-list transform is intentionally unchanged: a balanced retained
-    /// stream is a child of the caller's current state, just like a normal
-    /// `save`/`restore` child draw. Texture references are registered on the
-    /// destination list so renderer eviction cannot remove a texture used by
-    /// this frame's replay.
-    pub(crate) fn append_retained(&mut self, retained: &RetainedDrawList, base: Mat3) {
-        if self.is_suppressing_paint_commands() {
-            return;
-        }
-        for texture_id in retained.texture_ids() {
-            self.retain_texture_reference(*texture_id);
-        }
-        for command in &retained.commands {
-            self.commands.push(command.rebase_for_replay(base));
-        }
-    }
-
-    /// Summarizes the recorded commands without exposing their payloads.
-    ///
-    /// This is primarily useful for debug profiling at the end of a frame.
-    /// It performs one linear pass over the command stream and does not alter
-    /// the list or retain any command data.
-    pub fn stats(&self) -> DrawListStats {
-        let mut stats = DrawListStats {
-            commands: self.commands.len(),
-            ..DrawListStats::default()
-        };
-
-        for command in &self.commands {
-            match command {
-                DrawCommand::DrawText { .. }
-                | DrawCommand::DrawRichText { .. }
-                | DrawCommand::DrawTextDecoration { .. } => stats.text_commands += 1,
-                DrawCommand::DrawImage { .. } | DrawCommand::DrawImageWithResource { .. } => {
-                    stats.image_draws += 1;
-                }
-                DrawCommand::RetainedLayer { .. } => stats.retained_layers += 1,
-                DrawCommand::LoadImage { .. } | DrawCommand::LoadImageWithId { .. } => {
-                    stats.image_uploads += 1;
-                }
-                _ => {}
-            }
-        }
-
-        stats
-    }
-
-    // pub fn drain_commands(&mut self) -> Vec<DrawCommand> {
-    //     std::mem::take(&mut self.commands)
-    // }
-
-    pub fn has_texture_id(&self, texture_id: TextureId) -> bool {
-        self.commands.iter().any(|cmd| match cmd {
-            DrawCommand::DrawImage { texture_id: id, .. } => *id == texture_id,
-            DrawCommand::DrawImageWithResource { resource, .. } => {
-                resource.texture_id() == texture_id
-            }
-            DrawCommand::RetainedLayer { content, .. } => {
-                content.texture_ids().contains(&texture_id)
-            }
-            _ => false,
-        })
-    }
-
-    fn has_queued_image(&self, texture_id: TextureId) -> bool {
-        self.commands.iter().any(|cmd| match cmd {
-            DrawCommand::LoadImage { texture_id: id, .. } => *id == texture_id,
-            _ => false,
-        })
-    }
-
-    pub fn get_texture_size(&self, texture_id: TextureId) -> Option<(u32, u32)> {
-        match self.texture_sizes.get(&texture_id) {
-            Some(metadata) => match self.texture_registry.texture_state(texture_id) {
-                // The shared registry is authoritative once it has observed
-                // this list's metadata (or a newer replacement). A recycled
-                // draw list can retain `available = true` locally after the
-                // renderer evicts the texture from the submitted list.
-                Some((width, height, serial, available)) if serial >= metadata.registry_serial => {
-                    available.then_some((width, height))
-                }
-                Some(_) | None => metadata
-                    .available
-                    .load(Ordering::Acquire)
-                    .then_some((metadata.width, metadata.height)),
-            },
-            None => self
-                .texture_registry
-                .texture_state(texture_id)
-                .filter(|(_, _, _, available)| *available)
-                .map(|(width, height, _, _)| (width, height)),
-        }
-    }
-
-    /// Returns the generation of renderer-side image-cache changes.
+impl ClipState {
     #[inline]
-    #[doc(hidden)]
-    pub fn texture_cache_epoch(&self) -> u64 {
-        self.texture_registry.cache_epoch()
-    }
-
-    /// Returns whether the texture still has valid retained metadata and has
-    /// not been evicted by the renderer.
-    #[inline]
-    #[doc(hidden)]
-    pub fn is_texture_available(&self, texture_id: TextureId) -> bool {
-        match self.texture_sizes.get(&texture_id) {
-            Some(metadata) => match self.texture_registry.texture_state(texture_id) {
-                Some((_, _, serial, available)) if serial >= metadata.registry_serial => available,
-                Some(_) | None => metadata.available.load(Ordering::Acquire),
-            },
-            None => self
-                .texture_registry
-                .is_texture_available_or_unknown(texture_id),
+    fn intersect(self, clip: Option<Rect>) -> Self {
+        match (self, clip) {
+            (Self::Empty, _) => Self::Empty,
+            (state, None) => state,
+            (Self::Unclipped, Some(clip)) => Self::Clipped(clip),
+            (Self::Clipped(parent), Some(clip)) => {
+                parent.intersection(clip).map_or(Self::Empty, Self::Clipped)
+            }
         }
-    }
-
-    /// Returns the shared registry serial for a texture, if the ID has been
-    /// published by a draw list.
-    #[inline]
-    #[doc(hidden)]
-    pub fn texture_registry_serial(&self, texture_id: TextureId) -> Option<u64> {
-        self.texture_registry
-            .texture_state(texture_id)
-            .map(|(_, _, serial, _)| serial)
-    }
-
-    /// Marks a renderer-evicted texture without taking ownership of the draw
-    /// list's command buffer. The serial is captured when the renderer selects
-    /// the eviction, so a newer upload published by another in-flight frame
-    /// cannot be invalidated by an older removal. This also works when the
-    /// current draw list has no local metadata for the evicted ID.
-    #[inline]
-    #[doc(hidden)]
-    pub fn mark_texture_evicted(&self, texture_id: TextureId, serial: u64) {
-        if let Some(metadata) = self.texture_sizes.get(&texture_id)
-            && metadata.registry_serial == serial
-        {
-            metadata.available.store(false, Ordering::Release);
-        }
-        self.texture_registry
-            .mark_evicted_if_current(texture_id, serial);
     }
 
     #[inline]
-    #[doc(hidden)]
-    pub fn has_live_texture_reference(&self, texture_id: TextureId) -> bool {
-        self.texture_registry.is_referenced(texture_id)
-    }
-
-    fn release_texture_references(&mut self) {
-        for texture_id in self.referenced_textures.drain() {
-            self.texture_registry.release_reference(texture_id);
-        }
-    }
-
-    /// Carries the shared registry's latest metadata into a destination draw
-    /// list as a retained stream is attached to it. Without this hand-off an
-    /// image could be evicted while its layer is not visible, yet the next
-    /// source-backed widget would have no local metadata to observe that the
-    /// texture became unavailable and reload it.
-    fn retain_texture_reference(&mut self, texture_id: TextureId) {
-        if self.referenced_textures.insert(texture_id) {
-            self.texture_registry.retain_reference(texture_id);
-        }
-
-        let Some((width, height, registry_serial, available)) =
-            self.texture_registry.texture_state(texture_id)
-        else {
-            return;
-        };
-        match self.texture_sizes.get_mut(&texture_id) {
-            Some(metadata) if registry_serial > metadata.registry_serial => {
-                metadata.width = width;
-                metadata.height = height;
-                metadata.registry_serial = registry_serial;
-                metadata.available.store(available, Ordering::Release);
+    fn intersect_state(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Empty, _) | (_, Self::Empty) => Self::Empty,
+            (Self::Unclipped, state) | (state, Self::Unclipped) => state,
+            (Self::Clipped(left), Self::Clipped(right)) => {
+                left.intersection(right).map_or(Self::Empty, Self::Clipped)
             }
-            Some(_) => {}
-            None => {
-                self.texture_sizes.insert(
-                    texture_id,
-                    TextureMetadata {
-                        width,
-                        height,
-                        registry_serial,
-                        available: AtomicBool::new(available),
-                    },
-                );
+        }
+    }
+
+    #[inline]
+    fn intersect_bounds(self, bounds: Rect) -> Option<Rect> {
+        match self {
+            Self::Unclipped => Some(bounds),
+            Self::Clipped(clip) => bounds.intersection(clip),
+            Self::Empty => None,
+        }
+    }
+
+    #[inline]
+    fn as_option(self) -> Option<Rect> {
+        match self {
+            Self::Unclipped => None,
+            Self::Clipped(clip) => Some(clip),
+            Self::Empty => {
+                unreachable!("empty clip states are culled before emitting operations")
             }
         }
     }
 }
 
-impl Drop for DrawList {
-    fn drop(&mut self) {
-        self.release_texture_references();
+/// Where the content of a render node can reach pixels, in the node's own
+/// local logical coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LocalVisibleRegion {
+    /// No clip limits the node, or its placement is not a plain translation,
+    /// so nothing may be assumed to be out of sight.
+    Unbounded,
+    /// The node and everything below it are clipped away entirely.
+    Nothing,
+    /// Only this rectangle can be seen.
+    Within(Rect),
+}
+
+/// Errors reported while constructing or recording the retained tree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenderTreeError {
+    /// The requested render node is not part of this tree.
+    UnknownNode(RenderNodeId),
+    /// A child was inserted before its parent existed.
+    MissingParent(RenderNodeId),
+    /// A render node appeared more than once in one synchronized structure.
+    DuplicateNode(RenderNodeId),
+    /// A synchronized child must refer to an earlier parent entry.
+    InvalidParentIndex { node: usize, parent: usize },
+    /// A second recorder was opened for the same element before the first ended.
+    RecorderAlreadyOpen(RenderNodeId),
+    /// Recording was requested with a non-finite or negative rectangle extent.
+    InvalidBounds,
+    /// Opacity must be finite and in the closed interval from zero to one.
+    InvalidOpacity,
+    /// A clip, transform, or alpha scope was not closed before commit.
+    UnbalancedState,
+    /// A node transform is non-finite or overflows its subtree bounds.
+    InvalidTransform,
+}
+
+/// How one synchronized render node supplies its paint content.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderPaintSource {
+    /// The element has not recorded its paint yet.
+    #[default]
+    Unresolved,
+    /// The node records only its own commands in its v2 local list.
+    LocalV2,
+}
+
+/// New geometry for one existing node, for [`RenderTree::sync_geometry`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NodeGeometry {
+    /// The existing node to update.
+    pub node: RenderNodeId,
+    /// Element-local position and size in logical pixels.
+    pub bounds: Rect,
+    /// The node's own clip, if any.
+    pub clip: Option<Rect>,
+    /// Top-left, top-right, bottom-right and bottom-left radii of the clip.
+    pub clip_radius: [f32; 4],
+}
+
+/// One element's place in a synchronized retained render structure.
+///
+/// `parent_index` refers to an earlier entry in the same slice. An existing
+/// `RenderNodeId` preserves that node's local paint list and effects; `None`
+/// creates a new node. The returned IDs from [`RenderTree::sync_structure`]
+/// align with the input slice.
+#[derive(Clone, Copy, Debug)]
+pub struct RenderNodeSpec {
+    /// Previously assigned render identity, if this element already exists.
+    pub existing_id: Option<RenderNodeId>,
+    /// Index of the parent descriptor, or `None` for a tree root.
+    pub parent_index: Option<usize>,
+    /// Element-local position and size in logical pixels.
+    pub bounds: Rect,
+}
+
+impl RenderNodeSpec {
+    /// Creates a structure descriptor for an existing or new render node.
+    #[inline]
+    pub const fn new(
+        existing_id: Option<RenderNodeId>,
+        parent_index: Option<usize>,
+        bounds: Rect,
+    ) -> Self {
+        Self {
+            existing_id,
+            parent_index,
+            bounds,
+        }
     }
 }
 
-impl Default for DrawList {
-    fn default() -> Self {
-        Self::new()
-    }
+// Counts `DrawCommandList::node` lookups so tests can bound the cost of
+// world-space queries. Compiled out of every non-test build.
+#[cfg(test)]
+aimer_tls::thread_local! {
+    static NODE_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+// Counts how many node frames are derived from their parents, so tests can
+// bound the work world-space queries repeat. Compiled out of every non-test
+// build.
+#[cfg(test)]
+aimer_tls::thread_local! {
+    static FRAME_DERIVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+// Counts rectangles mapped through a transform that is not the identity, so
+// tests can show the common untransformed case never takes that path.
+#[cfg(test)]
+aimer_tls::thread_local! {
+    static GENERAL_RECT_TRANSFORMS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+// Counts how often a plan derives the geometry of every node, so tests can
+// show it is reused while nothing that affects geometry has changed.
+#[cfg(test)]
+aimer_tls::thread_local! {
+    static PLAN_GEOMETRY_RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
-mod memory_tests {
-    use std::hint::black_box;
-    use aimer_time::Instant;
+fn plan_geometry_runs() -> usize {
+    PLAN_GEOMETRY_RUNS.with(std::cell::Cell::get)
+}
 
-    use super::*;
-    use crate::font::{FontFamily, FontStyle};
-    use crate::svg::{SvgScene, SvgViewport};
+#[cfg(test)]
+fn general_rect_transforms() -> usize {
+    GENERAL_RECT_TRANSFORMS.with(std::cell::Cell::get)
+}
 
-    /// A finished frame is handed to the raster thread by value, so the whole
-    /// draw list — every command payload included — has to be `Send`.
-    #[test]
-    fn draw_list_can_cross_a_thread_boundary() {
-        fn assert_send<T: Send>() {}
-        assert_send::<DrawCommand>();
-        assert_send::<DrawList>();
+#[cfg(test)]
+fn frame_derivations() -> usize {
+    FRAME_DERIVATIONS.with(std::cell::Cell::get)
+}
 
-        let mut list = DrawList::new();
-        list.fill_rect(
-            Rect::new(0.0, 0.0, 2.0, 2.0),
-            Color::red(),
-            [0.0; 4],
-            [0.0; 4],
-            Color::transparent(),
+#[cfg(test)]
+fn reset_node_lookups() {
+    NODE_LOOKUPS.with(|count| count.set(0));
+    FRAME_DERIVATIONS.with(|count| count.set(0));
+    GENERAL_RECT_TRANSFORMS.with(|count| count.set(0));
+    PLAN_GEOMETRY_RUNS.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+fn node_lookups() -> usize {
+    NODE_LOOKUPS.with(std::cell::Cell::get)
+}
+
+/// A retained tree of local paint lists and ordered child links.
+#[derive(Default)]
+pub struct DrawCommandList {
+    nodes: Vec<RenderNode>,
+    indices: HashMap<RenderNodeId, usize, crate::utilities::IdBuildHasher>,
+    roots: Vec<RenderNodeId>,
+    next_id: u64,
+    clip_escape_count: usize,
+    pending_damage: Vec<Rect>,
+    /// Advances whenever a node is added, handed out mutably, or the structure
+    /// is replaced. Those are the only ways a node's world rectangle can
+    /// change, so a cached rectangle is current while this is unchanged. It
+    /// may advance without any rectangle changing (a paint source is set
+    /// through the same accessor); that only costs a recomputation.
+    geometry_revision: u64,
+    /// Advances whenever the parent/child structure can change: a node is
+    /// added or the node array is replaced by a structure sync. The paint-order
+    /// plan caches the resolved positions of parents and children against it,
+    /// so every edit to `nodes`, `indices`, `roots`, `parent` or `children`
+    /// must advance it. Geometry, clip and paint edits must not.
+    topology_revision: u64,
+    /// Advances whenever a node starts or stops escaping its ancestors' clips.
+    /// `escapes` is derived against it and `topology_revision`.
+    escape_revision: u64,
+    /// Which nodes have an escaping descendant; read through
+    /// [`DrawCommandList::escapes_below`].
+    escapes: RefCell<escape_index::EscapeIndex>,
+    /// Positions of every parent and child, resolved lazily against
+    /// `topology_revision`; read through [`DrawCommandList::topology`].
+    topology: RefCell<render_order::Topology>,
+    /// The frame each node hands its children, as of the `geometry_revision`
+    /// stored beside it. A slot from an earlier revision is ignored, so no edit
+    /// has to clear anything: every way a node's geometry can change advances
+    /// the revision. See [`DrawCommandList::frame_at`].
+    world_frames: RefCell<Vec<Option<(u64, world::WorldFrame)>>>,
+    render_workspace: RefCell<render_order::RenderWorkspace>,
+    /// What each subtree covers, kept for as long as nothing inside it is
+    /// edited. See [`subtree_extent`].
+    extents: RefCell<subtree_extent::ExtentCache>,
+}
+
+impl DrawCommandList {
+    fn insert(
+        &mut self,
+        parent: Option<RenderNodeId>,
+        bounds: Rect,
+    ) -> Result<RenderNodeId, RenderTreeError> {
+        if !bounds.is_valid() {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+        self.geometry_revision = self.geometry_revision.wrapping_add(1);
+        self.topology_revision = self.topology_revision.wrapping_add(1);
+        let parent_index = match parent {
+            Some(parent) => Some(
+                *self
+                    .indices
+                    .get(&parent)
+                    .ok_or(RenderTreeError::MissingParent(parent))?,
+            ),
+            None => None,
+        };
+
+        let id = RenderNodeId(
+            self.next_id
+                .checked_add(1)
+                .expect("render node IDs exhausted"),
         );
-
-        let moved = std::thread::spawn(move || list.commands().len())
-            .join()
-            .expect("raster worker panicked");
-
-        assert_eq!(moved, 1);
+        self.next_id = id.get();
+        let index = self.nodes.len();
+        self.indices.insert(id, index);
+        self.nodes.push(RenderNode {
+            id,
+            parent,
+            children: Vec::new(),
+            bounds,
+            clip: None,
+            clip_radius: [0.0; 4],
+            escapes_clip: false,
+            animation_clip: None,
+            presentation_transform: Mat3::identity(),
+            presentation_opacity: 1.0,
+            transform: Mat3::identity(),
+            opacity: 1.0,
+            paint_source: RenderPaintSource::Unresolved,
+            draw_list: Shared::new(RefCell::new(DrawList {
+                dirty: true,
+                stale: true,
+                ..DrawList::default()
+            })),
+        });
+        if let Some(parent_index) = parent_index {
+            self.nodes[parent_index].children.push(id);
+        } else {
+            self.roots.push(id);
+        }
+        if let Some(bounds) = self.visible_node_bounds(id) {
+            self.push_damage(bounds);
+        }
+        Ok(id)
     }
 
-    #[test]
-    fn draw_list_stats_classify_recorded_work() {
-        let mut list = DrawList::new();
+    fn node(&self, id: RenderNodeId) -> Option<&RenderNode> {
+        #[cfg(test)]
+        NODE_LOOKUPS.with(|count| count.set(count.get() + 1));
+        self.indices
+            .get(&id)
+            .and_then(|index| self.nodes.get(*index))
+    }
 
-        list.draw_text(
-            Vec2d::new(0.0, 0.0),
-            Arc::from("stats"),
-            16.0,
-            Color::black(),
-            400,
-        );
-        list.load_image(&[1, 2, 3, 4], 1, 1);
-        list.draw_image(Rect::new(0.0, 0.0, 1.0, 1.0), 7);
+    fn node_mut(&mut self, id: RenderNodeId) -> Option<&mut RenderNode> {
+        let index = *self.indices.get(&id)?;
+        self.geometry_revision = self.geometry_revision.wrapping_add(1);
+        self.mark_extent_stale(index, true);
+        self.nodes.get_mut(index)
+    }
 
-        assert_eq!(
-            list.stats(),
-            DrawListStats {
-                commands: 3,
-                retained_layers: 0,
-                text_commands: 1,
-                image_draws: 1,
-                image_uploads: 1,
+    /// Hands out a node for an edit to its own `transform` or presentation only.
+    ///
+    /// Like [`Self::node_mut`], but the node's measured extent stays valid: an
+    /// extent is taken before the node's own placement, so only what is above
+    /// the node, which places it, is measured again. An edit to anything else
+    /// about the node must use `node_mut`.
+    fn node_mut_placement(&mut self, id: RenderNodeId) -> Option<&mut RenderNode> {
+        let index = *self.indices.get(&id)?;
+        self.geometry_revision = self.geometry_revision.wrapping_add(1);
+        self.mark_extent_stale(index, false);
+        self.nodes.get_mut(index)
+    }
+
+    /// Hands out a node for an edit that cannot change any node's geometry:
+    /// its paint source, its opacity, or the state of its local command list.
+    ///
+    /// Unlike [`Self::node_mut`] this leaves `geometry_revision` alone, so the
+    /// frames and plans derived from geometry stay valid across the repaints,
+    /// hovers and fades that make up most frames. An edit that touches bounds,
+    /// clips, transforms or the structure must use `node_mut`.
+    fn node_mut_paint(&mut self, id: RenderNodeId) -> Option<&mut RenderNode> {
+        let index = *self.indices.get(&id)?;
+        self.nodes.get_mut(index)
+    }
+
+    fn subtree_uses_only_local_v2(&self, id: RenderNodeId) -> bool {
+        let Some(node) = self.node(id) else {
+            return false;
+        };
+        node.paint_source == RenderPaintSource::LocalV2
+            && node
+                .children
+                .iter()
+                .copied()
+                .all(|child| self.subtree_uses_only_local_v2(child))
+    }
+
+    fn push_damage(&mut self, rect: Rect) {
+        if !rect.is_valid() || rect.width == 0.0 || rect.height == 0.0 {
+            return;
+        }
+        if let Some(existing) = self
+            .pending_damage
+            .iter_mut()
+            .find(|existing| existing.intersection(rect).is_some())
+        {
+            *existing = existing.union(rect);
+        } else {
+            self.pending_damage.push(rect);
+        }
+    }
+
+    /// Runs `apply`, which edits the geometry of nodes at or inside `tops`, and
+    /// damages the footprint of each of those subtrees from before and after.
+    ///
+    /// A subtree's footprint contains every descendant, so `tops` must be the
+    /// changed nodes that have no changed ancestor: walking the subtree of
+    /// every changed node instead visits each node once per ancestor, which
+    /// made a window resize cost the sum of all subtree sizes twice per node.
+    fn damage_subtrees_around<R>(
+        &mut self,
+        tops: &[RenderNodeId],
+        apply: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let before: Vec<Option<Rect>> = tops
+            .iter()
+            .map(|id| self.subtree_damage_bounds(*id))
+            .collect();
+        let result = apply(self);
+        for (id, old_bounds) in tops.iter().zip(before) {
+            let new_bounds = self.subtree_damage_bounds(*id);
+            if let Some(damage) = old_bounds.into_iter().chain(new_bounds).reduce(Rect::union) {
+                self.push_damage(damage);
             }
-        );
+        }
+        result
+    }
+}
+
+/// A shareable handle to the retained v2 render tree.
+#[derive(Clone, Default)]
+pub struct RenderTree {
+    draw_cmd: Shared<RefCell<DrawCommandList>>,
+}
+
+impl RenderTree {
+    /// Creates an empty retained render tree.
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    #[test]
-    fn removing_a_texture_clears_metadata_and_records_gpu_release() {
-        let mut list = DrawList::new();
-        list.set_texture_size(42, 640, 480);
-
-        list.remove_texture(42);
-
-        assert_eq!(list.get_texture_size(42), None);
-        assert!(matches!(
-            list.commands().last(),
-            Some(DrawCommand::RemoveTexture { texture_id: 42 })
-        ));
+    /// Adds a root element in paint order.
+    pub fn add_root(&self, bounds: Rect) -> Result<RenderNodeId, RenderTreeError> {
+        self.draw_cmd.borrow_mut().insert(None, bounds)
     }
 
-    #[test]
-    fn svg_commands_remain_interleaved_with_other_primitives() {
-        let scene = Arc::new(SvgScene {
-            viewport: SvgViewport {
-                width: 10.0,
-                height: 10.0,
-            },
-            nodes: Arc::from([]),
-            geometries: Arc::from([]),
-            resources: Arc::new(crate::svg::SvgResourceGraph::empty()),
-        });
-        let mut list = DrawList::new();
-        list.fill_rect(
-            Rect::new(0.0, 0.0, 2.0, 2.0),
-            Color::red(),
-            [0.0; 4],
-            [0.0; 4],
-            Color::transparent(),
-        );
-        list.draw_svg(scene, Rect::new(2.0, 2.0, 10.0, 10.0), Arc::from([]));
-        list.draw_image(Rect::new(12.0, 12.0, 2.0, 2.0), 7);
-
-        assert!(matches!(list.commands()[0], DrawCommand::FillRect { .. }));
-        assert!(matches!(list.commands()[1], DrawCommand::Svg { .. }));
-        assert!(matches!(list.commands()[2], DrawCommand::DrawImage { .. }));
+    /// Adds a child after the parent's existing children.
+    pub fn add_child(
+        &self,
+        parent: RenderNodeId,
+        bounds: Rect,
+    ) -> Result<RenderNodeId, RenderTreeError> {
+        self.draw_cmd.borrow_mut().insert(Some(parent), bounds)
     }
 
-    #[test]
-    fn styled_text_command_retains_face_selection() {
-        let mut list = DrawList::new();
-        list.draw_text_styled(
-            Vec2d::new(1.0, 2.0),
-            Arc::from("code"),
-            16.0,
-            Color::black(),
-            FontFamily::MONOSPACE,
-            FontStyle::Italic,
-            700,
-        );
-
-        assert!(matches!(
-            list.commands().last(),
-            Some(DrawCommand::DrawText {
-                font_family: FontFamily::MONOSPACE,
-                font_style: FontStyle::Italic,
-                font_weight: 700,
-                ..
-            })
-        ));
+    /// Synchronizes element order, parentage, and layout while retaining lists
+    /// for nodes whose IDs remain present.
+    ///
+    /// Descriptors are supplied in parent-before-child traversal order. A
+    /// structural change damages the previous and next visible bounds of
+    /// affected subtrees; a bounds-only change damages the changed node's
+    /// previous and next subtree footprints. IDs returned at each position
+    /// line up with `nodes`.
+    pub fn sync_structure(
+        &self,
+        nodes: &[RenderNodeSpec],
+    ) -> Result<Vec<RenderNodeId>, RenderTreeError> {
+        self.sync_structure_inner(nodes, None, None)
     }
 
-    #[test]
-    fn shadow_text_is_recorded_before_the_foreground_request() {
-        let mut list = DrawList::new();
-        list.draw_text_shadow_styled(
-            Vec2d::new(1.0, 2.0),
-            Arc::from("shadow"),
-            16.0,
-            Color::black(),
-            FontFamily::SANS_SERIF,
-            FontStyle::Normal,
-            400,
-            TextShadowRequest {
-                offset_x: 2.0,
-                offset_y: 1.0,
-                blur: 3.0,
-                color: Rgba8::new(0, 0, 0, 128),
-            },
-        );
-        list.draw_text_styled(
-            Vec2d::new(1.0, 2.0),
-            Arc::from("shadow"),
-            16.0,
-            Color::white(),
-            FontFamily::SANS_SERIF,
-            FontStyle::Normal,
-            400,
-        );
-
-        assert!(matches!(
-            list.commands().first(),
-            Some(DrawCommand::DrawText {
-                shadow: Some(_),
-                draw_glyphs: false,
-                ..
-            })
-        ));
-        assert!(matches!(
-            list.commands().get(1),
-            Some(DrawCommand::DrawText {
-                shadow: None,
-                draw_glyphs: true,
-                ..
-            })
-        ));
+    /// Synchronizes render nodes and their local clips as one geometry update.
+    ///
+    /// `clips` must align with `nodes`. Applying bounds and clips together
+    /// keeps moving viewports from damaging an intermediate position.
+    #[doc(hidden)]
+    pub fn sync_structure_with_clips(
+        &self,
+        nodes: &[RenderNodeSpec],
+        clips: &[Option<Rect>],
+    ) -> Result<Vec<RenderNodeId>, RenderTreeError> {
+        if nodes.len() != clips.len() || clips.iter().flatten().any(|clip| !clip.is_valid()) {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+        self.sync_structure_inner(nodes, Some(clips), None)
     }
 
-    #[test]
-    fn duplicate_hashed_image_loads_share_one_queued_command() {
-        let data = [1, 2, 3, 4];
-        let mut list = DrawList::new();
-
-        let first = list.load_image(&data, 1, 1);
-        let first_epoch = list.texture_cache_epoch();
-        let second = list.load_image(&data, 1, 1);
-
-        assert_eq!(first, second);
-        assert_eq!(list.texture_cache_epoch(), first_epoch);
-        assert_eq!(
-            list.commands()
+    /// Like [`Self::sync_structure_with_clips`], with corner radii for each clip.
+    ///
+    /// `radii` aligns with `nodes` and gives the top-left, top-right,
+    /// bottom-right, and bottom-left radii of the same node's clip in the
+    /// clip's local logical pixels. A radius on a node without a clip is
+    /// ignored by rendering. Radii must be finite and non-negative.
+    #[doc(hidden)]
+    pub fn sync_structure_with_clip_radii(
+        &self,
+        nodes: &[RenderNodeSpec],
+        clips: &[Option<Rect>],
+        radii: &[[f32; 4]],
+    ) -> Result<Vec<RenderNodeId>, RenderTreeError> {
+        if nodes.len() != clips.len()
+            || nodes.len() != radii.len()
+            || clips.iter().flatten().any(|clip| !clip.is_valid())
+            || radii
                 .iter()
-                .filter(|command| matches!(command, DrawCommand::LoadImage { .. }))
-                .count(),
-            1
-        );
+                .flatten()
+                .any(|radius| !radius.is_finite() || *radius < 0.0)
+        {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+        self.sync_structure_inner(nodes, Some(clips), Some(radii))
     }
 
-    #[test]
-    fn explicit_id_image_loads_are_not_deduplicated() {
-        let data = [1, 2, 3, 4];
-        let mut list = DrawList::new();
-
-        list.load_image_with_id(7, &data, 1, 1);
-        list.load_image_with_id(7, &data, 1, 1);
-
-        assert_eq!(
-            list.commands()
-                .iter()
-                .filter(|command| matches!(command, DrawCommand::LoadImageWithId { .. }))
-                .count(),
-            2
-        );
-    }
-
-    #[test]
-    fn replacing_same_sized_image_payload_advances_the_texture_epoch() {
-        let mut list = DrawList::new();
-        list.load_image_with_id(7, &[1, 2, 3, 4], 1, 1);
-        let first_upload = list.texture_cache_epoch();
-
-        list.load_image_with_id(7, &[4, 3, 2, 1], 1, 1);
-
-        assert!(list.texture_cache_epoch() > first_upload);
-    }
-
-    #[test]
-    fn evicted_texture_metadata_can_be_reactivated_by_a_reload() {
-        let mut list = DrawList::new();
-        list.set_texture_size(42, 640, 480);
-        let initial_epoch = list.texture_cache_epoch();
-        let serial = list
-            .texture_registry_serial(42)
-            .expect("the texture must be registered");
-
-        list.mark_texture_evicted(42, serial);
-
-        assert!(!list.is_texture_available(42));
-        assert_eq!(list.get_texture_size(42), None);
-        assert!(list.texture_cache_epoch() > initial_epoch);
-
-        list.set_texture_size(42, 640, 480);
-
-        assert!(list.is_texture_available(42));
-        assert_eq!(list.get_texture_size(42), Some((640, 480)));
-        assert!(list.texture_cache_epoch() > initial_epoch);
-    }
-
-    #[test]
-    fn a_replacement_draw_list_sees_shared_texture_metadata() {
-        let registry = Arc::new(TextureRegistry::default());
-        let mut submitted = DrawList::with_texture_registry(registry.clone());
-        let replacement = DrawList::with_texture_registry(registry);
-
-        submitted.set_texture_size(7, 320, 200);
-        let serial = submitted
-            .texture_registry_serial(7)
-            .expect("the texture must be registered");
-
-        assert!(replacement.is_texture_available(7));
-        assert_eq!(replacement.get_texture_size(7), Some((320, 200)));
-
-        submitted.mark_texture_evicted(7, serial);
-
-        assert!(!replacement.is_texture_available(7));
-        assert_eq!(replacement.get_texture_size(7), None);
-    }
-
-    #[test]
-    fn an_eviction_from_a_draw_list_without_local_metadata_updates_the_registry() {
-        let registry = Arc::new(TextureRegistry::default());
-        let mut uploaded = DrawList::with_texture_registry(registry.clone());
-        let observer = DrawList::with_texture_registry(registry);
-
-        uploaded.set_texture_size(7, 320, 200);
-        let serial = uploaded
-            .texture_registry_serial(7)
-            .expect("the texture must be registered");
-
-        observer.mark_texture_evicted(7, serial);
-
-        assert!(!uploaded.is_texture_available(7));
-        assert_eq!(uploaded.get_texture_size(7), None);
-        assert!(!observer.is_texture_available(7));
-        assert_eq!(observer.get_texture_size(7), None);
-    }
-
-    #[test]
-    fn a_reused_draw_list_does_not_treat_evicted_texture_metadata_as_available() {
-        let registry = Arc::new(TextureRegistry::default());
-        let mut submitted = DrawList::with_texture_registry(registry.clone());
-        let mut replacement = DrawList::with_texture_registry(registry.clone());
-
-        submitted.set_texture_size(7, 320, 200);
-        let (_, _, serial, _) = registry
-            .texture_state(7)
-            .expect("the uploaded texture must be registered");
-        replacement
-            .texture_sizes
-            .insert(7, TextureMetadata::new(320, 200, serial));
-
-        submitted.mark_texture_evicted(7, serial);
-
-        assert!(!replacement.is_texture_available(7));
-        assert_eq!(replacement.get_texture_size(7), None);
-    }
-
-    #[test]
-    fn re_registering_an_available_texture_does_not_hide_an_in_flight_eviction() {
-        let registry = Arc::new(TextureRegistry::default());
-        let mut submitted = DrawList::with_texture_registry(registry.clone());
-        let mut replacement = DrawList::with_texture_registry(registry);
-
-        submitted.set_texture_size(7, 320, 200);
-        replacement.set_texture_size(7, 320, 200);
-        let serial = submitted
-            .texture_registry_serial(7)
-            .expect("the texture must be registered");
-
-        submitted.mark_texture_evicted(7, serial);
-
-        assert!(!replacement.is_texture_available(7));
-        assert_eq!(replacement.get_texture_size(7), None);
-
-        replacement.set_texture_size(7, 320, 200);
-
-        assert!(replacement.is_texture_available(7));
-        assert_eq!(replacement.get_texture_size(7), Some((320, 200)));
-    }
-
-    #[test]
-    fn an_older_eviction_cannot_hide_a_newer_reload() {
-        let registry = Arc::new(TextureRegistry::default());
-        let mut submitted = DrawList::with_texture_registry(registry.clone());
-        let mut replacement = DrawList::with_texture_registry(registry);
-
-        submitted.set_texture_size(7, 320, 200);
-        let serial = submitted
-            .texture_registry_serial(7)
-            .expect("the texture must be registered");
-        replacement.load_image_with_id(7, &[1, 2, 3, 4], 320, 200);
-        submitted.mark_texture_evicted(7, serial);
-
-        assert!(replacement.is_texture_available(7));
-        assert_eq!(replacement.get_texture_size(7), Some((320, 200)));
-        // The submitted list may be recycled after the newer frame has
-        // already published its replacement metadata.
-        assert!(submitted.is_texture_available(7));
-        assert_eq!(submitted.get_texture_size(7), Some((320, 200)));
-    }
-
-    #[test]
-    fn an_older_eviction_cannot_hide_a_newer_hashed_reload() {
-        let registry = Arc::new(TextureRegistry::default());
-        let data = [1, 2, 3, 4];
-        let mut submitted = DrawList::with_texture_registry(registry.clone());
-        let mut replacement = DrawList::with_texture_registry(registry);
-
-        let texture_id = submitted.load_image(&data, 320, 200);
-        let serial = submitted
-            .texture_registry_serial(texture_id)
-            .expect("the texture must be registered");
-        assert_eq!(replacement.load_image(&data, 320, 200), texture_id);
-
-        submitted.mark_texture_evicted(texture_id, serial);
-
-        assert!(replacement.is_texture_available(texture_id));
-        assert_eq!(replacement.get_texture_size(texture_id), Some((320, 200)));
-        // The submitted list may be recycled after the newer frame has
-        // already published its replacement metadata.
-        assert!(submitted.is_texture_available(texture_id));
-        assert_eq!(submitted.get_texture_size(texture_id), Some((320, 200)));
-    }
-
-    #[test]
-    fn in_flight_draw_lists_protect_shared_image_references() {
-        let registry = Arc::new(TextureRegistry::default());
-        let mut submitted = DrawList::with_texture_registry(registry.clone());
-        let mut replacement = DrawList::with_texture_registry(registry);
-
-        submitted.draw_image(Rect::new(0.0, 0.0, 1.0, 1.0), 7);
-        assert!(replacement.has_live_texture_reference(7));
-
-        replacement.draw_image(Rect::new(0.0, 0.0, 1.0, 1.0), 7);
-        submitted.clear();
-        assert!(replacement.has_live_texture_reference(7));
-
-        replacement.clear();
-        assert!(!replacement.has_live_texture_reference(7));
-    }
-
-    #[test]
-    fn retained_commands_rebase_local_transforms_without_copying_bulk_payloads() {
-        let mut recorded = DrawList::new();
-        recorded.save();
-        recorded.translate(3.0, 4.0);
-        recorded.fill_rect(
-            Rect::new(0.0, 0.0, 10.0, 10.0),
-            Color::white(),
-            [0.0; 4],
-            [0.0; 4],
-            Color::transparent(),
-        );
-        recorded.restore();
-        let retained = recorded
-            .retained_snapshot()
-            .expect("basic paint commands should be retainable");
-
-        let mut replayed = DrawList::new();
-        replayed.translate(10.0, 20.0);
-        let base = *replayed.current_transform();
-        replayed.append_retained(&retained, base);
-
-        assert_eq!(retained.len(), 4);
-        assert!(matches!(
-            replayed.commands().get(1),
-            Some(DrawCommand::PushTransform { matrix })
-                if matrix.cols[2][0] == 10.0 && matrix.cols[2][1] == 20.0
-        ));
-        assert!(matches!(
-            replayed.commands().get(2),
-            Some(DrawCommand::SetTransform { matrix })
-                if matrix.cols[2][0] == 13.0 && matrix.cols[2][1] == 24.0
-        ));
-    }
-
-    #[test]
-    fn retained_snapshot_rejects_commands_that_would_copy_or_rebuild_bulk_state() {
-        let mut list = DrawList::new();
-        list.draw_rich_text(
-            Vec2d::default(),
-            vec![RichTextSegment::new("rich")],
-            16.0,
-            Color::black(),
-        );
-        assert!(list.retained_snapshot().is_none());
-
-        let mut upload = DrawList::new();
-        upload.load_image(&[1, 2, 3, 4], 1, 1);
-        assert!(upload.retained_snapshot().is_none());
-    }
-
-    #[test]
-    fn retained_layer_is_recorded_as_one_command() {
-        let mut recorded = DrawList::new();
-        recorded.fill_rect(
-            Rect::new(0.0, 0.0, 10.0, 10.0),
-            Color::white(),
-            [0.0; 4],
-            [0.0; 4],
-            Color::transparent(),
-        );
-        let content = Arc::new(RetainedLayerContent::from_snapshot(
-            recorded
-                .retained_snapshot()
-                .expect("a plain rectangle can be retained"),
-        ));
-
-        let mut frame = DrawList::new();
-        frame.draw_retained_layer(7, Rect::new(0.0, 0.0, 10.0, 10.0), content);
-
-        assert_eq!(frame.commands().len(), 1);
-        assert!(matches!(
-            frame.commands().first(),
-            Some(DrawCommand::RetainedLayer { layer_id: 7, .. })
-        ));
-    }
-
-    #[test]
-    fn padded_text_shadow_is_safe_and_translated_only_when_rasterized() {
-        let mut recorded = DrawList::new();
-        recorded.push(DrawCommand::DrawText {
-            position: Vec2d::new(0.0, 16.0),
-            text: Arc::from("shadow"),
-            font_size: 16.0,
-            color: Color::white(),
-            bounds_width: Some(100.0),
-            bounds_height: Some(24.0),
-            overflow: TextOverflowMode::Clip,
-            horizontal_align: TextHorizontalAlign::Left,
-            font_family: FontFamily::SANS_SERIF,
-            font_style: FontStyle::Normal,
-            font_weight: 400,
-            shadow: Some(TextShadowRequest {
-                offset_x: 2.0,
-                offset_y: -3.0,
-                blur: 4.0,
-                color: Rgba8::new(0, 0, 0, 255),
-            }),
-            draw_glyphs: true,
+    /// Applies new bounds, clips and clip radii to existing nodes, leaving the
+    /// tree's structure alone.
+    ///
+    /// This is the part of [`Self::sync_structure_with_clip_radii`] that runs
+    /// when no node was added, removed or re-parented, for a caller that already
+    /// knows that and has descriptors for only some of the nodes. A node whose
+    /// geometry is unchanged costs one comparison and records no damage. Nothing
+    /// is applied if any descriptor is invalid or names an unknown node.
+    #[doc(hidden)]
+    pub fn sync_geometry(&self, updates: &[NodeGeometry]) -> Result<(), RenderTreeError> {
+        if updates.iter().any(|update| {
+            !update.bounds.is_valid()
+                || update.clip.is_some_and(|clip| !clip.is_valid())
+                || update
+                    .clip_radius
+                    .iter()
+                    .any(|radius| !radius.is_finite() || *radius < 0.0)
+        }) {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+        let mut tree = self.draw_cmd.borrow_mut();
+        if let Some(missing) = updates
+            .iter()
+            .find(|update| tree.node(update.node).is_none())
+        {
+            return Err(RenderTreeError::UnknownNode(missing.node));
+        }
+        let changed: HashSet<RenderNodeId> = updates
+            .iter()
+            .filter(|update| {
+                let node = tree.node(update.node).expect("presence checked above");
+                node.bounds != update.bounds
+                    || node.clip != update.clip
+                    || node.clip_radius != update.clip_radius
+            })
+            .map(|update| update.node)
+            .collect();
+        let tops: Vec<RenderNodeId> = changed
+            .iter()
+            .copied()
+            .filter(|id| {
+                let mut ancestor = tree.node(*id).and_then(|node| node.parent);
+                while let Some(parent) = ancestor {
+                    if changed.contains(&parent) {
+                        return false;
+                    }
+                    ancestor = tree.node(parent).and_then(|node| node.parent);
+                }
+                true
+            })
+            .collect();
+        tree.damage_subtrees_around(&tops, |tree| {
+            for update in updates {
+                if !changed.contains(&update.node) {
+                    continue;
+                }
+                let node = tree.node_mut(update.node).expect("presence checked above");
+                node.assign_bounds(update.bounds);
+                node.clip = update.clip;
+                node.clip_radius = update.clip_radius;
+            }
         });
-        let content = RetainedLayerContent::from_snapshot_with_padding(
-            recorded
-                .retained_snapshot()
-                .expect("text commands should be retainable"),
-            RetainedLayerPadding::new(2.0, 7.0, 6.0, 1.0),
-        );
-
-        assert!(content.is_compositor_safe());
-        assert_eq!(
-            content.padding(),
-            RetainedLayerPadding::new(2.0, 7.0, 6.0, 1.0)
-        );
-
-        let layer_draw_list = content.to_draw_list();
-        assert!(matches!(
-            layer_draw_list.commands().first(),
-            Some(DrawCommand::SetTransform { matrix })
-                if matrix.cols[2][0] == 2.0 && matrix.cols[2][1] == 7.0
-        ));
-        assert!(matches!(
-            layer_draw_list.commands().get(1),
-            Some(DrawCommand::DrawText { position, .. })
-                if position.x == 0.0 && position.y == 16.0
-        ));
+        Ok(())
     }
 
-    #[test]
-    fn insufficient_text_shadow_padding_uses_direct_fallback() {
-        let mut recorded = DrawList::new();
-        recorded.push(DrawCommand::DrawText {
-            position: Vec2d::new(0.0, 16.0),
-            text: Arc::from("shadow"),
-            font_size: 16.0,
-            color: Color::white(),
-            bounds_width: Some(100.0),
-            bounds_height: Some(24.0),
-            overflow: TextOverflowMode::Clip,
-            horizontal_align: TextHorizontalAlign::Left,
-            font_family: FontFamily::SANS_SERIF,
-            font_style: FontStyle::Normal,
-            font_weight: 400,
-            shadow: Some(TextShadowRequest {
-                offset_x: 0.0,
-                offset_y: 0.0,
-                blur: 4.0,
-                color: Rgba8::new(0, 0, 0, 255),
-            }),
-            draw_glyphs: true,
-        });
-        let content = Arc::new(RetainedLayerContent::from_snapshot_with_padding(
-            recorded
-                .retained_snapshot()
-                .expect("text commands should be retainable"),
-            RetainedLayerPadding::new(3.0, 4.0, 4.0, 4.0),
-        ));
-        assert!(!content.is_compositor_safe());
+    fn sync_structure_inner(
+        &self,
+        nodes: &[RenderNodeSpec],
+        clip_updates: Option<&[Option<Rect>]>,
+        radius_updates: Option<&[[f32; 4]]>,
+    ) -> Result<Vec<RenderNodeId>, RenderTreeError> {
+        // Radii are part of the clip update: without a radius slice the clip
+        // is square.
+        let radius_at = |index: usize| radius_updates.map_or([0.0; 4], |radii| radii[index]);
+        let mut tree = self.draw_cmd.borrow_mut();
+        let mut seen = HashSet::with_capacity(nodes.len());
+        let mut ids = Vec::with_capacity(nodes.len());
+        let mut next_id = tree.next_id;
 
-        let mut frame = DrawList::new();
-        frame.draw_retained_layer(10, Rect::new(0.0, 0.0, 100.0, 24.0), content);
+        for (index, spec) in nodes.iter().enumerate() {
+            if !spec.bounds.is_valid() {
+                return Err(RenderTreeError::InvalidBounds);
+            }
+            if let Some(parent) = spec.parent_index
+                && parent >= index
+            {
+                return Err(RenderTreeError::InvalidParentIndex {
+                    node: index,
+                    parent,
+                });
+            }
 
-        assert_eq!(frame.stats().retained_layers, 0);
-        assert!(matches!(
-            frame.commands().first(),
-            Some(DrawCommand::DrawText { position, .. })
-                if position.x == 0.0 && position.y == 16.0
-        ));
+            let id = if let Some(id) = spec.existing_id {
+                if !seen.insert(id) {
+                    return Err(RenderTreeError::DuplicateNode(id));
+                }
+                if tree.node(id).is_none() {
+                    return Err(RenderTreeError::UnknownNode(id));
+                }
+                id
+            } else {
+                next_id = next_id.checked_add(1).expect("render node IDs exhausted");
+                RenderNodeId(next_id)
+            };
+            ids.push(id);
+        }
+
+        let mut parents = Vec::with_capacity(nodes.len());
+        let mut children = vec![Vec::new(); nodes.len()];
+        let mut roots = Vec::new();
+        for (index, spec) in nodes.iter().enumerate() {
+            let parent = spec.parent_index.map(|parent| ids[parent]);
+            if let Some(parent_index) = spec.parent_index {
+                children[parent_index].push(ids[index]);
+            } else {
+                roots.push(ids[index]);
+            }
+            parents.push(parent);
+        }
+
+        let structure_changed = tree.nodes.len() != nodes.len()
+            || tree.roots != roots
+            || nodes.iter().enumerate().any(|(index, _)| {
+                let Some(old) = tree.node(ids[index]) else {
+                    return true;
+                };
+                old.parent != parents[index] || old.children != children[index]
+            });
+
+        if !structure_changed {
+            // `covered[index]` is set for a changed node and everything below
+            // one, so the first changed node on each path is the only one whose
+            // subtree footprint has to be damaged.
+            let mut covered = vec![false; nodes.len()];
+            let mut changed = Vec::new();
+            let mut tops = Vec::new();
+            for (index, spec) in nodes.iter().enumerate() {
+                let id = ids[index];
+                let node = tree.node(id).ok_or(RenderTreeError::UnknownNode(id))?;
+                let clip_changed = clip_updates.is_some_and(|clips| {
+                    node.clip != clips[index] || node.clip_radius != radius_at(index)
+                });
+                let is_changed = node.bounds != spec.bounds || clip_changed;
+                let under_changed = spec.parent_index.is_some_and(|parent| covered[parent]);
+                covered[index] = under_changed || is_changed;
+                if is_changed {
+                    changed.push(index);
+                    if !under_changed {
+                        tops.push(id);
+                    }
+                }
+            }
+            tree.damage_subtrees_around(&tops, |tree| {
+                for index in changed {
+                    let Some(node) = tree.node_mut(ids[index]) else {
+                        continue;
+                    };
+                    node.assign_bounds(nodes[index].bounds);
+                    if let Some(clips) = clip_updates {
+                        node.clip = clips[index];
+                        node.clip_radius = radius_at(index);
+                    }
+                }
+            });
+            return Ok(ids);
+        }
+
+        // A structural edit only changes pixels in the changed parent
+        // subtrees. Damaging the union of every root here made a virtualized
+        // row-window update repaint the complete window whenever the app root
+        // filled it, even though the changed rows were clipped by a scroll
+        // viewport. Capture the old clipped bounds before replacing the node
+        // array, then pair them with the corresponding new bounds below.
+        let mut structural_damage_ids = HashSet::new();
+        for (index, id) in ids.iter().copied().enumerate() {
+            if let Some(old) = tree.node(id) {
+                if old.children != children[index]
+                    || old.bounds != nodes[index].bounds
+                    || clip_updates.is_some_and(|clips| {
+                        old.clip != clips[index] || old.clip_radius != radius_at(index)
+                    })
+                {
+                    structural_damage_ids.insert(id);
+                }
+                if old.parent != parents[index] {
+                    structural_damage_ids.insert(old.parent.unwrap_or(id));
+                    structural_damage_ids.insert(parents[index].unwrap_or(id));
+                    structural_damage_ids.insert(id);
+                }
+            } else {
+                structural_damage_ids.insert(parents[index].unwrap_or(id));
+            }
+        }
+        for old in &tree.nodes {
+            if !seen.contains(&old.id) {
+                structural_damage_ids.insert(old.parent.unwrap_or(old.id));
+            }
+        }
+        let old_retained_roots = tree
+            .roots
+            .iter()
+            .filter(|id| roots.contains(id))
+            .copied()
+            .collect::<Vec<_>>();
+        let new_retained_roots = roots
+            .iter()
+            .filter(|id| tree.roots.contains(id))
+            .copied()
+            .collect::<Vec<_>>();
+        if old_retained_roots != new_retained_roots {
+            structural_damage_ids.extend(old_retained_roots);
+            structural_damage_ids.extend(new_retained_roots);
+        }
+        let mut structural_damage_ids = structural_damage_ids.into_iter().collect::<Vec<_>>();
+        structural_damage_ids.sort_unstable_by_key(|id| id.get());
+        let old_damage = tree.visible_subtree_bounds_of(&structural_damage_ids);
+        let mut previous = mem::take(&mut tree.nodes)
+            .into_iter()
+            .map(|node| (node.id, node))
+            .collect::<HashMap<_, _>>();
+        let mut synchronized = Vec::with_capacity(nodes.len());
+        let mut clip_escape_count = 0;
+        for (index, spec) in nodes.iter().enumerate() {
+            let id = ids[index];
+            let mut node = previous.remove(&id).unwrap_or_else(|| RenderNode {
+                id,
+                parent: None,
+                children: Vec::new(),
+                bounds: spec.bounds,
+                clip: None,
+                clip_radius: [0.0; 4],
+                escapes_clip: false,
+                animation_clip: None,
+                presentation_transform: Mat3::identity(),
+                presentation_opacity: 1.0,
+                transform: Mat3::identity(),
+                opacity: 1.0,
+                paint_source: RenderPaintSource::Unresolved,
+                draw_list: Shared::new(RefCell::new(DrawList {
+                    dirty: true,
+                    stale: true,
+                    ..DrawList::default()
+                })),
+            });
+            node.parent = parents[index];
+            node.children = mem::take(&mut children[index]);
+            node.assign_bounds(spec.bounds);
+            if let Some(clips) = clip_updates {
+                node.clip = clips[index];
+                node.clip_radius = radius_at(index);
+            }
+            clip_escape_count += usize::from(node.escapes_clip);
+            synchronized.push(node);
+        }
+
+        tree.geometry_revision = tree.geometry_revision.wrapping_add(1);
+        tree.topology_revision = tree.topology_revision.wrapping_add(1);
+        tree.nodes = synchronized;
+        tree.clip_escape_count = clip_escape_count;
+        tree.indices = tree
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.id, index))
+            .collect();
+        tree.roots = roots;
+        tree.next_id = next_id;
+
+        let new_damage = tree.visible_subtree_bounds_of(&structural_damage_ids);
+        for damage in old_damage.into_iter().chain(new_damage) {
+            tree.push_damage(damage);
+        }
+        Ok(ids)
     }
 
-    #[test]
-    fn retained_layer_falls_back_for_unsafe_effects_and_oversized_bounds() {
-        let mut recorded = DrawList::new();
-        recorded.draw_shadow_rect(
-            Rect::new(0.0, 0.0, 10.0, 10.0),
-            Color::black(),
-            [1.0, 1.0, 2.0, 0.0],
-            [0.0; 4],
-            false,
-            [0.0; 3],
-        );
-        let unsafe_content = Arc::new(RetainedLayerContent::from_snapshot(
-            recorded
-                .retained_snapshot()
-                .expect("shadow commands remain valid direct-path snapshots"),
-        ));
-        assert!(!unsafe_content.is_compositor_safe());
-
-        let mut unsafe_frame = DrawList::new();
-        unsafe_frame.draw_retained_layer(8, Rect::new(0.0, 0.0, 10.0, 10.0), unsafe_content);
-        assert_eq!(unsafe_frame.stats().retained_layers, 0);
-        assert!(matches!(
-            unsafe_frame.commands().first(),
-            Some(DrawCommand::DrawShadowRect { .. })
-        ));
-
-        let mut plain = DrawList::new();
-        plain.fill_rect(
-            Rect::new(0.0, 0.0, 10.0, 10.0),
-            Color::white(),
-            [0.0; 4],
-            [0.0; 4],
-            Color::transparent(),
-        );
-        let plain_content = Arc::new(RetainedLayerContent::from_snapshot(
-            plain
-                .retained_snapshot()
-                .expect("plain commands should be retainable"),
-        ));
-        let mut oversized_frame = DrawList::new();
-        oversized_frame.draw_retained_layer(
-            9,
-            Rect::new(0.0, 0.0, RETAINED_LAYER_MAX_DIMENSION as f32 + 1.0, 10.0),
-            plain_content,
-        );
-        assert_eq!(oversized_frame.stats().retained_layers, 0);
-        assert!(matches!(
-            oversized_frame.commands().first(),
-            Some(DrawCommand::FillRect { .. })
-        ));
+    /// Creates a build context for one element's local paint list.
+    pub fn context(&self, element: RenderNodeId) -> Result<CurrentBuildContext, RenderTreeError> {
+        if self.draw_cmd.borrow().node(element).is_none() {
+            return Err(RenderTreeError::UnknownNode(element));
+        }
+        Ok(CurrentBuildContext {
+            draw_cmd: self.draw_cmd.clone(),
+            element,
+        })
     }
 
-    fn patterned_bytes(len: usize) -> Vec<u8> {
-        (0..len)
-            .map(|index| (index as u8).wrapping_mul(31).wrapping_add(7))
+    /// Returns the paint source currently selected for one element.
+    pub fn paint_source(
+        &self,
+        element: RenderNodeId,
+    ) -> Result<RenderPaintSource, RenderTreeError> {
+        self.draw_cmd
+            .borrow()
+            .node(element)
+            .map(|node| node.paint_source)
+            .ok_or(RenderTreeError::UnknownNode(element))
+    }
+
+    /// Returns whether this element's local v2 draw list needs recording.
+    pub fn needs_recording(&self, element: RenderNodeId) -> Result<bool, RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        Ok(node.draw_list.borrow().needs_recording())
+    }
+
+    /// Changes the paint source for one retained node.
+    pub fn set_paint_source(
+        &self,
+        element: RenderNodeId,
+        source: RenderPaintSource,
+    ) -> Result<(), RenderTreeError> {
+        let mut tree = self.draw_cmd.borrow_mut();
+        let current_source = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?
+            .paint_source;
+        if current_source == source {
+            return Ok(());
+        }
+        let bounds = tree.visible_subtree_bounds(element);
+        let node = tree
+            .node_mut_paint(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        if node.draw_list.borrow().recording {
+            return Err(RenderTreeError::RecorderAlreadyOpen(element));
+        }
+        node.paint_source = source;
+        if let Some(bounds) = bounds {
+            tree.push_damage(bounds);
+        }
+        Ok(())
+    }
+
+    /// Changes an element's local bounds and damages both its old and new area.
+    pub fn set_bounds(&self, element: RenderNodeId, bounds: Rect) -> Result<(), RenderTreeError> {
+        if !bounds.is_valid() {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+        let mut tree = self.draw_cmd.borrow_mut();
+        let current_bounds = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?
+            .bounds;
+        if current_bounds == bounds {
+            return Ok(());
+        }
+        let old = tree.visible_subtree_bounds(element);
+        let node = tree
+            .node_mut(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        node.assign_bounds(bounds);
+        let new = tree.visible_subtree_bounds(element);
+        if let Some(damage) = old.into_iter().chain(new).reduce(Rect::union) {
+            tree.push_damage(damage);
+        }
+        Ok(())
+    }
+
+    /// Sets the node-local transform inherited by its retained descendants.
+    ///
+    /// The transform changes presentation geometry and damage only; it leaves
+    /// every node's local command list and revision untouched. The supplied
+    /// matrix maps coordinates relative to this node's origin. It must be
+    /// finite and produce finite subtree bounds.
+    pub fn set_transform(
+        &self,
+        element: RenderNodeId,
+        transform: Mat3,
+    ) -> Result<(), RenderTreeError> {
+        if !transform
+            .cols
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+        {
+            return Err(RenderTreeError::InvalidTransform);
+        }
+        let mut tree = self.draw_cmd.borrow_mut();
+        let old_transform = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?
+            .transform;
+        if old_transform == transform {
+            return Ok(());
+        }
+        let old_bounds = tree.damage_footprint(element);
+        tree.node_mut_placement(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?
+            .transform = transform;
+        if !tree.subtree_is_finite(element) {
+            tree.node_mut_placement(element)
+                .ok_or(RenderTreeError::UnknownNode(element))?
+                .transform = old_transform;
+            return Err(RenderTreeError::InvalidTransform);
+        }
+        let new_bounds = tree.damage_footprint(element);
+        if let Some(damage) = old_bounds.into_iter().chain(new_bounds).reduce(Rect::union) {
+            tree.push_damage(damage);
+        }
+        Ok(())
+    }
+
+    fn set_presentation(
+        &self,
+        element: RenderNodeId,
+        transform: Mat3,
+        opacity: f32,
+    ) -> Result<(), RenderTreeError> {
+        if !transform
+            .cols
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+        {
+            return Err(RenderTreeError::InvalidTransform);
+        }
+        if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+            return Err(RenderTreeError::InvalidOpacity);
+        }
+        let mut tree = self.draw_cmd.borrow_mut();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        if node.presentation_transform == transform && node.presentation_opacity == opacity {
+            return Ok(());
+        }
+        let old_transform = node.presentation_transform;
+        let old_opacity = node.presentation_opacity;
+        let old_bounds = tree.damage_footprint(element);
+        let node = tree
+            .node_mut_placement(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        node.presentation_transform = transform;
+        node.presentation_opacity = opacity;
+        if !tree.subtree_is_finite(element) {
+            let node = tree
+                .node_mut_placement(element)
+                .ok_or(RenderTreeError::UnknownNode(element))?;
+            node.presentation_transform = old_transform;
+            node.presentation_opacity = old_opacity;
+            return Err(RenderTreeError::InvalidTransform);
+        }
+        let new_bounds = tree.damage_footprint(element);
+        if let Some(damage) = old_bounds.into_iter().chain(new_bounds).reduce(Rect::union) {
+            tree.push_damage(damage);
+        }
+        Ok(())
+    }
+
+    /// Applies a local clip to the element and its descendants.
+    pub fn set_clip(
+        &self,
+        element: RenderNodeId,
+        clip: Option<Rect>,
+    ) -> Result<(), RenderTreeError> {
+        if clip.is_some_and(|clip| !clip.is_valid()) {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+        let mut tree = self.draw_cmd.borrow_mut();
+        if tree.node(element).is_none() {
+            return Err(RenderTreeError::UnknownNode(element));
+        }
+        // This setter describes a square clip: it also clears any radius.
+        if tree
+            .node(element)
+            .is_some_and(|node| node.clip == clip && node.clip_radius == [0.0; 4])
+        {
+            return Ok(());
+        }
+        let old_bounds = tree.visible_subtree_bounds(element);
+        let node = tree
+            .node_mut(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        node.clip = clip;
+        node.clip_radius = [0.0; 4];
+        let new_bounds = tree.visible_subtree_bounds(element);
+        if let Some(damage) = old_bounds.into_iter().chain(new_bounds).reduce(Rect::union) {
+            tree.push_damage(damage);
+        }
+        Ok(())
+    }
+
+    /// Applies a local clip with rounded corners to the element and its
+    /// descendants.
+    ///
+    /// `radius` is top-left, top-right, bottom-right, bottom-left in the
+    /// element's own logical pixels, so it scales with the node's presentation
+    /// transform exactly as the clip rectangle does. It is dropped when `clip`
+    /// is `None`. An unchanged clip and radius record no damage, which lets a
+    /// caller update the radius every frame of an animation.
+    #[doc(hidden)]
+    pub fn set_clip_with_radius(
+        &self,
+        element: RenderNodeId,
+        clip: Option<Rect>,
+        radius: [f32; 4],
+    ) -> Result<(), RenderTreeError> {
+        if clip.is_some_and(|clip| !clip.is_valid())
+            || radius.iter().any(|corner| !corner.is_finite() || *corner < 0.0)
+        {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+        let radius = if clip.is_some() { radius } else { [0.0; 4] };
+        let mut tree = self.draw_cmd.borrow_mut();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        if node.clip == clip && node.clip_radius == radius {
+            return Ok(());
+        }
+        let old_bounds = tree.visible_subtree_bounds(element);
+        let node = tree
+            .node_mut(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        node.clip = clip;
+        node.clip_radius = radius;
+        let new_bounds = tree.visible_subtree_bounds(element);
+        if let Some(damage) = old_bounds.into_iter().chain(new_bounds).reduce(Rect::union) {
+            tree.push_damage(damage);
+        }
+        Ok(())
+    }
+
+    /// Changes an element's local bounds and clip as one geometry update.
+    ///
+    /// This is useful for moving a clipped viewport child: applying bounds
+    /// before its compensating clip would otherwise damage the intermediate
+    /// position as well as the old and new footprints.
+    pub fn set_geometry(
+        &self,
+        element: RenderNodeId,
+        bounds: Rect,
+        clip: Option<Rect>,
+    ) -> Result<(), RenderTreeError> {
+        if !bounds.is_valid() || clip.is_some_and(|clip| !clip.is_valid()) {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+        let mut tree = self.draw_cmd.borrow_mut();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        if node.bounds == bounds && node.clip == clip && node.clip_radius == [0.0; 4] {
+            return Ok(());
+        }
+        let old_bounds = tree.visible_subtree_bounds(element);
+        let node = tree
+            .node_mut(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        node.bounds = bounds;
+        node.clip = clip;
+        node.clip_radius = [0.0; 4];
+        let new_bounds = tree.visible_subtree_bounds(element);
+        if let Some(damage) = old_bounds.into_iter().chain(new_bounds).reduce(Rect::union) {
+            tree.push_damage(damage);
+        }
+        Ok(())
+    }
+
+    /// Sets node opacity without invalidating its local draw commands.
+    ///
+    /// A node with children becomes an opacity group so overlapping
+    /// descendants are blended together once. A leaf carries opacity directly
+    /// on its [`RenderItem`]. Both cases damage the node's subtree bounds.
+    pub fn set_opacity(&self, element: RenderNodeId, opacity: f32) -> Result<(), RenderTreeError> {
+        if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+            return Err(RenderTreeError::InvalidOpacity);
+        }
+        let mut tree = self.draw_cmd.borrow_mut();
+        let current_opacity = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?
+            .opacity;
+        if current_opacity == opacity {
+            return Ok(());
+        }
+        let bounds = tree.visible_subtree_bounds(element);
+        let node = tree
+            .node_mut_paint(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        node.opacity = opacity;
+        if let Some(bounds) = bounds {
+            tree.push_damage(bounds);
+        }
+        Ok(())
+    }
+
+    /// Returns the transform and opacity a parent last published for a node
+    /// with [`Self::set_presentation`], separate from any compositor animation.
+    #[doc(hidden)]
+    pub fn presentation(&self, element: RenderNodeId) -> Result<(Mat3, f32), RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        Ok((node.presentation_transform, node.presentation_opacity))
+    }
+
+    /// Returns the transform and opacity the compositor currently applies to a
+    /// node, as last set by [`Self::set_compositor_animation`].
+    ///
+    /// A node that was never animated reports the identity transform and full
+    /// opacity.
+    #[doc(hidden)]
+    pub fn compositor_animation(
+        &self,
+        element: RenderNodeId,
+    ) -> Result<(Mat3, f32), RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        Ok((node.transform, node.opacity))
+    }
+
+    /// Updates an animation transform, opacity, and pre-transform clip as one
+    /// retained presentation change without re-recording local commands.
+    #[doc(hidden)]
+    pub fn set_compositor_animation(
+        &self,
+        element: RenderNodeId,
+        transform: Mat3,
+        opacity: f32,
+        clip: Option<Rect>,
+    ) -> Result<(), RenderTreeError> {
+        if !transform
+            .cols
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+        {
+            return Err(RenderTreeError::InvalidTransform);
+        }
+        if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+            return Err(RenderTreeError::InvalidOpacity);
+        }
+        if clip.is_some_and(|clip| !clip.is_valid()) {
+            return Err(RenderTreeError::InvalidBounds);
+        }
+
+        let mut tree = self.draw_cmd.borrow_mut();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        if node.transform == transform && node.opacity == opacity && node.animation_clip == clip {
+            return Ok(());
+        }
+
+        let old_bounds = tree.visible_subtree_bounds(element);
+        let (old_transform, old_opacity, old_clip) = {
+            let node = tree
+                .node_mut(element)
+                .ok_or(RenderTreeError::UnknownNode(element))?;
+            let previous = (node.transform, node.opacity, node.animation_clip);
+            node.transform = transform;
+            node.opacity = opacity;
+            node.animation_clip = clip;
+            previous
+        };
+        if tree.subtree_bounds(element).is_none() {
+            let node = tree
+                .node_mut(element)
+                .ok_or(RenderTreeError::UnknownNode(element))?;
+            node.transform = old_transform;
+            node.opacity = old_opacity;
+            node.animation_clip = old_clip;
+            return Err(RenderTreeError::InvalidTransform);
+        }
+
+        let new_bounds = tree.visible_subtree_bounds(element);
+        if let Some(damage) = old_bounds.into_iter().chain(new_bounds).reduce(Rect::union) {
+            tree.push_damage(damage);
+        }
+        Ok(())
+    }
+
+    /// Marks this element's local command list stale so it is recorded again,
+    /// without damaging anything yet.
+    ///
+    /// For an element that was rebuilt and may or may not draw something new:
+    /// the commit of its next recording damages the node only if the recorded
+    /// picture differs from the previous one. Use
+    /// [`invalidate_paint`](Self::invalidate_paint) when the pixels under the
+    /// node are known to be out of date whatever the element records.
+    pub fn refresh_paint(&self, element: RenderNodeId) -> Result<(), RenderTreeError> {
+        let mut tree = self.draw_cmd.borrow_mut();
+        let node = tree
+            .node_mut_paint(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        let mut list = node.draw_list.borrow_mut();
+        // Already stale for a stronger reason stays that way.
+        if !list.stale {
+            list.refreshed = true;
+        }
+        list.dirty = true;
+        list.stale = true;
+        Ok(())
+    }
+
+    /// Marks only this element's local command list stale.
+    pub fn invalidate_paint(&self, element: RenderNodeId) -> Result<(), RenderTreeError> {
+        let mut tree = self.draw_cmd.borrow_mut();
+        if tree.node(element).is_none() {
+            return Err(RenderTreeError::UnknownNode(element));
+        }
+        let bounds = tree.visible_node_bounds(element);
+        let node = tree
+            .node_mut_paint(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        {
+            let mut list = node.draw_list.borrow_mut();
+            list.dirty = true;
+            list.stale = true;
+            list.refreshed = false;
+        }
+        if let Some(bounds) = bounds {
+            tree.push_damage(bounds);
+        }
+        Ok(())
+    }
+
+    /// Returns the IDs whose local command lists need recording.
+    pub fn dirty_elements(&self) -> Vec<RenderNodeId> {
+        self.draw_cmd
+            .borrow()
+            .nodes
+            .iter()
+            .filter_map(|node| node.draw_list.borrow().dirty.then_some(node.id))
             .collect()
     }
 
-    fn retained_image_bytes(list: &DrawList) -> usize {
-        match list.commands().last() {
-            Some(DrawCommand::LoadImage { bytes, .. })
-            | Some(DrawCommand::LoadImageWithId { bytes, .. }) => {
-                let bytes = black_box(bytes.as_slice());
-                bytes.len()
-                    + bytes.first().copied().unwrap_or_default() as usize
-                    + bytes.last().copied().unwrap_or_default() as usize
-            }
-            _ => panic!("image load did not append an image command"),
-        }
+    /// Returns the most recently committed local command revision.
+    pub fn draw_list_revision(&self, element: RenderNodeId) -> Result<u64, RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        let revision = node.draw_list.borrow().revision;
+        Ok(revision)
     }
 
-    #[test]
-    #[ignore = "manual bulk-data profile"]
-    fn profile_image_command_copy() {
-        const ROUNDS: usize = 7;
+    /// Whether `other` is a handle to this same tree.
+    #[inline]
+    pub fn same_tree(&self, other: &Self) -> bool {
+        Shared::ptr_eq(&self.draw_cmd, &other.draw_cmd)
+    }
 
-        let cases = [
-            ("4kb", 4_096, 32, 32, 256),
-            ("256kb", 262_144, 256, 256, 16),
-            ("4mb", 4_194_304, 1_024, 1_024, 2),
-        ];
-        let mut checksum = 0u64;
+    /// A counter that changes whenever any node's world rectangle may have.
+    ///
+    /// Callers that cache [`Self::element_bounds`] results are current while
+    /// this is unchanged. It can also advance when nothing moved.
+    #[inline]
+    pub fn geometry_revision(&self) -> u64 {
+        self.draw_cmd.borrow().geometry_revision
+    }
 
-        for (name, byte_count, width, height, measured) in cases {
-            let data = patterned_bytes(byte_count);
-            for with_id in [false, true] {
-                let mut samples = Vec::with_capacity(ROUNDS);
-                for _ in 0..ROUNDS {
-                    for _ in 0..2 {
-                        let mut list = DrawList::new();
-                        if with_id {
-                            list.load_image_with_id(17, &data, width, height);
-                        } else {
-                            list.load_image(&data, width, height);
-                        }
-                        checksum = checksum.wrapping_add(retained_image_bytes(&list) as u64);
+    /// Returns an element's current world-space layout bounds.
+    pub fn element_bounds(&self, element: RenderNodeId) -> Result<Rect, RenderTreeError> {
+        self.draw_cmd
+            .borrow()
+            .world_bounds(element)
+            .ok_or(RenderTreeError::UnknownNode(element))
+    }
+
+    /// Returns where anything drawn by an element or its descendants can reach
+    /// pixels, in the element's own local logical coordinates.
+    ///
+    /// It is the clip the element hands down, so it does not depend on the
+    /// element's own bounds: children that overflow a parent are still
+    /// covered. See [`LocalVisibleRegion`] for the three possible answers.
+    pub fn local_visible_region(
+        &self,
+        element: RenderNodeId,
+    ) -> Result<LocalVisibleRegion, RenderTreeError> {
+        self.draw_cmd
+            .borrow()
+            .local_visible_region(element)
+            .ok_or(RenderTreeError::UnknownNode(element))
+    }
+
+    /// Reports whether an element's retained paint is known to be up to date:
+    /// it paints through a local v2 list that a recording attempt has finished
+    /// on since the list last went stale, and no recorder is open on it.
+    ///
+    /// That holds for an element whose commands were committed and for one that
+    /// painted nothing and reported it with
+    /// [`mark_recording_attempted`](Self::mark_recording_attempted). A settled
+    /// element has nothing new to record, so skipping its traversal while it
+    /// is off screen loses no paint.
+    pub fn is_settled(&self, element: RenderNodeId) -> Result<bool, RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        let list = node.draw_list.borrow();
+        Ok(node.paint_source == RenderPaintSource::LocalV2 && !list.stale && !list.recording)
+    }
+
+    /// Reports that an element's paint callback has run for the current state
+    /// of its list, whether or not it committed anything.
+    ///
+    /// A layout container paints nothing and never commits, so its list keeps
+    /// asking to be recorded. Marking the attempt tells the tree the list is
+    /// still current; [`needs_recording`](Self::needs_recording) is left alone,
+    /// so the element is asked again exactly as often as before. A node with
+    /// an open recorder is left unsettled.
+    pub fn mark_recording_attempted(&self, element: RenderNodeId) -> Result<(), RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        let mut list = node.draw_list.borrow_mut();
+        if !list.recording {
+            list.stale = false;
+            list.refreshed = false;
+        }
+        Ok(())
+    }
+
+    /// Returns an element's direct parent, or `None` when it is a root.
+    pub fn parent_of(
+        &self,
+        element: RenderNodeId,
+    ) -> Result<Option<RenderNodeId>, RenderTreeError> {
+        self.draw_cmd
+            .borrow()
+            .node(element)
+            .map(|node| node.parent)
+            .ok_or(RenderTreeError::UnknownNode(element))
+    }
+
+    /// Shares an immutable snapshot of one element's local retained commands.
+    pub fn draw_list_snapshot(
+        &self,
+        element: RenderNodeId,
+    ) -> Result<DrawListSnapshot, RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        let draw_list = node.draw_list.borrow();
+        Ok(DrawListSnapshot {
+            revision: draw_list.revision,
+            commands: draw_list.commands.clone(),
+            image_textures: draw_list.image_textures.clone(),
+        })
+    }
+
+    /// Returns whether any damage is waiting to be taken, without taking it.
+    pub fn has_pending_damage(&self) -> bool {
+        !self.draw_cmd.borrow().pending_damage.is_empty()
+    }
+
+    /// Takes damage accumulated by new nodes, local repaint, or geometry changes.
+    pub fn take_damage(&self) -> Vec<Rect> {
+        mem::take(&mut self.draw_cmd.borrow_mut().pending_damage)
+    }
+
+    /// Reports whether an element and its descendants all use local-v2 paint.
+    ///
+    /// Callers can use this to decide whether the retained tree owns every visual
+    /// update below an element after rebuilding, recording, and syncing the tree
+    /// for the current frame. A legacy or unresolved node returns `false`.
+    #[doc(hidden)]
+    pub fn subtree_uses_only_local_v2(
+        &self,
+        element: RenderNodeId,
+    ) -> Result<bool, RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let Some(node) = tree.node(element) else {
+            return Err(RenderTreeError::UnknownNode(element));
+        };
+        Ok(tree.subtree_uses_only_local_v2(node.id))
+    }
+}
+
+/// The active node identity and command tree passed while an element records paint.
+#[derive(Clone)]
+pub struct CurrentBuildContext {
+    draw_cmd: Shared<RefCell<DrawCommandList>>,
+    element: RenderNodeId,
+}
+
+/// Internal commit lease for one element's retained draw list.
+///
+/// The public recorder lives in `aimer_canvas::Canvas`. This lease keeps list
+/// reservation, scope validation, and commit behavior beside Cupid's retained
+/// storage without exposing that storage to the canvas crate.
+#[doc(hidden)]
+pub struct DrawListWriter {
+    owner: RenderNodeId,
+    draw_cmd: Shared<RefCell<DrawCommandList>>,
+    draw_list: Shared<RefCell<DrawList>>,
+    finished: bool,
+}
+
+impl DrawListWriter {
+    /// Commits the element-local commands and returns their new revision.
+    #[doc(hidden)]
+    pub fn commit(mut self, commands: Vec<DrawCommand>) -> Result<u64, RenderTreeError> {
+        validate_state_scopes(&commands)?;
+        let bounds = {
+            let tree = self.draw_cmd.borrow();
+            if tree.node(self.owner).is_none() {
+                return Err(RenderTreeError::UnknownNode(self.owner));
+            }
+            tree.visible_node_bounds(self.owner)
+        };
+        let (revision, changed, blends_children) = {
+            let mut draw_list = self.draw_list.borrow_mut();
+            let had_morph = draw_list.morph.is_some();
+            // A rebuilt element records again whether or not its picture changed.
+            // The first recording always counts: revision 0 means nothing has
+            // been drawn from this list yet.
+            if draw_list.refreshed
+                && draw_list.revision > 0
+                && command_equality::commands_equal(&draw_list.commands, &commands)
+            {
+                draw_list.dirty = false;
+                draw_list.stale = false;
+                draw_list.refreshed = false;
+                draw_list.recording = false;
+                (draw_list.revision, false, false)
+            } else {
+            draw_list.image_textures = commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::DrawImage { texture_id, .. } => Some(*texture_id),
+                    DrawCommand::DrawImageWithResource { resource, .. } => {
+                        Some(resource.texture_id())
                     }
-
-                    let start = Instant::now();
-                    for _ in 0..measured {
-                        let mut list = DrawList::new();
-                        if with_id {
-                            list.load_image_with_id(17, &data, width, height);
-                        } else {
-                            list.load_image(&data, width, height);
-                        }
-                        checksum = checksum.wrapping_add(retained_image_bytes(&list) as u64);
-                    }
-                    samples.push(start.elapsed().as_secs_f64() * 1e6 / measured as f64);
+                    _ => None,
+                })
+                .collect();
+            draw_list.masks_descendants = matches!(
+                commands.first(),
+                Some(DrawCommand::DrawCustom { pipeline_name, .. })
+                    if pipeline_name.as_ref() == COVERAGE_MASK_PIPELINE_NAME
+            );
+            draw_list.fades_descendants = matches!(
+                commands.first(),
+                Some(DrawCommand::DrawCustom { pipeline_name, .. })
+                    if pipeline_name.as_ref() == FADE_MASK_PIPELINE_NAME
+            );
+            draw_list.morph = match commands.first() {
+                Some(DrawCommand::DrawCustom { pipeline_name, data })
+                    if pipeline_name.as_ref() == MORPH_PIPELINE_NAME =>
+                {
+                    MorphParams::decode(data)
                 }
-
-                samples.sort_by(f64::total_cmp);
-                let p50 = samples[ROUNDS / 2];
-                let p95 = samples[(ROUNDS * 95).div_ceil(100) - 1];
-                let method = if with_id { "with-id" } else { "hashed" };
-                println!("{name} {method}: p50 {p50:.3} us, p95 {p95:.3} us");
+                _ => None,
+            };
+            draw_list.commands = Arc::from(commands);
+            draw_list.revision = draw_list
+                .revision
+                .checked_add(1)
+                .expect("draw-list revisions exhausted");
+            draw_list.dirty = false;
+            draw_list.stale = false;
+            draw_list.refreshed = false;
+            draw_list.recording = false;
+            (draw_list.revision, true, had_morph || draw_list.morph.is_some())
+            }
+        };
+        if changed {
+            let mut tree = self.draw_cmd.borrow_mut();
+            // A morph blends its children's pixels, which reach beyond the
+            // node's own bounds (the outgoing picture is often larger than the
+            // incoming one the node is sized to), so each frame of it, and the
+            // frame that drops the marker, must repaint the whole subtree.
+            let bounds = if blends_children {
+                tree.visible_subtree_bounds(self.owner).or(bounds)
+            } else {
+                bounds
+            };
+            if let Some(bounds) = bounds {
+                tree.push_damage(bounds);
             }
         }
-
-        let data = patterned_bytes(4_194_304);
-        let mut samples = Vec::with_capacity(ROUNDS);
-        for _ in 0..ROUNDS {
-            for _ in 0..2 {
-                let mut list = DrawList::new();
-                list.load_image(&data, 1_024, 1_024);
-                list.load_image(&data, 1_024, 1_024);
-                checksum = checksum
-                    .wrapping_add(retained_image_bytes(&list) as u64)
-                    .wrapping_add(black_box(list.commands().len()) as u64);
-            }
-
-            let start = Instant::now();
-            for _ in 0..2 {
-                let mut list = DrawList::new();
-                list.load_image(&data, 1_024, 1_024);
-                list.load_image(&data, 1_024, 1_024);
-                checksum = checksum
-                    .wrapping_add(retained_image_bytes(&list) as u64)
-                    .wrapping_add(black_box(list.commands().len()) as u64);
-            }
-            samples.push(start.elapsed().as_secs_f64() * 1e6 / 2.0);
-        }
-
-        samples.sort_by(f64::total_cmp);
-        let p50 = samples[ROUNDS / 2];
-        let p95 = samples[(ROUNDS * 95).div_ceil(100) - 1];
-        println!("4mb duplicate hashed: p50 {p50:.3} us, p95 {p95:.3} us");
-
-        assert_ne!(checksum, 0);
+        self.finished = true;
+        Ok(revision)
     }
+}
+
+fn validate_state_scopes(commands: &[DrawCommand]) -> Result<(), RenderTreeError> {
+    let mut clip_depth = 0usize;
+    let mut transform_depth = 0usize;
+    let mut alpha_set = false;
+    let mut italic_set = false;
+    let mut language_set = false;
+    for command in commands {
+        match command {
+            DrawCommand::PushClip { .. } => clip_depth += 1,
+            DrawCommand::PopClip => {
+                let Some(depth) = clip_depth.checked_sub(1) else {
+                    return Err(RenderTreeError::UnbalancedState);
+                };
+                clip_depth = depth;
+            }
+            DrawCommand::PushTransform { .. } => transform_depth += 1,
+            DrawCommand::PopTransform => {
+                let Some(depth) = transform_depth.checked_sub(1) else {
+                    return Err(RenderTreeError::UnbalancedState);
+                };
+                transform_depth = depth;
+            }
+            DrawCommand::SetAlpha { .. } => alpha_set = true,
+            DrawCommand::RestoreAlpha => alpha_set = false,
+            DrawCommand::SetItalic { italic } => italic_set = *italic,
+            DrawCommand::SetTextLanguage { language } => language_set = language.is_some(),
+            DrawCommand::FillRect { .. }
+            | DrawCommand::DrawText { .. }
+            | DrawCommand::DrawRichText { .. }
+            | DrawCommand::DrawTextDecoration { .. }
+            | DrawCommand::DrawImage { .. }
+            | DrawCommand::DrawImageWithResource { .. }
+            | DrawCommand::Svg { .. }
+            | DrawCommand::DrawCustom { .. }
+            | DrawCommand::DrawShadowRect { .. }
+            | DrawCommand::SetTransform { .. } => {}
+        }
+    }
+    if clip_depth != 0 || transform_depth != 0 || alpha_set || italic_set || language_set {
+        return Err(RenderTreeError::UnbalancedState);
+    }
+    Ok(())
+}
+
+impl Drop for DrawListWriter {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        let mut draw_list = self.draw_list.borrow_mut();
+        draw_list.recording = false;
+        draw_list.dirty = true;
+        draw_list.stale = true;
+        draw_list.refreshed = false;
+    }
+}
+
+/// One visible node in the render plan, in parent-first paint order.
+pub struct RenderItem {
+    /// Identity of the element to draw.
+    pub element: RenderNodeId,
+    /// World-space element bounds.
+    pub bounds: Rect,
+    /// Untransformed world-space origin for local commands.
+    pub origin: (f32, f32),
+    /// Cumulative transform mapping untransformed world coordinates to display coordinates.
+    pub transform: Mat3,
+    /// Effective world-space clip, if any.
+    pub clip: Option<Rect>,
+    /// Corner radii of the effective clip in world logical pixels: top-left,
+    /// top-right, bottom-right, bottom-left.
+    ///
+    /// The renderer keeps one clip at a time. It intersects nested clip
+    /// rectangles but takes the radii from the innermost clip, so this is the
+    /// radius of the closest clip-owning node (the item's own node included).
+    /// It is all zeros when `clip` is `None` or square.
+    pub clip_radius: [f32; 4],
+    /// Opacity applied directly to this node's commands.
+    pub opacity: f32,
+    /// Whether this node has recorded its local v2 commands yet.
+    pub paint_source: RenderPaintSource,
+    draw_list: Shared<RefCell<DrawList>>,
+}
+
+/// An ordered drawing or group-compositing operation.
+pub enum RenderOp {
+    /// Begins an offscreen group for a node with children.
+    ///
+    /// A plain group composites its items together once, at `opacity`. A
+    /// `masked` group holds a node that opened its list with the
+    /// [coverage-mask marker](COVERAGE_MASK_PIPELINE_NAME): that node's own
+    /// item is the content, every other item in the group is coverage, and the
+    /// group shows the content only where the coverage is, at `opacity`.
+    /// A `fade` group holds a node that opened its list with the
+    /// [fade-mask marker](FADE_MASK_PIPELINE_NAME): that node's own item is only
+    /// alpha, every other item in the group is content, and the group shows the
+    /// content scaled by that alpha, at `opacity`. `masked` and `fade` are never
+    /// both set.
+    BeginOpacityGroup {
+        element: RenderNodeId,
+        bounds: Rect,
+        opacity: f32,
+        clip: Option<Rect>,
+        masked: bool,
+        fade: bool,
+        /// Set when the group belongs to a morph; see [`MORPH_PIPELINE_NAME`].
+        /// A host group holds exactly its two source groups and no item of its
+        /// own, and `masked` is false for it and for its sources.
+        morph: Option<MorphGroup>,
+    },
+    /// Draws one element's local command list.
+    ///
+    /// Backends must initialize from the item's node state and restore that
+    /// state after the list, so commands cannot affect sibling elements.
+    Draw(RenderItem),
+    /// Composites the current opacity group into its parent.
+    EndOpacityGroup { element: RenderNodeId },
+}
+
+impl RenderItem {
+    /// Returns the local commands and recording revision for this node.
+    pub fn snapshot(&self) -> DrawListSnapshot {
+        let draw_list = self.draw_list.borrow();
+        DrawListSnapshot {
+            revision: draw_list.revision,
+            commands: draw_list.commands.clone(),
+            image_textures: draw_list.image_textures.clone(),
+        }
+    }
+}
+
+/// Shared immutable snapshot of one node's retained local commands.
+#[derive(Clone, Debug, Default)]
+pub struct DrawListSnapshot {
+    /// Monotonic local recording revision.
+    pub revision: u64,
+    /// Commands in element-local coordinates.
+    pub commands: Arc<[DrawCommand]>,
+    /// The textures `commands` draw directly, in command order with repeats.
+    pub image_textures: Arc<[TextureId]>,
+}
+
+/// Damage and ordered render operations for one v2 frame.
+pub struct RenderFrame {
+    /// Device-independent regions that changed.
+    pub damage: Vec<Rect>,
+    /// Nodes to composite in paint order within those regions.
+    pub operations: Vec<RenderOp>,
 }

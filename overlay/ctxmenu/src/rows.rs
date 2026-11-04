@@ -512,12 +512,12 @@ impl Drawable for RawContextMenuRows {
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         let rect = self.child_row_rect(ctx, child, child_index)?;
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(rect.x, rect.y, rect.width, rect.height),
+            aimer_cupid::draw_cmd::Rect::new(rect.x, rect.y, rect.width, rect.height),
             None,
         ))
     }

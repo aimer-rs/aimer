@@ -334,7 +334,7 @@ impl Drawable for StatelessElement {
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
-    ) -> Option<(aimer_cupid::draw_cmd_v2::Rect, Option<aimer_cupid::draw_cmd_v2::Rect>)> {
+    ) -> Option<(aimer_cupid::draw_cmd::Rect, Option<aimer_cupid::draw_cmd::Rect>)> {
         unsafe { &*self.child.0.get() }.retained_v2_child_geometry(ctx, child)
     }
 
@@ -344,7 +344,7 @@ impl Drawable for StatelessElement {
         ctx: &BuildContext,
         child: &dyn Element,
         child_index: usize,
-    ) -> Option<(aimer_cupid::draw_cmd_v2::Rect, Option<aimer_cupid::draw_cmd_v2::Rect>)> {
+    ) -> Option<(aimer_cupid::draw_cmd::Rect, Option<aimer_cupid::draw_cmd::Rect>)> {
         unsafe { &*self.child.0.get() }
             .retained_v2_child_geometry_at(ctx, child, child_index)
     }

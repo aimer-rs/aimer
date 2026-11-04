@@ -1,7 +1,7 @@
 use super::*;
 
 use aimer::HeadlessOptions;
-use aimer_cupid::draw_cmd_v2::DrawCommand;
+use aimer_cupid::draw_cmd::DrawCommand;
 use aimer::quiver::winit::dpi::{PhysicalPosition, PhysicalSize};
 use aimer::quiver::winit::event::{DeviceId, ElementState, MouseButton, WindowEvent};
 use aimer::{Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement};

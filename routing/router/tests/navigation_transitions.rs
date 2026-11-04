@@ -1487,7 +1487,7 @@ fn find_host(element: &dyn Element) -> Option<&dyn Element> {
 /// A swipe presents that copy too, and drops it when the swipe is over.
 #[test]
 fn a_tagged_container_transition_swipes_with_its_item_copy_and_releases_it() {
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderTree};
     use aimer_widget::{ErrorWidget, Key};
 
     let ctx = context();
@@ -1555,7 +1555,7 @@ fn a_tagged_container_transition_swipes_with_its_item_copy_and_releases_it() {
 
 #[test]
 fn custom_presentations_reach_retained_nodes_without_rerecording_page_lists() {
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderTree};
     let ctx = context();
     let navigator = Navigator::new(Page::Home, routes)
         .transition(DynamicTransitions::new(
@@ -1701,7 +1701,7 @@ fn a_route_keeps_its_flex_factor_through_the_transition_host() {
 
 #[test]
 fn high_dpi_transitions_sample_and_clip_the_logical_viewport() {
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderTree};
     let mut ctx = context();
     ctx.scale = 2.0;
     ctx.parent_size = ResolvedSize {

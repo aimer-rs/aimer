@@ -456,15 +456,15 @@ impl<E: Element> Drawable for RawPositionedElement<E> {
         child: &dyn Element,
         _child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         let (offset, child_ctx) = self.retained_child_layout(ctx)?;
         let position = child.pos().unwrap_or_default();
         let size = child
             .retained_v2_bounds(&child_ctx)
             .unwrap_or_else(|| child.content_size(&child_ctx));
-        let bounds = aimer_cupid::draw_cmd_v2::Rect::new(
+        let bounds = aimer_cupid::draw_cmd::Rect::new(
             (offset.x + position.x) / ctx.scale,
             (offset.y + position.y) / ctx.scale,
             size.width / ctx.scale,

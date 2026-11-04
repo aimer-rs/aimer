@@ -7,7 +7,7 @@
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::draw_cmd_v2::{MorphParams, MorphStyle};
+use crate::draw_cmd::{MorphParams, MorphStyle};
 
 /// One morph composite, as the shader reads it.
 ///

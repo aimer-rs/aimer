@@ -665,10 +665,10 @@ mod tests {
     fn record_local_v2(
         element: &impl Drawable,
         ctx: &BuildContext<'_>,
-    ) -> std::sync::Arc<[aimer_cupid::draw_cmd_v2::DrawCommand]> {
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    ) -> std::sync::Arc<[aimer_cupid::draw_cmd::DrawCommand]> {
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let root = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 400.0, 300.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 400.0, 300.0))
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
@@ -890,7 +890,7 @@ mod tests {
         let decorations = commands
             .iter()
             .filter_map(|command| match command {
-                aimer_cupid::draw_cmd_v2::DrawCommand::DrawTextDecoration { rect, .. } => {
+                aimer_cupid::draw_cmd::DrawCommand::DrawTextDecoration { rect, .. } => {
                     Some(rect)
                 }
                 _ => None,
@@ -918,7 +918,7 @@ mod tests {
         assert!(record_local_v2(&button, &ctx).iter().any(|command| {
             matches!(
                 command,
-                aimer_cupid::draw_cmd_v2::DrawCommand::DrawTextDecoration { .. }
+                aimer_cupid::draw_cmd::DrawCommand::DrawTextDecoration { .. }
             )
         }));
     }
@@ -1011,7 +1011,7 @@ mod tests {
             record_local_v2(button, &ctx)
                 .iter()
                 .find_map(|command| match command {
-                    aimer_cupid::draw_cmd_v2::DrawCommand::DrawText { font_size, .. } => {
+                    aimer_cupid::draw_cmd::DrawCommand::DrawText { font_size, .. } => {
                         Some(*font_size)
                     }
                     _ => None,

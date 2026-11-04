@@ -293,7 +293,7 @@ mod tests {
     use std::rc::Rc;
 
     use aimer_attribute::position::Vec2d;
-    use aimer_cupid::draw_cmd_v2::{
+    use aimer_cupid::draw_cmd::{
         DrawCommand, Rect as RenderRect, RenderPaintSource, RenderTree,
     };
     use aimer_widget::base::WindowHandle;
@@ -346,7 +346,7 @@ mod tests {
         ctx: &BuildContext,
         element: &AnyElement,
         tree: &RenderTree,
-        node: aimer_cupid::draw_cmd_v2::RenderNodeId,
+        node: aimer_cupid::draw_cmd::RenderNodeId,
     ) {
         let nodes = Rc::new(aimer_widget::ElementNodeMap::from([(element.id(), node)]));
         ctx.canvas.begin_frame();

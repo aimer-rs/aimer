@@ -6,7 +6,7 @@
 //! clip-owning ancestor (itself included), and a clip owner with square
 //! corners resets it.
 
-use aimer_cupid::draw_cmd_v2::{Rect, RenderNodeId, RenderNodeSpec, RenderOp, RenderTree};
+use aimer_cupid::draw_cmd::{Rect, RenderNodeId, RenderNodeSpec, RenderOp, RenderTree};
 
 struct Fixture {
     tree: RenderTree,

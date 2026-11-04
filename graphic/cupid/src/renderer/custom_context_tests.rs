@@ -7,7 +7,7 @@ use crate::AntiAlias;
 use crate::backend::{metal::MetalBackend, *};
 use crate::custom_pipeline::{CommandContext, CustomPipelineGeneric, RenderContextGeneric};
 use crate::damage_region::DamageSet;
-use crate::draw_cmd_v2::{DrawCommand, Rect, RenderFrame, RenderTree};
+use crate::draw_cmd::{DrawCommand, Rect, RenderFrame, RenderTree};
 use crate::frame::{FramePacket, FrameRenderMetadata};
 use crate::renderer::RendererImpl;
 

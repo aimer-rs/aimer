@@ -5,7 +5,7 @@
 
 use aimer_opengl::*;
 use crate::backend::*;
-use crate::draw_cmd::DrawList;
+use crate::render_list::DrawList;
 use crate::renderer::RendererImpl;
 use crate::utilities::{Color, Rect};
 
@@ -261,7 +261,7 @@ fn gl_pixel(data: &[u8], size: u32, x: u32, y: u32) -> [u8; 4] {
 #[test]
 fn opacity_groups_with_partial_damage_update_on_headless_opengl() {
     use crate::damage_region::DamageSet;
-    use crate::draw_cmd_v2::{DrawCommand as V2DrawCommand, RenderFrame, RenderTree};
+    use crate::draw_cmd::{DrawCommand as V2DrawCommand, RenderFrame, RenderTree};
     use crate::frame::{Frame, FramePacket, FrameRenderMetadata};
 
     const SIZE: u32 = 80;
@@ -373,7 +373,7 @@ fn render_material_node(
     // red on the top half, blue on the bottom half: a vertical flip must show.
     use aimer_material_pipeline::{MATERIAL_PIPELINE_NAME, MaterialKind, MaterialRequest};
     use crate::damage_region::DamageSet;
-    use crate::draw_cmd_v2::{DrawCommand as V2DrawCommand, RenderFrame, RenderTree};
+    use crate::draw_cmd::{DrawCommand as V2DrawCommand, RenderFrame, RenderTree};
     use crate::frame::{FramePacket, FrameRenderMetadata};
     use std::sync::Arc;
 

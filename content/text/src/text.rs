@@ -205,7 +205,7 @@ mod tests {
 
     use aimer_attribute::{ResolvedSize, Vec2d};
     use aimer_canvas::{FrameCanvas, InnerCanvas};
-    use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderPaintSource, RenderTree};
+    use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderPaintSource, RenderTree};
     use aimer_style::{LineHeight, TextAlign, TextStyle, TextTransform};
     use aimer_widget::base::{BuildContext, WindowHandle};
     use aimer_widget::{Drawable, LayoutCache, LayoutElement, Rebuildable, Widget};

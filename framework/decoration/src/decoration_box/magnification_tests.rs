@@ -2,7 +2,7 @@ use super::test_support::stacked;
 use crate::{BorderRadius, BoxDecoration, Decoration, Magnification, MagnificationStyle as S};
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 use aimer_cupid::material::{MaterialKind, MaterialRequest};
 
 fn recorded(lens: Magnification, size: ResolvedSize) -> Vec<DrawCommand> {

@@ -519,15 +519,15 @@ impl Drawable for RawFloating {
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         if child_index != 1 || !std::ptr::eq(child, self.child.as_ref()) {
             return None;
         }
         let (size, offset, _) = self.retained_child_layout(ctx)?;
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 offset.x / ctx.scale,
                 offset.y / ctx.scale,
                 size.width / ctx.scale,

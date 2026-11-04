@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use aimer_cupid::draw_cmd_v2::{Rect, RenderNodeId, RenderTree};
+use aimer_cupid::draw_cmd::{Rect, RenderNodeId, RenderTree};
 use aimer_router::{
     Curve, curves, ContainerTransition, ExpandTransition, NavigationAction, NavigationContext, NavigationTransition, Route,
     NavigationTransitionFrame, ResolvedNavigationTransition,

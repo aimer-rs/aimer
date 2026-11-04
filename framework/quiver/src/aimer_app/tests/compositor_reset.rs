@@ -111,7 +111,7 @@ impl Scene {
             .render_all()
             .into_iter()
             .find_map(|operation| match operation {
-                aimer_cupid::draw_cmd_v2::RenderOp::Draw(item)
+                aimer_cupid::draw_cmd::RenderOp::Draw(item)
                     if (item.bounds.width - 100.0).abs() < 0.01 =>
                 {
                     Some(item.bounds.x)

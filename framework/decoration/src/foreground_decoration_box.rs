@@ -6,7 +6,7 @@ use crate::decoration_box::{PaintGeometry, PaintKey, sanitized_outsets};
 use crate::{BoxDecoration, Decoration};
 use aimer_attribute::{ResolvedSize, Size, Vec2d};
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutElement,

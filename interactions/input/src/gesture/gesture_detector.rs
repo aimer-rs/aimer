@@ -1278,7 +1278,7 @@ mod tests {
 
     #[test]
     fn the_render_tree_rectangle_becomes_the_hit_area() {
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
         let taps = Rc::new(std::cell::Cell::new(0));
         let detector = counting_detector(taps.clone());

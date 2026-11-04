@@ -711,7 +711,7 @@ mod tests {
         use std::sync::OnceLock;
 
         use aimer_attribute::BoxConstraint;
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
         use aimer_widget::base::WindowHandle;
         use aimer_widget::ErrorWidget;
 

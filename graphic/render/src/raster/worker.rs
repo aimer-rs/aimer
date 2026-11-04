@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_cha
 use std::thread::JoinHandle;
 
 use aimer_frame_stats::PhaseTimer;
-use aimer_cupid::draw_cmd::DrawList;
+use aimer_cupid::render_list::DrawList;
 use aimer_cupid::frame::FramePacket;
 use winit::dpi::PhysicalSize;
 

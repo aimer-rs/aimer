@@ -30,12 +30,12 @@ fn static_documents_are_shared_across_threads() {
 fn styles(element: &dyn aimer_widget::Element, context: &aimer_widget::base::BuildContext)
     -> Arc<[aimer_cupid::svg::SvgNodeStyleOverride]>
 {
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
-    let node = tree.add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 48.0, 48.0)).unwrap();
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
+    let node = tree.add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 48.0, 48.0)).unwrap();
     context.with_local_v2_paint_context(tree.context(node).unwrap(), |ctx| element.paint_local_v2(ctx));
     let drawing = tree.draw_list_snapshot(node).unwrap();
     drawing.commands.iter().find_map(|command| match command {
-        aimer_cupid::draw_cmd_v2::DrawCommand::Svg { overrides, .. } => Some(overrides.clone()),
+        aimer_cupid::draw_cmd::DrawCommand::Svg { overrides, .. } => Some(overrides.clone()),
         _ => None,
     }).unwrap()
 }

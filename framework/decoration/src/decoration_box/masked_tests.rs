@@ -3,7 +3,7 @@ use crate::{BoxDecoration, DecorationBox, Gradient, MaskedDecorationBox};
 use aimer_attribute::ResolvedSize;
 use aimer_color::prelude::Color;
 use aimer_container::{SizedBox, ZeroSizedBox};
-use aimer_cupid::draw_cmd_v2::{COVERAGE_MASK_PIPELINE_NAME, DrawCommand};
+use aimer_cupid::draw_cmd::{COVERAGE_MASK_PIPELINE_NAME, DrawCommand};
 use aimer_widget::{Drawable, EventTreeRole, FocusNode, Focusable, Widget};
 
 fn is_marker(command: &DrawCommand) -> bool {

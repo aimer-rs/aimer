@@ -325,7 +325,7 @@ impl IndicatorStyle for FlatPill {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aimer_cupid::draw_cmd_v2::DrawCommand;
+    use aimer_cupid::draw_cmd::DrawCommand;
     use aimer_cupid::material::MaterialRequest;
     use aimer_decoration::MultiDecorationBox;
     use aimer_widget::Widget;

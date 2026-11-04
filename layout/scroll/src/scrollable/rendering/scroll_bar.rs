@@ -6,7 +6,7 @@ use aimer_attribute::dimension::Dimension;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_cupid::utilities::Color as V2Color;
 use aimer_input::gesture::GestureEvent;
 use aimer_input::gesture::gesture_detector::GestureDetector;

@@ -29,7 +29,10 @@ pub use aimer_pipeline_core::custom_pipeline;
 pub use aimer_effect_pipeline as effects;
 #[doc(hidden)]
 pub use aimer_scene::damage_region;
-pub use aimer_scene::{draw_cmd, draw_cmd_v2};
+pub use aimer_scene::draw_cmd;
+/// The renderer's internal lowered command stream; see `aimer_scene::render_list`.
+#[doc(hidden)]
+pub use aimer_scene::render_list;
 // Font parsing, shaping and rasterization live in `aimer_cupid_font`.
 pub use aimer_cupid_font::font;
 pub use aimer_scene::frame;
@@ -105,7 +108,7 @@ mod wgpu_api_test_adapter {
     use crate::backend::wgpu::WgpuBackend;
     use crate::compositor::CompositorStats;
     use crate::damage_region::DamageSet;
-    use crate::draw_cmd::DrawList;
+    use crate::render_list::DrawList;
     use crate::frame::{FramePacket, FrameRenderMetadata};
     use crate::renderer::{Renderer as GenericRenderer, RendererMemoryStats};
     use crate::text_pipeline::{
@@ -376,7 +379,7 @@ mod deferred_frame_uploads {
 
     use super::wgpu_api_test_adapter::Renderer;
     use crate::damage_region::{DamageRect, DamageSet};
-    use crate::draw_cmd::{DrawList, RetainedLayerContent};
+    use crate::render_list::{DrawList, RetainedLayerContent};
     use crate::frame::FrameRenderMetadata;
     use crate::pipeline::material::{MATERIAL_PIPELINE_NAME, MaterialKind, MaterialRequest};
     use crate::utilities::{Color, Rect};
@@ -2484,7 +2487,7 @@ mod generic_backend_tests {
     #[test]
     fn generic_renderer_with_wgpu_backend_renders_fill_rect() {
         use crate::WgpuBackend;
-        use crate::draw_cmd::DrawList;
+        use crate::render_list::DrawList;
         use crate::gpu_context::GpuDevice;
         use crate::renderer::RendererImpl;
         use crate::utilities::{Color, Rect};
@@ -2542,7 +2545,7 @@ mod generic_backend_tests {
     #[test]
     fn generic_renderer_with_wgpu_backend_renders_image_and_text() {
         use crate::WgpuBackend;
-        use crate::draw_cmd::DrawList;
+        use crate::render_list::DrawList;
         use crate::gpu_context::GpuDevice;
         use crate::renderer::RendererImpl;
         use crate::utilities::{Color, Rect, Vec2d};

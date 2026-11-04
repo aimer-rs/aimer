@@ -19,7 +19,7 @@
 
 use std::collections::HashMap;
 
-use aimer_cupid::draw_cmd_v2::NodeGeometry;
+use aimer_cupid::draw_cmd::NodeGeometry;
 use aimer_cupid::utilities::IdBuildHasher;
 
 use super::*;
