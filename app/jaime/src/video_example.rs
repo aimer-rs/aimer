@@ -21,8 +21,10 @@ use crate::audio_example::{control_button, gap};
 use crate::{Assets, theme};
 
 /// Apple's public HLS test stream: adaptive bitrate, with sound.
-const STREAM_URL: &str =
-    "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8";
+// const STREAM_URL: &str = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8";
+const STREAM_URL: &str = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8";
+// const STREAM_URL: &str = "https://www.youtube.com/embed/FWZstnhTytw";
+
 /// The size the player is shown at, in logical pixels.
 const PLAYER: (f32, f32) = (640.0, 360.0);
 
@@ -41,6 +43,8 @@ impl VideoExample {
         Self
     }
 }
+
+
 
 pub struct VideoExampleState {
     player: VideoPlayer,

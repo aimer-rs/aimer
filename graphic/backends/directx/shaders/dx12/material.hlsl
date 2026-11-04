@@ -462,18 +462,18 @@ float3 lens_bevel_normal(float2 position, float2 half_size, float4 radii, float 
 // pulled in by `width` that keeps the corner radius (as far as it fits), so a
 // band wider than the corner radius still has round corners, where a plain
 // distance to the edge goes square, and has no medial axis for a normal to jump on.
-float3 lens_band(float2 point, float2 half_size, float4 radii, float width) {
-    float radius = min(selected_radius(point, radii), min(half_size.x, half_size.y));
-    float2 edge_q = abs(point) - half_size + radius;
+float3 lens_band(float2 p, float2 half_size, float4 radii, float width) {
+    float radius = min(selected_radius(p, radii), min(half_size.x, half_size.y));
+    float2 edge_q = abs(p) - half_size + radius;
     float inset = max(-(length(max(edge_q, float2(0.0, 0.0))) + min(max(edge_q.x, edge_q.y), 0.0) - radius), 0.0);
     float2 inner_half = max(half_size - width, float2(0.0, 0.0));
     float inner_radius = min(radius, min(inner_half.x, inner_half.y));
-    float2 q = abs(point) - inner_half + inner_radius;
+    float2 q = abs(p) - inner_half + inner_radius;
     float2 outer = max(q, float2(0.0, 0.0));
     float gap = max(length(outer) + min(max(q.x, q.y), 0.0) - inner_radius, 0.0);
     float2 outward = q.x > q.y ? float2(1.0, 0.0) : float2(0.0, 1.0);
     if (dot(outer, outer) > 0.0) outward = normalize(outer);
-    outward *= sign(point);
+    outward *= sign(p);
     return float3(outward, inset / max(inset + gap, 0.0001));
 }
 
