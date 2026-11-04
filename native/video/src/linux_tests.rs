@@ -3,12 +3,13 @@
 //! They skip, loudly, where FFmpeg is not installed.
 
 use std::path::PathBuf;
+use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
 
 use aimer_cupid::external_texture::{ExternalTextureSource, NativeTexture};
 
 use crate::backend::FrameSlot;
-use crate::linux_ffmpeg::available;
+use crate::linux_ffmpeg::Programs;
 use crate::{VideoError, VideoSource};
 
 /// 64 x 48, ten pictures a second for one second, no sound: red above, blue
@@ -18,7 +19,7 @@ fn halves() -> VideoSource {
 }
 
 fn have_ffmpeg() -> bool {
-    let present = available("ffmpeg") && available("ffprobe");
+    let present = Programs::from_environment().available();
     if !present {
         eprintln!("skipped: ffmpeg and ffprobe are not installed");
     }
@@ -192,4 +193,59 @@ fn a_clip_with_sound_plays_on_whether_or_not_there_is_an_audio_device() {
     assert!(video.error().is_none(), "{:?}", video.error());
     assert!(video.is_playing());
     video.pause();
+}
+
+/// A stand-in `ffmpeg` that fails whenever it is asked to decode on the GPU,
+/// as one without a working device does, and otherwise runs the real one.
+fn ffmpeg_without_a_gpu(directory: &std::path::Path) -> Programs {
+    let script = directory.join("ffmpeg");
+    let log = directory.join("log");
+    // Only decoding runs (`-i`) are logged, not the `-version` availability check.
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\ndecode=0\nhardware=0\nfor argument in \"$@\"; do\n  [ \"$argument\" = \"-i\" ] && decode=1\n  [ \"$argument\" = \"-hwaccel\" ] && hardware=1\ndone\nif [ $hardware = 1 ]; then\n  echo hardware >> {log}\n  echo 'Failed setup for format vaapi: hwaccel initialisation returned error' >&2\n  exit 1\nfi\n[ $decode = 1 ] && echo software >> {log}\nexec ffmpeg \"$@\"\n",
+            log = log.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    Programs {
+        ffmpeg: script.into_os_string(),
+        ffprobe: "ffprobe".into(),
+    }
+}
+
+#[test]
+fn a_failing_gpu_decoder_falls_back_to_software_once_and_the_clip_plays() {
+    if !have_ffmpeg() {
+        return;
+    }
+    let directory = std::env::temp_dir().join(format!("aimer-video-hwfail-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let programs = ffmpeg_without_a_gpu(&directory);
+    let video = super::linux::open_with(&halves(), programs).expect("opens");
+    assert!(until(|| video.is_ready()));
+    video.play();
+    let frames = FrameSlot::default();
+    let mut shown = 0;
+    assert!(
+        until(|| {
+            if video.take_frame(&frames) {
+                shown += 1;
+            }
+            !video.is_playing()
+        }),
+        "the clip never ended"
+    );
+    assert!(video.error().is_none(), "{:?}", video.error());
+    assert!(shown >= 6, "only {shown} pictures were shown");
+
+    // One failed attempt with the GPU, then software for good.
+    let log = std::fs::read_to_string(directory.join("log")).unwrap();
+    let attempts: Vec<&str> = log.lines().collect();
+    assert_eq!(attempts.first(), Some(&"hardware"), "{attempts:?}");
+    assert_eq!(attempts.iter().filter(|line| **line == "hardware").count(), 1, "{attempts:?}");
+    assert!(attempts.contains(&"software"), "{attempts:?}");
+    std::fs::remove_dir_all(&directory).ok();
 }

@@ -4,8 +4,15 @@
 //! raw RGBA pictures to a pipe. A program rather than a linked library keeps
 //! this independent of which FFmpeg version the system has: the program's
 //! command line is stable where the libraries' structures are not.
+//!
+//! The decoder runs on the GPU where FFmpeg can drive one (`-hwaccel auto`:
+//! VAAPI, VDPAU, CUDA...). FFmpeg downloads the decoded pictures to system
+//! memory and converts them to RGBA there, so this offloads decoding, not the
+//! trip to the renderer; it falls back to software decoding by itself where no
+//! device works, and [`Session::start`] can be told not to try.
 
 use std::collections::VecDeque;
+use std::ffi::OsString;
 use std::io::Read;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -17,6 +24,33 @@ use std::thread::JoinHandle;
 const QUEUE: usize = 4;
 /// The most pictures a second a video is shown at.
 const MAX_FPS: f64 = 60.0;
+
+/// The programs to run: `ffmpeg` and `ffprobe` from the `PATH`, unless the
+/// `AIMER_FFMPEG` and `AIMER_FFPROBE` environment variables name others.
+#[derive(Clone, Debug)]
+pub(crate) struct Programs {
+    pub ffmpeg: OsString,
+    pub ffprobe: OsString,
+}
+
+impl Programs {
+    pub(crate) fn from_environment() -> Self {
+        let choose = |variable: &str, fallback: &str| {
+            std::env::var_os(variable)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| fallback.into())
+        };
+        Self {
+            ffmpeg: choose("AIMER_FFMPEG", "ffmpeg"),
+            ffprobe: choose("AIMER_FFPROBE", "ffprobe"),
+        }
+    }
+
+    /// Whether both run.
+    pub(crate) fn available(&self) -> bool {
+        available(&self.ffmpeg) && available(&self.ffprobe)
+    }
+}
 
 /// What `ffprobe` says about a source.
 #[derive(Clone, Debug, PartialEq)]
@@ -90,7 +124,7 @@ fn parse_rate(text: &str) -> Option<f64> {
 }
 
 /// Whether `program` runs.
-pub(crate) fn available(program: &str) -> bool {
+pub(crate) fn available(program: &std::ffi::OsStr) -> bool {
     Command::new(program)
         .arg("-version")
         .stdin(Stdio::null())
@@ -101,9 +135,9 @@ pub(crate) fn available(program: &str) -> bool {
 }
 
 /// Asks `ffprobe` about `input`.
-pub(crate) fn probe(input: &str) -> Result<Info, String> {
+pub(crate) fn probe(programs: &Programs, input: &str) -> Result<Info, String> {
     let run = |args: &[&str]| -> Result<String, String> {
-        let output = Command::new("ffprobe")
+        let output = Command::new(&programs.ffprobe)
             .args(["-v", "error"])
             .args(args)
             .arg(input)
@@ -126,6 +160,33 @@ pub(crate) fn probe(input: &str) -> Result<Info, String> {
     ])?;
     let audio = run(&["-select_streams", "a", "-show_entries", "stream=codec_name", "-of", "csv=p=0"])?;
     parse_info(&video, &audio).ok_or_else(|| "the source has no video stream".to_string())
+}
+
+/// The command line that decodes `input` from `start` seconds to RGBA pictures
+/// on standard output, at `fps` pictures a second.
+pub(crate) fn decode_arguments(input: &str, fps: f64, start: f64, hardware: bool) -> Vec<String> {
+    let mut arguments: Vec<String> = ["-nostdin", "-loglevel", "error"].map(String::from).into();
+    if input.starts_with("http://") || input.starts_with("https://") {
+        arguments.extend(
+            ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4"].map(String::from),
+        );
+    }
+    // Options before `-i` apply to the input: the decoder, and the seek.
+    if hardware {
+        arguments.extend(["-hwaccel", "auto"].map(String::from));
+    }
+    if start > 0.0 {
+        arguments.extend(["-ss".to_string(), format!("{start:.3}")]);
+    }
+    arguments.extend(["-i", input, "-map", "0:v:0", "-an", "-sn", "-dn", "-vf"].map(String::from));
+    arguments.push(format!("fps={fps}"));
+    arguments.extend(["-pix_fmt", "rgba", "-f", "rawvideo", "pipe:1"].map(String::from));
+    arguments
+}
+
+/// Whether to decode on the GPU: on unless `AIMER_VIDEO_HWACCEL` is `0`.
+pub(crate) fn hardware_decoding_allowed() -> bool {
+    std::env::var_os("AIMER_VIDEO_HWACCEL").is_none_or(|value| value != "0")
 }
 
 /// One decoded picture.
@@ -160,20 +221,16 @@ pub(crate) struct Session {
 
 impl Session {
     /// Starts decoding `input` from `start` seconds, as pictures of `info`'s
-    /// size at `info.fps`.
-    pub(crate) fn start(input: &str, info: &Info, start: f64) -> Result<Self, String> {
-        let mut command = Command::new("ffmpeg");
-        command.args(["-nostdin", "-loglevel", "error"]);
-        if input.starts_with("http://") || input.starts_with("https://") {
-            command.args(["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4"]);
-        }
-        if start > 0.0 {
-            command.args(["-ss", &format!("{start:.3}")]);
-        }
-        let child = command
-            .args(["-i", input, "-map", "0:v:0", "-an", "-sn", "-dn", "-vf"])
-            .arg(format!("fps={}", info.fps))
-            .args(["-pix_fmt", "rgba", "-f", "rawvideo", "pipe:1"])
+    /// size at `info.fps`, on the GPU when `hardware` and FFmpeg has one.
+    pub(crate) fn start(
+        programs: &Programs,
+        input: &str,
+        info: &Info,
+        start: f64,
+        hardware: bool,
+    ) -> Result<Self, String> {
+        let child = Command::new(&programs.ffmpeg)
+            .args(decode_arguments(input, info.fps, start, hardware))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -326,6 +383,33 @@ fn read_pictures(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_hardware_option_comes_before_the_input_it_applies_to() {
+        let arguments = decode_arguments("clip.mp4", 30.0, 12.5, true);
+        let at = |needle: &str| arguments.iter().position(|argument| argument == needle).unwrap();
+        assert_eq!(arguments[at("-hwaccel") + 1], "auto");
+        assert!(at("-hwaccel") < at("-i"));
+        assert!(at("-ss") < at("-i"));
+        assert_eq!(arguments[at("-ss") + 1], "12.500");
+        assert_eq!(arguments[at("-i") + 1], "clip.mp4");
+        assert_eq!(arguments.last().unwrap(), "pipe:1");
+    }
+
+    #[test]
+    fn software_decoding_leaves_the_hardware_option_out() {
+        let arguments = decode_arguments("clip.mp4", 25.0, 0.0, false);
+        assert!(!arguments.iter().any(|argument| argument == "-hwaccel"));
+        assert!(!arguments.iter().any(|argument| argument == "-ss"), "no seek from the start");
+        assert!(arguments.contains(&"fps=25".to_string()));
+    }
+
+    #[test]
+    fn a_remote_source_reconnects() {
+        let arguments = decode_arguments("https://example.com/a.m3u8", 30.0, 0.0, true);
+        assert!(arguments.contains(&"-reconnect".to_string()));
+        assert!(!decode_arguments("/tmp/a.mp4", 30.0, 0.0, true).contains(&"-reconnect".to_string()));
+    }
 
     #[test]
     fn rates_parse_as_fractions_and_whole_numbers() {

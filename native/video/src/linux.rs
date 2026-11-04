@@ -23,7 +23,7 @@ use aimer_audio::{AudioPlayer, AudioSource};
 use aimer_cupid::external_texture::{NativeTexture, new_source_id};
 
 use crate::backend::{FrameSlot, PlatformVideo, StoredFrame};
-use crate::linux_ffmpeg::{Info, Session, available, probe};
+use crate::linux_ffmpeg::{Info, Programs, Session, hardware_decoding_allowed, probe};
 use crate::{VideoError, VideoSource};
 
 /// How far the soundtrack may be from the wall clock for it to be believed
@@ -32,6 +32,11 @@ const AUDIO_TRUST: f64 = 0.75;
 
 /// Opens `source` as a paused player.
 pub(crate) fn open(source: &VideoSource) -> Result<Box<dyn PlatformVideo>, VideoError> {
+    open_with(source, Programs::from_environment())
+}
+
+/// [`open`], running the given FFmpeg programs.
+pub(crate) fn open_with(source: &VideoSource, programs: Programs) -> Result<Box<dyn PlatformVideo>, VideoError> {
     let (input, audio_source, local) = match source {
         VideoSource::File(path) => {
             let path = existing(path.clone())?;
@@ -53,18 +58,18 @@ pub(crate) fn open(source: &VideoSource) -> Result<Box<dyn PlatformVideo>, Video
             (url.clone(), AudioSource::Stream(url.clone()), false)
         }
     };
-    if !available("ffmpeg") || !available("ffprobe") {
+    if !programs.available() {
         return Err(VideoError::Playback(
             "video on Linux needs FFmpeg: install the ffmpeg package (it provides ffmpeg and ffprobe)".into(),
         ));
     }
-    let state = Arc::new(Mutex::new(State::new(input.clone())));
+    let state = Arc::new(Mutex::new(State::new(input.clone(), programs)));
     // Probing a remote source waits on the network, so it does not run here.
     let worker = state.clone();
     std::thread::Builder::new()
         .name("aimer-video-probe".into())
         .spawn(move || {
-            let info = probe(&input);
+            let info = probe(&worker.lock().unwrap_or_else(PoisonError::into_inner).programs.clone(), &input);
             worker
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -96,6 +101,7 @@ struct LinuxVideo {
 
 struct State {
     input: String,
+    programs: Programs,
     info: Option<Info>,
     error: Option<VideoError>,
     session: Option<Session>,
@@ -116,12 +122,19 @@ struct State {
     /// one a seek lands on.
     show_first: bool,
     serial: u64,
+    /// FFmpeg may decode on the GPU. Turned off for good once a source fails
+    /// with it and works without.
+    hardware: bool,
+    /// The current session started with the GPU decoder, and has shown nothing
+    /// yet: if it fails, decoding in software is worth a try.
+    hardware_unproven: bool,
 }
 
 impl State {
-    fn new(input: String) -> Self {
+    fn new(input: String, programs: Programs) -> Self {
         Self {
             input,
+            programs,
             info: None,
             error: None,
             session: None,
@@ -135,6 +148,8 @@ impl State {
             pending_seek: None,
             show_first: true,
             serial: 0,
+            hardware: hardware_decoding_allowed(),
+            hardware_unproven: false,
         }
     }
 
@@ -154,10 +169,7 @@ impl State {
         }
         let start = self.pending_seek.take().unwrap_or(0.0);
         self.base = start;
-        match Session::start(&self.input, &info, start) {
-            Ok(session) => self.session = Some(session),
-            Err(why) => self.error = Some(VideoError::Playback(why)),
-        }
+        self.start_session(&info, start);
         self.info = Some(info);
         if start > 0.0
             && let Some(audio) = &self.audio
@@ -211,10 +223,33 @@ impl State {
         }
         // Dropping the old session kills its FFmpeg.
         self.session = None;
-        match Session::start(&self.input, &info, seconds) {
-            Ok(session) => self.session = Some(session),
+        self.start_session(&info, seconds);
+    }
+
+    /// Starts FFmpeg decoding from `start`.
+    fn start_session(&mut self, info: &Info, start: f64) {
+        match Session::start(&self.programs, &self.input, info, start, self.hardware) {
+            Ok(session) => {
+                self.session = Some(session);
+                self.hardware_unproven = self.hardware;
+            }
             Err(why) => self.error = Some(VideoError::Playback(why)),
         }
+    }
+
+    /// A session that used the GPU decoder failed before showing anything:
+    /// decodes in software from now on, from the playhead. Returns whether it
+    /// did, which is the case once only.
+    fn retry_in_software(&mut self, info: &Info) -> bool {
+        if !self.hardware || !self.hardware_unproven {
+            return false;
+        }
+        self.hardware = false;
+        self.hardware_unproven = false;
+        self.session = None;
+        let at = self.base + self.since.map_or(0.0, |since| since.elapsed().as_secs_f64());
+        self.start_session(info, at.max(0.0));
+        true
     }
 }
 
@@ -327,6 +362,10 @@ impl PlatformVideo for LinuxVideo {
             return false;
         };
         if let Some(why) = session.failure() {
+            // The GPU decoder may be what failed: try the CPU before giving up.
+            if state.retry_in_software(&info) {
+                return false;
+            }
             state.error = Some(VideoError::Decode(why));
             return false;
         }
@@ -348,6 +387,7 @@ impl PlatformVideo for LinuxVideo {
             return false;
         };
         state.show_first = false;
+        state.hardware_unproven = false;
         state.serial += 1;
         let Some(data) = NonNull::new(picture.pixels.as_ptr().cast_mut()) else {
             return false;

@@ -161,12 +161,21 @@ keeps this independent of which FFmpeg version the system has. FFmpeg streams
 - The soundtrack plays through `aimer_audio` and is the clock when it runs:
   pictures are shown when the sound reaches them. A video without sound, or on
   a machine with no audio device, runs on the wall clock.
-- Decoding happens on the CPU and each picture is uploaded to the GPU once
-  (`NativeTexture::Rgba8`), so this is not zero-copy. Four pictures are decoded
-  ahead and no more, so a paused video decodes nothing.
+- FFmpeg decodes on the GPU where it can drive one (`-hwaccel auto`: VAAPI,
+  VDPAU, CUDA...), and falls back to software by itself. If the GPU decoder
+  makes a source fail before it shows a picture, the player retries once in
+  software, from where it was, and stays there. Set `AIMER_VIDEO_HWACCEL=0` to
+  never try the GPU, and `AIMER_FFMPEG` / `AIMER_FFPROBE` to name the programs.
+- FFmpeg downloads the decoded pictures to system memory, converts them to RGBA
+  there, and each is uploaded to the GPU once (`NativeTexture::Rgba8`). So the
+  GPU does the decoding but the picture still crosses the CPU: this is not
+  zero-copy. Four pictures are decoded ahead and no more, so a paused video
+  decodes nothing.
 - Seeking restarts FFmpeg at the new position; it is accurate, not instant.
-- Hardware decoding straight into GPU memory (VAAPI to Vulkan) is not
-  implemented yet.
+- Handing the decoder's GPU surfaces to the renderer without the trip through
+  system memory (VAAPI to a Vulkan image over DMA-BUF) is not implemented: it
+  needs FFmpeg's C structures, whose layout changes between versions, and a
+  machine with a VAAPI device to test on.
 
 ### On Windows
 
