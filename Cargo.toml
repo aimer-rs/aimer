@@ -5,10 +5,14 @@ edition = "2024"
 description = "The organized export of other Aimer project"
 repository = "https://github.com/Cottons29/aimer"
 authors = ["cottons29", "lycuttons@gmail.com"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["gui", "rust"]
 categories = ["development-tools", "gui"]
+
+
+[lib]
+path = "lib.rs"
 
 [dependencies]
 aimer_attribute.workspace = true

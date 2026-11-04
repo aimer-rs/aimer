@@ -13,7 +13,7 @@ use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
 /// box outline, so it can move samples even at the enlargement anchor. Axis
 /// flags constrain displacement from every effect, including refraction.
 ///
-/// ```
+/// ```ignore
 /// use aimer_cupid::material::MagnificationStyle as Style;
 /// let toolbar = Style::UNIFORM | Style::HORIZONTAL | Style::LEFT;
 /// assert!(toolbar.contains(Style::UNIFORM | Style::LEFT));

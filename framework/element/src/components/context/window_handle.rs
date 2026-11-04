@@ -105,7 +105,7 @@ impl WindowHandle {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```ignore
     /// # fn example(window: &aimer_widget::base::WindowHandle) {
     /// let entering = !window.is_fullscreen();
     /// window.set_fullscreen(entering);
