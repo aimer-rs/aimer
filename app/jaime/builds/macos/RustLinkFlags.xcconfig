@@ -5,4 +5,4 @@
 // The app target uses this file as its base configuration and only
 // interpolates `$(AIMER_RUST_LDFLAGS)` into `OTHER_LDFLAGS`, so adding an
 // Apple binding to the Rust side never needs an Xcode change.
-AIMER_RUST_LDFLAGS = -framework Security -framework AuthenticationServices -lobjc -framework AppKit -framework CoreGraphics -framework CoreText -framework QuartzCore -framework Metal -framework Foundation -framework CoreFoundation -framework ApplicationServices -framework CoreVideo -framework Carbon -lc -lSystem -liconv -lm
+AIMER_RUST_LDFLAGS = -framework Security -framework AuthenticationServices -lobjc -framework AVFAudio -framework AVFoundation -framework CoreMedia -framework AppKit -framework CoreGraphics -framework CoreText -framework QuartzCore -framework Metal -framework Foundation -framework CoreFoundation -framework ApplicationServices -framework CoreVideo -framework Carbon -lc -lSystem -liconv -lm

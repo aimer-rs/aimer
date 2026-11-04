@@ -11,7 +11,52 @@ aimer_tls.workspace = true
 objc2.workspace = true
 objc2-foundation = { workspace = true, features = ["std", "NSData", "NSError", "NSString", "NSURL"] }
 objc2-avf-audio = { workspace = true, features = ["std", "AVAudioPlayer"] }
+# `AVPlayer` plays a URL while it downloads; `AVAudioPlayer` cannot.
+objc2-av-foundation = { workspace = true, features = ["std", "AVPlayer", "AVPlayerItem", "AVTime", "objc2-core-media"] }
+objc2-core-media = { workspace = true, features = ["std", "CMTime", "CMTimeRange"] }
 
 # The audio session only exists on iOS; macOS plays without one.
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-avf-audio = { workspace = true, features = ["AVAudioSession", "AVAudioSessionTypes"] }
+
+# Linux has no system player: decode with Symphonia, output through ALSA
+# (loaded at run time, so building needs no ALSA headers), download with ureq.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+symphonia.workspace = true
+ureq.workspace = true
+
+# WinRT `MediaPlayer`; Media Foundation decodes and streams.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true, features = [
+    "std",
+    "Foundation",
+    "Media_Core",
+    "Media_Playback",
+    "Security_Cryptography",
+    "Storage",
+    "Storage_Streams",
+    "Web_Http",
+    "Win32_System_WinRT",
+] }
+
+# `android.media.MediaPlayer` over JNI.
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+ndk-context.workspace = true
+
+# `HTMLAudioElement`; the browser fetches, streams and decodes.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+aimer_tls.workspace = true
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = [
+    "Element",
+    "HtmlAudioElement",
+    "HtmlElement",
+    "HtmlMediaElement",
+    "MediaError",
+    "TimeRanges",
+    "Window",
+] }

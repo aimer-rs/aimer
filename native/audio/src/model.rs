@@ -13,9 +13,15 @@ pub enum AudioSource {
     Bundled(String),
     /// A file on the host file system.
     File(PathBuf),
-    /// An `http` or `https` URL. The whole file is downloaded before it plays;
-    /// there is no progressive streaming.
+    /// An `http` or `https` URL. The whole file is downloaded before it plays,
+    /// so seeking and looping are instant afterwards. For long remote audio use
+    /// [`AudioSource::Stream`] instead.
     Url(String),
+    /// An `http` or `https` URL played while it downloads.
+    ///
+    /// A [`Sound`](crate::Sound) cannot stream, so it downloads this source
+    /// like [`AudioSource::Url`].
+    Stream(String),
 }
 
 impl AudioSource {
@@ -31,10 +37,16 @@ impl AudioSource {
         Self::File(path.into())
     }
 
-    /// A remote file.
+    /// A remote file, downloaded completely before it plays.
     #[inline]
     pub fn url(url: impl Into<String>) -> Self {
         Self::Url(url.into())
+    }
+
+    /// A remote file, played as soon as enough of it has arrived.
+    #[inline]
+    pub fn stream(url: impl Into<String>) -> Self {
+        Self::Stream(url.into())
     }
 }
 
@@ -73,6 +85,9 @@ pub enum PlaybackState {
     /// Producing sound. A track asked to play while still loading counts as
     /// playing: it starts the moment it is ready.
     Playing,
+    /// Asked to play, but waiting for streamed data to arrive. It resumes by
+    /// itself, so it counts as playing for [`AudioPlayer::is_playing`](crate::AudioPlayer::is_playing).
+    Buffering,
     /// Paused partway through.
     Paused,
     /// Reached the end and is not repeating.

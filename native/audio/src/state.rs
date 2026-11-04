@@ -31,6 +31,11 @@ pub(crate) struct Snapshot {
     pub position: f64,
     /// Seconds, once the source is open.
     pub duration: Option<f64>,
+    /// Seconds of the track already available to play; only a stream's grows
+    /// over time.
+    pub buffered: f64,
+    /// The player is waiting for data it needs to keep going.
+    pub buffering: bool,
     pub volume: f32,
     pub muted: bool,
     pub loops: AudioLoops,
@@ -46,6 +51,8 @@ impl Snapshot {
             finished: false,
             position: 0.0,
             duration: None,
+            buffered: 0.0,
+            buffering: false,
             volume: 1.0,
             muted: false,
             loops: AudioLoops::Once,
@@ -56,6 +63,7 @@ impl Snapshot {
         match self.phase {
             Phase::Failed => PlaybackState::Failed,
             Phase::Idle => PlaybackState::Idle,
+            Phase::Loaded if self.want_play && self.buffering => PlaybackState::Buffering,
             _ if self.want_play => PlaybackState::Playing,
             Phase::Loading => PlaybackState::Loading,
             Phase::Loaded if self.finished => PlaybackState::Finished,
@@ -78,6 +86,8 @@ impl Snapshot {
         self.finished = false;
         self.position = 0.0;
         self.duration = None;
+        self.buffered = 0.0;
+        self.buffering = false;
     }
 
     pub fn fail(&mut self, error: AudioError) {
@@ -126,6 +136,18 @@ mod tests {
         assert_eq!(s.state(), PlaybackState::Paused);
         s.finished = true;
         assert_eq!(s.state(), PlaybackState::Finished);
+    }
+
+    #[test]
+    fn a_playing_snapshot_that_waits_for_data_reads_buffering() {
+        let mut s = Snapshot::new();
+        s.phase = Phase::Loaded;
+        s.buffering = true;
+        assert_eq!(s.state(), PlaybackState::Ready, "a paused stream is not buffering");
+        s.want_play = true;
+        assert_eq!(s.state(), PlaybackState::Buffering);
+        s.buffering = false;
+        assert_eq!(s.state(), PlaybackState::Playing);
     }
 
     #[test]

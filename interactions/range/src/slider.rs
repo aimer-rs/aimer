@@ -28,6 +28,7 @@ pub struct Slider<T: RangeValue = f64> {
     trail: Option<ChildBuilder>,
     thumb: Option<ChildBuilder>,
     pub(crate) on_change: Option<RangeChangeCallback<T>>,
+    pub(crate) on_change_end: Option<RangeChangeCallback<T>>,
 }
 
 impl<T: RangeValue> Slider<T> {
@@ -51,6 +52,7 @@ impl<T: RangeValue> Slider<T> {
             trail: None,
             thumb: None,
             on_change: None,
+            on_change_end: None,
         };
         slider.refresh_spec();
         slider
@@ -226,6 +228,43 @@ impl<T: RangeValue> Slider<T> {
         F: Fn(T) + 'static,
     {
         self.on_change = Some(std::rc::Rc::new(callback));
+        self
+    }
+
+    /// Registers a callback for the value a completed change settled on.
+    ///
+    /// [`Self::on_change`] reports every value a drag passes through; this
+    /// reports only where the user let go, once per gesture: when the pointer
+    /// is released (a tap on the track included) or the drag is cancelled, and
+    /// after each keyboard step that changed the value. Use it for work too
+    /// costly to repeat while the thumb moves, such as seeking a media player,
+    /// and keep showing the dragged value from `on_change` until it arrives.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::cell::Cell;
+    /// use std::rc::Rc;
+    ///
+    /// use aimer_range::Slider;
+    ///
+    /// let dragging = Rc::new(Cell::new(None::<f64>));
+    /// let (shown, settled) = (dragging.clone(), dragging.clone());
+    /// let slider = Slider::new()
+    ///     .range(0.0..60.0)
+    ///     .on_change(move |seconds| shown.set(Some(seconds)))
+    ///     .on_change_end(move |_seconds| {
+    ///         // seek here, then follow the playhead again
+    ///         settled.set(None);
+    ///     });
+    /// # let _ = slider;
+    /// ```
+    #[inline]
+    pub fn on_change_end<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(T) + 'static,
+    {
+        self.on_change_end = Some(std::rc::Rc::new(callback));
         self
     }
 

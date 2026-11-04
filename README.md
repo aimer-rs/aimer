@@ -60,11 +60,21 @@ fn main() {
 
 ![Aimer Logo](.assets/rust-forum-screenshot.png)
 
+## AI usage
 
+AI tools assist with Aimer's development, audits, testing, documentation, and
+project maintenance. Maintainers direct product design and architecture, review
+generated changes, and remain responsible for everything that ships.
 
-## Disclaimer
+Contributors are welcome to use AI tools. You must understand, review, and
+validate what you submit, explain your decisions, and address feedback. The
+same quality standards apply regardless of how a contribution was produced.
 
-Aimer is built exclusively with AI (**A**imer **I**ntelligence).
+Submit only work you can stand behind. AI-generated code, test results, and
+claims need verification before they become part of a contribution.
+
+The final merge are perform by Aimer's team after it have been reviewed.
+
 
 ## License
 

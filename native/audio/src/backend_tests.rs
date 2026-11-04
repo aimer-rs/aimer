@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 use crate::{AudioError, AudioLoops, AudioPlayer, AudioSource, PlaybackState, Sound};
 
 /// Mono, 16-bit, 8 kHz PCM silence of the given length.
+// Only platforms that run the real-player tests use the fixtures.
+#[cfg_attr(not(any(target_os = "ios", target_os = "macos", target_os = "linux")), allow(dead_code))]
 fn silent_wav(seconds: f32) -> Vec<u8> {
     const RATE: u32 = 8000;
     let samples = (RATE as f32 * seconds) as u32;
@@ -29,6 +31,7 @@ fn silent_wav(seconds: f32) -> Vec<u8> {
     wav
 }
 
+#[cfg_attr(not(any(target_os = "ios", target_os = "macos", target_os = "linux")), allow(dead_code))]
 fn temp_file(name: &str, bytes: &[u8]) -> PathBuf {
     let path = std::env::temp_dir().join(format!("aimer_audio_{}_{name}", std::process::id()));
     std::fs::write(&path, bytes).expect("temp file should be writable");
@@ -103,7 +106,14 @@ fn clones_control_the_same_track() {
     assert_eq!(player.loops(), AudioLoops::Count(4));
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "ios",
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows",
+    target_arch = "wasm32"
+)))]
 #[test]
 fn platforms_without_a_backend_report_unsupported() {
     assert!(!crate::is_supported());
@@ -113,8 +123,10 @@ fn platforms_without_a_backend_report_unsupported() {
     assert_eq!(player.error(), Some(AudioError::Unsupported));
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos"))]
-mod apple {
+/// Playback through the platform's real player. On Linux the output is ALSA's
+/// `null` device, so these run without sound hardware.
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "linux"))]
+mod real {
     use super::*;
 
     fn silent_player(name: &str, seconds: f32) -> AudioPlayer {
@@ -274,5 +286,101 @@ mod apple {
         // The engine keeps running and serves the next handle.
         let next = silent_player("after_drop.wav", 0.3);
         assert_eq!(next.state(), PlaybackState::Ready);
+    }
+}
+
+/// Streaming through the Linux software player, from a local HTTP server.
+#[cfg(target_os = "linux")]
+mod linux_stream {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+
+    use super::*;
+
+    /// Serves `body` once, in slow chunks, and returns its URL.
+    fn serve(name: &str, body: Vec<u8>, with_length: bool) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let url = format!("http://{}/{name}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let Ok((stream, _)) = listener.accept() else { return };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            while reader.read_line(&mut line).is_ok_and(|read| read > 2) {
+                line.clear();
+            }
+            let mut stream = stream;
+            let header = if with_length {
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())
+            } else {
+                "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n".to_string()
+            };
+            let _ = stream.write_all(header.as_bytes());
+            for chunk in body.chunks(4096) {
+                if stream.write_all(chunk).is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        });
+        url
+    }
+
+    #[test]
+    fn a_stream_plays_while_it_downloads_and_finishes() {
+        let url = serve("stream.wav", silent_wav(0.4), true);
+        let player = AudioPlayer::new();
+        player.set_volume(0.0);
+        player.load(AudioSource::stream(url));
+        player.play();
+        assert!(player.is_playing());
+
+        wait_until("the length to be known", || player.duration().is_some());
+        let duration = player.duration().unwrap();
+        assert!((duration.as_secs_f64() - 0.4).abs() < 0.01, "{duration:?}");
+        wait_until("the stream to finish", || player.state() == PlaybackState::Finished);
+        assert_eq!(player.buffered(), duration);
+        assert_eq!(player.error(), None);
+    }
+
+    #[test]
+    fn a_stream_without_a_length_header_still_plays() {
+        let url = serve("chunked.wav", silent_wav(0.3), false);
+        let player = AudioPlayer::from_source(AudioSource::stream(url));
+        player.set_volume(0.0);
+        player.play();
+        wait_until("the stream to finish", || {
+            matches!(player.state(), PlaybackState::Finished | PlaybackState::Failed)
+        });
+        assert_eq!(player.state(), PlaybackState::Finished, "{:?}", player.error());
+    }
+
+    #[test]
+    fn a_stream_that_is_not_audio_fails() {
+        let url = serve("page.html", b"<html>not audio</html>".to_vec(), true);
+        let player = AudioPlayer::from_source(AudioSource::stream(url));
+        player.play();
+        wait_until("the failure", || player.state() == PlaybackState::Failed);
+        assert!(matches!(player.error(), Some(AudioError::Decode(_))), "{:?}", player.error());
+    }
+
+    #[test]
+    fn a_stream_from_a_server_that_is_not_there_fails_with_a_network_error() {
+        // A port that was free a moment ago: nothing listens on it now.
+        let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let player = AudioPlayer::from_source(AudioSource::stream(format!("http://127.0.0.1:{port}/a.wav")));
+        player.play();
+        wait_until("the failure", || player.state() == PlaybackState::Failed);
+        assert!(matches!(player.error(), Some(AudioError::Network(_))), "{:?}", player.error());
+    }
+
+    #[test]
+    fn a_url_source_downloads_first_and_plays() {
+        let url = serve("whole.wav", silent_wav(0.2), true);
+        let player = AudioPlayer::from_source(AudioSource::url(url));
+        player.set_volume(0.0);
+        wait_loaded(&player);
+        assert_eq!(player.state(), PlaybackState::Ready, "{:?}", player.error());
+        player.play();
+        wait_until("the track to finish", || player.state() == PlaybackState::Finished);
     }
 }

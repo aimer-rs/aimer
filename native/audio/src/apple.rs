@@ -3,7 +3,8 @@
 //! One `AVAudioPlayer` is one voice. Tracks open it from a file URL so the
 //! system streams from disk; sounds open it from shared in-memory data.
 //! `AVAudioPlayer` has no progressive-download mode, so a [`fetch`] of a URL
-//! downloads the whole file first.
+//! downloads the whole file first; streamed tracks use `AVPlayer` in
+//! [`apple_stream`](crate::apple_stream).
 //!
 //! Every object here is created and used on the engine thread only.
 //!
@@ -15,7 +16,7 @@ use objc2_avf_audio::AVAudioPlayer;
 use objc2_foundation::{NSData, NSError, NSString, NSURL};
 
 use crate::AudioError;
-use crate::backend::{Backend, Voice, VoiceData};
+use crate::backend::{Backend, Voice, VoiceData, is_http_url};
 
 pub(crate) struct AppleBackend;
 
@@ -33,6 +34,9 @@ impl Backend for AppleBackend {
     }
 
     fn open(&mut self, data: &VoiceData) -> Result<Box<dyn Voice>, AudioError> {
+        if let VoiceData::Stream(url) = data {
+            return crate::apple_stream::open(url);
+        }
         // SAFETY: `alloc` yields an uninitialised instance that the init call
         // consumes; the returned player is a retained, fully initialised object.
         let (player, data) = match data {
@@ -44,6 +48,9 @@ impl Backend for AppleBackend {
                 };
                 (player, None)
             }
+            VoiceData::Stream(_) => unreachable!("handled above"),
+            // Apple bundles are plain directories, so assets resolve to paths.
+            VoiceData::Asset(key) => return Err(AudioError::NotFound(key.clone())),
             VoiceData::Bytes(bytes) => {
                 let data = NSData::with_bytes(bytes);
                 let player =
@@ -62,8 +69,7 @@ impl Backend for AppleBackend {
     }
 
     fn fetch(url: &str) -> Result<Vec<u8>, AudioError> {
-        let lower = url.get(..8).unwrap_or(url).to_ascii_lowercase();
-        if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        if !is_http_url(url) {
             return Err(AudioError::Network(format!("not an http(s) URL: {url}")));
         }
         let ns_url = NSURL::URLWithString(&NSString::from_str(url))
