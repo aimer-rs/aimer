@@ -125,16 +125,17 @@ impl Drawable for BackingLayer {
     }
 
     fn paint_needs_recording(&self, _: &BuildContext) -> bool {
-        self.recorded.get() != Some(self.window.get())
+        self.recorded.get() != Some(self.host.get())
     }
 
     fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
-        Some(self.window.get().map_or(ResolvedSize::default(), |window| ResolvedSize {
-            width: window.host.0 * ctx.scale,
-            height: window.host.1 * ctx.scale,
-        }))
+        // The host publishes `(0, 0)` until it has a size, which is also the size recorded
+        // for it: nothing is painted, so there is nothing to bound.
+        let (width, height) = self.host.get();
+        Some(ResolvedSize { width: width * ctx.scale, height: height * ctx.scale })
     }
 }
+
 
 impl EventElement for BackingLayer {
     fn event_tree_role(&self) -> EventTreeRole { EventTreeRole::Transparent }
