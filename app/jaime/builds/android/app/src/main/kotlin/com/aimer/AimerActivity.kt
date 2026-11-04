@@ -2,8 +2,6 @@ package com.aimer
 
 import android.app.NativeActivity
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
@@ -16,11 +14,6 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
-import android.window.BackEvent
-import android.window.OnBackAnimationCallback
-import android.window.OnBackInvokedCallback
-import android.window.OnBackInvokedDispatcher
-import androidx.annotation.RequiresApi
 
 /**
  * Thin wrapper around [NativeActivity] that gives the framework a working
@@ -58,78 +51,6 @@ class AimerActivity : NativeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         runOnUiThread(::setupInputView)
-        registerSystemBack()
-        // Only a fresh launch: a recreated activity carries the intent it was
-        // first started with, and replaying it would reopen the link over the
-        // state the user had navigated to since.
-        if (savedInstanceState == null) {
-            openLinkFrom(intent)
-        }
-    }
-
-    /**
-     * A link opened while the app is already running, which needs
-     * `launchMode="singleTask"` (see the manifest) to arrive here instead of
-     * starting a second activity.
-     */
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        openLinkFrom(intent)
-    }
-
-    /**
-     * Hands the URL of a `VIEW` intent to Rust, which offers it to the app's
-     * navigators. Safe before the native side is running: Rust queues it.
-     */
-    private fun openLinkFrom(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_VIEW) {
-            return
-        }
-        intent.data?.toString()?.let(::nativeOpenLink)
-    }
-
-    /**
-     * Hands the system's back to Rust, which offers it to the app's back
-     * handlers (a navigator pops, an open dialog closes) and leaves the app if
-     * none takes it.
-     *
-     * From API 33 the system delivers back through an `OnBackInvokedCallback`
-     * rather than a key, and from API 34 it reports a gesture's progress, which
-     * Rust uses to drag the page away under the user's finger. Below 33 the
-     * system sends `KEYCODE_BACK`, which winit already delivers as a key.
-     */
-    private fun registerSystemBack() {
-        if (Build.VERSION.SDK_INT >= 34) {
-            registerPredictiveBack()
-        } else if (Build.VERSION.SDK_INT >= 33) {
-            registerBackInvoked()
-        }
-    }
-
-    @RequiresApi(34)
-    private fun registerPredictiveBack() {
-        onBackInvokedDispatcher.registerOnBackInvokedCallback(
-            OnBackInvokedDispatcher.PRIORITY_DEFAULT,
-            object : OnBackAnimationCallback {
-                override fun onBackStarted(backEvent: BackEvent) = nativeBack(BACK_STARTED, 0f)
-
-                override fun onBackProgressed(backEvent: BackEvent) =
-                    nativeBack(BACK_PROGRESSED, backEvent.progress)
-
-                override fun onBackInvoked() = nativeBack(BACK_INVOKED, 1f)
-
-                override fun onBackCancelled() = nativeBack(BACK_CANCELLED, 0f)
-            },
-        )
-    }
-
-    @RequiresApi(33)
-    private fun registerBackInvoked() {
-        onBackInvokedDispatcher.registerOnBackInvokedCallback(
-            OnBackInvokedDispatcher.PRIORITY_DEFAULT,
-            OnBackInvokedCallback { nativeBack(BACK_INVOKED, 1f) },
-        )
     }
 
     private fun setupInputView() {
@@ -391,28 +312,6 @@ class AimerActivity : NativeActivity() {
         private const val INPUT_KIND_TEXT = 0
         private const val INPUT_KIND_NUMBER = 1
         private const val INPUT_KIND_OBSCURE = 2
-
-        /**
-         * Reports a link the app was opened with to Rust.
-         *
-         * May be called before the event loop exists; Rust queues it.
-         */
-        @JvmStatic
-        external fun nativeOpenLink(url: String)
-
-        // Phases of a system back; these must match `nativeBack` in aimer_quiver.
-        private const val BACK_STARTED = 0
-        private const val BACK_PROGRESSED = 1
-        private const val BACK_INVOKED = 2
-        private const val BACK_CANCELLED = 3
-
-        /**
-         * Reports a step of the system's back to Rust.
-         *
-         * Called on the UI thread; Rust only queues it for the event loop.
-         */
-        @JvmStatic
-        external fun nativeBack(phase: Int, progress: Float)
 
         /**
          * Reports a native editing transaction to Rust.

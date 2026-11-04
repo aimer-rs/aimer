@@ -3,34 +3,25 @@
      app/build.gradle.kts; declaring `package` here is ignored since AGP 8. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Haptic feedback (`aimer_haptics`) goes through the system vibrator. -->
-    <uses-permission android:name="android.permission.VIBRATE" />
-
     <application
-        android:enableOnBackInvokedCallback="true"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/AimerFullscreenTheme">
+        <!-- `uiMode` in `configChanges` keeps the activity alive when the user
+             switches the system between light and dark: without it Android
+             destroys and recreates the activity, restarting the app instead of
+             letting the theme animate into the new appearance. -->
         <activity
             android:name="com.aimer.AimerActivity"
             android:exported="true"
-            android:launchMode="singleTask"
             android:configChanges="orientation|keyboardHidden|screenSize|uiMode"
             android:windowSoftInputMode="stateHidden|adjustResize">
-            <meta-data android:name="android.app.lib_name" android:value="Jaime" />
+            <meta-data android:name="android.app.lib_name" android:value="jaime" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <!-- Links that open the app: `jaime://topic/42`. A web link needs
-                 `https` and a host here, plus an `autoVerify` assetlinks setup. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="jaime" />
             </intent-filter>
         </activity>
     </application>

@@ -18,6 +18,16 @@ android {
         versionName = "1.0"
     }
 
+    buildTypes {
+        getByName("release") {
+            // Sign release builds with the debug key so they can be installed
+            // locally; an unsigned release APK fails with
+            // INSTALL_PARSE_FAILED_NO_CERTIFICATES. Replace this with a real
+            // signing config before publishing.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
     sourceSets {
         getByName("main") {
             kotlin.srcDir("src/main/kotlin")
