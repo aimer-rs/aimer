@@ -90,7 +90,7 @@ fn bar_fills<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Vec<String> {
             && let Ok(snapshot) = app.app.render_tree().draw_list_snapshot(node)
         {
             for command in snapshot.commands.iter() {
-                if let aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { color, rect, .. } = command
+                if let aimer_cupid::draw_cmd::DrawCommand::FillRect { color, rect, .. } = command
                     && rect.width > 100.0
                     && rect.height < 14.0
                 {

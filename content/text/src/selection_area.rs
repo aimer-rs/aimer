@@ -223,11 +223,11 @@ impl Drawable for SelectionAreaElement {
         ui::track_handles(&self.session);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 }
 
 impl LayoutElement for SelectionAreaElement {

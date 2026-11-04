@@ -46,7 +46,7 @@ use aimer_attribute::BoxConstraint;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_cupid::damage_region::DamageSet;
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     DrawCommand as V2DrawCommand, Rect as RenderRect, RenderFrame, RenderNodeId, RenderNodeSpec,
     RenderOp, RenderPaintSource, RenderTree, RenderTreeError,
 };
@@ -189,7 +189,7 @@ pub(crate) struct WindowRenderTree {
     /// final sync (see [`census::PaintSourceCensus::drawn_unmapped`]).
     drawn_unmapped: Vec<census::CensusElement>,
     /// Elements that had no retained paint to show in some frame: they declined
-    /// (`can_paint_local_v2` was false) or their state was not valid. One entry
+    /// (`can_paint` was false) or their state was not valid. One entry
     /// per element, accumulated.
     declined_paint: Vec<census::CensusElement>,
     /// Why the last [`Self::sync`] failed, if it did. A failed sync leaves the
@@ -390,7 +390,7 @@ impl WindowRenderTree {
             let Some(node) = render_ids.get(*index) else {
                 continue;
             };
-            element.adopt_retained_v2_interaction_source(
+            element.adopt_interaction_source(
                 aimer_widget::InteractionSource::new(
                     self.tree.clone(),
                     *node,
@@ -483,7 +483,7 @@ fn node_frame(
 ) -> NodeFrame {
     let position = element.pos().unwrap_or_default();
     let size = element
-        .retained_v2_bounds(ctx)
+        .paint_bounds(ctx)
         .unwrap_or_else(|| element.content_size(ctx));
     let (mut bounds, clip) = geometry.unwrap_or_else(|| {
         (
@@ -504,7 +504,7 @@ fn node_frame(
     );
     let mut own_outset = (0.0, 0.0);
     let mut clip = clip;
-    if let Some([left, top, right, bottom]) = element.retained_v2_paint_outsets(ctx)
+    if let Some([left, top, right, bottom]) = element.paint_outsets(ctx)
         && [left, top, right, bottom]
             .iter()
             .all(|outset| outset.is_finite() && *outset >= 0.0)
@@ -630,14 +630,14 @@ fn child_input<'c>(
     child: &dyn Element,
     index: usize,
 ) -> ChildInput<'c> {
-    let provided = element.retained_v2_child_context_at(ctx, child, index);
+    let provided = element.child_context_at(ctx, child, index);
     // A child that was measured keeps the size of its last measurement, and the
     // geometry below measures it again in the space it is laid out in. The tree
     // reads the last one, so the measurement for the base context comes first.
     let child_ctx = provided.unwrap_or_else(|| child_base_ctx.get().clone());
-    let geometry = element.retained_v2_child_geometry_at(ctx, child, index);
+    let geometry = element.child_geometry_at(ctx, child, index);
     let clip_radius = if geometry.is_some() {
-        element.retained_v2_child_clip_radius(ctx, child)
+        element.child_clip_radius(ctx, child)
     } else {
         [0.0; 4]
     };
@@ -712,10 +712,10 @@ fn collect_render_tree_nodes<'element, 'context>(
         )
     };
     let node_index = specs.len();
-    if let Some(interaction_size) = element.retained_v2_interaction_size(ctx) {
+    if let Some(interaction_size) = element.interaction_size(ctx) {
         // The node starts `own_outset` (logical) outside the element's layout
         // box, so the interaction rectangle starts that far inside the node.
-        let offset = element.retained_v2_interaction_offset(ctx);
+        let offset = element.interaction_offset(ctx);
         interactive.push((
             node_index,
             element,
@@ -775,7 +775,7 @@ fn collect_render_tree_nodes<'element, 'context>(
             element_path,
         );
     });
-    if !is_new && has_new_child && element.can_paint_local_v2(ctx) {
+    if !is_new && has_new_child && element.can_paint(ctx) {
         // This owner's previous synchronization saw the old child slots.
         // Reapply its presentation after the new children have render nodes.
         new_elements.push((node_index, element, ctx.clone(), element_path.clone()));
@@ -789,7 +789,7 @@ fn record_new_local_v2_paints<'element, 'context>(
 ) -> bool {
     if new_nodes
         .iter()
-        .any(|node| !node.element.can_paint_local_v2(&node.context))
+        .any(|node| !node.element.can_paint(&node.context))
     {
         return false;
     }
@@ -805,13 +805,13 @@ fn record_new_local_v2_paints<'element, 'context>(
                 // A child created during drawing missed the normal mapped-node
                 // state pass. Cached pixels must not appear at default opacity
                 // before their animation's first sample is applied.
-                if !node.element.sync_local_v2_state(ctx) {
+                if !node.element.sync_paint_state(ctx) {
                     return false;
                 }
                 if tree.needs_recording(node.render_node).unwrap_or(true)
-                    || node.element.local_v2_paint_needs_recording(ctx)
+                    || node.element.paint_needs_recording(ctx)
                 {
-                    node.element.paint_local_v2(ctx);
+                    node.element.paint(ctx);
                 }
                 true
             });
@@ -2376,7 +2376,7 @@ mod tests {
     use aimer_attribute::position::Vec2d;
     use aimer_attribute::size::{ResolvedSize, Size};
     use aimer_container::Container;
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderOp, RenderPaintSource};
+    use aimer_cupid::draw_cmd::{Rect, RenderOp, RenderPaintSource};
     use aimer_flex::Column;
     use aimer_scroll::{ScrollController, Scrollable};
     use aimer_widget::base::{BuildContext, Color, WindowHandle};
@@ -2447,11 +2447,11 @@ mod tests {
             self.child.update(ctx);
         }
 
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             self.paints.set(self.paints.get() + 1);
             let canvas = aimer_canvas::Canvas::of(ctx);
             canvas.fill_rect(Rect::new(0.0, 0.0, 30.0, 30.0), [30, 90, 180, 255]);
@@ -2485,11 +2485,11 @@ mod tests {
             self.child.update(ctx);
         }
 
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             aimer_canvas::Canvas::of(ctx).finish();
         }
     }
@@ -2571,11 +2571,11 @@ mod tests {
     impl Drawable for V2Grandchild {
         fn update(&self, _ctx: &BuildContext) {}
 
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             self.paints.set(self.paints.get() + 1);
             let canvas = aimer_canvas::Canvas::of(ctx);
             canvas.finish();
@@ -2613,11 +2613,11 @@ mod tests {
     }
 
     impl Drawable for V2PaintLeaf {
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             self.paints.set(self.paints.get() + 1);
             let (red, green, blue, alpha) = self.color.to_rgba();
             let canvas = aimer_canvas::Canvas::of(ctx);
@@ -2701,11 +2701,11 @@ mod tests {
             self.child.update(ctx);
         }
 
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             aimer_canvas::Canvas::of(ctx).finish();
         }
 
@@ -2750,11 +2750,11 @@ mod tests {
             }
         }
 
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             let canvas = aimer_canvas::Canvas::of(ctx);
             canvas.finish();
         }
@@ -2795,11 +2795,11 @@ mod tests {
             self.child.update(ctx);
         }
 
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             aimer_canvas::Canvas::of(ctx).finish();
         }
     }
@@ -3568,7 +3568,7 @@ mod tests {
         assert_eq!(background_before.revision, 1);
         assert!(matches!(
             background_before.commands.as_ref(),
-            [aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { color, .. }]
+            [aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. }]
                 if (color.r, color.g, color.b, color.a) == (0, 0, 255, 255)
         ));
         let child_clip =

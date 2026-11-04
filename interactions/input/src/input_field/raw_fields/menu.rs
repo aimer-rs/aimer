@@ -382,7 +382,7 @@ mod tests {
         let end = field.controller.grapheme_count();
         field.chosen_action.set(Some(FieldAction::SelectAll));
 
-        assert!(field.sync_local_v2_state(&context));
+        assert!(field.sync_paint_state(&context));
 
         assert_eq!(field.cursor.selection_range(), Some((0, end)));
         assert_eq!(field.controller.selection_graphemes(), (0, end));

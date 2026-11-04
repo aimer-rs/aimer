@@ -200,8 +200,8 @@ fn animated_builder_paints_locally_whatever_its_child_is() {
     let context = context();
     let element = AnimatedBuilder::new(controller, |_value| UnknownLeaf).to_element(&context);
 
-    assert!(element.as_ref().can_paint_local_v2(&context));
-    assert!(element.as_ref().sync_local_v2_state(&context));
+    assert!(element.as_ref().can_paint(&context));
+    assert!(element.as_ref().sync_paint_state(&context));
 }
 
 mod typed_constructors {

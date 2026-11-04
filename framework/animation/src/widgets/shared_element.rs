@@ -348,15 +348,15 @@ impl Drawable for RawSharedElement {
     /// The element owns a render node of its own, with nothing recorded on it,
     /// so there is a node whose bounds are the child's.
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         Canvas::of(ctx).finish();
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         if let (Some(tag), Some(node)) = (&self.tag, ctx.local_v2_node_handle()) {
             REGISTRY.with(|registry| {
                 registry.borrow_mut().insert(
@@ -446,7 +446,7 @@ mod tests {
     use std::sync::OnceLock;
 
     use aimer_attribute::BoxConstraint;
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderNodeId, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderNodeId, RenderTree};
 
     use super::*;
 
@@ -530,7 +530,7 @@ mod tests {
         fn sync(&self, element: &dyn Element, context: &BuildContext<'_>) -> bool {
             let retained = self.tree.context(self.id).unwrap();
             context.with_local_v2_paint_context(retained, |context| {
-                element.sync_local_v2_state(context)
+                element.sync_paint_state(context)
             })
         }
     }

@@ -10,7 +10,7 @@
 #![cfg_attr(not(any(test, feature = "frame-stats")), allow(dead_code))]
 
 use super::WindowRenderTree;
-use aimer_cupid::draw_cmd_v2::RenderPaintSource;
+use aimer_cupid::draw_cmd::RenderPaintSource;
 use aimer_widget::{Element, ElementId};
 
 /// One element a census entry points at, with its type for diagnostics.
@@ -43,7 +43,7 @@ pub struct PaintSourceCensus {
     /// `visit_children` causes this.
     pub drawn_unmapped: Vec<CensusElement>,
     /// Elements that had no retained paint to show in some frame: they
-    /// declined (`can_paint_local_v2` was false) or their state was not valid
+    /// declined (`can_paint` was false) or their state was not valid
     /// enough to paint. They paint nothing. Debug builds only.
     pub declined_paint: Vec<CensusElement>,
     /// Why the last render-tree synchronization failed (the error's name), if

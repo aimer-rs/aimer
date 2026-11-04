@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use super::{FrameWorker, WorkerEvent, WorkerPresenter};
-use aimer_cupid::draw_cmd::DrawList;
+use aimer_cupid::render_list::DrawList;
 use aimer_cupid::frame::{Frame, FramePacket};
 use winit::dpi::PhysicalSize;
 

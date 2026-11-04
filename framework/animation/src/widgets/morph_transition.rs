@@ -460,7 +460,7 @@ struct MorphTransitionElement {
     controller: AnimationController,
     window: WindowHandle,
     look: MorphLook,
-    /// The eased progress settled by the latest `sync_local_v2_state`.
+    /// The eased progress settled by the latest `sync_paint_state`.
     progress: Cell<f32>,
     /// The marker the node's list currently holds; `None` while it holds none.
     recorded: Cell<Option<MarkerSignature>>,
@@ -495,16 +495,16 @@ impl Drawable for MorphTransitionElement {
             aimer_widget::mark_paint_damage_full();
         }
         // The morph itself is a shader over the children's render nodes (see
-        // `paint_local_v2`); this walks them and settles the state.
-        self.draw_local_v2_compatibility(ctx);
+        // `paint`); this walks them and settles the state.
+        self.update_retained(ctx);
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         // While idle the node holds no list at all, which is what drops the
         // marker once the morph has finished.
         let Some(params) = self.marker() else {
@@ -517,11 +517,11 @@ impl Drawable for MorphTransitionElement {
         self.recorded.set(Some(Self::signature(&params)));
     }
 
-    fn local_v2_paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
         self.recorded.get() != self.marker().as_ref().map(Self::signature)
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         // Both children are presented through their own render nodes and the
         // shader reads them there, so the tree damages whatever they paint; no
         // promise about the paint extent of either is needed.
@@ -544,7 +544,7 @@ impl Drawable for MorphTransitionElement {
             && ctx.set_local_v2_child_presentation_at(1, identity, 1.0)
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         unsafe {
             if self.morph_state.get() == MorphState::Morphing
                 && let Some(old) = self.old_child.get()

@@ -477,17 +477,17 @@ impl Drawable for RawDraggable {
     /// Hit-tested against the rectangle this element reports as its own size,
     /// which can be larger than the content box its render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.visible_child().computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("Draggable")
@@ -503,14 +503,14 @@ impl Drawable for RawDraggable {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         let child = self.visible_child();
         let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
         let size = child.computed_size(ctx);
@@ -520,16 +520,7 @@ impl Drawable for RawDraggable {
         true
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
-        let child = self.visible_child();
-        let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
-        let size = child.computed_size(ctx);
-        self.bounds
-            .save(ctx.scale, abs_x, abs_y, size.width, size.height);
-        child.update(ctx);
-    }
-
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,

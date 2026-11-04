@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::mask_group_tests::{SIZE, near, pixel, record, render};
 use crate::AntiAlias;
-use crate::draw_cmd_v2::{DrawCommand, FADE_MASK_PIPELINE_NAME, Rect, RenderTree};
+use crate::draw_cmd::{DrawCommand, FADE_MASK_PIPELINE_NAME, Rect, RenderTree};
 use crate::pipeline::material::{
     GradientShape, MATERIAL_PIPELINE_NAME, MaterialGradient, MaterialKind, MaterialRequest,
 };
@@ -52,7 +52,7 @@ fn solid(rect: Rect, color: Color) -> DrawCommand {
 }
 
 /// root -> faded (16,16, 96x96, alpha ramp) -> opaque green content (20,20, 56x56).
-fn faded_scene() -> (RenderTree, crate::draw_cmd_v2::RenderNodeId) {
+fn faded_scene() -> (RenderTree, crate::draw_cmd::RenderNodeId) {
     let tree = RenderTree::new();
     let root = tree.add_root(Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32)).unwrap();
     let faded = tree.add_child(root, Rect::new(16.0, 16.0, 96.0, 96.0)).unwrap();
@@ -97,7 +97,7 @@ fn a_fade_leaves_its_unfaded_siblings_alone() {
         .render_all()
         .iter()
         .find_map(|operation| match operation {
-            crate::draw_cmd_v2::RenderOp::Draw(item) => Some(item.element),
+            crate::draw_cmd::RenderOp::Draw(item) => Some(item.element),
             _ => None,
         })
         .expect("the scene draws its root");
@@ -131,7 +131,7 @@ fn a_fade_inside_a_fade_multiplies_the_alphas() {
 
 #[test]
 fn a_fade_inside_a_coverage_mask_keeps_both_effects() {
-    use crate::draw_cmd_v2::COVERAGE_MASK_PIPELINE_NAME;
+    use crate::draw_cmd::COVERAGE_MASK_PIPELINE_NAME;
     let tree = RenderTree::new();
     let root = tree.add_root(Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32)).unwrap();
     // A blue box shown only through its descendant, which is itself a fade.

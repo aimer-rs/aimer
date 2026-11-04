@@ -540,16 +540,16 @@ where
     /// The frame records nothing itself: its current child owns the render
     /// nodes and resolves its own paint source.
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
     /// Launches the request and adopts a completed one before the retained
     /// tree records, so the frame that observes a result renders it.
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         self.refresh(ctx);
         true
     }
@@ -769,10 +769,10 @@ mod tests {
         let element = widget.to_element(&ctx);
         let frame = find(element.as_ref(), "AsyncFrame").expect("the builder mounts a frame");
 
-        assert!(frame.can_paint_local_v2(&ctx));
-        assert!(frame.sync_local_v2_state(&ctx), "the request is launched while syncing");
+        assert!(frame.can_paint(&ctx));
+        assert!(frame.sync_paint_state(&ctx), "the request is launched while syncing");
         venus.run_microtasks();
-        assert!(frame.sync_local_v2_state(&ctx));
+        assert!(frame.sync_paint_state(&ctx));
         assert!(
             contains(frame, "Data"),
             "syncing adopts the completed request before paint is recorded"

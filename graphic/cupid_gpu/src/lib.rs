@@ -13,7 +13,9 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
+pub mod external_pool;
 pub mod glsl_package;
+pub mod web_video;
 
 // ──────────────────────────────────────────────
 //  Descriptor types shared by all backends
@@ -826,6 +828,73 @@ impl BuiltinShader {
 ///
 /// The associated `RenderPass` type uses a GAT so that each pass object borrows
 /// its command encoder for the correct lifetime — the same pattern `wgpu` uses.
+/// A texture another API created, for [`GpuBackend::import_native_texture`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NativeTextureHandle {
+    /// An `id<MTLTexture>`, not retained by this value.
+    Metal(std::ptr::NonNull<std::ffi::c_void>),
+    /// A browser `<video>` element registered with [`web_video::register`],
+    /// whose picture is `serial`.
+    ///
+    /// The backend copies the picture into a texture of its own when `serial`
+    /// differs from the one it copied last.
+    WebVideo {
+        /// The id from [`web_video::register`].
+        id: u32,
+        /// Changes whenever the element shows a new picture.
+        serial: u64,
+        /// The picture's size in pixels.
+        width: u32,
+        /// The picture's size in pixels.
+        height: u32,
+    },
+    /// A `B8G8R8A8` Direct3D 11 texture shared by NT handle, with the shared
+    /// fence that says when it has been written.
+    ///
+    /// The handles are borrowed and stay open until the GPU has finished with
+    /// the frame. A backend caches what it opens under (`pool`, `slot`), which
+    /// together name one texture for the life of the process.
+    Dxgi {
+        /// Names the producer's texture pool; never reused within a process.
+        pool: u32,
+        /// Which texture of the pool this is.
+        slot: u32,
+        /// The texture's NT handle, as an integer.
+        texture: usize,
+        /// The pool's shared fence, as an NT handle integer.
+        fence: usize,
+        /// The fence value reached once the texture is written.
+        value: u64,
+        /// The picture's size in pixels.
+        width: u32,
+        /// The picture's size in pixels.
+        height: u32,
+    },
+    /// An `AHardwareBuffer` holding `R8G8B8A8` pixels that the producer's GL
+    /// context has finished writing (it waits for the GPU before handing the
+    /// frame over).
+    ///
+    /// The backend imports it (cached under `pool` and `slot`) and acquires it
+    /// from the foreign queue family when `serial` is not the picture it last
+    /// acquired. The buffer stays valid until the GPU has finished with the
+    /// frame.
+    AndroidHardwareBuffer {
+        /// The producer's pool, from [`external_pool::register`].
+        pool: u32,
+        /// Which buffer of the pool this is.
+        slot: u32,
+        /// The `AHardwareBuffer*`, as an integer.
+        buffer: usize,
+        /// Changes whenever the buffer's pixels do.
+        serial: u64,
+        /// The picture's size in pixels.
+        width: u32,
+        /// The picture's size in pixels.
+        height: u32,
+    },
+}
+
 pub trait GpuBackend: Sized + 'static {
     // ── Associated types ────────────────────────────────────────────────
 
@@ -931,6 +1000,29 @@ pub trait GpuBackend: Sized + 'static {
 
     /// Create a texture view (default view covering the whole texture).
     fn create_texture_view(&self, texture: &Self::Texture, label: &str) -> Self::TextureView;
+
+    /// Wraps a texture another API created (a video decoder's output, say) as
+    /// a view this backend can sample, without copying it.
+    ///
+    /// Returns `None` when this backend cannot use that kind of handle, which
+    /// is the default: the caller then draws nothing for it.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a valid texture of this backend's device, and must
+    /// stay valid until the GPU has finished every command that samples the
+    /// returned view.
+    #[inline]
+    unsafe fn import_native_texture(&self, _handle: NativeTextureHandle) -> Option<Self::TextureView> {
+        None
+    }
+
+    /// Lets go of what [`import_native_texture`](Self::import_native_texture)
+    /// cached for producers that no longer exist (see [`external_pool`]).
+    ///
+    /// The renderer calls this once per render; the default does nothing.
+    #[inline]
+    fn prune_native_textures(&self) {}
 
     /// Create a texture sampler.
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler;

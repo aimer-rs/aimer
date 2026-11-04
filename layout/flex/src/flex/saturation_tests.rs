@@ -73,7 +73,7 @@ fn every_child_of_a_maximal_column_has_a_finite_offset() {
     assert_eq!(children.len(), 13);
     for (index, child) in children {
         let (rect, _) = column
-            .retained_v2_child_geometry_at(&ctx, child, index)
+            .child_geometry_at(&ctx, child, index)
             .expect("every child reports retained geometry");
         assert!(
             rect.x.is_finite() && rect.y.is_finite(),

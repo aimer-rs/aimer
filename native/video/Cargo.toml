@@ -1,0 +1,107 @@
+[package]
+name = "aimer_video"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Video playback drawn straight from the decoder's GPU memory"
+
+[dependencies]
+aimer_attribute.workspace = true
+aimer_canvas.workspace = true
+aimer_container.workspace = true
+aimer_flex.workspace = true
+aimer_input.workspace = true
+aimer_lucide.workspace = true
+aimer_modal.workspace = true
+aimer_range.workspace = true
+aimer_space.workspace = true
+aimer_style.workspace = true
+aimer_svg.workspace = true
+aimer_text.workspace = true
+aimer_cupid.workspace = true
+aimer_events.workspace = true
+aimer_time.workspace = true
+aimer_widget.workspace = true
+
+[dev-dependencies]
+aimer_tls.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+# AVPlayer decodes and streams; AVPlayerItemVideoOutput hands out
+# IOSurface-backed pixel buffers, which CVMetalTextureCache wraps as Metal
+# textures without a copy.
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+objc2.workspace = true
+objc2-core-foundation = { workspace = true, features = ["std", "CFDictionary", "CFString", "CFNumber", "CFCGTypes"] }
+objc2-foundation = { workspace = true, features = ["std", "NSDictionary", "NSError", "NSString", "NSURL", "NSValue", "NSArray"] }
+objc2-av-foundation = { workspace = true, features = ["std", "AVPlayer", "AVPlayerItem", "AVPlayerItemOutput", "AVTime", "objc2-core-foundation", "objc2-core-media", "objc2-core-video"] }
+objc2-core-media = { workspace = true, features = ["std", "CMTime", "CMTimeRange"] }
+objc2-core-video = { workspace = true, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVMetalTexture", "CVMetalTextureCache", "CVReturn", "objc2-metal"] }
+objc2-metal = { workspace = true, features = ["std", "MTLDevice", "MTLTexture", "MTLPixelFormat", "MTLResource", "MTLTypes"] }
+objc2-quartz-core = { workspace = true, features = ["std", "CABase"] }
+
+# The audio session only exists on iOS.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-avf-audio = { workspace = true, features = ["std", "AVAudioSession", "AVAudioSessionTypes"] }
+
+# FFmpeg runs as a child process; the soundtrack plays through `aimer_audio`.
+[target.'cfg(target_os = "linux")'.dependencies]
+aimer_audio.workspace = true
+
+# `android.media.MediaPlayer` over JNI into a `SurfaceTexture`; EGL and OpenGL ES
+# (loaded at run time) convert each picture into an `AHardwareBuffer` that the
+# renderer's Vulkan backend imports.
+[target.'cfg(target_os = "android")'.dependencies]
+aimer_cupid_gpu.workspace = true
+jni.workspace = true
+libc.workspace = true
+ndk-context.workspace = true
+
+# WinRT `MediaPlayer` in frame-server mode; Media Foundation decodes and
+# streams, and each picture is copied into a shared Direct3D 11 texture that the
+# renderer's Direct3D 12 backend opens.
+[target.'cfg(target_os = "windows")'.dependencies]
+aimer_cupid_gpu.workspace = true
+windows = { workspace = true, features = [
+    "std",
+    "Foundation",
+    "Graphics_DirectX_Direct3D11",
+    "Media_Core",
+    "Media_Playback",
+    "Storage",
+    "Storage_Streams",
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Direct3D11",
+] }
+
+# `HTMLVideoElement`: the browser fetches, streams, decodes and plays the
+# sound; the renderer's backend copies its picture into a texture on the GPU.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+aimer_cupid_gpu.workspace = true
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = [
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlMediaElement",
+    "HtmlVideoElement",
+    "MediaError",
+    "TimeRanges",
+    "Window",
+] }
+
+# Browser tests: they run in headless Chromium through wasm-bindgen-test. The
+# `web` feature picks the renderer backends a wasm build of Cupid needs.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+aimer_cupid = { workspace = true, features = ["web"] }
+wasm-bindgen-test.workspace = true
+web-sys = { workspace = true, features = ["Blob", "BlobPropertyBag", "Url"] }

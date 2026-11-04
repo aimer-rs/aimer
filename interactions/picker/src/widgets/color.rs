@@ -525,24 +525,24 @@ impl Drawable for RawColorPicker {
     /// Hit-tested against the rectangle this element reports as its own size,
     /// which can be larger than the content box its render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("RawColorPicker")
     }
 
     fn update(&self, ctx: &BuildContext) {
-        // The surface is painted by `paint_local_v2`; this only publishes where
+        // The surface is painted by `paint`; this only publishes where
         // it sits and visits the retained children.
         let size = self.computed_size(ctx);
         let (x, y) = ctx.canvas.get_transform_translation();
@@ -554,11 +554,11 @@ impl Drawable for RawColorPicker {
         }
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite() && ctx.scale > 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let size = self.computed_size(ctx);
         let picker = self.runtime.picker.borrow();
         let value = picker.draft();
@@ -602,7 +602,7 @@ impl Drawable for RawColorPicker {
         self.bounds.save(ctx.scale, x, y, size.width, size.height);
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         _child: &dyn Element,
@@ -618,23 +618,23 @@ impl Drawable for RawColorPicker {
         Some(child_ctx)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
-        let child_ctx = self.retained_v2_child_context_at(ctx, child, child_index)?;
+        let child_ctx = self.child_context_at(ctx, child, child_index)?;
         let offset = super::color_slider_offset(child_index, ctx.scale);
         let position = child.pos().unwrap_or_default();
         let size = child
-            .retained_v2_bounds(&child_ctx)
+            .paint_bounds(&child_ctx)
             .unwrap_or_else(|| child.content_size(&child_ctx));
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 (offset.x + position.x) / ctx.scale,
                 (offset.y + position.y) / ctx.scale,
                 size.width / ctx.scale,

@@ -2,7 +2,7 @@ use super::test_support::stacked;
 use crate::{BorderRadius, BoxDecoration, Decoration, Magnification, MagnificationStyle as S};
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 use aimer_cupid::material::{MaterialKind, MaterialRequest};
 
 fn recorded(lens: Magnification, size: ResolvedSize) -> Vec<DrawCommand> {
@@ -161,10 +161,10 @@ async fn magnification_preserves_child_layout_and_does_not_clip_it() {
         }
     );
     assert_eq!(element.retained_clip(&ctx), None);
-    assert_eq!(element.retained_v2_paint_outsets(&ctx), Some([0.0; 4]));
+    assert_eq!(element.paint_outsets(&ctx), Some([0.0; 4]));
     element.visit_children(&mut |child| {
         assert_eq!(child.computed_size(&ctx), element.computed_size(&ctx));
-        assert_eq!(element.retained_v2_child_clip_radius(&ctx, child), [0.0; 4]);
+        assert_eq!(element.child_clip_radius(&ctx, child), [0.0; 4]);
     });
 }
 

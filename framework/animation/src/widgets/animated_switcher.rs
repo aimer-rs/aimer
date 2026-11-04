@@ -272,22 +272,22 @@ unsafe impl Sync for AnimatedSwitcherElement {}
 impl Drawable for AnimatedSwitcherElement {
     fn update(&self, ctx: &BuildContext) {
         // The crossfade itself is the children's presentation opacity, applied
-        // by `sync_local_v2_state`; this only advances the controllers.
+        // by `sync_paint_state`; this only advances the controllers.
         let now = AnimInstant::now();
         self.in_controller.tick(now);
         self.out_controller.tick(now);
-        self.draw_local_v2_compatibility(ctx);
+        self.update_retained(ctx);
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         // The crossfade is each child node's presentation opacity, so the tree
         // damages whatever the child paints, inside its layout box or not. It
         // needs no promise about the children's paint extent.
@@ -315,7 +315,7 @@ impl Drawable for AnimatedSwitcherElement {
         )
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         if let Some(old) = unsafe { &*self.old_child.get() } {
             old.update(ctx);
         }

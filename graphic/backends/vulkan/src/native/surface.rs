@@ -657,6 +657,7 @@ fn create_swapchain(
             usage: vec![TextureUsage::RenderAttachment],
             layout: Mutex::new(vk::ImageLayout::UNDEFINED),
             presentable: true,
+            imported_memory: None,
         }));
         let view_info = vk::ImageViewCreateInfo::default()
             .image(raw_image)

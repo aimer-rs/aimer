@@ -1,7 +1,7 @@
 //! A node whose list opens with the fade-mask marker is planned as a group
 //! whose own commands provide the alpha its descendants are shown through.
 
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     COVERAGE_MASK_PIPELINE_NAME, DrawCommand, FADE_MASK_PIPELINE_NAME, Rect, RenderNodeId,
     RenderOp, RenderTree,
 };

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use aimer_canvas::{FontFamily, FontStyle};
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     Color, DrawCommand, Rect, RenderNodeId, RenderPaintSource, RenderTree, RenderTreeError, Vec2d,
 };
 use aimer_cupid::text_pipeline::{TextOverflowMode, text_layout::TextHorizontalAlign};

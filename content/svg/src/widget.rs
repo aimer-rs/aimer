@@ -699,14 +699,14 @@ impl Drawable for RawSvgAsset {
         }
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.phase.get() == SvgAssetPhase::Ready
             && self
                 .active_element()
-                .is_some_and(|element| element.can_paint_local_v2(ctx))
+                .is_some_and(|element| element.can_paint(ctx))
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
@@ -1030,24 +1030,24 @@ impl Drawable for RawSvg {
     /// Hit-tested against the rectangle this element reports as its own size,
     /// which can be larger than the content box its render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.resolved_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("Svg")
     }
 
     fn update(&self, ctx: &BuildContext) {
-        // The document is painted by `paint_local_v2`.
+        // The document is painted by `paint`.
         let size = self.resolved_size(ctx);
         self.save_bounds(ctx, size);
     }
@@ -1056,7 +1056,7 @@ impl Drawable for RawSvg {
         self.save_bounds(ctx, self.resolved_size(ctx));
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let size = self.resolved_size(ctx);
         ctx.scale.is_finite()
             && ctx.scale > 0.0
@@ -1066,11 +1066,11 @@ impl Drawable for RawSvg {
             && size.height >= 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let size = self.resolved_size(ctx);
         let scale = ctx.scale;
         let destination =
-            aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, size.width / scale, size.height / scale);
+            aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, size.width / scale, size.height / scale);
         let canvas = aimer_canvas::Canvas::of(ctx);
         if !self.paint_bounded {
             canvas.push_clip(destination, [0.0; 4]);
@@ -1659,20 +1659,20 @@ mod tests {
     fn recorded_commands(
         element: &dyn Element,
         context: &BuildContext,
-    ) -> aimer_cupid::draw_cmd_v2::DrawListSnapshot {
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    ) -> aimer_cupid::draw_cmd::DrawListSnapshot {
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
         let tree = RenderTree::new();
         let node = tree.add_root(Rect::new(0.0, 0.0, 32.0, 32.0)).unwrap();
         let node_context = tree.context(node).unwrap();
-        context.with_local_v2_paint_context(node_context, |ctx| element.paint_local_v2(ctx));
+        context.with_local_v2_paint_context(node_context, |ctx| element.paint(ctx));
         tree.draw_list_snapshot(node).unwrap()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn svg_with_geometry_outside_the_viewport_is_clipped_to_its_box() {
-        use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect};
+        use aimer_cupid::draw_cmd::{DrawCommand, Rect};
 
         let document = SvgDocument::from_svg(
             br#"<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><path d="M-1 0h2v2H-1z"/></svg>"#,
@@ -1683,7 +1683,7 @@ mod tests {
 
         // SVG overflow is hidden at the root, so the widget stays inside its
         // box and never needs the legacy live path.
-        assert!(element.can_paint_local_v2(&context));
+        assert!(element.can_paint(&context));
         let snapshot = recorded_commands(element.as_ref(), &context);
         assert!(matches!(
             snapshot.commands.as_ref(),
@@ -1698,7 +1698,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_provably_bounded_svg_is_recorded_without_a_clip() {
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
 
         let document = SvgDocument::from_svg(
             br#"<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h32v32H0z"/></svg>"#,

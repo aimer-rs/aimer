@@ -1,7 +1,7 @@
 use aimer_canvas::Canvas;
 use aimer_canvas::{DrawShape, MaterialDrawRequest, MaterialKind, ShapeDrawResult};
-use aimer_cupid::draw_cmd_v2::RichTextSegment;
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use aimer_cupid::draw_cmd::RichTextSegment;
+use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 use aimer_cupid::font::TextLanguage;
 use aimer_cupid::text_pipeline::TextOverflowMode;
 use aimer_cupid::utilities::{Color, Mat3, Vec2d};

@@ -23,7 +23,7 @@ fn light_edge_only_draw_lists_do_not_need_an_offscreen_backdrop() {
 #[test]
 fn retained_light_edges_do_not_need_an_offscreen_backdrop() {
     use crate::damage_region::DamageSet;
-    use crate::draw_cmd_v2::{DrawCommand, Rect, RenderFrame, RenderPaintSource, RenderTree};
+    use crate::draw_cmd::{DrawCommand, Rect, RenderFrame, RenderPaintSource, RenderTree};
     use crate::frame::{FramePacket, FrameRenderMetadata};
     use std::sync::Arc;
     for kind in [MaterialKind::LightEdge, MaterialKind::Magnification] {

@@ -231,16 +231,16 @@ impl Drawable for RawModal {
         ctx.canvas.restore();
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -253,21 +253,21 @@ impl Drawable for RawModal {
             .map(|(_, _, child_context)| child_context)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         if child_index != 1 || !std::ptr::eq(child, self.child.as_ref()) {
             return None;
         }
         let (size, offset, _) = self.retained_child_layout(ctx)?;
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 offset.x / ctx.scale,
                 offset.y / ctx.scale,
                 size.width / ctx.scale,

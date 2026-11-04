@@ -24,7 +24,7 @@ pub mod font {
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use aimer_cupid::draw_cmd_v2::ImageResource;
+use aimer_cupid::draw_cmd::ImageResource;
 pub use aimer_svg::SvgAsset;
 use aimer_widget::base::BuildContext;
 pub use font::{

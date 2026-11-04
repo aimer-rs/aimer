@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use crate::damage_region::{DamageRect, DamageSet};
-use crate::draw_cmd::DrawList;
-use crate::draw_cmd_v2::{
+use crate::render_list::DrawList;
+use crate::draw_cmd::{
     DrawCommand as V2DrawCommand, Mat3, MorphGroup, Rect as V2Rect, RenderNodeId,
 };
 
@@ -158,8 +158,8 @@ fn rects_intersect(left: DamageRect, right: DamageRect) -> bool {
 /// # Examples
 ///
 /// ```
-/// use aimer_cupid::draw_cmd::DrawList;
-/// use aimer_cupid::frame::Frame;
+/// use aimer_scene::render_list::DrawList;
+/// use aimer_scene::frame::Frame;
 ///
 /// let frame = Frame::new(DrawList::new(), 800, 600);
 ///
@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn retained_plan_returns_only_nodes_intersecting_each_damage_region() {
-        let tree = crate::draw_cmd_v2::RenderTree::new();
+        let tree = crate::draw_cmd::RenderTree::new();
         let left_node = tree.add_root(V2Rect::new(0.0, 0.0, 8.0, 8.0)).unwrap();
         let right_node = tree.add_root(V2Rect::new(16.0, 0.0, 8.0, 8.0)).unwrap();
         let item = |element| RetainedV2Item {

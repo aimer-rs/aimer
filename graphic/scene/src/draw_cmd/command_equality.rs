@@ -165,6 +165,13 @@ fn command_equal(left: &DrawCommand, right: &DrawCommand) -> bool {
             },
         ) => rect == r_rect && Arc::ptr_eq(resource, r_resource),
         (
+            DrawExternalTexture { rect, texture },
+            DrawExternalTexture {
+                rect: r_rect,
+                texture: r_texture,
+            },
+        ) => rect == r_rect && texture == r_texture,
+        (
             Svg {
                 scene,
                 destination,

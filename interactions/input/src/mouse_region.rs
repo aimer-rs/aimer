@@ -30,6 +30,9 @@ pub enum PointerState {
 /// [`MouseRegion::current_state`] so other code can observe transitions.
 pub type SharedPointerState = Rc<Cell<PointerState>>;
 
+/// A callback for pointer activity, with the kind of pointer it came from.
+pub type PointerActivityCallback = Rc<dyn Fn(PointerSource)>;
+
 /// A transparent widget that tracks mouse hover over its child.
 ///
 /// Touch events do not change hover state. Enter and exit callbacks run only on
@@ -50,6 +53,7 @@ pub type SharedPointerState = Rc<Cell<PointerState>>;
 pub struct MouseRegion<W = RequiredChild> {
     pub on_hover_enter: VoidCallback,
     pub on_hover_exit: VoidCallback,
+    pub on_pointer_activity: Option<PointerActivityCallback>,
     pub cursor: Option<winit::window::CursorIcon>,
     pub current_state: SharedPointerState,
     pub cached_bounds: CacheBounds,
@@ -69,6 +73,7 @@ impl MouseRegion {
         Self {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: CacheBounds::new(),
@@ -89,6 +94,18 @@ impl<W> MouseRegion<W> {
     /// outside the child bounds.
     pub fn on_hover_exit(mut self, on_hover_exit: impl Into<VoidCallback>) -> Self {
         self.on_hover_exit = on_hover_exit.into();
+        self
+    }
+
+    /// Sets a callback fired for every pointer move or press inside the
+    /// region, from a mouse, a pen or a finger, with the pointer's source.
+    ///
+    /// Unlike hover, this reports touch too, and keeps firing while the
+    /// pointer moves inside: a video player uses it to show its controls on
+    /// any activity and to tell a touch screen from a mouse. The event still
+    /// reaches the child; the callback only observes it.
+    pub fn on_pointer_activity(mut self, on_pointer_activity: impl Fn(PointerSource) + 'static) -> Self {
+        self.on_pointer_activity = Some(Rc::new(on_pointer_activity));
         self
     }
 
@@ -116,6 +133,7 @@ impl<W> MouseRegion<W> {
         MouseRegion {
             on_hover_enter: self.on_hover_enter,
             on_hover_exit: self.on_hover_exit,
+            on_pointer_activity: self.on_pointer_activity,
             cursor: self.cursor,
             current_state: self.current_state,
             cached_bounds: self.cached_bounds,
@@ -141,6 +159,7 @@ impl<W: Widget + 'static> Widget for MouseRegion<W> {
         RawMouseRegion {
             on_hover_enter: self.on_hover_enter.clone(),
             on_hover_exit: self.on_hover_exit.clone(),
+            on_pointer_activity: self.on_pointer_activity.clone(),
             cursor: self.cursor,
             current_state: self.current_state.clone(),
             cached_bounds: seeded_interaction_bounds(&self.cached_bounds),
@@ -166,6 +185,7 @@ impl<W: Widget + 'static> Widget for MouseRegion<W> {
 pub struct RawMouseRegion<E: Element> {
     pub(crate) on_hover_enter: VoidCallback,
     pub(crate) on_hover_exit: VoidCallback,
+    pub(crate) on_pointer_activity: Option<PointerActivityCallback>,
     pub(crate) cursor: Option<winit::window::CursorIcon>,
     pub(crate) current_state: Rc<Cell<PointerState>>,
     pub(crate) cached_bounds: InteractionBounds,
@@ -305,6 +325,12 @@ impl<E: Element> RawMouseRegion<E> {
         );
         if is_mouse {
             self.sync_hover(is_inside);
+        }
+        if is_inside
+            && let Some(on_activity) = self.on_pointer_activity.as_ref()
+            && let ElementEvent::PointerMove(info) | ElementEvent::PointerDown(info) = event
+        {
+            on_activity(info.source);
         }
         if !is_inside && !was_captured && !matches!(event, ElementEvent::Cancel) {
             return EventResult::ignored();
@@ -455,11 +481,11 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
         self.child.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
@@ -467,17 +493,17 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
     /// The region hit-tests the border box its child reports, which can be
     /// larger than the content box the render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.child.computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.cached_bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.cached_bounds.disagreement("MouseRegion")
@@ -612,10 +638,41 @@ mod tests {
         assert_eq!(event_children, 1);
     }
 
+    #[test]
+    fn pointer_activity_reports_moves_and_presses_inside_with_their_source() {
+        let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let record = seen.clone();
+        let bounds = InteractionBounds::new();
+        bounds.save(1.0, 0.0, 0.0, 50.0, 50.0);
+        let region = RawMouseRegion {
+            on_hover_enter: VoidCallback::default(),
+            on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: Some(Rc::new(move |source| record.borrow_mut().push(source))),
+            cursor: None,
+            current_state: Rc::new(Cell::new(PointerState::Outside)),
+            cached_bounds: bounds,
+            child: TestElement,
+            window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+        };
+        let at = |x: f32, source: PointerSource| {
+            PointerInfo::new(aimer_attribute::position::Vec2d { x, y: 10.0 }, source, 1, PointerButton::Primary)
+        };
+
+        let _ = region.on_event(&ElementEvent::PointerMove(at(10.0, PointerSource::Mouse)));
+        let _ = region.on_event(&ElementEvent::PointerDown(at(20.0, PointerSource::Touch)));
+        let _ = region.on_event(&ElementEvent::PointerUp(at(20.0, PointerSource::Touch)));
+        let _ = region.on_event(&ElementEvent::PointerMove(at(400.0, PointerSource::Mouse)));
+
+        // A release is not new activity, and a move outside is not this
+        // region's.
+        assert_eq!(*seen.borrow(), vec![PointerSource::Mouse, PointerSource::Touch]);
+    }
+
     fn region_over(current_state: Rc<Cell<PointerState>>) -> RawMouseRegion<TestElement> {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state,
             cached_bounds: InteractionBounds::new(),
@@ -665,6 +722,7 @@ mod tests {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: current_state.clone(),
             cached_bounds: InteractionBounds::new(),
@@ -684,6 +742,7 @@ mod tests {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -720,6 +779,7 @@ mod tests {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Inside)),
             cached_bounds: bounds,
@@ -756,6 +816,7 @@ mod tests {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: Some(winit::window::CursorIcon::Pointer),
             current_state: Rc::new(Cell::new(PointerState::Inside)),
             cached_bounds: bounds,
@@ -799,6 +860,7 @@ mod tests {
                 let exited = exited.clone();
                 (move || exited.set(exited.get() + 1)).into()
             },
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Inside)),
             cached_bounds: bounds,
@@ -818,7 +880,7 @@ mod tests {
     // move.
     #[test]
     fn the_render_tree_rectangle_becomes_the_hover_area() {
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
         let bounds = InteractionBounds::new();
         bounds.save(1.0, 0.0, 0.0, 100.0, 100.0);
@@ -826,6 +888,7 @@ mod tests {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: state.clone(),
             cached_bounds: bounds,
@@ -834,7 +897,7 @@ mod tests {
         };
         let tree = RenderTree::new();
         let node = tree.add_root(Rect::new(200.0, 200.0, 10.0, 10.0)).unwrap();
-        region.adopt_retained_v2_interaction_source(aimer_widget::InteractionSource::new(
+        region.adopt_interaction_source(aimer_widget::InteractionSource::new(
             tree,
             node,
             (50.0, 50.0),
@@ -862,6 +925,7 @@ mod tests {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: InteractionBounds::new(),
@@ -880,7 +944,7 @@ mod tests {
         );
 
         assert_eq!(
-            region.retained_v2_interaction_size(&ctx),
+            region.interaction_size(&ctx),
             Some(region.child.computed_size(&ctx))
         );
     }
@@ -898,6 +962,7 @@ mod tests {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -930,6 +995,7 @@ mod tests {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -977,6 +1043,7 @@ mod tests {
         let root = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -1037,6 +1104,7 @@ mod tests {
         RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds,

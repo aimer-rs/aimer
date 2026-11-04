@@ -4,7 +4,7 @@ use aimer::effects::{self, EffectCommand, ShaderEffect};
 use aimer::quiver::winit::dpi::{PhysicalPosition, PhysicalSize};
 use aimer::quiver::winit::event::{DeviceId, MouseScrollDelta, TouchPhase, WindowEvent};
 use aimer::{AimerApp, HeadlessOptions};
-use aimer_cupid::draw_cmd_v2::{DrawCommand, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand, RenderOp};
 use aimer_time::{Duration as TimeDuration, Instant};
 
 use super::*;

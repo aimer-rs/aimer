@@ -507,19 +507,12 @@ impl<T: Theme> Drawable for AnimatedThemeElement<T> {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
-
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
-        self.child.update(ctx);
-        if self.controller.is_animating() {
-            request_next_frame();
-        }
-    }
+    fn paint(&self, _ctx: &BuildContext) {}
 }
 
 impl<T: Theme> EventElement for AnimatedThemeElement<T> {

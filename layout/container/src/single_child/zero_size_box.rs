@@ -29,7 +29,7 @@ impl Drawable for ZeroSizedBox {
     fn update(&self, _: &BuildContext) {}
 
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 }

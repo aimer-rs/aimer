@@ -84,7 +84,7 @@ impl VisitorElement for Leaf {
     }
 }
 impl Drawable for Leaf {
-    fn can_paint_local_v2(&self, _: &BuildContext) -> bool {
+    fn can_paint(&self, _: &BuildContext) -> bool {
         true
     }
 }
@@ -1066,7 +1066,7 @@ impl VisitorElement for BarFrameElement {
     }
 }
 impl Drawable for BarFrameElement {
-    fn can_paint_local_v2(&self, _: &BuildContext) -> bool {
+    fn can_paint(&self, _: &BuildContext) -> bool {
         true
     }
 }
@@ -1092,7 +1092,7 @@ impl VisitorElement for TabBar {
     }
 }
 impl Drawable for TabBar {
-    fn can_paint_local_v2(&self, _: &BuildContext) -> bool {
+    fn can_paint(&self, _: &BuildContext) -> bool {
         true
     }
 }
@@ -1487,7 +1487,7 @@ fn find_host(element: &dyn Element) -> Option<&dyn Element> {
 /// A swipe presents that copy too, and drops it when the swipe is over.
 #[test]
 fn a_tagged_container_transition_swipes_with_its_item_copy_and_releases_it() {
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderTree};
     use aimer_widget::{ErrorWidget, Key};
 
     let ctx = context();
@@ -1499,7 +1499,7 @@ fn a_tagged_container_transition_swipes_with_its_item_copy_and_releases_it() {
     let tree = RenderTree::new();
     let node = tree.add_root(Rect::new(20.0, 20.0, 60.0, 40.0)).unwrap();
     let retained = tree.context(node).unwrap();
-    assert!(ctx.with_local_v2_paint_context(retained, |ctx| item.sync_local_v2_state(ctx)));
+    assert!(ctx.with_local_v2_paint_context(retained, |ctx| item.sync_paint_state(ctx)));
 
     let container = ContainerTransition::<Page>::new()
         .tag(|page: &Page| (*page == Page::Detail).then(|| Key::from("album")));
@@ -1555,7 +1555,7 @@ fn a_tagged_container_transition_swipes_with_its_item_copy_and_releases_it() {
 
 #[test]
 fn custom_presentations_reach_retained_nodes_without_rerecording_page_lists() {
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderTree};
     let ctx = context();
     let navigator = Navigator::new(Page::Home, routes)
         .transition(DynamicTransitions::new(
@@ -1607,7 +1607,7 @@ fn custom_presentations_reach_retained_nodes_without_rerecording_page_lists() {
     let retained = tree.context(root).unwrap();
     for _ in 0..8 {
         assert!(
-            ctx.with_local_v2_paint_context(retained.clone(), |ctx| host.sync_local_v2_state(ctx))
+            ctx.with_local_v2_paint_context(retained.clone(), |ctx| host.sync_paint_state(ctx))
         );
     }
     assert_eq!(
@@ -1701,7 +1701,7 @@ fn a_route_keeps_its_flex_factor_through_the_transition_host() {
 
 #[test]
 fn high_dpi_transitions_sample_and_clip_the_logical_viewport() {
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderTree};
     let mut ctx = context();
     ctx.scale = 2.0;
     ctx.parent_size = ResolvedSize {
@@ -1747,7 +1747,7 @@ fn high_dpi_transitions_sample_and_clip_the_logical_viewport() {
     let incoming = tree.add_child(root, viewport).unwrap();
     assert!(
         ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| host
-            .sync_local_v2_state(ctx))
+            .sync_paint_state(ctx))
     );
     assert_eq!(
         sampled_size.get(),
@@ -1775,7 +1775,7 @@ fn both_transition_children_receive_the_original_viewport_constraints() {
     let mut children = 0;
     host.visit_retained_v2_children(&mut |_, child| {
         let child_ctx = host
-            .retained_v2_child_context(&ctx, child)
+            .child_context(&ctx, child)
             .expect("an overlay must preserve transparent-wrapper constraints for both pages");
         assert_eq!(child_ctx.box_constraint.max_width, 240.0);
         assert_eq!(child_ctx.parent_size, ctx.parent_size);

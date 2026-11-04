@@ -36,6 +36,7 @@ mod form_example;
 mod glass_liquid_example;
 mod gif_example;
 mod audio_example;
+mod video_example;
 mod gradient_example;
 mod http_request_button;
 mod i18n_example;

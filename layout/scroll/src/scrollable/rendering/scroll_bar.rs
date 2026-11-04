@@ -6,7 +6,7 @@ use aimer_attribute::dimension::Dimension;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_cupid::utilities::Color as V2Color;
 use aimer_input::gesture::GestureEvent;
 use aimer_input::gesture::gesture_detector::GestureDetector;
@@ -417,7 +417,7 @@ impl Drawable for RawScrollBar {
         let Some(ctrl) = self.ctrl.as_ref() else {
             return;
         };
-        // The bar is painted by `paint_local_v2`. Preparing its geometry here
+        // The bar is painted by `paint`. Preparing its geometry here
         // publishes the thumb and track metrics hit testing reads.
         let paint = prepare_scrollbar_paint(ctx, ctrl, &self.config, self.runtime.as_ref());
         // if let Some(paint) = paint {
@@ -427,13 +427,13 @@ impl Drawable for RawScrollBar {
         // }
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.ctrl
             .as_ref()
             .is_none_or(|ctrl| scrollbar_geometry(ctx, ctrl, &self.config, 0.0).is_ok())
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = Canvas::of(ctx);
         let paint = self.ctrl.as_ref().and_then(|ctrl| {
             prepare_scrollbar_paint(ctx, ctrl, &self.config, self.runtime.as_ref())
@@ -445,7 +445,7 @@ impl Drawable for RawScrollBar {
         self.runtime.v2_paint_snapshot.set(paint);
     }
 
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         let paint = self.ctrl.as_ref().and_then(|ctrl| {
             prepare_scrollbar_paint(ctx, ctrl, &self.config, self.runtime.as_ref())
         });

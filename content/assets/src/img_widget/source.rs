@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use aimer_cupid::draw_cmd_v2::ImageResource;
+use aimer_cupid::draw_cmd::ImageResource;
 use aimer_utils::error;
 #[cfg(not(target_arch = "wasm32"))]
 use aimer_venus::Venus;
@@ -66,12 +66,12 @@ impl DecodedPixels {
     /// Takes the pixels of an `upload_width` x `upload_height` image.
     fn new(rgba: Vec<u8>, upload_width: u32, upload_height: u32) -> Self {
         Self {
-            texture_id: aimer_cupid::draw_cmd::DrawList::image_texture_id(
+            texture_id: aimer_cupid::draw_cmd::ImageResource::texture_id_for(
                 &rgba,
                 upload_width,
                 upload_height,
             ),
-            revision: aimer_cupid::draw_cmd::DrawList::image_content_revision(
+            revision: aimer_cupid::draw_cmd::ImageResource::content_revision_for(
                 &rgba,
                 upload_width,
                 upload_height,
@@ -1701,8 +1701,8 @@ mod tests {
     #[test]
     fn decoded_pixels_carry_the_identity_the_renderer_would_have_computed() {
         let rgba = (0..2 * 3 * 4).map(|byte| byte as u8).collect::<Vec<u8>>();
-        let expected_id = aimer_cupid::draw_cmd::DrawList::image_texture_id(&rgba, 2, 3);
-        let expected_revision = aimer_cupid::draw_cmd::DrawList::image_content_revision(&rgba, 2, 3);
+        let expected_id = aimer_cupid::draw_cmd::ImageResource::texture_id_for(&rgba, 2, 3);
+        let expected_revision = aimer_cupid::draw_cmd::ImageResource::content_revision_for(&rgba, 2, 3);
 
         let resource = new_retained_image_resource(2, 3, 2, 3, DecodedPixels::new(rgba.clone(), 2, 3));
 

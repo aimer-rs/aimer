@@ -6,14 +6,14 @@
 //! composited into its parent. When the host ends, one draw reads both kept
 //! targets and writes the blend into the parent.
 //!
-//! [`MORPH_PIPELINE_NAME`]: crate::draw_cmd_v2::MORPH_PIPELINE_NAME
+//! [`MORPH_PIPELINE_NAME`]: crate::draw_cmd::MORPH_PIPELINE_NAME
 
 use super::{ActiveOpacityGroup, Renderer};
 use crate::backend::{
     GpuBackend, LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
 };
 use crate::damage_region::DamageRect;
-use crate::draw_cmd_v2::{MorphGroup, MorphParams};
+use crate::draw_cmd::{MorphGroup, MorphParams};
 use crate::pipeline::morph_pipeline::{MorphInstance, MorphPipeline};
 
 /// Which picture of its host a source group draws.

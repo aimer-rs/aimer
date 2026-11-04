@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use aimer_cupid::draw_cmd_v2::ImageResource;
+use aimer_cupid::draw_cmd::ImageResource;
 use aimer_utils::AnimInstant;
 use aimer_widget::base::{BuildContext, WindowHandle};
 use image::codecs::gif::GifDecoder;
@@ -404,9 +404,9 @@ fn frame_resource(image: image::RgbaImage, limit: u32) -> Option<Arc<ImageResour
     let rgba = image.into_raw();
 
     let texture_id =
-        aimer_cupid::draw_cmd::DrawList::image_texture_id(&rgba, upload_width, upload_height);
+        aimer_cupid::draw_cmd::ImageResource::texture_id_for(&rgba, upload_width, upload_height);
     let revision =
-        aimer_cupid::draw_cmd::DrawList::image_content_revision(&rgba, upload_width, upload_height);
+        aimer_cupid::draw_cmd::ImageResource::content_revision_for(&rgba, upload_width, upload_height);
     ImageResource::rgba8_with_intrinsic_size(
         texture_id,
         revision,

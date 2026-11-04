@@ -291,20 +291,20 @@ impl Drawable for AnimatedBuilderElement {
     /// nodes and resolves its own paint source, so the builder never forces the
     /// subtree onto the legacy path.
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         unsafe { &*self.child.get() }.sync_paint_geometry(ctx);
         true
     }
 
     #[inline]
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         self.output_changed.set(false);
         unsafe { &*self.child.get() }.update(ctx);
         if self.controller.is_animating() || self.live {

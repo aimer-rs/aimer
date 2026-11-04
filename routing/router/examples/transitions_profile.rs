@@ -6,7 +6,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use aimer_time::{Duration, Instant};
 
-use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+use aimer_cupid::draw_cmd::{Rect, RenderTree};
 use aimer_router::*;
 use aimer_widget::base::{BuildContext, ResolvedSize, WindowHandle};
 use aimer_widget::{
@@ -64,7 +64,7 @@ impl Widget for Leaf {
     }
 }
 impl VisitorElement for LeafElement { fn debug_name(&self) -> &'static str { "ProfileLeaf" } }
-impl Drawable for LeafElement { fn can_paint_local_v2(&self, _: &BuildContext) -> bool { true } }
+impl Drawable for LeafElement { fn can_paint(&self, _: &BuildContext) -> bool { true } }
 impl EventElement for LeafElement {}
 impl LayoutElement for LeafElement {}
 impl Rebuildable for LeafElement {}
@@ -106,7 +106,7 @@ fn profile(name: &str, transition: impl NavigationTransition<Page>, ctx: &BuildC
             tree.context(node).unwrap().begin_recording().unwrap().commit(vec![]).unwrap();
         }
         let paint = ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| ctx.fork_with_state(()));
-        measure(&format!("{name} retained sync"), 2_000, || assert!(host.sync_local_v2_state(&paint)));
+        measure(&format!("{name} retained sync"), 2_000, || assert!(host.sync_paint_state(&paint)));
         assert_eq!(tree.draw_list_revision(outgoing).unwrap(), 1);
         assert_eq!(tree.draw_list_revision(incoming).unwrap(), 1);
     }

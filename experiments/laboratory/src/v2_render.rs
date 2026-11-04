@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 use aimer_rubick::Shared;
 
 pub use aimer_canvas::Canvas;
-pub use aimer_cupid::draw_cmd_v2::{
+pub use aimer_cupid::draw_cmd::{
     CurrentBuildContext, DrawCommand, DrawCommandList, DrawList, DrawListSnapshot, Rect,
     RenderFrame, RenderItem, RenderNodeId, RenderOp, RenderTree, RenderTreeError,
 };

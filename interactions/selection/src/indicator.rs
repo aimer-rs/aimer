@@ -216,7 +216,7 @@ fn rounded(
 }
 
 impl Drawable for RawIndicator {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let indicator = &self.0;
         ctx.scale.is_finite()
             && ctx.scale > 0.0
@@ -227,7 +227,7 @@ impl Drawable for RawIndicator {
             && indicator.corner >= 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = Canvas::of(ctx);
         let Indicator {
             mark,

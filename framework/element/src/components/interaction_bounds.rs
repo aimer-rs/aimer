@@ -4,7 +4,7 @@
 //! Elements used to measure their interaction rectangle while updating, by
 //! reading the legacy canvas transform. The retained render tree already knows
 //! every node's world position, so an element that opts in through
-//! [`Drawable::retained_v2_interaction_size`](crate::Drawable) is handed a live
+//! [`Drawable::interaction_size`](crate::Drawable) is handed a live
 //! [`InteractionSource`] after each tree synchronization. [`InteractionBounds`]
 //! owns the transition: until the first adoption it behaves like a plain
 //! [`CacheBounds`]; afterwards the render tree answers hit tests, read when they
@@ -16,7 +16,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::Rc;
 
 use aimer_attribute::{Bounds, CacheBounds, Vec2d};
-use aimer_cupid::draw_cmd_v2::{RenderNodeId, RenderTree};
+use aimer_cupid::draw_cmd::{RenderNodeId, RenderTree};
 use aimer_events::pointer::{PointerSource, last_pointer_source, min_touch_target};
 
 /// Largest disagreement, in logical pixels, that still counts as the same box.
@@ -346,7 +346,7 @@ impl InteractionBounds {
 
 #[cfg(test)]
 mod tests {
-    use aimer_cupid::draw_cmd_v2::Rect;
+    use aimer_cupid::draw_cmd::Rect;
 
     use super::*;
 

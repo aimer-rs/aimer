@@ -79,7 +79,7 @@ fn hover_fills<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> usize {
             && let Ok(snapshot) = app.app.render_tree().draw_list_snapshot(node)
         {
             for command in snapshot.commands.iter() {
-                if let aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { color, .. } = command
+                if let aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. } = command
                     && format!("{color:?}") == hover
                 {
                     *out += 1;

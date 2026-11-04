@@ -1,5 +1,5 @@
 use aimer::canvas::{FrameCanvas, InnerCanvas};
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     DrawCommand as V2DrawCommand, Rect, RenderOp, RenderPaintSource, RenderTree,
 };
 use aimer::widget::base::WindowHandle;
@@ -60,7 +60,7 @@ fn child_transform(transform: Transform) -> Option<aimer_cupid::utilities::Mat3>
 
     let retained = tree.context(root).unwrap();
     let synced = context.with_local_v2_paint_context(retained, |context| {
-        element.can_paint_local_v2(context) && element.sync_local_v2_state(context)
+        element.can_paint(context) && element.sync_paint_state(context)
     });
     if !synced {
         return None;

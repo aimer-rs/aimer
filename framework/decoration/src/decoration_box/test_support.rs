@@ -3,7 +3,7 @@
 use crate::Decoration;
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 use aimer_cupid::material::MaterialRequest;
 
 /// Box size used by [`stacked`].

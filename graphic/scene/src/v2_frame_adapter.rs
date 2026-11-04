@@ -2,8 +2,8 @@
 //! packet carries.
 
 use crate::damage_region::{DamageRect, DamageSet};
-use crate::draw_cmd::{DrawCommand as LegacyDrawCommand, DrawList as LegacyDrawList};
-use crate::draw_cmd_v2::{DrawCommand as V2DrawCommand, Rect, RenderFrame, RenderItem, RenderOp};
+use crate::render_list::{DrawCommand as LegacyDrawCommand, DrawList as LegacyDrawList};
+use crate::draw_cmd::{DrawCommand as V2DrawCommand, Rect, RenderFrame, RenderItem, RenderOp};
 use crate::frame::{Frame, FramePacket, FrameRenderMetadata, RetainedRenderPlan, RetainedV2Item};
 use crate::utilities::Mat3;
 
@@ -602,6 +602,9 @@ fn lower_command(command: V2DrawCommand, origin: Mat3, scale: f32) -> LegacyDraw
         V2DrawCommand::DrawImageWithResource { rect, resource } => {
             LegacyDrawCommand::DrawImageWithResource { rect, resource }
         }
+        V2DrawCommand::DrawExternalTexture { rect, texture } => {
+            LegacyDrawCommand::DrawExternalTexture { rect, texture }
+        }
         V2DrawCommand::Svg {
             scene,
             destination,
@@ -659,6 +662,8 @@ fn lower_command(command: V2DrawCommand, origin: Mat3, scale: f32) -> LegacyDraw
 
 #[cfg(test)]
 mod rounded_clip_tests;
+#[cfg(test)]
+mod external_texture_tests;
 
 #[cfg(test)]
 mod text_scale_tests;
@@ -668,8 +673,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::damage_region::{DamageRect, DamageSet};
-    use crate::draw_cmd::{DrawCommand as LegacyDrawCommand, DrawList as LegacyDrawList};
-    use crate::draw_cmd_v2::{
+    use crate::render_list::{DrawCommand as LegacyDrawCommand, DrawList as LegacyDrawList};
+    use crate::draw_cmd::{
         DrawCommand, Rect, RenderFrame, RenderOp, RenderPaintSource, RenderTree,
     };
     use crate::frame::{
@@ -1198,7 +1203,7 @@ mod tests {
 
     fn record_commands(
         tree: &RenderTree,
-        node: crate::draw_cmd_v2::RenderNodeId,
+        node: crate::draw_cmd::RenderNodeId,
         commands: Vec<DrawCommand>,
     ) {
         tree.context(node)
@@ -1304,7 +1309,7 @@ mod tests {
         );
     }
 
-    fn record_fill(tree: &RenderTree, node: crate::draw_cmd_v2::RenderNodeId, color: Color) {
+    fn record_fill(tree: &RenderTree, node: crate::draw_cmd::RenderNodeId, color: Color) {
         tree.context(node)
             .unwrap()
             .begin_recording()

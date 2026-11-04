@@ -9,7 +9,7 @@
 use super::*;
 
 use aimer_container::Container;
-use aimer_cupid::draw_cmd_v2::{DrawCommand, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand, RenderOp};
 use aimer_style::TextAlign;
 use aimer_text::Text;
 

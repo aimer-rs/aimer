@@ -8,7 +8,7 @@ use fixtures::*;
 
 use aimer::canvas::Canvas as RetainedCanvas;
 use aimer_cupid::WgpuBackend;
-use aimer_cupid::draw_cmd_v2::{Rect, RenderPaintSource};
+use aimer_cupid::draw_cmd::{Rect, RenderPaintSource};
 use aimer_cupid::frame::FramePacket;
 use aimer_cupid::renderer::Renderer;
 use aimer::{BackdropFilter, Decoration, ResolvedSize, Vec2d};
@@ -298,7 +298,7 @@ fn backdrop_filter_budget_fallback_leaves_the_backdrop_unchanged() {
     );
     canvas.finish();
     let packet = FramePacket::from_v2_direct(
-        aimer_cupid::draw_cmd_v2::RenderFrame {
+        aimer_cupid::draw_cmd::RenderFrame {
             damage: vec![Rect::new(0.0, 0.0, 4096.0, 1025.0)],
             operations: tree.render_all(),
         },

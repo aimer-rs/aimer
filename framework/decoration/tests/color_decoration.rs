@@ -2,7 +2,7 @@ use aimer_attribute::{BoxConstraint, ResolvedSize, Vec2d};
 use aimer_canvas::{Canvas, FrameCanvas, InnerCanvas};
 use aimer_color::prelude::Color;
 use aimer_container::{Container, SizedBox};
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 use aimer_decoration::{BorderRadius, Decoration, DecorationBox, MultiDecorationBox};
 use aimer_widget::base::{BuildContext, WindowHandle};
 use aimer_widget::{Drawable, Widget};
@@ -152,6 +152,6 @@ async fn color_decoration_works_in_containers_and_propagates_to_later_layers() {
         let paints = aimer_widget::testing::record_retained_paint(element.as_ref(), &ctx);
         let background = paints.iter().flat_map(|paint| paint.commands.iter()).next().unwrap();
         assert!(matches!(background, DrawCommand::FillRect { color, .. } if color.b == 255 && color.r == 0));
-        assert!(!element.local_v2_paint_needs_recording(&ctx));
+        assert!(!element.paint_needs_recording(&ctx));
     }
 }

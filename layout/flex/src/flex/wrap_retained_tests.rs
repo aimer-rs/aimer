@@ -5,7 +5,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_widget::base::{BuildContext, ResolvedSize};
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement, Widget,
@@ -59,7 +59,7 @@ fn a_wrapping_row_paints_locally() {
     let row = wrapped_row(&ctx);
 
     assert!(
-        row.as_ref().can_paint_local_v2(&ctx),
+        row.as_ref().can_paint(&ctx),
         "a wrapping flex must not fall back to a legacy island"
     );
 }
@@ -76,7 +76,7 @@ fn wrapped_children_are_placed_on_their_lines() {
     let rects: Vec<Rect> = children
         .iter()
         .map(|(index, child)| {
-            row.retained_v2_child_geometry_at(&ctx, *child, *index)
+            row.child_geometry_at(&ctx, *child, *index)
                 .expect("a wrapped child reports retained geometry")
                 .0
         })
@@ -100,7 +100,7 @@ fn a_wrapped_child_is_given_exactly_its_own_size() {
     let mut children = Vec::new();
     row.visit_retained_v2_children(&mut |index, child| children.push((index, child)));
     let child_ctx = row
-        .retained_v2_child_context_at(&ctx, children[1].1, 1)
+        .child_context_at(&ctx, children[1].1, 1)
         .expect("a wrapped child gets a retained context");
 
     assert_eq!(child_ctx.box_constraint.max_width, 50.0);
@@ -114,7 +114,7 @@ fn a_stranger_is_not_given_wrapped_geometry() {
     let stranger = Fixed(1.0, 1.0).to_element(&ctx);
 
     assert!(
-        row.retained_v2_child_geometry_at(&ctx, stranger.as_ref(), 0)
+        row.child_geometry_at(&ctx, stranger.as_ref(), 0)
             .is_none()
     );
 }
@@ -167,9 +167,9 @@ fn syncing_every_wrapped_child_measures_the_list_once() {
     let mut children = Vec::new();
     row.visit_retained_v2_children(&mut |index, child| children.push((index, child)));
     for (index, child) in &children {
-        row.retained_v2_child_geometry_at(&ctx, *child, *index)
+        row.child_geometry_at(&ctx, *child, *index)
             .unwrap();
-        row.retained_v2_child_context_at(&ctx, *child, *index)
+        row.child_context_at(&ctx, *child, *index)
             .unwrap();
     }
 

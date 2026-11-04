@@ -1,6 +1,6 @@
 use super::fixtures::*;
 use aimer::canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_cupid::frame::FramePacket;
 use aimer::{ResolvedSize, Vec2d};
 use aimer_decoration::{Decoration, Magnification, MagnificationStyle as S};

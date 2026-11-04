@@ -4,7 +4,7 @@
 use std::any::TypeId;
 
 use aimer_canvas::{Canvas, Mat3, Rect, RenderColor};
-use aimer_cupid::draw_cmd_v2::{DrawCommand, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand, RenderTree};
 
 #[test]
 fn the_types_the_canvas_draws_with_are_exported_and_are_the_renderers_own() {

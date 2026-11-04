@@ -190,25 +190,25 @@ impl RawAnchor {
 }
 
 impl Drawable for RawAnchor {
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
     /// The anchor reports its child's rectangle, which a floating panel is
     /// pinned to.
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.child.computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.handle.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.handle.bounds.disagreement("Anchor")

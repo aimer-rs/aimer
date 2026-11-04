@@ -17,7 +17,7 @@
 use std::sync::mpsc::{Receiver, RecvError, SyncSender, sync_channel};
 use std::thread::JoinHandle;
 
-use aimer_cupid::draw_cmd::DrawList;
+use aimer_cupid::render_list::DrawList;
 use aimer_cupid::frame::{Frame, FramePacket};
 use winit::dpi::PhysicalSize;
 

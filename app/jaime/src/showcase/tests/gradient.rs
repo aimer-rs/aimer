@@ -1,6 +1,6 @@
 use super::*;
 
-use aimer_cupid::draw_cmd_v2::{COVERAGE_MASK_PIPELINE_NAME, DrawCommand};
+use aimer_cupid::draw_cmd::{COVERAGE_MASK_PIPELINE_NAME, DrawCommand};
 use aimer_cupid::material::{GradientShape, MaterialKind, MaterialRequest};
 use aimer::quiver::winit::dpi::PhysicalSize;
 use aimer::{
@@ -53,10 +53,10 @@ impl LayoutElement for CapturedElement {
     }
 }
 impl Drawable for CapturedElement {
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         aimer::canvas::Canvas::of(ctx).finish();
     }
     fn update(&self, ctx: &BuildContext) {

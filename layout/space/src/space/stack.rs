@@ -453,13 +453,13 @@ impl RawStackElement {
 }
 
 impl Drawable for RawStackElement {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.retained_child_context(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         _child: &dyn Element,

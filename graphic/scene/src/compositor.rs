@@ -4,7 +4,7 @@
 //! element tree. It carries logical nodes, paint order, transforms, clips,
 //! damage footprints, and the command/surface payload ranges that the renderer
 //! can consume without walking widgets again. Ordinary commands remain in
-//! [`crate::draw_cmd::DrawList`] as the safe payload fallback; promoted content
+//! [`crate::render_list::DrawList`] as the safe payload fallback; promoted content
 //! is represented by renderer-owned surfaces and composed directly when its
 //! pixels are unchanged.
 //! 
@@ -13,7 +13,7 @@ use std::cmp::Reverse;
 use std::rc::Rc;
 
 use crate::damage_region::{DamageRect, DamageSet};
-use crate::draw_cmd::{DrawCommand, DrawList};
+use crate::render_list::{DrawCommand, DrawList};
 use crate::utilities::{Mat3, Rect};
 
 mod retained;
@@ -1660,7 +1660,7 @@ impl CompositorScene {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draw_cmd::DrawList;
+    use crate::render_list::DrawList;
 
     #[test]
     fn scene_preserves_retained_layer_order_and_properties() {
@@ -1982,8 +1982,8 @@ mod tests {
     struct RetainedLayerContentForTest;
 
     impl RetainedLayerContentForTest {
-        fn content() -> crate::draw_cmd::RetainedLayerContent {
-            crate::draw_cmd::RetainedLayerContent::from_snapshot(
+        fn content() -> crate::render_list::RetainedLayerContent {
+            crate::render_list::RetainedLayerContent::from_snapshot(
                 DrawList::new().retained_snapshot().unwrap(),
             )
         }

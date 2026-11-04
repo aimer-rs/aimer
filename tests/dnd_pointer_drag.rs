@@ -223,7 +223,7 @@ fn drawn_corner(
     width: f32,
     height: f32,
 ) -> Option<(f32, f32)> {
-    use aimer_cupid::draw_cmd_v2::RenderOp;
+    use aimer_cupid::draw_cmd::RenderOp;
 
     // Parents are drawn before their children, and the hosted follower is the
     // same size as the feedback it carries, so the last match is the feedback
@@ -440,7 +440,7 @@ fn the_list_shows_where_the_item_will_go() {
     );
     // The rows are the only 90x40 nodes; the last of them is the third row.
     let third_row_y = {
-        use aimer_cupid::draw_cmd_v2::RenderOp;
+        use aimer_cupid::draw_cmd::RenderOp;
         app.render_ops()
             .into_iter()
             .filter_map(|op| match op {

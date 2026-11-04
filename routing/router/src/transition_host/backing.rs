@@ -104,9 +104,9 @@ impl Rebuildable for BackingLayer {}
 impl Drawable for BackingLayer {
     fn update(&self, _: &BuildContext) {}
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool { ctx.scale.is_finite() && ctx.scale > 0.0 }
+    fn can_paint(&self, ctx: &BuildContext) -> bool { ctx.scale.is_finite() && ctx.scale > 0.0 }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = Canvas::of(ctx);
         let (width, height) = self.host.get();
         if width > 0.0 && height > 0.0 {
@@ -124,13 +124,15 @@ impl Drawable for BackingLayer {
         self.recorded.set(Some((width, height)));
     }
 
-    fn local_v2_paint_needs_recording(&self, _: &BuildContext) -> bool {
-        self.recorded.get() != Some(self.host.get())
+    fn paint_needs_recording(&self, _: &BuildContext) -> bool {
+        self.recorded.get() != Some(self.window.get())
     }
 
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
-        let (width, height) = self.host.get();
-        Some(ResolvedSize { width: width * ctx.scale, height: height * ctx.scale })
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+        Some(self.window.get().map_or(ResolvedSize::default(), |window| ResolvedSize {
+            width: window.host.0 * ctx.scale,
+            height: window.host.1 * ctx.scale,
+        }))
     }
 }
 

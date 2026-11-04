@@ -17,6 +17,7 @@ pub struct HeadlessWindowState {
     coalesced_redraw_count: AtomicU64,
     display_tick_count: AtomicU64,
     cursor: AtomicUsize,
+    fullscreen: AtomicBool,
 }
 
 #[inline]
@@ -90,7 +91,44 @@ impl WindowHandle {
             coalesced_redraw_count: AtomicU64::new(0),
             display_tick_count: AtomicU64::new(0),
             cursor: AtomicUsize::new(cursor_id(winit::window::CursorIcon::Default)),
+            fullscreen: AtomicBool::new(false),
         }))
+    }
+
+    /// Puts the window into fullscreen, or takes it out.
+    ///
+    /// Fullscreen is borderless on the monitor the window is on: it keeps the
+    /// display mode, so entering and leaving is instant. On the web it is the
+    /// browser's fullscreen, which only a user action (a click or a key) may
+    /// enter. Where a window has no fullscreen of its own (Android, an iOS app
+    /// that already fills the screen) the call does nothing.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # fn example(window: &aimer_widget::base::WindowHandle) {
+    /// let entering = !window.is_fullscreen();
+    /// window.set_fullscreen(entering);
+    /// # }
+    /// ```
+    pub fn set_fullscreen(&self, fullscreen: bool) {
+        match self {
+            Self::Native(window) => {
+                window.set_fullscreen(fullscreen.then_some(winit::window::Fullscreen::Borderless(None)));
+            }
+            Self::Headless(state) => state.fullscreen.store(fullscreen, Ordering::Relaxed),
+        }
+    }
+
+    /// Whether the window is in fullscreen.
+    ///
+    /// A window the user put into fullscreen themselves (the green button on
+    /// macOS, say) reads as fullscreen too.
+    pub fn is_fullscreen(&self) -> bool {
+        match self {
+            Self::Native(window) => window.fullscreen().is_some(),
+            Self::Headless(state) => state.fullscreen.load(Ordering::Relaxed),
+        }
     }
 
     /// Returns the drawable client area in physical pixels.
@@ -243,3 +281,28 @@ impl WindowHandle {
     }
 }
 
+
+#[cfg(test)]
+mod fullscreen_tests {
+    use super::WindowHandle;
+
+    #[test]
+    fn a_window_enters_and_leaves_fullscreen() {
+        let window = WindowHandle::headless(winit::dpi::PhysicalSize::new(800, 600), 2.0);
+        assert!(!window.is_fullscreen(), "windows start windowed");
+        window.set_fullscreen(true);
+        assert!(window.is_fullscreen());
+        window.set_fullscreen(true);
+        assert!(window.is_fullscreen(), "entering twice stays in");
+        window.set_fullscreen(false);
+        assert!(!window.is_fullscreen());
+    }
+
+    #[test]
+    fn clones_share_the_fullscreen_state() {
+        let window = WindowHandle::headless(winit::dpi::PhysicalSize::new(800, 600), 1.0);
+        let clone = window.clone();
+        clone.set_fullscreen(true);
+        assert!(window.is_fullscreen());
+    }
+}

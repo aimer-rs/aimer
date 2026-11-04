@@ -1,4 +1,4 @@
-use aimer_cupid::draw_cmd_v2::{
+use aimer_cupid::draw_cmd::{
     DrawCommand, Rect, RenderNodeSpec, RenderOp, RenderTree, RenderTreeError,
 };
 use aimer_cupid::utilities::Color;
@@ -103,7 +103,7 @@ fn sync_rejects_duplicate_ids_and_removes_nodes_omitted_from_the_next_snapshot()
 /// Builds the same three-node tree twice, moves one node, and returns the
 /// bounds and damage that each way of applying the move leaves behind.
 fn moved_leaf_outcome(
-    apply: impl FnOnce(&RenderTree, &[aimer_cupid::draw_cmd_v2::RenderNodeId]),
+    apply: impl FnOnce(&RenderTree, &[aimer_cupid::draw_cmd::RenderNodeId]),
 ) -> (Vec<Rect>, Vec<Rect>) {
     let tree = RenderTree::new();
     let ids = tree
@@ -141,7 +141,7 @@ fn geometry_sync_matches_the_structure_sync_it_replaces() {
         .unwrap();
     });
     let incremental = moved_leaf_outcome(|tree, ids| {
-        tree.sync_geometry(&[aimer_cupid::draw_cmd_v2::NodeGeometry {
+        tree.sync_geometry(&[aimer_cupid::draw_cmd::NodeGeometry {
             node: ids[1],
             bounds: moved,
             clip,
@@ -157,7 +157,7 @@ fn geometry_sync_matches_the_structure_sync_it_replaces() {
 #[test]
 fn geometry_sync_leaves_an_unchanged_node_without_damage() {
     let (_, damage) = moved_leaf_outcome(|tree, ids| {
-        tree.sync_geometry(&[aimer_cupid::draw_cmd_v2::NodeGeometry {
+        tree.sync_geometry(&[aimer_cupid::draw_cmd::NodeGeometry {
             node: ids[2],
             bounds: Rect::new(100.0, 10.0, 50.0, 30.0),
             clip: None,
@@ -179,7 +179,7 @@ fn geometry_sync_rejects_what_the_structure_sync_rejects() {
             Rect::new(0.0, 0.0, 10.0, 10.0),
         )])
         .unwrap();
-    let geometry = |bounds, clip, clip_radius| aimer_cupid::draw_cmd_v2::NodeGeometry {
+    let geometry = |bounds, clip, clip_radius| aimer_cupid::draw_cmd::NodeGeometry {
         node: ids[0],
         bounds,
         clip,
@@ -202,7 +202,7 @@ fn geometry_sync_rejects_what_the_structure_sync_rejects() {
         )]),
         Err(RenderTreeError::InvalidBounds)
     );
-    let missing = aimer_cupid::draw_cmd_v2::NodeGeometry {
+    let missing = aimer_cupid::draw_cmd::NodeGeometry {
         node: ids[0],
         bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
         clip: None,

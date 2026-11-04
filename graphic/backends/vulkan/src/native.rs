@@ -15,6 +15,7 @@
 
 mod allocator;
 mod commands;
+mod external;
 mod pipeline;
 mod surface;
 mod trait_impl;
@@ -64,6 +65,8 @@ pub(super) struct VulkanCore {
     pub(super) properties: vk::PhysicalDeviceProperties,
     pub(super) memory_properties: vk::PhysicalDeviceMemoryProperties,
     pub(super) enabled_features: vk::PhysicalDeviceFeatures,
+    /// Which kinds of memory from other APIs the device can import.
+    pub(super) external: external::ExternalSupport,
 }
 
 struct InstanceOwner {
@@ -72,6 +75,9 @@ struct InstanceOwner {
     debug_utils: Option<ash::ext::debug_utils::Instance>,
     debug_messenger: vk::DebugUtilsMessengerEXT,
     surface_maintenance1_enabled: bool,
+    /// The instance extensions importing memory from other APIs needs were
+    /// enabled.
+    external_instance_extensions: bool,
 }
 
 pub(super) struct VulkanShared {
@@ -91,6 +97,8 @@ pub struct VulkanBackend {
     pub(super) shared: Arc<VulkanShared>,
     pending_buffers: Mutex<Vec<commands::PendingBufferUpload>>,
     pending_textures: Mutex<Vec<commands::PendingTextureUpload>>,
+    /// Textures made from other APIs' buffers, by producer pool and slot.
+    imports: Mutex<external::ImportedTextures>,
 }
 
 /// A Vulkan buffer owned by Cupid.
@@ -121,6 +129,8 @@ pub(super) struct VulkanTextureInner {
     pub(super) usage: Vec<TextureUsage>,
     pub(super) layout: Mutex<vk::ImageLayout>,
     pub(super) presentable: bool,
+    /// Memory imported from another API, which this image owns and frees.
+    pub(super) imported_memory: Option<vk::DeviceMemory>,
 }
 
 /// A Vulkan image view.
@@ -254,6 +264,7 @@ impl VulkanBackend {
             shared,
             pending_buffers: Mutex::new(Vec::new()),
             pending_textures: Mutex::new(Vec::new()),
+            imports: Mutex::new(Default::default()),
         }
     }
 
@@ -383,6 +394,7 @@ impl VulkanBackend {
             usage: desc.usage.clone(),
             layout: Mutex::new(vk::ImageLayout::UNDEFINED),
             presentable: false,
+            imported_memory: None,
         }))
     }
 }
@@ -523,6 +535,14 @@ impl VulkanCore {
         } else {
             Vec::new()
         };
+        // Importing memory from other APIs is optional: the extensions it needs
+        // are enabled together, only when the device has all of them.
+        let external = external::ExternalSupport::select(
+            instance,
+            selected.physical_device,
+            owner.external_instance_extensions,
+            &mut extension_names,
+        );
         if selected.swapchain_maintenance1_enabled {
             extension_names.push(ash::ext::swapchain_maintenance1::NAME.as_ptr());
         }
@@ -549,6 +569,7 @@ impl VulkanCore {
                 properties: selected.properties,
                 memory_properties,
                 enabled_features,
+                external,
             }),
             selected.graphics_family,
             selected.present_family,
@@ -687,6 +708,8 @@ fn create_instance_owner(
         extensions.push(ash::khr::get_surface_capabilities2::NAME.as_ptr());
         extensions.push(ash::ext::surface_maintenance1::NAME.as_ptr());
     }
+    let external_instance_extensions =
+        external::enable_instance_extensions(&entry, &mut extensions);
     let layers = if enable_validation {
         vec![validation_layer_name.as_ptr()]
     } else {
@@ -741,6 +764,7 @@ fn create_instance_owner(
         debug_utils,
         debug_messenger,
         surface_maintenance1_enabled,
+        external_instance_extensions,
     }))
 }
 

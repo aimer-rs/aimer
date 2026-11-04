@@ -11,7 +11,7 @@ use super::*;
 use std::time::Duration;
 
 use aimer_animation::curves;
-use aimer_cupid::draw_cmd_v2::RenderOp;
+use aimer_cupid::draw_cmd::RenderOp;
 use aimer_cupid::utilities::Mat3;
 use aimer_input::button::Button;
 use aimer_modal::{Anchor, AnchorHandle, Floating, FloatingAlign, FloatingSide, ModalAnimation};
@@ -156,7 +156,7 @@ fn filled_boxes<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Vec<(f32, f32
         };
         let snapshot = item.snapshot();
         for command in snapshot.commands.iter() {
-            if let aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { rect, .. } = command {
+            if let aimer_cupid::draw_cmd::DrawCommand::FillRect { rect, .. } = command {
                 let (x, y) = item
                     .transform
                     .transform_point(item.origin.0 + rect.x, item.origin.1 + rect.y);

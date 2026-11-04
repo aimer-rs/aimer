@@ -233,7 +233,7 @@ impl Paragraph {
             })
     }
 
-    pub(crate) fn retained_v2_paint_outsets(
+    pub(crate) fn paint_outsets(
         &self,
         layout: &PreparedLayout,
         scale: f32,
@@ -1378,7 +1378,7 @@ mod tests {
     fn decorations_resolve_the_hover_color_when_recorded() {
         use aimer_attribute::{ResolvedSize, Vec2d};
         use aimer_canvas::{Canvas, FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+        use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
         use aimer_style::{TextAlign, TextDecoration, TextDecorationLine, TextOverflow};
         use aimer_widget::base::WindowHandle;
 

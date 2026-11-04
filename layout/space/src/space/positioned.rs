@@ -302,7 +302,7 @@ impl<E: Element> RawPositionedElement<E> {
             return None;
         }
         // Scale and rotation do not move the child's origin; they are the child
-        // node's presentation (see `sync_local_v2_state`).
+        // node's presentation (see `sync_paint_state`).
         let (transform_x, transform_y) = match self.transform {
             Transform::Translate(x, y) => (x, y),
             Transform::TranslateX(x) => (x, 0.0),
@@ -384,7 +384,7 @@ impl<E: Element> RawPositionedElement<E> {
 impl<E: Element> Drawable for RawPositionedElement<E> {
     /// Hit-tested over the positioned child, which starts `offset` in from the
     /// node. A transform the layout cannot express has no hit area.
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         if self.child_presentation().is_some() {
             return None;
         }
@@ -392,30 +392,30 @@ impl<E: Element> Drawable for RawPositionedElement<E> {
         Some(self.placed_child_size(&child_ctx))
     }
 
-    fn retained_v2_interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
+    fn interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
         self.retained_child_layout(ctx)
             .map_or((0.0, 0.0), |(offset, _)| (offset.x, offset.y))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("Positioned")
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let Some((_, child_ctx)) = self.retained_child_layout(ctx) else {
             return false;
         };
         let size = self
             .child
-            .retained_v2_bounds(&child_ctx)
+            .paint_bounds(&child_ctx)
             .unwrap_or_else(|| self.child.content_size(&child_ctx));
         let position = self.child.pos().unwrap_or_default();
         size.width.is_finite()
@@ -430,9 +430,9 @@ impl<E: Element> Drawable for RawPositionedElement<E> {
             && position.y.abs() <= 1_000_000.0
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         self.sync_paint_geometry(ctx);
         match self.child_presentation() {
             Some(transform) => ctx.set_local_v2_child_presentation_at(0, transform, 1.0),
@@ -440,7 +440,7 @@ impl<E: Element> Drawable for RawPositionedElement<E> {
         }
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         _child: &dyn Element,
@@ -450,21 +450,21 @@ impl<E: Element> Drawable for RawPositionedElement<E> {
             .map(|(_, child_ctx)| child_ctx)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
         _child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         let (offset, child_ctx) = self.retained_child_layout(ctx)?;
         let position = child.pos().unwrap_or_default();
         let size = child
-            .retained_v2_bounds(&child_ctx)
+            .paint_bounds(&child_ctx)
             .unwrap_or_else(|| child.content_size(&child_ctx));
-        let bounds = aimer_cupid::draw_cmd_v2::Rect::new(
+        let bounds = aimer_cupid::draw_cmd::Rect::new(
             (offset.x + position.x) / ctx.scale,
             (offset.y + position.y) / ctx.scale,
             size.width / ctx.scale,

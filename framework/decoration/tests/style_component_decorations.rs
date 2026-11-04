@@ -27,7 +27,7 @@ async fn style_components_work_directly_in_containers_and_decoration_wrappers() 
             .decoration(BorderRadius::from(8)).child(SizedBox::new()).to_element(&ctx);
         assert_eq!(radius.content_size(&ctx), ResolvedSize { width: 80.0 * scale, height: 40.0 * scale });
         radius.visit_children(&mut |child| {
-            assert_eq!(radius.retained_v2_child_clip_radius(&ctx, child), [8.0; 4]);
+            assert_eq!(radius.child_clip_radius(&ctx, child), [8.0; 4]);
         });
         let decorations: [Box<dyn Decoration>; 4] = [
             Box::new(BoxBorder::all(stroke)), Box::new(BoxOutline::all(stroke)),

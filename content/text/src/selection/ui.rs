@@ -521,7 +521,7 @@ fn paint_handles(
     let (red, green, blue, alpha) = HANDLE_COLOR.to_rgba();
     let color = aimer_cupid::utilities::Color::rgba8(red, green, blue, alpha);
     let rect = |bounds: Bounds| {
-        aimer_cupid::draw_cmd_v2::Rect::new(bounds.x, bounds.y, bounds.width, bounds.height)
+        aimer_cupid::draw_cmd::Rect::new(bounds.x, bounds.y, bounds.width, bounds.height)
     };
     for knob in [start, end] {
         canvas.fill_rect(rect(knob.bar_bounds()), [red, green, blue, alpha]);
@@ -687,7 +687,7 @@ mod tests {
     #[test]
     fn the_layer_paints_a_bar_and_a_knob_for_each_end() {
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+        use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 
         let (session, slot, _geometry) = session();
         select(&session, &slot, 2..5);
@@ -763,9 +763,9 @@ mod tests {
 
         drop(session);
 
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let overlay = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 400.0, 800.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 400.0, 800.0))
             .unwrap();
         let node_context = tree.context(overlay).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {

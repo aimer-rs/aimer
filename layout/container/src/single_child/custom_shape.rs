@@ -185,7 +185,7 @@ struct RawCustomShape {
 
 impl Drawable for RawCustomShape {
     fn update(&self, ctx: &BuildContext) {
-        // The shape is painted by `paint_local_v2`; the retained child remains
+        // The shape is painted by `paint`; the retained child remains
         // the canonical event, focus, semantics, and visual subtree.
         self.child.update(ctx);
     }
@@ -195,11 +195,11 @@ impl Drawable for RawCustomShape {
         self.child.sync_paint_geometry(ctx);
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite() && ctx.scale > 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         let scale = if ctx.scale.is_finite() && ctx.scale > 0.0 {
             ctx.scale
@@ -228,10 +228,6 @@ impl Drawable for RawCustomShape {
             let _ = canvas.draw_shape(&request, viewport);
         }
         canvas.finish();
-    }
-
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
-        self.child.update(ctx);
     }
 }
 

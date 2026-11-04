@@ -1,7 +1,7 @@
 use super::*;
 
 use aimer::HeadlessOptions;
-use aimer_cupid::draw_cmd_v2::DrawCommand;
+use aimer_cupid::draw_cmd::DrawCommand;
 use aimer::quiver::winit::dpi::{PhysicalPosition, PhysicalSize};
 use aimer::quiver::winit::event::{DeviceId, ElementState, MouseButton, WindowEvent};
 use aimer::{Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement};
@@ -92,8 +92,8 @@ impl LayoutElement for CapturedElement {
     fn content_size(&self, ctx: &BuildContext) -> ResolvedSize { self.child.content_size(ctx) }
 }
 impl Drawable for CapturedElement {
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool { true }
-    fn paint_local_v2(&self, ctx: &BuildContext) { aimer::canvas::Canvas::of(ctx).finish(); }
+    fn can_paint(&self, _ctx: &BuildContext) -> bool { true }
+    fn paint(&self, ctx: &BuildContext) { aimer::canvas::Canvas::of(ctx).finish(); }
     fn update(&self, ctx: &BuildContext) {
         self.child.update(ctx);
         let mut labels = Vec::new();

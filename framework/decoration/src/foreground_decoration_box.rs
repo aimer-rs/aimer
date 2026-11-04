@@ -6,7 +6,7 @@ use crate::decoration_box::{PaintGeometry, PaintKey, sanitized_outsets};
 use crate::{BoxDecoration, Decoration};
 use aimer_attribute::{ResolvedSize, Size, Vec2d};
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutElement,
@@ -183,14 +183,14 @@ impl Drawable for RawOverlayBox {
         self.child.sync_paint_geometry(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
     /// The wrapper paints nothing itself; its layer node does.
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -206,7 +206,7 @@ impl Drawable for RawOverlayBox {
         })
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -321,11 +321,11 @@ impl<D: Decoration> Rebuildable for ForegroundLayer<D> {}
 impl<D: Decoration> Drawable for ForegroundLayer<D> {
     fn update(&self, _ctx: &BuildContext) {}
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let key = self.paint_key(ctx);
         let canvas = Canvas::of(ctx);
         if let Some(geometry) = key.geometry {
@@ -343,18 +343,18 @@ impl<D: Decoration> Drawable for ForegroundLayer<D> {
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         self.recorded.get() != Some(self.paint_key(ctx))
     }
 
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(
             PaintGeometry::new(ctx.parent_size, ctx.scale)
                 .map_or(ResolvedSize::default(), |geometry| geometry.size),
         )
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         Some(
             PaintGeometry::new(ctx.parent_size, ctx.scale)
                 .map_or([0.0; 4], |geometry| sanitized_outsets(&self.decoration, geometry)),

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::mask_group_tests::{SIZE, disc, near, pixel, record, render};
 use crate::AntiAlias;
-use crate::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use crate::draw_cmd::{DrawCommand, Rect, RenderTree};
 use crate::effects::{EffectCommand, ParamWriter, ShaderEffect, register};
 use crate::utilities::Color;
 

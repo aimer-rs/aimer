@@ -193,23 +193,23 @@ impl Drawable for RawSelectableText {
     /// The paragraph's interaction rectangle is its laid-out box. The render
     /// tree supplies where that box is now, so geometry painted earlier follows
     /// a scroll.
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.paragraph.prepare_for_paint(ctx).size)
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.geometry().bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.geometry().bounds.disagreement("RawSelectableText")
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         self.slot().stamp();
         self.sync_paint_geometry(ctx);
         let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
@@ -221,37 +221,37 @@ impl Drawable for RawSelectableText {
         true
     }
 
-    fn draw_local_v2_compatibility(&self, _ctx: &BuildContext) {}
+    fn update_retained(&self, _ctx: &BuildContext) {}
 
     fn update(&self, ctx: &BuildContext) {
-        // The text is painted by `paint_local_v2`; this keeps the geometry the
+        // The text is painted by `paint`; this keeps the geometry the
         // interaction reads current and polls a resting touch.
-        self.sync_local_v2_state(ctx);
+        self.sync_paint_state(ctx);
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         let data = self.local_v2_paint_data(ctx)?;
         let outsets = self
             .paragraph
-            .retained_v2_paint_outsets(&data.layout, data.scale);
+            .paint_outsets(&data.layout, data.scale);
         outsets
             .iter()
             .any(|outset| *outset > 0.0)
             .then_some(outsets)
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.local_v2_paint_data(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let data = self
             .local_v2_paint_data(ctx)
             .expect("RawSelectableText v2 support must be checked before painting");
         let selected_range = self.slot().selected_range().unwrap_or(0..0);
         let outsets = self
             .paragraph
-            .retained_v2_paint_outsets(&data.layout, data.scale);
+            .paint_outsets(&data.layout, data.scale);
         let origin_offset = aimer_attribute::Vec2d {
             x: outsets[0],
             y: outsets[1],
@@ -317,7 +317,7 @@ impl Drawable for RawSelectableText {
         *self.geometry().retained_v2_selection.borrow_mut() = Some(selected_range);
     }
 
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         if self.local_v2_paint_data(ctx).is_none() {
             return false;
         }

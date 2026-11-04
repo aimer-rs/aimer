@@ -130,7 +130,7 @@ impl Drawable for RawScalable {
         ctx.canvas.restore();
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite()
             && ctx.scale > 0.0
             && self.scale.is_finite()
@@ -138,14 +138,14 @@ impl Drawable for RawScalable {
             && (ctx.scale * self.scale).is_finite()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         aimer_canvas::Canvas::of(ctx).finish();
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         let offset = self.scale_offset(ctx);
         let position = self.child.pos().unwrap_or_default();
-        let [left, top, _, _] = self.child.retained_v2_paint_outsets(ctx)
+        let [left, top, _, _] = self.child.paint_outsets(ctx)
             .filter(|outsets| outsets.iter().all(|outset| outset.is_finite() && *outset >= 0.0))
             .unwrap_or([0.0; 4]);
         let factor = 1.0 - self.scale;
@@ -165,11 +165,7 @@ impl Drawable for RawScalable {
         )
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
-        self.update(ctx);
-    }
-
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -179,26 +175,26 @@ impl Drawable for RawScalable {
             .then(|| self.child_context(ctx))
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         if child_index != 0 || !std::ptr::eq(child, self.child.as_ref()) {
             return None;
         }
         let child_ctx = self.child_context(ctx);
         let size = child
-            .retained_v2_bounds(&child_ctx)
+            .paint_bounds(&child_ctx)
             .unwrap_or_else(|| child.content_size(&child_ctx));
         let position = child.pos().unwrap_or_default();
         let scale = ctx.scale;
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 position.x / scale,
                 position.y / scale,
                 size.width / scale,

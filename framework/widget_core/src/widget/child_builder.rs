@@ -571,83 +571,83 @@ impl Drawable for RetainedChildElement {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         // The slot has no paint of its own. Keeping it local-v2 lets the
         // retained child keep its independent render node beneath the slot.
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         aimer_canvas::Canvas::of(ctx).finish();
     }
 
     #[inline]
-    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
+    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
         self.child().and_then(|child| child.retained_clip(ctx))
     }
 
     #[inline]
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         self.child().map(|child| {
             child
-                .retained_v2_bounds(ctx)
+                .paint_bounds(ctx)
                 .unwrap_or_else(|| child.content_size(ctx))
         })
     }
 
     #[inline]
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         self.child()
-            .and_then(|child| child.retained_v2_paint_outsets(ctx))
+            .and_then(|child| child.paint_outsets(ctx))
     }
 
     #[inline]
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
     ) -> Option<BuildContext<'a>> {
         self.child()
-            .and_then(|retained| retained.retained_v2_child_context(ctx, child))
+            .and_then(|retained| retained.child_context(ctx, child))
     }
 
     #[inline]
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<BuildContext<'a>> {
         self.child().and_then(|retained| {
-            retained.retained_v2_child_context_at(ctx, child, child_index)
+            retained.child_context_at(ctx, child, child_index)
         })
     }
 
     #[inline]
-    fn retained_v2_child_geometry(
+    fn child_geometry(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         self.child()
-            .and_then(|retained| retained.retained_v2_child_geometry(ctx, child))
+            .and_then(|retained| retained.child_geometry(ctx, child))
     }
 
     #[inline]
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         self.child().and_then(|retained| {
-            retained.retained_v2_child_geometry_at(ctx, child, child_index)
+            retained.child_geometry_at(ctx, child, child_index)
         })
     }
 

@@ -1013,13 +1013,13 @@ impl aimer_widget::Drawable for AnimatedLayoutElement {
         }
     }
 
-    fn can_paint_local_v2(&self, _ctx: &aimer_widget::base::BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &aimer_widget::base::BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, _ctx: &aimer_widget::base::BuildContext) {}
+    fn paint(&self, _ctx: &aimer_widget::base::BuildContext) {}
 
-    fn sync_local_v2_state(&self, ctx: &aimer_widget::base::BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &aimer_widget::base::BuildContext) -> bool {
         // The scale is the child node's presentation transform, so the tree
         // damages whatever the child paints; no promise about its paint extent
         // is needed.
@@ -1045,7 +1045,7 @@ impl aimer_widget::Drawable for AnimatedLayoutElement {
         ctx.set_local_v2_child_presentation_at(0, aimer_canvas::Mat3::scale(scale_x, scale_y), 1.0)
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &aimer_widget::base::BuildContext) {
+    fn update_retained(&self, ctx: &aimer_widget::base::BuildContext) {
         self.child.update(ctx);
         if self.transition.borrow().is_animating() {
             request_animation_frame();

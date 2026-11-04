@@ -51,5 +51,21 @@ web-sys = { workspace = true, features = [
     "GpuTextureDescriptor",
     "GpuTextureFormat",
     "GpuTextureView",
+    "HtmlVideoElement",
     "HtmlCanvasElement",
+] }
+
+# Browser tests: they run in headless Chromium through wasm-bindgen-test.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test.workspace = true
+web-sys = { workspace = true, features = [
+    "Blob",
+    "BlobPropertyBag",
+    "Document",
+    "Event",
+    "EventTarget",
+    "HtmlMediaElement",
+    "HtmlVideoElement",
+    "Url",
+    "Window",
 ] }

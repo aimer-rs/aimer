@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use aimer_animation::{AnimInstant, AnimationController, curves};
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::Rect;
+use aimer_cupid::draw_cmd::Rect;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,
@@ -307,7 +307,7 @@ struct DefaultCaretElement {
 }
 
 impl Drawable for DefaultCaretElement {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite()
             && ctx.scale > 0.0
             && ctx.parent_size.width.is_finite()
@@ -316,7 +316,7 @@ impl Drawable for DefaultCaretElement {
             && ctx.parent_size.height >= 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = Canvas::of(ctx);
         if self.context.is_focused() && self.context.is_visible() {
             let (red, green, blue, alpha) = self.color.get().to_rgba();

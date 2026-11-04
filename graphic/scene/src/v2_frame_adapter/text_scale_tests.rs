@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use crate::draw_cmd::DrawCommand as LegacyDrawCommand;
-use crate::draw_cmd_v2::{DrawCommand, Rect, RenderOp, RenderPaintSource, RenderTree};
+use crate::render_list::DrawCommand as LegacyDrawCommand;
+use crate::draw_cmd::{DrawCommand, Rect, RenderOp, RenderPaintSource, RenderTree};
 use crate::frame::RetainedV2Item;
 use crate::utilities::{Color, Mat3, Vec2d};
 

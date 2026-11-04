@@ -78,7 +78,7 @@ impl Widget for Boxes {
 fn containers<W: Widget + 'static>(
     element: &dyn Element,
     app: &HeadlessAimerApp<W>,
-    found: &mut Vec<aimer_cupid::draw_cmd_v2::RenderNodeId>,
+    found: &mut Vec<aimer_cupid::draw_cmd::RenderNodeId>,
 ) {
     if element.debug_name() == "Container"
         && let Some(node) = app.app.render_node_for_element(element.id())

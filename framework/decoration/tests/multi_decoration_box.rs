@@ -5,7 +5,7 @@ use aimer_attribute::{BoxConstraint, ResolvedSize, Vec2d};
 use aimer_canvas::{Canvas, FrameCanvas, InnerCanvas};
 use aimer_color::prelude::Color;
 use aimer_container::{SizedBox, ZeroSizedBox};
-use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 use aimer_decoration::{BoxDecoration, Decoration, LightEdge, MultiDecorationBox};
 use aimer_widget::base::{BuildContext, WindowHandle};
 use aimer_widget::{
@@ -38,7 +38,7 @@ fn record(element: &dyn Element, ctx: &BuildContext) -> Vec<DrawCommand> {
     let tree = RenderTree::new();
     let root = tree.add_root(Rect::new(0.0, 0.0, 200.0, 160.0)).unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
-        element.paint_local_v2(ctx)
+        element.paint(ctx)
     });
     tree.draw_list_snapshot(root).unwrap().commands.to_vec()
 }
@@ -101,7 +101,7 @@ async fn multi_decoration_empty_stacks_and_box_child_preserve_layout() {
                 }
             );
             assert!(record(element.as_ref(), &ctx).is_empty());
-            assert!(!element.local_v2_paint_needs_recording(&ctx));
+            assert!(!element.paint_needs_recording(&ctx));
         }
         let zero = MultiDecorationBox::new()
             .decoration(LightEdge::new())
@@ -160,7 +160,7 @@ async fn multi_decoration_unions_sanitized_outsets_and_uses_one_logical_origin()
                     .to_element(&ctx)
             };
             assert_eq!(
-                element.retained_v2_paint_outsets(&ctx),
+                element.paint_outsets(&ctx),
                 Some([2.0, 3.0, 5.0, 4.0])
             );
             assert_eq!(
@@ -187,10 +187,10 @@ async fn multi_decoration_unions_sanitized_outsets_and_uses_one_logical_origin()
                 ]
             );
             element.visit_children(&mut |child| {
-                let child_ctx = element.retained_v2_child_context(&ctx, child).unwrap();
+                let child_ctx = element.child_context(&ctx, child).unwrap();
                 assert_eq!(child_ctx.box_constraint, ctx.box_constraint);
                 assert_eq!(child.computed_size(&child_ctx), element.computed_size(&ctx));
-                assert_eq!(element.retained_v2_child_clip_radius(&ctx, child), [0.0; 4]);
+                assert_eq!(element.child_clip_radius(&ctx, child), [0.0; 4]);
             });
         }
     }
@@ -228,13 +228,13 @@ async fn multi_decoration_tracks_each_revision_without_sum_or_xor_collisions() {
         for (first, second) in [(1, 2), (2, 1), (3, 1), (3, 4), (1, 2)] {
             a.set(first);
             b.set(second);
-            assert!(element.local_v2_paint_needs_recording(&ctx));
+            assert!(element.paint_needs_recording(&ctx));
             let commands = record(element.as_ref(), &ctx);
             assert!(
                 matches!(commands.as_slice(), [DrawCommand::FillRect { color: a, .. }, DrawCommand::FillRect { color: b, .. }]
                 if a.r == first as u8 && b.r == second as u8)
             );
-            assert!(!element.local_v2_paint_needs_recording(&ctx));
+            assert!(!element.paint_needs_recording(&ctx));
         }
     }
 }

@@ -10,7 +10,7 @@
 
 use std::cell::Cell;
 
-use aimer_cupid::draw_cmd_v2::LocalVisibleRegion;
+use aimer_cupid::draw_cmd::LocalVisibleRegion;
 
 use super::*;
 

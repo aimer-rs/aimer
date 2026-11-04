@@ -78,20 +78,20 @@ pub(super) fn find_element<'a>(root: &'a dyn Element, name: &str) -> Option<&'a 
     found
 }
 
-pub(super) fn decoration_paint(root: &dyn Element, ctx: &BuildContext<'_>) -> aimer_cupid::draw_cmd_v2::Color {
+pub(super) fn decoration_paint(root: &dyn Element, ctx: &BuildContext<'_>) -> aimer_cupid::draw_cmd::Color {
     let element = find_element(root, "Container").expect("Button has a decoration owner");
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let node = tree
-        .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 100.0, 40.0))
+        .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 100.0, 40.0))
         .unwrap();
     ctx.with_local_v2_paint_context(tree.context(node).unwrap(), |ctx| {
-        assert!(element.can_paint_local_v2(ctx));
-        element.paint_local_v2(ctx);
+        assert!(element.can_paint(ctx));
+        element.paint(ctx);
     });
-    assert!(!element.local_v2_paint_needs_recording(ctx));
+    assert!(!element.paint_needs_recording(ctx));
     let commands = tree.draw_list_snapshot(node).unwrap().commands;
     match &commands[0] {
-        aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { color, .. } => *color,
+        aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. } => *color,
         command => panic!("expected a Button background, got {command:?}"),
     }
 }
@@ -210,11 +210,11 @@ pub(super) fn child_geometry(root: &dyn Element, ctx: &BuildContext<'_>) -> (f32
     let mut child = None;
     decoration.visit_children(&mut |element| child = Some(element));
     let child = child.unwrap();
-    let child_ctx = decoration.retained_v2_child_context(ctx, child).unwrap();
+    let child_ctx = decoration.child_context(ctx, child).unwrap();
     (
         child_ctx.box_constraint.max_width,
         child_ctx.box_constraint.max_height,
-        decoration.retained_v2_child_clip_radius(ctx, child),
+        decoration.child_clip_radius(ctx, child),
     )
 }
 

@@ -2,7 +2,7 @@
 
 use aimer_attribute::BoxConstraint;
 use aimer_attribute::size::ResolvedSize;
-use aimer_cupid::draw_cmd_v2::DrawCommand;
+use aimer_cupid::draw_cmd::DrawCommand;
 use aimer_cupid::svg::SvgColor;
 use aimer_lucide::{Icon, Icons};
 use aimer_svg::{SvgDocument, SvgStyle};

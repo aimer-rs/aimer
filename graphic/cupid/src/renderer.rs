@@ -337,10 +337,10 @@ fn retained_layer_dimensions(rect: Rect, max_dimension: u32) -> Option<(u32, u32
     let width = rect.width.ceil().max(1.0) as u64;
     let height = rect.height.ceil().max(1.0) as u64;
     let bytes = width.checked_mul(height)?.checked_mul(4)?;
-    let max_dimension = max_dimension.min(crate::draw_cmd::RETAINED_LAYER_MAX_DIMENSION);
+    let max_dimension = max_dimension.min(crate::render_list::RETAINED_LAYER_MAX_DIMENSION);
     (width <= u64::from(max_dimension)
         && height <= u64::from(max_dimension)
-        && bytes <= crate::draw_cmd::RETAINED_LAYER_MAX_BYTES)
+        && bytes <= crate::render_list::RETAINED_LAYER_MAX_BYTES)
         .then_some((width as u32, height as u32))
 }
 

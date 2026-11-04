@@ -4,7 +4,7 @@ use aimer::{
     BuildContext, Color, CustomShape, Glass, LayoutElement, Liquid, ResolvedSize, Scalable,
     SizedBox, Vec2d, Widget,
 };
-use aimer_cupid::draw_cmd_v2::{DrawCommand as V2DrawCommand, Rect, RenderPaintSource, RenderTree};
+use aimer_cupid::draw_cmd::{DrawCommand as V2DrawCommand, Rect, RenderPaintSource, RenderTree};
 use aimer_shape::*;
 
 fn context<'a>(canvas: FrameCanvas<'a>, runtime: &tokio::runtime::Runtime) -> BuildContext<'a> {
@@ -42,8 +42,8 @@ fn record_local_v2(
     let root = tree.add_root(Rect::new(0.0, 0.0, 64.0, 64.0)).unwrap();
     let retained_context = tree.context(root).unwrap();
     context.with_local_v2_paint_context(retained_context, |context| {
-        assert!(element.can_paint_local_v2(context));
-        element.paint_local_v2(context);
+        assert!(element.can_paint(context));
+        element.paint(context);
     });
     tree.draw_list_snapshot(root).unwrap().commands
 }
@@ -166,8 +166,8 @@ fn custom_shape_records_svg_paint_in_its_local_v2_list() {
     let root = tree.add_root(Rect::new(0.0, 0.0, 64.0, 64.0)).unwrap();
     let retained_context = tree.context(root).unwrap();
     context.with_local_v2_paint_context(retained_context, |context| {
-        assert!(element.can_paint_local_v2(context));
-        element.paint_local_v2(context);
+        assert!(element.can_paint(context));
+        element.paint(context);
     });
 
     
@@ -212,12 +212,12 @@ fn scalable_keeps_its_child_as_a_scaled_retained_node() {
         .unwrap();
     let retained_context = tree.context(root).unwrap();
     context.with_local_v2_paint_context(retained_context, |context| {
-        assert!(element.can_paint_local_v2(context));
-        assert!(element.sync_local_v2_state(context));
-        element.paint_local_v2(context);
+        assert!(element.can_paint(context));
+        assert!(element.sync_paint_state(context));
+        element.paint(context);
 
         element.visit_children(&mut |child| {
-            let child_context = element.retained_v2_child_context_at(context, child, 0);
+            let child_context = element.child_context_at(context, child, 0);
             assert_eq!(child_context.as_ref().map(|ctx| ctx.scale), Some(1.0));
         });
     });
@@ -245,8 +245,8 @@ fn glass_and_liquid_record_material_requests_in_their_local_v2_lists() {
     let glass_node = tree.add_root(Rect::new(0.0, 0.0, 64.0, 64.0)).unwrap();
     let retained_context = tree.context(glass_node).unwrap();
     context.with_local_v2_paint_context(retained_context, |context| {
-        assert!(glass.can_paint_local_v2(context));
-        glass.paint_local_v2(context);
+        assert!(glass.can_paint(context));
+        glass.paint(context);
     });
     let glass_commands = tree.draw_list_snapshot(glass_node).unwrap().commands;
     assert!(glass_commands.iter().any(|command| matches!(
@@ -263,8 +263,8 @@ fn glass_and_liquid_record_material_requests_in_their_local_v2_lists() {
     let liquid_node = tree.add_root(Rect::new(0.0, 0.0, 64.0, 64.0)).unwrap();
     let retained_context = tree.context(liquid_node).unwrap();
     context.with_local_v2_paint_context(retained_context, |context| {
-        assert!(liquid.can_paint_local_v2(context));
-        liquid.paint_local_v2(context);
+        assert!(liquid.can_paint(context));
+        liquid.paint(context);
     });
     let liquid_commands = tree.draw_list_snapshot(liquid_node).unwrap().commands;
     assert!(liquid_commands.iter().any(|command| matches!(

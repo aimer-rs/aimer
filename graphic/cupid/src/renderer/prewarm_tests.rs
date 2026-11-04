@@ -8,7 +8,7 @@
 use super::Renderer;
 use crate::backend::metal::MetalBackend;
 use crate::backend::{GpuBackend, TextureDescriptor, TextureDimension, TextureUsage};
-use crate::draw_cmd::DrawList;
+use crate::render_list::DrawList;
 use crate::frame::{Frame, FramePacket};
 use objc2_metal::MTLPixelFormat;
 

@@ -3,7 +3,7 @@ use std::time::Duration;
 use aimer_attribute::Dimension;
 use aimer_container::{Container, ZeroSizedBox};
 use aimer_ctxmenu::{ContextMenu, ContextMenuItem, ContextMenuShape, ContextMenuStyle};
-use aimer_cupid::draw_cmd_v2::{DrawCommand as V2DrawCommand, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand as V2DrawCommand, RenderOp};
 use aimer_cupid::utilities::Mat3;
 use aimer_modal::{Modal, ModalAnimation};
 #[cfg(feature = "wgpu")]
@@ -193,7 +193,7 @@ fn animated_floating_menu_keeps_styled_panel_and_rows_as_local_lists() {
 fn retained_context_menu_decoration_renders_at_one_and_two_x_under_opacity() {
     use aimer_cupid::WgpuBackend;
     use aimer_cupid::damage_region::DamageSet;
-    use aimer_cupid::draw_cmd_v2::{DrawCommand as V2DrawCommand, Rect, RenderFrame, RenderOp};
+    use aimer_cupid::draw_cmd::{DrawCommand as V2DrawCommand, Rect, RenderFrame, RenderOp};
     use aimer_cupid::frame::{Frame, FramePacket, FrameRenderMetadata};
     use aimer_cupid::renderer::Renderer;
 
@@ -1144,7 +1144,7 @@ fn retained_context_menu_hover_updates_only_its_rows_layer() {
 #[test]
 fn replacing_a_retained_context_menu_clears_its_old_shadow_and_panel_pixels() {
     use aimer_cupid::WgpuBackend;
-    use aimer_cupid::draw_cmd_v2::{DrawCommand as V2DrawCommand, Rect, RenderOp};
+    use aimer_cupid::draw_cmd::{DrawCommand as V2DrawCommand, Rect, RenderOp};
     use aimer_cupid::renderer::Renderer;
 
     let _serial = VIRTUALIZED_RENDER_TEST_LOCK
@@ -1369,7 +1369,7 @@ fn replacing_a_retained_context_menu_clears_its_old_shadow_and_panel_pixels() {
 #[test]
 fn retained_pill_menu_records_separator_and_hover_pixels_at_one_and_two_x() {
     use aimer_cupid::WgpuBackend;
-    use aimer_cupid::draw_cmd_v2::{DrawCommand as V2DrawCommand, RenderOp};
+    use aimer_cupid::draw_cmd::{DrawCommand as V2DrawCommand, RenderOp};
     use aimer_cupid::renderer::Renderer;
 
     let _serial = VIRTUALIZED_RENDER_TEST_LOCK
@@ -1483,7 +1483,7 @@ fn retained_pill_menu_records_separator_and_hover_pixels_at_one_and_two_x() {
         let mut renderer = Renderer::new(&backend, FORMAT);
         renderer.render_packet(&backend, &view, &first_packet, false);
         let initial_pixels = read_context_menu_pixels(&device, &queue, &target, width, height);
-        let row_sample = |bounds: aimer_cupid::draw_cmd_v2::Rect| Vec2d {
+        let row_sample = |bounds: aimer_cupid::draw_cmd::Rect| Vec2d {
             x: bounds.x + 12.0,
             y: bounds.y + bounds.height * 0.5,
         };

@@ -5,7 +5,7 @@ use super::*;
 use aimer::HeadlessOptions;
 use aimer::quiver::winit::dpi::{PhysicalPosition, PhysicalSize};
 use aimer::quiver::winit::event::{DeviceId, MouseScrollDelta, TouchPhase, WindowEvent};
-use aimer_cupid::draw_cmd_v2::RenderOp;
+use aimer_cupid::draw_cmd::RenderOp;
 
 struct Page;
 impl Widget for Page {

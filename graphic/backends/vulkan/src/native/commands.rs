@@ -291,6 +291,42 @@ impl VulkanCommandEncoder {
         }
     }
 
+    /// Takes an image another API wrote and makes it sampleable: an acquire
+    /// from the foreign queue family into the graphics family, into
+    /// `SHADER_READ_ONLY_OPTIMAL`. The old layout is `UNDEFINED`, which for
+    /// memory imported from a foreign producer keeps what it wrote.
+    #[cfg(target_os = "android")]
+    pub(super) fn acquire_foreign_image(&mut self, texture: &VulkanTexture) {
+        let barrier = vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_access_mask(vk::AccessFlags::SHADER_READ)
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_FOREIGN_EXT)
+            .dst_queue_family_index(self.shared.graphics_family)
+            .image(texture.0.raw)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            });
+        unsafe {
+            self.shared.core.device.cmd_pipeline_barrier(
+                self.raw,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+        self.set_layout(texture, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        self.retain(texture.clone());
+    }
+
     fn image_barrier(&mut self, texture: &VulkanTexture, new_layout: vk::ImageLayout) {
         let old_layout = self.current_layout(texture);
         if old_layout == new_layout {

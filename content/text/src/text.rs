@@ -205,7 +205,7 @@ mod tests {
 
     use aimer_attribute::{ResolvedSize, Vec2d};
     use aimer_canvas::{FrameCanvas, InnerCanvas};
-    use aimer_cupid::draw_cmd_v2::{DrawCommand, Rect, RenderPaintSource, RenderTree};
+    use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderPaintSource, RenderTree};
     use aimer_style::{LineHeight, TextAlign, TextStyle, TextTransform};
     use aimer_widget::base::{BuildContext, WindowHandle};
     use aimer_widget::{Drawable, LayoutCache, LayoutElement, Rebuildable, Widget};
@@ -316,13 +316,13 @@ mod tests {
             .unwrap();
 
         let local_context = tree.context(text_node).unwrap();
-        assert!(original.can_paint_local_v2(&ctx));
-        ctx.with_local_v2_paint_context(local_context, |ctx| original.paint_local_v2(ctx));
+        assert!(original.can_paint(&ctx));
+        ctx.with_local_v2_paint_context(local_context, |ctx| original.paint(ctx));
         tree.set_paint_source(text_node, RenderPaintSource::LocalV2)
             .unwrap();
         let sibling_context = tree.context(sibling_node).unwrap();
-        assert!(sibling.can_paint_local_v2(&ctx));
-        ctx.with_local_v2_paint_context(sibling_context, |ctx| sibling.paint_local_v2(ctx));
+        assert!(sibling.can_paint(&ctx));
+        ctx.with_local_v2_paint_context(sibling_context, |ctx| sibling.paint(ctx));
         tree.set_paint_source(sibling_node, RenderPaintSource::LocalV2)
             .unwrap();
 
@@ -342,8 +342,8 @@ mod tests {
         tree.invalidate_paint(text_node).unwrap();
         let updated = raw_text("after");
         let updated_context = tree.context(text_node).unwrap();
-        assert!(updated.can_paint_local_v2(&ctx));
-        ctx.with_local_v2_paint_context(updated_context, |ctx| updated.paint_local_v2(ctx));
+        assert!(updated.can_paint(&ctx));
+        ctx.with_local_v2_paint_context(updated_context, |ctx| updated.paint(ctx));
 
         let updated_recording = tree.draw_list_snapshot(text_node).unwrap();
         assert_eq!(updated_recording.revision, 2);

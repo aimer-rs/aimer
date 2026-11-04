@@ -112,32 +112,26 @@ impl Drawable for IndicatorSurfaceElement {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite() && ctx.scale > 0.0
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
-
-    #[inline]
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
-        self.save_bounds(ctx);
-        self.child.update(ctx);
-    }
+    fn paint(&self, _ctx: &BuildContext) {}
 
     /// Hit-tested against the size the content reports as its own.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.child.computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: InteractionSource) {
+    fn adopt_interaction_source(&self, source: InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(&self) -> Option<InteractionDisagreement> {
+    fn interaction_disagreement(&self) -> Option<InteractionDisagreement> {
         self.bounds.disagreement("IndicatorSurface")
     }
 }

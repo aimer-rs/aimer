@@ -701,7 +701,7 @@ impl RawGrid {
         });
         let overflow = detect_overflow(child_size, cell_size, offset);
         let render_size = child
-            .retained_v2_bounds(&child_ctx)
+            .paint_bounds(&child_ctx)
             .unwrap_or_else(|| child.content_size(&child_ctx));
         Some((
             cell_pos,
@@ -716,7 +716,7 @@ impl RawGrid {
 }
 
 impl Drawable for RawGrid {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         if !ctx.scale.is_finite() || ctx.scale <= 0.0 {
             return false;
         }
@@ -779,13 +779,13 @@ impl Drawable for RawGrid {
         })
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         if let Err(error) = self.layout_grid(ctx) {
             ErrorElement::record_message(ctx, &format!("Grid layout error: {error}"));
         }
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -795,20 +795,20 @@ impl Drawable for RawGrid {
             .map(|(_, _, child_ctx, _, _, _, _)| child_ctx)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         let (cell_pos, offset, child_ctx, cell_size, _, render_size, _) =
             self.retained_child_layout(ctx, child, child_index)?;
         let position = child.pos().unwrap_or_default();
         let scale = ctx.scale;
-        let bounds = aimer_cupid::draw_cmd_v2::Rect::new(
+        let bounds = aimer_cupid::draw_cmd::Rect::new(
             (cell_pos.x + offset.x + position.x) / scale,
             (cell_pos.y + offset.y + position.y) / scale,
             render_size.width / scale,
@@ -823,7 +823,7 @@ impl Drawable for RawGrid {
         }
 
         let grid_clip = (self.overflow == GridOverflow::Clip).then(|| {
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 -(offset.x + position.x) / scale,
                 -(offset.y + position.y) / scale,
                 cell_size.width / scale,
@@ -873,7 +873,7 @@ impl Drawable for RawGrid {
                     self.draw_item(ctx, item, *placement, &layout);
                 }
             }
-            // The message is recorded by `paint_local_v2`; there is no child to
+            // The message is recorded by `paint`; there is no child to
             // visit when the layout failed.
             Err(_) => {}
         }
@@ -1005,14 +1005,14 @@ fn track_offset(tracks: &[f32], index: usize, gap: f32) -> f32 {
 }
 
 fn intersect_retained_clips(
-    first: aimer_cupid::draw_cmd_v2::Rect,
-    second: aimer_cupid::draw_cmd_v2::Rect,
-) -> aimer_cupid::draw_cmd_v2::Rect {
+    first: aimer_cupid::draw_cmd::Rect,
+    second: aimer_cupid::draw_cmd::Rect,
+) -> aimer_cupid::draw_cmd::Rect {
     let x = first.x.max(second.x);
     let y = first.y.max(second.y);
     let right = (first.x + first.width).min(second.x + second.width);
     let bottom = (first.y + first.height).min(second.y + second.height);
-    aimer_cupid::draw_cmd_v2::Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0))
+    aimer_cupid::draw_cmd::Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0))
 }
 
 fn alignment_offset(alignment: GridAlignment, available: f32, child: f32) -> f32 {
@@ -1047,7 +1047,7 @@ mod tests {
     use aimer_attribute::{BoxConstraint, ResolvedSize, Vec2d};
     use aimer_canvas::{FrameCanvas, InnerCanvas};
     use aimer_container::ZeroSizedBox;
-    use aimer_cupid::draw_cmd::DrawCommand;
+    use aimer_cupid::render_list::DrawCommand;
     use aimer_widget::base::{BuildContext, WindowHandle};
     use aimer_widget::{
         AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement,
@@ -1200,14 +1200,14 @@ mod tests {
         };
         assert!(grid.layout_grid(&ctx).is_err());
 
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let root = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 200.0, 100.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 200.0, 100.0))
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
-            assert!(grid.can_paint_local_v2(ctx));
-            grid.paint_local_v2(ctx);
+            assert!(grid.can_paint(ctx));
+            grid.paint(ctx);
         });
 
         let message = tree
@@ -1216,7 +1216,7 @@ mod tests {
             .commands
             .iter()
             .find_map(|command| match command {
-                aimer_cupid::draw_cmd_v2::DrawCommand::DrawText { text, .. } => {
+                aimer_cupid::draw_cmd::DrawCommand::DrawText { text, .. } => {
                     Some(text.to_string())
                 }
                 _ => None,

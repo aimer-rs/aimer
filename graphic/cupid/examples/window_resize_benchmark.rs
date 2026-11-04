@@ -6,7 +6,7 @@ fn main() {
     use aimer_cupid::backend::metal::MetalBackend;
     use aimer_cupid::backend::*;
     use aimer_cupid::damage_region::DamageSet;
-    use aimer_cupid::draw_cmd::DrawList;
+    use aimer_cupid::render_list::DrawList;
     use aimer_cupid::frame::{Frame, FramePacket, FrameRenderMetadata};
     use aimer_cupid::renderer::RendererImpl;
     use objc2_metal::MTLPixelFormat;

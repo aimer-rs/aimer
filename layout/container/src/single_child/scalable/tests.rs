@@ -22,7 +22,7 @@ async fn scaling_preserves_layout_size_and_parent_constraints() {
         assert_eq!(element.computed_size(&ctx), ResolvedSize { width: 60.0, height: 24.0 });
         assert_eq!(element.content_size(&ctx), ResolvedSize { width: 60.0, height: 24.0 });
         element.visit_children(&mut |child| {
-            let child_ctx = element.retained_v2_child_context_at(&ctx, child, 0).unwrap();
+            let child_ctx = element.child_context_at(&ctx, child, 0).unwrap();
             assert_eq!(child_ctx.scale, ctx.scale);
             assert_eq!(child_ctx.box_constraint, ctx.box_constraint);
         });
@@ -36,7 +36,7 @@ async fn scaling_preserves_layout_size_and_parent_constraints() {
     let centered = Scalable::new().scale(2.0)
         .child(SizedBox::new().width(30).height(12)).to_element(&ctx);
     centered.visit_children(&mut |child| {
-        let child_ctx = centered.retained_v2_child_context_at(&ctx, child, 0).unwrap();
+        let child_ctx = centered.child_context_at(&ctx, child, 0).unwrap();
         assert_eq!(child_ctx.visible_rect, None);
     });
 }

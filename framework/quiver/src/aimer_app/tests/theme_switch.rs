@@ -296,8 +296,8 @@ fn painted_probe_colors<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Vec<S
         {
             for command in snapshot.commands.iter() {
                 match command {
-                    aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { color, .. }
-                    | aimer_cupid::draw_cmd_v2::DrawCommand::DrawText { color, .. } => {
+                    aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. }
+                    | aimer_cupid::draw_cmd::DrawCommand::DrawText { color, .. } => {
                         out.push(format!("{color:?}"));
                     }
                     _ => {}

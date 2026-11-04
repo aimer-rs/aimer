@@ -613,7 +613,7 @@ mod tests {
     /// the paragraph was last painted.
     #[test]
     fn queries_follow_the_render_node_after_it_moves_without_a_repaint() {
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
         let geometry = TextGeometry::new(WindowHandle::headless(PhysicalSize::new(200, 200), 1.0));
         let transform = Mat3::translate(20.0, 100.0);

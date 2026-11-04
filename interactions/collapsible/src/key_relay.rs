@@ -89,12 +89,12 @@ impl Drawable for RawKeyRelay {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {

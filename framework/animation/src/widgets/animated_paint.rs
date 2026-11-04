@@ -70,7 +70,7 @@ impl PaintPresentation {
     /// clip on the child, so that a presentation without a radius removes only
     /// what the host added.
     ///
-    /// Call it from `Drawable::sync_local_v2_state`.
+    /// Call it from `Drawable::sync_paint_state`.
     pub fn apply_to_child(
         &self,
         ctx: &BuildContext,
@@ -282,14 +282,14 @@ impl Drawable for AnimatedPaintElement {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite() && ctx.scale > 0.0
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         let progress = self.controller.tick(AnimInstant::now());
         if self.controller.is_animating() {
             // Everything a frame of this animation changes is the child's
@@ -315,8 +315,8 @@ impl Drawable for AnimatedPaintElement {
     }
 
     #[inline]
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
-        // `sync_local_v2_state` has already asked for the next frame.
+    fn update_retained(&self, ctx: &BuildContext) {
+        // `sync_paint_state` has already asked for the next frame.
         self.child.update(ctx);
     }
 }
@@ -448,7 +448,7 @@ mod tests {
     /// Runs the element's state synchronization the way the render-tree sync
     /// does: against a root node that has the element's child as its only child.
     fn sync_state(element: &dyn Element, context: &BuildContext<'_>) -> bool {
-        use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+        use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
         let tree = RenderTree::new();
         let root = tree.add_root(Rect::new(0.0, 0.0, 101.0, 101.0)).unwrap();
@@ -456,7 +456,7 @@ mod tests {
             .unwrap();
         let retained = tree.context(root).unwrap();
         context
-            .with_local_v2_paint_context(retained, |context| element.sync_local_v2_state(context))
+            .with_local_v2_paint_context(retained, |context| element.sync_paint_state(context))
     }
 
     struct StableLeaf;
@@ -596,18 +596,18 @@ mod tests {
     /// A retained tree whose root holds the element's child, kept alive so a
     /// test can read back what synchronization did to that child.
     struct Retained {
-        tree: aimer_cupid::draw_cmd_v2::RenderTree,
-        root: aimer_cupid::draw_cmd_v2::RenderNodeId,
-        child: aimer_cupid::draw_cmd_v2::RenderNodeId,
+        tree: aimer_cupid::draw_cmd::RenderTree,
+        root: aimer_cupid::draw_cmd::RenderNodeId,
+        child: aimer_cupid::draw_cmd::RenderNodeId,
     }
 
     impl Retained {
         fn new() -> Self {
-            Self::at(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 101.0, 101.0))
+            Self::at(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 101.0, 101.0))
         }
 
-        fn at(bounds: aimer_cupid::draw_cmd_v2::Rect) -> Self {
-            use aimer_cupid::draw_cmd_v2::{Rect, RenderTree};
+        fn at(bounds: aimer_cupid::draw_cmd::Rect) -> Self {
+            use aimer_cupid::draw_cmd::{Rect, RenderTree};
 
             let tree = RenderTree::new();
             let root = tree.add_root(bounds).unwrap();
@@ -620,12 +620,12 @@ mod tests {
         fn sync(&self, element: &dyn Element, context: &BuildContext<'_>) -> bool {
             let retained = self.tree.context(self.root).unwrap();
             context.with_local_v2_paint_context(retained, |context| {
-                element.sync_local_v2_state(context)
+                element.sync_paint_state(context)
             })
         }
 
-        fn drawn_child(&self) -> aimer_cupid::draw_cmd_v2::RenderItem {
-            use aimer_cupid::draw_cmd_v2::RenderOp;
+        fn drawn_child(&self) -> aimer_cupid::draw_cmd::RenderItem {
+            use aimer_cupid::draw_cmd::RenderOp;
 
             self.tree
                 .render_all()
@@ -649,7 +649,7 @@ mod tests {
 
     #[test]
     fn a_corner_radius_clips_the_child_and_follows_its_transform() {
-        use aimer_cupid::draw_cmd_v2::Rect;
+        use aimer_cupid::draw_cmd::Rect;
 
         let context = context();
         let element = AnimatedPaint::new(controller(), StableLeaf)
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn without_a_corner_radius_the_childs_own_clip_is_left_alone() {
-        use aimer_cupid::draw_cmd_v2::Rect;
+        use aimer_cupid::draw_cmd::Rect;
 
         let context = context();
         let element = AnimatedPaint::new(controller(), StableLeaf)
@@ -708,7 +708,7 @@ mod tests {
 
     #[test]
     fn a_reveal_clips_the_child_to_that_window_and_leaving_it_removes_the_clip() {
-        use aimer_cupid::draw_cmd_v2::Rect;
+        use aimer_cupid::draw_cmd::Rect;
 
         let window = Rc::new(Cell::new(Some(super::ElementBounds::new(2.0, 4.0, 4.0, 2.0))));
         let shown = window.clone();
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn a_reveal_without_a_corner_radius_still_clips() {
-        use aimer_cupid::draw_cmd_v2::Rect;
+        use aimer_cupid::draw_cmd::Rect;
 
         let context = context();
         let element = AnimatedPaint::new(controller(), StableLeaf)
@@ -801,7 +801,7 @@ mod tests {
                 }
             })
             .to_element(&context);
-        let retained = Retained::at(aimer_cupid::draw_cmd_v2::Rect::new(30.0, 40.0, 101.0, 101.0));
+        let retained = Retained::at(aimer_cupid::draw_cmd::Rect::new(30.0, 40.0, 101.0, 101.0));
 
         assert!(retained.sync(element.as_ref(), &context));
 

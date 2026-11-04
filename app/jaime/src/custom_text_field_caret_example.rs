@@ -146,18 +146,18 @@ impl ThemedCaretElement {
 
 impl Drawable for ThemedCaretElement {
     #[inline]
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale
             .is_finite()
             && ctx.scale > 0.0
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
         self.painted.get() != Some(self.state())
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let (visible, composing) = self.state();
         self.painted
             .set(Some((visible, composing)));

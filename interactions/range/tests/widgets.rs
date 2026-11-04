@@ -558,7 +558,7 @@ fn visual_slots<'a>(
 ) -> Vec<&'a dyn aimer_widget::Element> {
     let mut slots = Vec::new();
     element.visit_children(&mut |surface| {
-        let _ = surface.retained_v2_bounds(ctx);
+        let _ = surface.paint_bounds(ctx);
         surface.visit_children(&mut |slot| slots.push(slot));
     });
     slots
@@ -579,14 +579,14 @@ fn innermost(element: &dyn aimer_widget::Element) -> &dyn aimer_widget::Element 
 /// How many rectangles `leaf` records in its own retained list.
 fn recorded_fills(leaf: &dyn aimer_widget::Element, ctx: &BuildContext<'_>) -> usize {
     let leaf = innermost(leaf);
-    let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+    let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let root = tree
-        .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 320.0, 120.0))
+        .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 320.0, 120.0))
         .unwrap();
     let node_context = tree.context(root).unwrap();
     ctx.with_local_v2_paint_context(node_context, |ctx| {
-        assert!(leaf.can_paint_local_v2(ctx));
-        leaf.paint_local_v2(ctx);
+        assert!(leaf.can_paint(ctx));
+        leaf.paint(ctx);
     });
     tree.draw_list_snapshot(root)
         .unwrap()
@@ -595,7 +595,7 @@ fn recorded_fills(leaf: &dyn aimer_widget::Element, ctx: &BuildContext<'_>) -> u
         .filter(|command| {
             matches!(
                 command,
-                aimer_cupid::draw_cmd_v2::DrawCommand::FillRect { .. }
+                aimer_cupid::draw_cmd::DrawCommand::FillRect { .. }
             )
         })
         .count()

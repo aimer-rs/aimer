@@ -7,7 +7,7 @@
 
 use super::*;
 
-use aimer_cupid::draw_cmd_v2::{DrawCommand as V2DrawCommand, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand as V2DrawCommand, RenderOp};
 use winit::event::ElementState;
 
 const CARET: (u8, u8, u8) = (255, 0, 255);

@@ -10,7 +10,14 @@ pub mod compositor;
 #[doc(hidden)]
 pub mod damage_region;
 pub mod draw_cmd;
-pub mod draw_cmd_v2;
+pub mod external_texture;
 pub mod frame;
+/// The renderer's flat, lowered command stream.
+///
+/// Framework-internal: applications and widgets draw through [`draw_cmd`],
+/// whose retained render tree `v2_frame_adapter` lowers into this form for the
+/// renderer to replay. Nothing here is a stable or supported API.
+#[doc(hidden)]
+pub mod render_list;
 #[doc(hidden)]
 pub mod v2_frame_adapter;

@@ -1164,7 +1164,7 @@ mod presentation {
     use std::sync::OnceLock;
 
     use aimer_attribute::BoxConstraint;
-    use aimer_cupid::draw_cmd_v2::{Rect, RenderNodeId, RenderTree};
+    use aimer_cupid::draw_cmd::{Rect, RenderNodeId, RenderTree};
     use aimer_widget::base::WindowHandle;
 
     use super::*;
@@ -1237,7 +1237,7 @@ mod presentation {
 
     pub(super) fn sync(element: &AnyElement, tree: &RenderTree, root: RenderNodeId, context: &BuildContext) -> bool {
         let retained = tree.context(root).unwrap();
-        context.with_local_v2_paint_context(retained, |context| element.sync_local_v2_state(context))
+        context.with_local_v2_paint_context(retained, |context| element.sync_paint_state(context))
     }
 
     #[test]
@@ -1386,7 +1386,7 @@ mod presentation {
         tree.render_all()
             .into_iter()
             .find_map(|operation| match operation {
-                aimer_cupid::draw_cmd_v2::RenderOp::Draw(item) if item.element == node => {
+                aimer_cupid::draw_cmd::RenderOp::Draw(item) if item.element == node => {
                     Some((item.clip, item.clip_radius))
                 }
                 _ => None,
@@ -1596,7 +1596,7 @@ mod presentation {
         let mut geometry = Vec::new();
 
         element.visit_retained_v2_children(&mut |index, child| {
-            geometry.push((index, element.retained_v2_child_geometry_at(&context, child, index)));
+            geometry.push((index, element.child_geometry_at(&context, child, index)));
         });
 
         // Slot 4 is the backing: the host's own box, and no clip of its own.

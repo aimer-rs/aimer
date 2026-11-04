@@ -3,7 +3,7 @@ use crate::{BoxDecoration, DecorationBox, Gradient, MaskedDecorationBox};
 use aimer_attribute::ResolvedSize;
 use aimer_color::prelude::Color;
 use aimer_container::{SizedBox, ZeroSizedBox};
-use aimer_cupid::draw_cmd_v2::{COVERAGE_MASK_PIPELINE_NAME, DrawCommand};
+use aimer_cupid::draw_cmd::{COVERAGE_MASK_PIPELINE_NAME, DrawCommand};
 use aimer_widget::{Drawable, EventTreeRole, FocusNode, Focusable, Widget};
 
 fn is_marker(command: &DrawCommand) -> bool {
@@ -82,8 +82,8 @@ async fn a_masked_box_repaints_on_scale_changes_like_any_decoration_box() {
         .child(SizedBox::new().width(24.0).height(12.0))
         .to_element(&ctx);
     record(&element, &ctx);
-    assert!(!element.local_v2_paint_needs_recording(&ctx));
+    assert!(!element.paint_needs_recording(&ctx));
     ctx.scale = 2.0;
-    assert!(element.local_v2_paint_needs_recording(&ctx));
+    assert!(element.paint_needs_recording(&ctx));
     assert!(record(&element, &ctx).first().is_some_and(is_marker));
 }

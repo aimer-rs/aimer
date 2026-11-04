@@ -6,7 +6,7 @@ use super::*;
 
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;
-use aimer_cupid::draw_cmd_v2::{DrawCommand as V2DrawCommand, RenderOp};
+use aimer_cupid::draw_cmd::{DrawCommand as V2DrawCommand, RenderOp};
 use aimer_decoration::Decoration;
 use aimer_input::input::TextFieldVisualState;
 use aimer_style::BoxDecoration;
@@ -32,7 +32,7 @@ fn headless(widget: impl Widget + 'static) -> HeadlessAimerApp<impl Widget + 'st
 fn bounds_of(
     app: &HeadlessAimerApp<impl Widget + 'static>,
     color: (u8, u8, u8),
-) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
+) -> Option<aimer_cupid::draw_cmd::Rect> {
     let tree = app.app.render_tree();
     tree.render_all().into_iter().find_map(|op| {
         let RenderOp::Draw(item) = op else { return None };

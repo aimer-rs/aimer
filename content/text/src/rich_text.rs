@@ -784,23 +784,23 @@ impl Drawable for RawRichText {
     /// The paragraph's interaction rectangle is its laid-out box. The render
     /// tree supplies where that box is now, so geometry painted earlier follows
     /// a scroll.
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.paragraph.prepare_for_paint(ctx).size)
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.geometry().bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.geometry().bounds.disagreement("RawRichText")
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         self.slot().stamp();
         self.sync_paint_geometry(ctx);
         let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
@@ -814,7 +814,7 @@ impl Drawable for RawRichText {
         true
     }
 
-    fn draw_local_v2_compatibility(&self, _ctx: &BuildContext) {
+    fn update_retained(&self, _ctx: &BuildContext) {
         if self.selectable && self.owns_session() {
             let session = self.session();
             ui::track_menu(&session);
@@ -822,29 +822,29 @@ impl Drawable for RawRichText {
         }
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         let data = self.local_v2_paint_data(ctx)?;
         let outsets = self
             .paragraph
-            .retained_v2_paint_outsets(&data.layout, data.scale);
+            .paint_outsets(&data.layout, data.scale);
         outsets
             .iter()
             .any(|outset| *outset > 0.0)
             .then_some(outsets)
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.local_v2_paint_data(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let data = self
             .local_v2_paint_data(ctx)
             .expect("RawRichText v2 support must be checked before painting");
         let hovered_link = self.retained_v2_hovered_link(ctx, &data);
         let outsets = self
             .paragraph
-            .retained_v2_paint_outsets(&data.layout, data.scale);
+            .paint_outsets(&data.layout, data.scale);
         let origin_offset = aimer_attribute::Vec2d {
             x: outsets[0],
             y: outsets[1],
@@ -912,7 +912,7 @@ impl Drawable for RawRichText {
         *geometry.retained_v2_selection.borrow_mut() = selected_range;
     }
 
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         let Some(data) = self.local_v2_paint_data(ctx) else {
             return false;
         };
@@ -1005,7 +1005,7 @@ impl Drawable for RawRichText {
     }
 
     fn update(&self, ctx: &BuildContext) {
-        // The text itself is painted by `paint_local_v2`. This traversal keeps
+        // The text itself is painted by `paint`. This traversal keeps
         // the geometry the interaction reads (painted bounds, hit and link
         // regions) current and drives the gesture state around it.
         self.slot().stamp();
@@ -1063,16 +1063,16 @@ mod tests {
     fn recorded_v2(
         text: &RawRichText,
         ctx: &aimer_widget::base::BuildContext<'_>,
-    ) -> Vec<aimer_cupid::draw_cmd_v2::DrawCommand> {
+    ) -> Vec<aimer_cupid::draw_cmd::DrawCommand> {
         use aimer_widget::Drawable;
-        let tree = aimer_cupid::draw_cmd_v2::RenderTree::new();
+        let tree = aimer_cupid::draw_cmd::RenderTree::new();
         let root = tree
-            .add_root(aimer_cupid::draw_cmd_v2::Rect::new(0.0, 0.0, 400.0, 400.0))
+            .add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 400.0, 400.0))
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
-            assert!(text.can_paint_local_v2(ctx), "the text paints locally");
-            text.paint_local_v2(ctx);
+            assert!(text.can_paint(ctx), "the text paints locally");
+            text.paint(ctx);
         });
         tree.draw_list_snapshot(root).unwrap().commands.to_vec()
     }
@@ -1449,7 +1449,7 @@ mod tests {
     fn selection_highlight_starts_at_the_text_line_top() {
         use aimer_attribute::ResolvedSize;
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1528,7 +1528,7 @@ mod tests {
     fn selection_highlight_connects_across_adjacent_spans() {
         use aimer_attribute::ResolvedSize;
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1597,7 +1597,7 @@ mod tests {
     fn selection_highlights_touch_between_wrapped_lines() {
         use aimer_attribute::{BoxConstraint, ResolvedSize};
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1673,7 +1673,7 @@ mod tests {
     fn explicit_newlines_have_stable_hit_targets_and_connected_highlights() {
         use aimer_attribute::{BoxConstraint, ResolvedSize};
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1790,7 +1790,7 @@ mod tests {
     fn italic_span_enables_synthetic_italic_for_its_draw() {
         use aimer_attribute::ResolvedSize;
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_widget::Drawable;
         use aimer_widget::base::BuildContext;
 
@@ -1873,7 +1873,7 @@ mod tests {
 
         use aimer_attribute::{ResolvedSize, Vec2d};
         use aimer_canvas::{FrameCanvas, InnerCanvas};
-        use aimer_cupid::draw_cmd_v2::DrawCommand;
+        use aimer_cupid::draw_cmd::DrawCommand;
         use aimer_style::{TextAlign, TextOverflow};
         use aimer_widget::Drawable;
         use aimer_widget::base::{BuildContext, WindowHandle};

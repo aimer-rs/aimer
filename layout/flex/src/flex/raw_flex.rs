@@ -993,7 +993,7 @@ impl RawFlex {
 }
 
 impl Drawable for RawFlex {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite()
             && ctx.scale > 0.0
             && ctx.box_constraint.max_width.is_finite()
@@ -1002,14 +1002,14 @@ impl Drawable for RawFlex {
             && ctx.box_constraint.max_height >= 0.0
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd_v2::Rect> {
-        if !self.can_paint_local_v2(ctx) || self.overflow_behavior != OverflowBehavior::Hidden {
+    fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
+        if !self.can_paint(ctx) || self.overflow_behavior != OverflowBehavior::Hidden {
             return None;
         }
 
-        Some(aimer_cupid::draw_cmd_v2::Rect::new(
+        Some(aimer_cupid::draw_cmd::Rect::new(
             0.0,
             0.0,
             ctx.box_constraint.max_width / ctx.scale,
@@ -1017,7 +1017,7 @@ impl Drawable for RawFlex {
         ))
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -1027,23 +1027,23 @@ impl Drawable for RawFlex {
             .map(|(_, child_ctx)| child_ctx)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<(
-        aimer_cupid::draw_cmd_v2::Rect,
-        Option<aimer_cupid::draw_cmd_v2::Rect>,
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         let (offset, child_ctx) = self.retained_child_layout(ctx, child, child_index)?;
         let size = child
-            .retained_v2_bounds(&child_ctx)
+            .paint_bounds(&child_ctx)
             .unwrap_or_else(|| child.content_size(&child_ctx));
         let position = child.pos().unwrap_or_default();
         let scale = ctx.scale;
         Some((
-            aimer_cupid::draw_cmd_v2::Rect::new(
+            aimer_cupid::draw_cmd::Rect::new(
                 (offset.x + position.x) / scale,
                 (offset.y + position.y) / scale,
                 size.width / scale,

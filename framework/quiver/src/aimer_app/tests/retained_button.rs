@@ -23,7 +23,7 @@ impl Widget for ButtonRows {
 fn decoration_nodes<W: Widget + 'static>(
     root: &dyn Element,
     app: &HeadlessAimerApp<W>,
-) -> Vec<aimer_cupid::draw_cmd_v2::RenderNodeId> {
+) -> Vec<aimer_cupid::draw_cmd::RenderNodeId> {
     let mut nodes = Vec::new();
     if root.debug_name() == "Container" {
         nodes.push(app.app.render_node_for_element(root.id()).unwrap());

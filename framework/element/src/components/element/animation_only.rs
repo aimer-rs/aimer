@@ -331,7 +331,7 @@ pub(crate) fn capture_rebuilt_root(element: ElementId, ctx: &BuildContext) {
 ///
 /// This is how an element that animates without the compositor opts in to
 /// animation-only frames. Call it from the element's own `update`,
-/// `sync_local_v2_state` or `draw_local_v2_compatibility` while it still has
+/// `sync_paint_state` or `update_retained` while it still has
 /// frames to produce, in place of `request_animation_frame`.
 ///
 /// By calling it the element promises two things. Its per-frame work is

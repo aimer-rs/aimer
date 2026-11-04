@@ -29,6 +29,7 @@ use crate::foreground_decoration_example::foreground_decoration_example;
 use crate::form_example::form_example;
 use crate::gif_example::gif_example;
 use crate::audio_example::audio_example;
+use crate::video_example::video_example;
 use crate::glass_liquid_example::glass_liquid_example;
 use crate::gradient_example::gradient_example;
 use crate::http_request_button::http_request_button_example;
@@ -493,6 +494,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::AssetImage => asset_image_example(app_theme),
         ExampleId::Gif => gif_example().boxed(),
         ExampleId::Audio => audio_example().boxed(),
+        ExampleId::Video => video_example().boxed(),
         ExampleId::BundledAssets => bundled_assets_example().boxed(),
         ExampleId::CustomPaint => custom_paint_example().boxed(),
         ExampleId::ColorMelt => color_melt_example().boxed(),

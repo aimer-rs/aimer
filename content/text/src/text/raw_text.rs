@@ -44,7 +44,7 @@ struct RawTextAuxCache {
     paragraph: Option<Paragraph>,
     plain_decorations: Option<PlainDecorationCache>,
     /// The parent size, as `[width, height]` bits, the text was last recorded
-    /// against. See [`RawTextWidget::local_v2_paint_needs_recording`].
+    /// against. See [`RawTextWidget::paint_needs_recording`].
     recorded_parent_size: Option<[u32; 2]>,
 }
 
@@ -229,7 +229,7 @@ impl RawTextWidget {
             return None;
         }
         let paint_outsets =
-            self.with_paragraph(|paragraph| paragraph.retained_v2_paint_outsets(&layout, scale));
+            self.with_paragraph(|paragraph| paragraph.paint_outsets(&layout, scale));
         let vertical_offset = match self.text_align {
             TextAlign::TopLeft | TextAlign::TopCenter | TextAlign::TopRight => 0.0,
             TextAlign::MidLeft | TextAlign::MidCenter | TextAlign::MidRight => {
@@ -442,11 +442,11 @@ impl RawTextWidget {
 }
 
 impl Drawable for RawTextWidget {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.local_v2_paint_data(ctx).is_some() || self.local_v2_paragraph_paint_data(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         assert!(self.record_local_v2_into(&canvas, ctx, Vec2d { x: 0.0, y: 0.0 }, true, |_| {},));
         canvas.finish();
@@ -460,7 +460,7 @@ impl Drawable for RawTextWidget {
     /// Runs for every text node each frame, so it is one borrow and two integer
     /// compares. A text that was never recorded has nothing to refresh; its
     /// first recording is requested by the render node itself.
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         let now = Self::parent_size_bits(ctx);
         self.cache.with_extra(|slot: &mut Option<RawTextAuxCache>| {
             slot.as_ref()
@@ -469,7 +469,7 @@ impl Drawable for RawTextWidget {
         })
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         if let Some(data) = self.local_v2_paragraph_paint_data(ctx) {
             return data
                 .outsets
@@ -718,13 +718,13 @@ mod tests {
 
         let _ = widget.computed_size(&context);
         assert!(
-            widget.can_paint_local_v2(&context),
+            widget.can_paint(&context),
             "laid out, so it can paint"
         );
 
         aimer_widget::notify_element_tree_changed();
         assert!(
-            widget.can_paint_local_v2(&context),
+            widget.can_paint(&context),
             "a text whose cached layout was retired must lay out again, not decline"
         );
     }

@@ -104,14 +104,14 @@ impl Drawable for IndicatorLayerElement {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite() && ctx.scale > 0.0
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         let sample = self.controller.tick(AnimInstant::now());
         if self.controller.is_animating() {
             // Everything a frame of this animation changes is the presentation
@@ -129,7 +129,7 @@ impl Drawable for IndicatorLayerElement {
         // layout origin, which moves the pivot a scale turns about.
         let [left, top, _, _] = self
             .child
-            .retained_v2_paint_outsets(ctx)
+            .paint_outsets(ctx)
             .filter(|outsets| outsets.iter().all(|outset| outset.is_finite() && *outset >= 0.0))
             .unwrap_or([0.0; 4]);
         let presentation = self.presentation(sample, size, [left, top]);
@@ -152,8 +152,8 @@ impl Drawable for IndicatorLayerElement {
     }
 
     #[inline]
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
-        // `sync_local_v2_state` has already asked for the next frame.
+    fn update_retained(&self, ctx: &BuildContext) {
+        // `sync_paint_state` has already asked for the next frame.
         self.child.update(ctx);
     }
 }
