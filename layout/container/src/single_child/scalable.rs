@@ -165,10 +165,6 @@ impl Drawable for RawScalable {
         )
     }
 
-    fn update_retained(&self, ctx: &BuildContext) {
-        self.update(ctx);
-    }
-
     fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,

@@ -835,10 +835,6 @@ impl Drawable for RawLiquid {
         decoration_needs_recording(self.decoration.as_ref(), self.recorded.get())
     }
 
-    fn update_retained(&self, ctx: &BuildContext) {
-        self.child.update(ctx);
-    }
-
     fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         surface_outsets(
             self.material.normalized().glass_material(),

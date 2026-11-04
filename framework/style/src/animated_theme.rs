@@ -513,13 +513,6 @@ impl<T: Theme> Drawable for AnimatedThemeElement<T> {
 
     #[inline]
     fn paint(&self, _ctx: &BuildContext) {}
-
-    fn update_retained(&self, ctx: &BuildContext) {
-        self.child.update(ctx);
-        if self.controller.is_animating() {
-            request_next_frame();
-        }
-    }
 }
 
 impl<T: Theme> EventElement for AnimatedThemeElement<T> {

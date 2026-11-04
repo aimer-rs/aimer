@@ -520,15 +520,6 @@ impl Drawable for RawDraggable {
         true
     }
 
-    fn update_retained(&self, ctx: &BuildContext) {
-        let child = self.visible_child();
-        let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
-        let size = child.computed_size(ctx);
-        self.bounds
-            .save(ctx.scale, abs_x, abs_y, size.width, size.height);
-        child.update(ctx);
-    }
-
     fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,

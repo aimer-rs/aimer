@@ -229,10 +229,6 @@ impl Drawable for RawCustomShape {
         }
         canvas.finish();
     }
-
-    fn update_retained(&self, ctx: &BuildContext) {
-        self.child.update(ctx);
-    }
 }
 
 impl RawCustomShape {}

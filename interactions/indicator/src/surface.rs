@@ -119,12 +119,6 @@ impl Drawable for IndicatorSurfaceElement {
     #[inline]
     fn paint(&self, _ctx: &BuildContext) {}
 
-    #[inline]
-    fn update_retained(&self, ctx: &BuildContext) {
-        self.save_bounds(ctx);
-        self.child.update(ctx);
-    }
-
     /// Hit-tested against the size the content reports as its own.
     #[inline]
     fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {

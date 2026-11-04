@@ -157,14 +157,20 @@ pub trait Drawable {
         true
     }
 
-    /// Walks this element for one frame once its retained paint is settled.
+    /// Walks this element for one frame after the render-tree walker has
+    /// already done part of [`Self::update`]'s work.
     ///
-    /// The framework calls this instead of [`Self::update`] while a render tree
-    /// presents the frame. The default runs `update`. A leaf may override it
-    /// when [`Self::sync_paint_state`] already did all its work and it has no
-    /// children to walk; a container may skip draw-time work its render node
-    /// already covers. Expected to merge into `update` once no `update` draws
-    /// on the canvas any more.
+    /// While a render tree presents the frame, the framework calls this
+    /// instead of `update`, and only after it has run
+    /// [`Self::sync_paint_state`] for the element, or sampled its
+    /// [`Self::compositor_animation`]. The default runs `update`, which is
+    /// right for any element whose `update` does not repeat that work.
+    ///
+    /// Override it only to leave out what the walker already did, so it is not
+    /// done twice in one frame: an animation's controller tick and sample, or
+    /// geometry and text state that `sync_paint_state` already brought up to
+    /// date. Everything else `update` does (walking children, publishing
+    /// interaction bounds, requesting the next frame) must still happen.
     #[doc(hidden)]
     #[inline]
     fn update_retained(&self, ctx: &BuildContext) {

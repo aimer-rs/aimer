@@ -151,11 +151,6 @@ impl<E: Element> Drawable for RawExpanded<E> {
     fn paint(&self, _ctx: &BuildContext) {}
 
     #[inline]
-    fn update_retained(&self, ctx: &BuildContext) {
-        self.child.update(ctx);
-    }
-
-    #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
         self.child.sync_paint_geometry(ctx);
     }
