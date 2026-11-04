@@ -13,6 +13,7 @@ mod pipeline;
 mod precompiled;
 mod resource;
 mod shader_hash;
+mod shared_texture;
 
 #[doc(hidden)]
 pub use commands::{Dx12CommandEncoder, Dx12RenderPass};
@@ -101,6 +102,8 @@ struct BackendShared {
     submit_lock: Mutex<()>,
     pending_uploads: Mutex<Vec<PendingUpload>>,
     retired: Mutex<Vec<RetiredBatch>>,
+    /// Textures opened from another device's shared handles.
+    imports: Mutex<shared_texture::SharedImports>,
 }
 
 /// Direct3D 12 device, queue, resource allocators, and generic Cupid backend.
@@ -158,6 +161,7 @@ impl Dx12Backend {
             submit_lock: Mutex::new(()),
             pending_uploads: Mutex::new(Vec::new()),
             retired: Mutex::new(Vec::new()),
+            imports: Mutex::new(Default::default()),
         };
         Ok(Self {
             shared: Arc::new(shared),
@@ -617,6 +621,40 @@ impl GpuBackend for Dx12Backend {
 
     fn create_texture_view(&self, texture: &Self::Texture, _label: &str) -> Self::TextureView {
         self.texture_view(texture, None)
+    }
+
+    unsafe fn import_native_texture(
+        &self,
+        handle: crate::backend::NativeTextureHandle,
+    ) -> Option<Self::TextureView> {
+        let crate::backend::NativeTextureHandle::Dxgi { pool, slot, texture, fence, value, width, height } =
+            handle
+        else {
+            return None;
+        };
+        let (texture, fence) = {
+            let mut imports = self
+                .shared
+                .imports
+                .lock()
+                .expect("D3D12 shared import mutex is not poisoned");
+            let texture = imports.texture(&self.shared.device, pool, slot, texture, (width, height))?;
+            let fence = imports.fence(&self.shared.device, pool, fence)?;
+            (texture, fence)
+        };
+        // The producer's device writes the texture; the queue must not sample
+        // it until the fence says that write is done. Commands recorded and
+        // submitted after this call run after the wait.
+        {
+            let _submission = self
+                .shared
+                .submit_lock
+                .lock()
+                .expect("D3D12 submission mutex is not poisoned");
+            // SAFETY: both objects belong to this device and are valid.
+            unsafe { self.shared.queue.Wait(&fence, value) }.ok()?;
+        }
+        Some(self.texture_view(&texture, None))
     }
 
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler {

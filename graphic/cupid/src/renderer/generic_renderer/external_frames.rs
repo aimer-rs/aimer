@@ -24,6 +24,15 @@ fn handle_of(frame: &NativeFrame) -> Option<NativeTextureHandle> {
             width: frame.width(),
             height: frame.height(),
         },
+        NativeTexture::Dxgi { pool, slot, texture, fence, value } => NativeTextureHandle::Dxgi {
+            pool,
+            slot,
+            texture,
+            fence,
+            value,
+            width: frame.width(),
+            height: frame.height(),
+        },
         #[allow(unreachable_patterns)]
         _ => return None,
     })
@@ -123,6 +132,25 @@ mod tests {
         assert_eq!(
             handle_of(&frame),
             Some(NativeTextureHandle::WebVideo { id: 3, serial: 9, width: 1280, height: 720 })
+        );
+    }
+
+    #[test]
+    fn a_shared_texture_frame_names_its_handles_and_fence_value() {
+        let texture = NativeTexture::Dxgi { pool: 2, slot: 1, texture: 0x40, fence: 0x44, value: 7 };
+        // SAFETY: the handles are integers; nothing is opened.
+        let frame = unsafe { NativeFrame::new(texture, 1920, 1080, Arc::new(())) };
+        assert_eq!(
+            handle_of(&frame),
+            Some(NativeTextureHandle::Dxgi {
+                pool: 2,
+                slot: 1,
+                texture: 0x40,
+                fence: 0x44,
+                value: 7,
+                width: 1920,
+                height: 1080,
+            })
         );
     }
 

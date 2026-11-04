@@ -848,6 +848,28 @@ pub enum NativeTextureHandle {
         /// The picture's size in pixels.
         height: u32,
     },
+    /// A `B8G8R8A8` Direct3D 11 texture shared by NT handle, with the shared
+    /// fence that says when it has been written.
+    ///
+    /// The handles are borrowed and stay open until the GPU has finished with
+    /// the frame. A backend caches what it opens under (`pool`, `slot`), which
+    /// together name one texture for the life of the process.
+    Dxgi {
+        /// Names the producer's texture pool; never reused within a process.
+        pool: u32,
+        /// Which texture of the pool this is.
+        slot: u32,
+        /// The texture's NT handle, as an integer.
+        texture: usize,
+        /// The pool's shared fence, as an NT handle integer.
+        fence: usize,
+        /// The fence value reached once the texture is written.
+        value: u64,
+        /// The picture's size in pixels.
+        width: u32,
+        /// The picture's size in pixels.
+        height: u32,
+    },
 }
 
 pub trait GpuBackend: Sized + 'static {

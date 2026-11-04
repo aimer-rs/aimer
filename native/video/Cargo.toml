@@ -44,6 +44,29 @@ objc2-quartz-core = { workspace = true, features = ["std", "CABase"] }
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-avf-audio = { workspace = true, features = ["std", "AVAudioSession", "AVAudioSessionTypes"] }
 
+# WinRT `MediaPlayer` in frame-server mode; Media Foundation decodes and
+# streams, and each picture is copied into a shared Direct3D 11 texture that the
+# renderer's Direct3D 12 backend opens.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true, features = [
+    "std",
+    "Foundation",
+    "Graphics_DirectX_Direct3D11",
+    "Media_Core",
+    "Media_Playback",
+    "Storage",
+    "Storage_Streams",
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Direct3D11",
+] }
+
 # `HTMLVideoElement`: the browser fetches, streams, decodes and plays the
 # sound; the renderer's backend copies its picture into a texture on the GPU.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

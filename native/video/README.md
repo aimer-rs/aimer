@@ -107,15 +107,27 @@ your own frame-by-frame UI (a position readout, say) the same way.
 |---------------|-----------------------------------------------------------------|
 | macOS         | `AVPlayer` + `AVPlayerItemVideoOutput`, frames as Metal textures |
 | iOS           | the same, with a *playback* audio session                       |
+| Windows       | `MediaPlayer` (Media Foundation), frames as shared Direct3D textures |
 | web           | `HTMLVideoElement`, its picture copied into a texture on the GPU |
 | others        | none yet: loads fail with `VideoError::Unsupported`; see `is_supported()` |
 
-Linux (FFmpeg loaded at run time), Android and Windows are planned.
+Linux (FFmpeg loaded at run time) and Android are planned.
 The player core is platform independent and talks to a small `PlatformVideo`
 trait; a backend also needs its renderer to import its texture kind, through
 `GpuBackend::import_native_texture`.
 
 The macOS and iOS backend has been compiled but not yet run on a device.
+
+### On Windows
+
+`MediaPlayer` runs in frame-server mode: it plays the sound and raises an event
+per picture, and each picture is copied (converted from YUV on the GPU) into a
+Direct3D 11 texture shared by NT handle. The renderer's Direct3D 12 backend
+opens the handle, waits on a shared fence for the copy to finish, and samples
+the texture as it is, so the picture is never copied through the CPU. Both
+sides use the system's default hardware adapter; on a machine with several GPUs
+where the renderer chose another, the video draws nothing. This backend has
+been compiled but not yet run on Windows.
 
 ### On the web
 

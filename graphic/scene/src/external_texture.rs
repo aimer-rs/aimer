@@ -34,6 +34,25 @@ pub enum NativeTexture {
         /// Changes whenever the element shows a new picture.
         serial: u64,
     },
+    /// A `B8G8R8A8` Direct3D 11 texture shared by NT handle, written by a
+    /// producer on another device (a Media Foundation video, say).
+    ///
+    /// The renderer opens the handle on its own device and makes its queue
+    /// wait for `value` on the shared fence before it samples the texture.
+    /// The handles are only borrowed: the producer keeps them open for as long
+    /// as the frame lives (see [`NativeFrame::new`]).
+    Dxgi {
+        /// Names the producer's texture pool; never reused within a process.
+        pool: u32,
+        /// Which texture of the pool this is.
+        slot: u32,
+        /// The texture's NT handle, as an integer.
+        texture: usize,
+        /// The pool's shared fence, as an NT handle integer.
+        fence: usize,
+        /// The fence value that is reached once the texture is written.
+        value: u64,
+    },
 }
 
 /// One frame of an external producer: a GPU texture and what keeps it alive.
