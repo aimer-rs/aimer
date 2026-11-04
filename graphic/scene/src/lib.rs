@@ -10,6 +10,7 @@ pub mod compositor;
 #[doc(hidden)]
 pub mod damage_region;
 pub mod draw_cmd;
+pub mod external_texture;
 pub mod frame;
 /// The renderer's flat, lowered command stream.
 ///

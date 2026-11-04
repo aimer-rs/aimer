@@ -306,6 +306,14 @@ pub enum DrawCommand {
         /// Shared image pixels and their stable renderer identity.
         resource: Arc<ImageResource>,
     },
+    /// Draws the current frame of an external GPU producer, such as a video,
+    /// without copying it. See [`crate::external_texture`].
+    DrawExternalTexture {
+        /// Element-local destination rectangle.
+        rect: Rect,
+        /// The producer and the frame generation this paint was recorded at.
+        texture: crate::external_texture::ExternalTexture,
+    },
     /// Draws an SVG scene with node-style overrides.
     Svg {
         /// Immutable retained SVG payload.
@@ -2011,6 +2019,7 @@ fn validate_state_scopes(commands: &[DrawCommand]) -> Result<(), RenderTreeError
             | DrawCommand::DrawTextDecoration { .. }
             | DrawCommand::DrawImage { .. }
             | DrawCommand::DrawImageWithResource { .. }
+            | DrawCommand::DrawExternalTexture { .. }
             | DrawCommand::Svg { .. }
             | DrawCommand::DrawCustom { .. }
             | DrawCommand::DrawShadowRect { .. }

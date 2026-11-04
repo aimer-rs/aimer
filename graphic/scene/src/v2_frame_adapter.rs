@@ -602,6 +602,9 @@ fn lower_command(command: V2DrawCommand, origin: Mat3, scale: f32) -> LegacyDraw
         V2DrawCommand::DrawImageWithResource { rect, resource } => {
             LegacyDrawCommand::DrawImageWithResource { rect, resource }
         }
+        V2DrawCommand::DrawExternalTexture { rect, texture } => {
+            LegacyDrawCommand::DrawExternalTexture { rect, texture }
+        }
         V2DrawCommand::Svg {
             scene,
             destination,
@@ -659,6 +662,8 @@ fn lower_command(command: V2DrawCommand, origin: Mat3, scale: f32) -> LegacyDraw
 
 #[cfg(test)]
 mod rounded_clip_tests;
+#[cfg(test)]
+mod external_texture_tests;
 
 #[cfg(test)]
 mod text_scale_tests;

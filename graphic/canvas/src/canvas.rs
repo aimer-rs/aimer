@@ -738,6 +738,23 @@ impl Canvas {
             .push(aimer_cupid::draw_cmd::DrawCommand::DrawImageWithResource { rect, resource });
     }
 
+    /// Draws the current frame of an external GPU producer, such as a video
+    /// player, into `rect` without copying it.
+    ///
+    /// The render tree repaints this element only when the recorded
+    /// `texture` changes, so record it with the producer's current frame
+    /// generation; see [`aimer_cupid::external_texture::ExternalTexture`].
+    #[inline]
+    pub fn draw_external_texture(
+        &self,
+        rect: aimer_cupid::utilities::Rect,
+        texture: aimer_cupid::external_texture::ExternalTexture,
+    ) {
+        self.commands
+            .borrow_mut()
+            .push(aimer_cupid::draw_cmd::DrawCommand::DrawExternalTexture { rect, texture });
+    }
+
     /// Adds a draw of an SVG scene.
     pub fn draw_svg(
         &self,

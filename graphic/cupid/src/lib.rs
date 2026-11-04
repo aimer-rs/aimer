@@ -30,6 +30,7 @@ pub use aimer_effect_pipeline as effects;
 #[doc(hidden)]
 pub use aimer_scene::damage_region;
 pub use aimer_scene::draw_cmd;
+pub use aimer_scene::external_texture;
 /// The renderer's internal lowered command stream; see `aimer_scene::render_list`.
 #[doc(hidden)]
 pub use aimer_scene::render_list;

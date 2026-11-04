@@ -826,6 +826,14 @@ impl BuiltinShader {
 ///
 /// The associated `RenderPass` type uses a GAT so that each pass object borrows
 /// its command encoder for the correct lifetime — the same pattern `wgpu` uses.
+/// A texture another API created, for [`GpuBackend::import_native_texture`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NativeTextureHandle {
+    /// An `id<MTLTexture>`, not retained by this value.
+    Metal(std::ptr::NonNull<std::ffi::c_void>),
+}
+
 pub trait GpuBackend: Sized + 'static {
     // ── Associated types ────────────────────────────────────────────────
 
@@ -931,6 +939,22 @@ pub trait GpuBackend: Sized + 'static {
 
     /// Create a texture view (default view covering the whole texture).
     fn create_texture_view(&self, texture: &Self::Texture, label: &str) -> Self::TextureView;
+
+    /// Wraps a texture another API created (a video decoder's output, say) as
+    /// a view this backend can sample, without copying it.
+    ///
+    /// Returns `None` when this backend cannot use that kind of handle, which
+    /// is the default: the caller then draws nothing for it.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a valid texture of this backend's device, and must
+    /// stay valid until the GPU has finished every command that samples the
+    /// returned view.
+    #[inline]
+    unsafe fn import_native_texture(&self, _handle: NativeTextureHandle) -> Option<Self::TextureView> {
+        None
+    }
 
     /// Create a texture sampler.
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler;

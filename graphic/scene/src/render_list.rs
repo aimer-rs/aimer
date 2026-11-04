@@ -409,6 +409,11 @@ pub enum DrawCommand {
         rect: Rect,
         resource: Arc<ImageResource>,
     },
+    /// The lowered form of `draw_cmd::DrawCommand::DrawExternalTexture`.
+    DrawExternalTexture {
+        rect: Rect,
+        texture: crate::external_texture::ExternalTexture,
+    },
     /// Composite a renderer-owned texture containing a retained static
     /// subtree. The content is kept alongside the command so the renderer can
     /// rasterize it on the first use or after invalidation, while later frames
@@ -576,6 +581,8 @@ impl RetainedLayerContent {
                     shadow.is_none_or(|shadow| shadow_is_covered(shadow, padding))
                 }
                 DrawCommand::DrawShadowRect { .. } => false,
+                // Live content must never be cached into a layer.
+                DrawCommand::DrawExternalTexture { .. } => false,
                 _ => true,
             });
         Self {
@@ -684,6 +691,7 @@ impl DrawCommand {
                 | Self::DrawTextDecoration { .. }
                 | Self::DrawImage { .. }
                 | Self::DrawImageWithResource { .. }
+                | Self::DrawExternalTexture { .. }
                 | Self::RetainedLayer { .. }
                 | Self::Svg { .. }
                 | Self::DrawShadowRect { .. }
@@ -787,6 +795,8 @@ impl DrawCommand {
                 rect: *rect,
                 resource: resource.clone(),
             },
+            // A live producer changes every frame: a snapshot of it would freeze.
+            Self::DrawExternalTexture { .. } => return None,
             Self::RetainedLayer { .. } => return None,
             Self::Svg {
                 scene,

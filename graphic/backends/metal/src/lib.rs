@@ -724,6 +724,21 @@ impl GpuBackend for MetalBackend {
         MetalTextureView(texture.0.clone())
     }
 
+    unsafe fn import_native_texture(
+        &self,
+        handle: aimer_cupid_gpu::NativeTextureHandle,
+    ) -> Option<Self::TextureView> {
+        let aimer_cupid_gpu::NativeTextureHandle::Metal(texture) = handle else {
+            return None;
+        };
+        // SAFETY: the caller guarantees `texture` is a live `id<MTLTexture>`
+        // of this device. `retain` adds the view's own reference, so the view
+        // and any bind group made from it keep the object alive by
+        // themselves; the producer keeps its contents stable (see the trait).
+        let texture = unsafe { Retained::retain(texture.as_ptr().cast::<ProtocolObject<dyn MTLTexture>>()) }?;
+        Some(MetalTextureView(texture))
+    }
+
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler {
         let descriptor = MTLSamplerDescriptor::new();
         descriptor.setMinFilter(map_filter(desc.min_filter));
