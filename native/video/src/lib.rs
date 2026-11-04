@@ -1,8 +1,17 @@
 #![doc = include_str!("../README.md")]
 
+mod assets;
 mod backend;
+mod captions;
+mod captions_view;
+mod controls;
+mod controls_state;
+mod frame_watch;
 mod model;
 mod player;
+mod player_view;
+mod rail;
+mod track_geometry;
 mod widget;
 #[cfg(test)]
 mod test_support;
@@ -12,8 +21,12 @@ mod apple;
 #[cfg(not(any(target_os = "ios", target_os = "macos")))]
 mod unsupported;
 
+pub use captions::{CaptionError, CaptionSource, CaptionTrack, Chapter, Chapters, Cue};
 pub use model::{PlaybackState, VideoError, VideoLoops, VideoSource};
 pub use player::VideoPlayer;
+pub use player_view::VideoPlayerView;
+pub use captions_view::{CaptionStyle, Captions};
+pub use controls::VideoControls;
 pub use widget::{Video, VideoFit};
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]

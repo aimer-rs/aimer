@@ -8,8 +8,19 @@ description = "Video playback drawn straight from the decoder's GPU memory"
 [dependencies]
 aimer_attribute.workspace = true
 aimer_canvas.workspace = true
+aimer_container.workspace = true
+aimer_flex.workspace = true
+aimer_input.workspace = true
+aimer_lucide.workspace = true
+aimer_modal.workspace = true
+aimer_range.workspace = true
+aimer_space.workspace = true
+aimer_style.workspace = true
+aimer_svg.workspace = true
+aimer_text.workspace = true
 aimer_cupid.workspace = true
 aimer_events.workspace = true
+aimer_time.workspace = true
 aimer_widget.workspace = true
 
 [dev-dependencies]

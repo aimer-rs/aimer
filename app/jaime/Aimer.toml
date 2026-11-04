@@ -20,6 +20,8 @@ giphy = "assets/giphy.gif"
 tap = "assets/tap.wav"
 trimmed_music = "assets/TrimmedAudio.wav"
 test_pattern = "assets/test_pattern.mp4"
+test_pattern_captions = "assets/test_pattern.vtt"
+test_pattern_chapters = "assets/test_pattern_chapters.vtt"
 
 
 [font]

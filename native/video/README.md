@@ -7,6 +7,9 @@ Video playback, drawn straight from the decoder's GPU memory.
   volume, mute and a loop count. The video's sound plays in sync with it.
 - **[`Video`]**: the widget that shows a player's picture, with a
   [`VideoFit`] of `Contain` (letterbox), `Cover` (crop) or `Fill` (stretch).
+- **[`VideoPlayerView`]**: the standard player: the picture, captions and
+  controls, with fullscreen. Its parts are public too: [`VideoControls`] and
+  [`Captions`].
 
 ```rust,no_run
 use aimer_video::{Video, VideoFit, VideoLoops, VideoPlayer, VideoSource};
@@ -18,6 +21,56 @@ player.play();
 // In a build method; buttons get clones of the same player.
 let video = Video::new().player(player.clone()).fit(VideoFit::Cover).height(240);
 ```
+
+## The standard player
+
+```rust,no_run
+use aimer_video::{CaptionSource, CaptionTrack, Chapters, VideoPlayer, VideoPlayerView, VideoSource};
+
+let player = VideoPlayer::from_source(VideoSource::bundled("assets/talk.mp4"));
+let captions = CaptionTrack::load(&CaptionSource::Bundled("assets/talk.vtt".into())).unwrap();
+let chapters = Chapters::load(&CaptionSource::Bundled("assets/talk_chapters.vtt".into())).unwrap();
+let view = VideoPlayerView::new()
+    .player(player)
+    .captions(captions)
+    .chapters(chapters)
+    .height(360);
+```
+
+`VideoPlayerView` lays out:
+
+- **The seek bar**: what has played (in the accent colour), what has
+  downloaded, and a thumb you can drag. It shows the dragged position while
+  the pointer is down and seeks once, on release. With chapters, it is cut
+  into one segment per chapter.
+- **Play/pause, mute and volume**, the **time** (`m:ss`, or `h:mm:ss` from
+  an hour on), and the **current chapter's title**.
+- **A captions button** when there are captions, and **a fullscreen button**.
+- **On a touch screen**, a large play/pause button in the middle.
+
+While the video plays, the controls hide three seconds after the last pointer
+activity and come back on the next. Clicking the picture with a mouse plays or
+pauses; on a touch screen a tap shows or hides the controls instead. Paused,
+the controls stay up.
+
+Fullscreen puts the window into fullscreen
+(`WindowHandle::set_fullscreen`) and shows the same player over the whole
+window; the button leaves it again. The video plays on throughout.
+
+### Captions and chapters
+
+Captions come from sidecar files, WebVTT (`.vtt`) or SubRip (`.srt`), parsed
+in Rust and drawn as framework text, so they look the same on every platform.
+Styling tags (`<i>`, `<c.yellow>`, `<v Speaker>`, `{\an8}`) are removed,
+entities decoded, overlapping cues shown together, and a malformed cue skipped
+rather than the whole file. Cue positions and styles from the file are not
+applied yet; set the look with `CaptionStyle`.
+
+Chapters come from a WebVTT chapters file (each cue's start and text are a
+chapter's start and title) or from a list of `Chapter`s.
+
+`CaptionSource` is a bundled asset, a file, or text the app already holds (one
+it downloaded itself, say). Captions are not read from inside the media yet.
 
 ## Sources
 

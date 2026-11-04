@@ -10,7 +10,7 @@
 //! Every object here is used through `&self` from the threads the player
 //! handle lives on; see the safety notes on [`AppleVideo`].
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::{Arc, OnceLock};
 
@@ -82,7 +82,7 @@ fn source_url(source: &VideoSource) -> Result<Retained<NSURL>, VideoError> {
         VideoSource::File(path) => file(path),
         VideoSource::Bundled(key) => {
             let exe = std::env::current_exe().ok();
-            let path = bundled_candidates(key, exe.as_deref())
+            let path = crate::assets::bundled_candidates(key, exe.as_deref())
                 .into_iter()
                 .find(|candidate| candidate.is_file())
                 .ok_or_else(|| VideoError::NotFound(key.clone()))?;
@@ -97,20 +97,6 @@ fn source_url(source: &VideoSource) -> Result<Retained<NSURL>, VideoError> {
                 .ok_or_else(|| VideoError::Network(format!("invalid URL: {url}")))
         }
     }
-}
-
-/// Where a bundled asset may live, in lookup order: the working directory
-/// (development runs), the macOS bundle's `Resources`, then next to the
-/// executable (iOS). The same lookup `aimer_assets` and `aimer_audio` use.
-fn bundled_candidates(key: &str, exe: Option<&Path>) -> Vec<PathBuf> {
-    let mut candidates = vec![PathBuf::from(key)];
-    if let Some(dir) = exe.and_then(Path::parent) {
-        if let Some(contents) = dir.parent() {
-            candidates.push(contents.join("Resources").join(key));
-        }
-        candidates.push(dir.join(key));
-    }
-    candidates
 }
 
 /// An output of Metal-compatible, IOSurface-backed BGRA pixel buffers.
@@ -380,23 +366,4 @@ fn configure_session() {
             let _ = session.setActive_error(true);
         }
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::bundled_candidates;
-    use std::path::{Path, PathBuf};
-
-    #[test]
-    fn bundled_assets_are_searched_in_the_working_directory_then_the_bundle() {
-        let exe = Path::new("/Apps/Demo.app/Contents/MacOS/demo");
-        assert_eq!(
-            bundled_candidates("assets/a.mp4", Some(exe)),
-            vec![
-                PathBuf::from("assets/a.mp4"),
-                PathBuf::from("/Apps/Demo.app/Contents/Resources/assets/a.mp4"),
-                PathBuf::from("/Apps/Demo.app/Contents/MacOS/assets/a.mp4"),
-            ]
-        );
-    }
 }
