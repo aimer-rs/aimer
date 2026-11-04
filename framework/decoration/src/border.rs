@@ -389,7 +389,7 @@ impl BoxOutline {
 }
 
 impl Drawable for RawBoxBorder {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite()
             && ctx.scale > 0.0
             && ctx.parent_size.width.is_finite()
@@ -398,7 +398,7 @@ impl Drawable for RawBoxBorder {
             && ctx.parent_size.height >= 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let scale = ctx.scale;
         let box_width = ctx.parent_size.width;
         let box_height = ctx.parent_size.height;
@@ -479,7 +479,7 @@ impl Drawable for RawBoxBorder {
         canvas.finish();
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         if self.mode != BorderMode::Outside {
             return Some([0.0; 4]);
         }

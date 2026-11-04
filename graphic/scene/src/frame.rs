@@ -158,8 +158,8 @@ fn rects_intersect(left: DamageRect, right: DamageRect) -> bool {
 /// # Examples
 ///
 /// ```
-/// use aimer_cupid::render_list::DrawList;
-/// use aimer_cupid::frame::Frame;
+/// use aimer_scene::render_list::DrawList;
+/// use aimer_scene::frame::Frame;
 ///
 /// let frame = Frame::new(DrawList::new(), 800, 600);
 ///

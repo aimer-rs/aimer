@@ -12,8 +12,8 @@ fn record_dyn(element: &dyn Element, ctx: &BuildContext) -> Vec<DrawCommand> {
     let tree = RenderTree::new();
     let root = tree.add_root(Rect::new(0.0, 0.0, 200.0, 160.0)).unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
-        assert!(element.can_paint_local_v2(ctx));
-        element.paint_local_v2(ctx);
+        assert!(element.can_paint(ctx));
+        element.paint(ctx);
     });
     tree.draw_list_snapshot(root).unwrap().commands.to_vec()
 }
@@ -90,7 +90,7 @@ async fn a_foreground_stack_paints_every_layer_in_the_node_after_the_child() {
     let layer = layer.expect("a layer follows the child");
     assert_eq!(layer.debug_name(), "ForegroundDecorationLayer");
     let layer_ctx = element
-        .retained_v2_child_context_at(&ctx, layer, 1)
+        .child_context_at(&ctx, layer, 1)
         .expect("the wrapper sizes its layer");
     let commands = record_dyn(layer, &layer_ctx);
     assert!(!commands.iter().any(is_marker));

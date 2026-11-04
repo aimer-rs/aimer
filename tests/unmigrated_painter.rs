@@ -1,7 +1,7 @@
 //! An element with no retained paint paints nothing.
 //!
 //! The legacy canvas path is gone. An element that does not implement
-//! `paint_local_v2` has nothing to show and stays unresolved, so the frame
+//! `paint` has nothing to show and stays unresolved, so the frame
 //! asks it again next time.
 
 use aimer::{

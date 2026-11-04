@@ -152,6 +152,6 @@ async fn color_decoration_works_in_containers_and_propagates_to_later_layers() {
         let paints = aimer_widget::testing::record_retained_paint(element.as_ref(), &ctx);
         let background = paints.iter().flat_map(|paint| paint.commands.iter()).next().unwrap();
         assert!(matches!(background, DrawCommand::FillRect { color, .. } if color.b == 255 && color.r == 0));
-        assert!(!element.local_v2_paint_needs_recording(&ctx));
+        assert!(!element.paint_needs_recording(&ctx));
     }
 }

@@ -95,7 +95,7 @@ impl Retained {
 
     pub(crate) fn sync(&self, element: &dyn Element, context: &BuildContext<'_>) -> bool {
         let retained = self.tree.context(self.root).unwrap();
-        context.with_local_v2_paint_context(retained, |context| element.sync_local_v2_state(context))
+        context.with_local_v2_paint_context(retained, |context| element.sync_paint_state(context))
     }
 
     /// The child's draw item, or `None` when the renderer would not draw it.

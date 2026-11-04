@@ -45,11 +45,11 @@ impl LayoutElement for ProbeElement {
 }
 
 impl Drawable for ProbeElement {
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = Canvas::of(ctx);
         canvas.fill_rect(Rect::new(0.0, 0.0, 100.0, 50.0), [200, 40, 40, 255]);
         canvas.finish();

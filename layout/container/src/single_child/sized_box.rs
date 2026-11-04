@@ -169,11 +169,11 @@ impl<E: Element> Drawable for RawSizedBox<E> {
         self.child.update(&child_ctx);
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.local_v2_paint_size(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let (width, height) = self
             .local_v2_paint_size(ctx)
             .expect("SizedBox v2 support must be checked before painting");

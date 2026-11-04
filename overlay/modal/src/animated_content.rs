@@ -56,7 +56,7 @@ impl Drawable for AnimatedOverlayContent {
         self.child.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         #[cfg(not(target_arch = "wasm32"))]
         {
             true
@@ -69,12 +69,12 @@ impl Drawable for AnimatedOverlayContent {
         }
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         // The retained tree applies the animation to this node. The
         // compatibility walk only updates descendant state and recordings.
         self.child.update(ctx);

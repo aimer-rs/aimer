@@ -1671,31 +1671,31 @@ impl Drawable for StatefulElement {
         child.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         // This wrapper owns state and rebuilds its child, but paints nothing.
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
 
     #[inline]
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         // A state owner is visually transparent. Preserve a child's
         // viewport-sized render bounds instead of expanding the wrapper to
         // the child's scrollable content extent.
-        unsafe { &*self.child.0.get() }.retained_v2_bounds(ctx)
+        unsafe { &*self.child.0.get() }.paint_bounds(ctx)
     }
 
     #[inline]
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
-        unsafe { &*self.child.0.get() }.retained_v2_paint_outsets(ctx)
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+        unsafe { &*self.child.0.get() }.paint_outsets(ctx)
     }
 
     #[inline]
-    fn retained_v2_child_geometry(
+    fn child_geometry(
         &self,
         ctx: &BuildContext,
         child: &dyn aimer_widget::Element,
@@ -1703,11 +1703,11 @@ impl Drawable for StatefulElement {
         aimer_cupid::draw_cmd::Rect,
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
-        unsafe { &*self.child.0.get() }.retained_v2_child_geometry(ctx, child)
+        unsafe { &*self.child.0.get() }.child_geometry(ctx, child)
     }
 
     #[inline]
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn aimer_widget::Element,
@@ -1717,18 +1717,18 @@ impl Drawable for StatefulElement {
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         unsafe { &*self.child.0.get() }
-            .retained_v2_child_geometry_at(ctx, child, child_index)
+            .child_geometry_at(ctx, child, child_index)
     }
 
     #[inline]
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &aimer_widget::base::BuildContext<'a>,
         child: &dyn aimer_widget::Element,
         child_index: usize,
     ) -> Option<aimer_widget::base::BuildContext<'a>> {
         unsafe { &*self.child.0.get() }
-            .retained_v2_child_context_at(ctx, child, child_index)
+            .child_context_at(ctx, child, child_index)
     }
 
     #[inline]

@@ -176,7 +176,7 @@ struct ShadowedElement;
 impl Drawable for ShadowedElement {
     fn update(&self, _context: &BuildContext) {}
 
-    fn retained_v2_paint_outsets(&self, _context: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, _context: &BuildContext) -> Option<[f32; 4]> {
         Some([7.0, 5.0, 11.0, 13.0])
     }
 }

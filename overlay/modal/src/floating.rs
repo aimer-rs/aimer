@@ -464,16 +464,16 @@ impl Drawable for RawFloating {
         ctx.canvas.restore();
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         // The barrier and hosted content have their own retained nodes. Keep
         // the barrier's full-window background out of compatibility painting
         // when a child such as a menu only changes a local row list.
@@ -500,7 +500,7 @@ impl Drawable for RawFloating {
         }
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -513,7 +513,7 @@ impl Drawable for RawFloating {
             .map(|(_, _, child_context)| child_context)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,

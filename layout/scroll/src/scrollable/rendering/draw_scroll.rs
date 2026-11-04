@@ -50,23 +50,23 @@ fn intersect_rect(left: Rect, right: Rect) -> Rect {
 
 impl<E: Element> Drawable for RawScrollableContainer<E> {
     /// Hit-tested over the scroll viewport as laid out.
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.layout_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("Scrollable")
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let size = self.layout_size(ctx);
         ctx.scale.is_finite()
             && ctx.scale > 0.0
@@ -76,15 +76,15 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             && size.height >= 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         Canvas::of(ctx).finish();
     }
 
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.layout_size(ctx))
     }
 
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -161,7 +161,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
         None
     }
 
-    fn retained_v2_child_geometry(
+    fn child_geometry(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -178,7 +178,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
         }
 
         if child.id() == self.child.id() {
-            let child_ctx = self.retained_v2_child_context(ctx, child)?;
+            let child_ctx = self.child_context(ctx, child)?;
             let size = child.content_size(&child_ctx);
             let position = child.pos().unwrap_or_default();
             let offset = snap_scroll_offset(self.ctrl.visual_offset(self.ctrl.scroll_offset.get()));
@@ -208,7 +208,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             .as_ref()
             .is_some_and(|bar| bar.id() == child.id())
         {
-            let bar_ctx = self.retained_v2_child_context(ctx, child)?;
+            let bar_ctx = self.child_context(ctx, child)?;
             let size = child.content_size(&bar_ctx);
             let bounds = if matches!(self.ctrl.axis, ScrollAxis::Vertical) {
                 Rect::new(
@@ -231,7 +231,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             .as_ref()
             .is_some_and(|bar| bar.id() == child.id())
         {
-            let bar_ctx = self.retained_v2_child_context(ctx, child)?;
+            let bar_ctx = self.child_context(ctx, child)?;
             let size = child.content_size(&bar_ctx);
             let bounds = if matches!(self.ctrl.axis, ScrollAxis::Horizontal) {
                 Rect::new(

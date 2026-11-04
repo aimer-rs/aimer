@@ -82,8 +82,8 @@ async fn a_masked_box_repaints_on_scale_changes_like_any_decoration_box() {
         .child(SizedBox::new().width(24.0).height(12.0))
         .to_element(&ctx);
     record(&element, &ctx);
-    assert!(!element.local_v2_paint_needs_recording(&ctx));
+    assert!(!element.paint_needs_recording(&ctx));
     ctx.scale = 2.0;
-    assert!(element.local_v2_paint_needs_recording(&ctx));
+    assert!(element.paint_needs_recording(&ctx));
     assert!(record(&element, &ctx).first().is_some_and(is_marker));
 }

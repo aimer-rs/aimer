@@ -53,7 +53,7 @@ pub(super) fn filter_packet_scaled(
         .to_element(&ctx);
     element.layout(&ctx);
     ctx.with_local_v2_paint_context(tree.context(node).unwrap(), |ctx| {
-        element.paint_local_v2(ctx)
+        element.paint(ctx)
     });
     packet_from_tree(tree, scale)
 }

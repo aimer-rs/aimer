@@ -32,7 +32,7 @@ fn styles(element: &dyn aimer_widget::Element, context: &aimer_widget::base::Bui
 {
     let tree = aimer_cupid::draw_cmd::RenderTree::new();
     let node = tree.add_root(aimer_cupid::draw_cmd::Rect::new(0.0, 0.0, 48.0, 48.0)).unwrap();
-    context.with_local_v2_paint_context(tree.context(node).unwrap(), |ctx| element.paint_local_v2(ctx));
+    context.with_local_v2_paint_context(tree.context(node).unwrap(), |ctx| element.paint(ctx));
     let drawing = tree.draw_list_snapshot(node).unwrap();
     drawing.commands.iter().find_map(|command| match command {
         aimer_cupid::draw_cmd::DrawCommand::Svg { overrides, .. } => Some(overrides.clone()),

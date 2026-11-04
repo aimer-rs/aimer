@@ -564,8 +564,8 @@ mod painting;
 
 impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
     /// Hit-tested over the box that is drawn: the computed size less the
-    /// margins, which start `retained_v2_interaction_offset` in from the node.
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    /// margins, which start `interaction_offset` in from the node.
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         let (m_left, m_top, m_right, m_bottom) = self.margin(ctx);
         let computed = self.computed_size(ctx);
         Some(ResolvedSize {
@@ -575,18 +575,18 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
     }
 
     #[inline]
-    fn retained_v2_interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
+    fn interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
         let (m_left, m_top, _, _) = self.margin(ctx);
         (m_left, m_top)
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("Container")
@@ -596,11 +596,11 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         self.render(ctx);
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.local_v2_paint_size(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let Some(size) = self.local_v2_paint_size(ctx) else {
             unreachable!("RawContainer v2 support must be checked before painting")
         };
@@ -613,7 +613,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         // otherwise a shadowed panel is drawn up and to the left of where it was
         // laid out, under children that are in the right place.
         let [outset_left, outset_top, _, _] =
-            self.retained_v2_paint_outsets(ctx).unwrap_or([0.0; 4]);
+            self.paint_outsets(ctx).unwrap_or([0.0; 4]);
         canvas.add_background_color(
             self.decoration()
                 .background_color()
@@ -641,7 +641,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         self.paint_state.set(state);
     }
 
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         let state = self.paint_state.get();
         self.flags.get() & RECORDED == 0
             || state.background != ctx.paint_background
@@ -654,7 +654,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         None
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         let size = self.local_v2_paint_size(ctx)?;
         let mut outsets = self
             .decoration()
@@ -686,7 +686,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         Some(outsets)
     }
 
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -697,7 +697,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         self.local_v2_child_context(ctx)
     }
 
-    fn retained_v2_child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
+    fn child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
         if !std::ptr::eq(child, &self.child as &dyn Element) {
             return [0.0; 4];
         }
@@ -708,7 +708,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         })
     }
 
-    fn retained_v2_child_geometry(
+    fn child_geometry(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,

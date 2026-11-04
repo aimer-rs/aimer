@@ -215,16 +215,16 @@ async fn light_edge_auto_color_repaints_retained_children_when_surface_color_cha
     assert_eq!(colors(element.as_ref(), &ctx), vec![[1.0; 4]]);
     background.update_color(Color::WHITE);
     element.visit_children(&mut |child| {
-        let child_ctx = element.retained_v2_child_context(&ctx, child).unwrap();
+        let child_ctx = element.child_context(&ctx, child).unwrap();
         assert!(
-            child.local_v2_paint_needs_recording(&child_ctx),
+            child.paint_needs_recording(&child_ctx),
             "ancestor color must invalidate the rim"
         );
     });
     assert_eq!(colors(element.as_ref(), &ctx), vec![[0.0, 0.0, 0.0, 1.0]]);
     element.visit_children(&mut |child| {
-        let child_ctx = element.retained_v2_child_context(&ctx, child).unwrap();
-        assert!(!child.local_v2_paint_needs_recording(&child_ctx));
+        let child_ctx = element.child_context(&ctx, child).unwrap();
+        assert!(!child.paint_needs_recording(&child_ctx));
     });
 }
 

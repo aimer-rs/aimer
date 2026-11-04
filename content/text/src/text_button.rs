@@ -369,7 +369,7 @@ impl RawTextButton {
         let normal = self.text_layout_for(ctx, false);
         if normal.0.text_style.text_shadow.is_some()
             || normal.0.text_style.background_color.is_some()
-            || !normal.0.can_paint_local_v2(&normal.1)
+            || !normal.0.can_paint(&normal.1)
         {
             return None;
         }
@@ -386,7 +386,7 @@ impl RawTextButton {
                 || (normal.2.height - hover_size.height).abs() > Self::SUBPIXEL_SIZE_TOLERANCE;
             if hover_text.text_style.text_shadow.is_some()
                 || hover_text.text_style.background_color.is_some()
-                || !hover_text.can_paint_local_v2(hover_ctx)
+                || !hover_text.can_paint(hover_ctx)
             {
                 return None;
             }
@@ -570,7 +570,7 @@ impl LayoutElement for RawTextButton {
 
 impl Drawable for RawTextButton {
     /// The button hit-tests its text block: the widest line by the full height.
-    fn retained_v2_interaction_size(
+    fn interaction_size(
         &self,
         ctx: &BuildContext,
     ) -> Option<aimer_attribute::ResolvedSize> {
@@ -582,12 +582,12 @@ impl Drawable for RawTextButton {
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.block.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.block.disagreement("TextButton")
@@ -611,15 +611,15 @@ impl Drawable for RawTextButton {
         text.update(&text_ctx);
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.local_v2_text(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let (text, text_ctx, _) = self
             .local_v2_text(ctx)
             .expect("TextButton v2 support must be checked before painting");
-        text.paint_local_v2(&text_ctx);
+        text.paint(&text_ctx);
     }
 }
 
@@ -672,8 +672,8 @@ mod tests {
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
-            assert!(element.can_paint_local_v2(ctx));
-            element.paint_local_v2(ctx);
+            assert!(element.can_paint(ctx));
+            element.paint(ctx);
         });
         tree.draw_list_snapshot(root).unwrap().commands
     }
@@ -975,7 +975,7 @@ mod tests {
         ctx.cursor_pos = Vec2d { x: -1.0, y: -1.0 };
         let button = underline_on_hover_button();
 
-        assert!(button.can_paint_local_v2(&ctx));
+        assert!(button.can_paint(&ctx));
     }
 
     #[test]
@@ -990,7 +990,7 @@ mod tests {
         let mut hovered = ctx.clone();
         hovered.cursor_pos = Vec2d { x: 2.0, y: 2.0 };
 
-        assert!(button.can_paint_local_v2(&hovered));
+        assert!(button.can_paint(&hovered));
     }
 
     #[test]

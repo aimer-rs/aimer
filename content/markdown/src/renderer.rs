@@ -1143,7 +1143,7 @@ mod tests {
     ) {
         let mut node_ctx = ctx.clone();
         node_ctx.parent_size = element.computed_size(ctx);
-        if element.can_paint_local_v2(&node_ctx) {
+        if element.can_paint(&node_ctx) {
             let tree = aimer_cupid::draw_cmd::RenderTree::new();
             let root = tree
                 .add_root(aimer_cupid::draw_cmd::Rect::new(
@@ -1152,7 +1152,7 @@ mod tests {
                 .unwrap();
             let retained = tree.context(root).unwrap();
             node_ctx.with_local_v2_paint_context(retained, |node_ctx| {
-                element.paint_local_v2(node_ctx);
+                element.paint(node_ctx);
             });
             commands.extend(
                 tree.draw_list_snapshot(root)

@@ -771,7 +771,7 @@ impl<E: Element> LayoutElement for RawResizable<E> {
 }
 
 impl<E: Element> Drawable for RawResizable<E> {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let size = self.effective_size(ctx);
         ctx.scale.is_finite()
             && ctx.scale > 0.0
@@ -784,7 +784,7 @@ impl<E: Element> Drawable for RawResizable<E> {
     }
 
     fn retained_clip(&self, ctx: &BuildContext) -> Option<aimer_cupid::draw_cmd::Rect> {
-        if !self.can_paint_local_v2(ctx) {
+        if !self.can_paint(ctx) {
             return None;
         }
         let size = self.effective_size(ctx);
@@ -796,12 +796,12 @@ impl<E: Element> Drawable for RawResizable<E> {
         ))
     }
 
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         _child: &dyn Element,
     ) -> Option<BuildContext<'a>> {
-        if !self.can_paint_local_v2(ctx) {
+        if !self.can_paint(ctx) {
             return None;
         }
         let size = self.effective_size(ctx);
@@ -812,22 +812,22 @@ impl<E: Element> Drawable for RawResizable<E> {
         Some(child_ctx)
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
     /// Hit-tested against the rectangle this element reports as its own size,
     /// which can be larger than the content box its render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.effective_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("Resizable")

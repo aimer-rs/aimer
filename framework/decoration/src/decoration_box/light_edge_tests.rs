@@ -176,7 +176,7 @@ async fn light_edge_preserves_child_layout_and_clipping() {
         }
     );
     assert_eq!(element.retained_clip(&ctx), None);
-    assert_eq!(element.retained_v2_paint_outsets(&ctx), Some([0.0; 4]));
+    assert_eq!(element.paint_outsets(&ctx), Some([0.0; 4]));
 }
 
 #[test]

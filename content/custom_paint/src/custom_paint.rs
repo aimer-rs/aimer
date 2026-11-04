@@ -214,11 +214,11 @@ impl<P: CanvasPainter> RawCustomPaint<P> {
 
 impl<P: CanvasPainter> Drawable for RawCustomPaint<P> {
     #[inline]
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.paint_target(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let (key, size) = self
             .paint_target(ctx)
             .expect("CustomPaint v2 support must be checked before painting");
@@ -229,7 +229,7 @@ impl<P: CanvasPainter> Drawable for RawCustomPaint<P> {
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         self.recorded.get() != self.paint_target(ctx).map(|(key, _)| key)
     }
 }
@@ -449,13 +449,13 @@ mod tests {
         let tree = RenderTree::new();
         let node = tree.add_root(RenderRect::new(0.0, 0.0, 24.0, 12.0)).unwrap();
 
-        assert!(element.local_v2_paint_needs_recording(&ctx));
+        assert!(element.paint_needs_recording(&ctx));
         paint_frame(&ctx, &element, &tree, node);
-        assert!(!element.local_v2_paint_needs_recording(&ctx));
+        assert!(!element.paint_needs_recording(&ctx));
         assert_eq!(sizes.borrow().len(), 1);
 
         let rescaled = context(ResolvedSize::default(), 2.0);
-        assert!(element.local_v2_paint_needs_recording(&rescaled));
+        assert!(element.paint_needs_recording(&rescaled));
     }
 
     #[tokio::test]
@@ -469,7 +469,7 @@ mod tests {
                 .painter(painter_like(&painter))
                 .to_element(&ctx);
 
-            assert!(!element.can_paint_local_v2(&ctx), "scale {scale}");
+            assert!(!element.can_paint(&ctx), "scale {scale}");
         }
     }
 

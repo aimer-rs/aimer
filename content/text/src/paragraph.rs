@@ -233,7 +233,7 @@ impl Paragraph {
             })
     }
 
-    pub(crate) fn retained_v2_paint_outsets(
+    pub(crate) fn paint_outsets(
         &self,
         layout: &PreparedLayout,
         scale: f32,

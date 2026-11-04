@@ -558,7 +558,7 @@ fn visual_slots<'a>(
 ) -> Vec<&'a dyn aimer_widget::Element> {
     let mut slots = Vec::new();
     element.visit_children(&mut |surface| {
-        let _ = surface.retained_v2_bounds(ctx);
+        let _ = surface.paint_bounds(ctx);
         surface.visit_children(&mut |slot| slots.push(slot));
     });
     slots
@@ -585,8 +585,8 @@ fn recorded_fills(leaf: &dyn aimer_widget::Element, ctx: &BuildContext<'_>) -> u
         .unwrap();
     let node_context = tree.context(root).unwrap();
     ctx.with_local_v2_paint_context(node_context, |ctx| {
-        assert!(leaf.can_paint_local_v2(ctx));
-        leaf.paint_local_v2(ctx);
+        assert!(leaf.can_paint(ctx));
+        leaf.paint(ctx);
     });
     tree.draw_list_snapshot(root)
         .unwrap()

@@ -55,10 +55,10 @@ impl LayoutElement for CapturedElement {
     }
 }
 impl Drawable for CapturedElement {
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         aimer::canvas::Canvas::of(ctx).finish();
     }
     fn update(&self, ctx: &BuildContext) {
@@ -89,7 +89,7 @@ impl Drawable for CapturedElement {
 // layout overlap, including Positioned offsets and the device scale.
 fn collect_bounds(element: &dyn Element, ctx: &BuildContext, bounds: &mut Vec<Rect>) {
     let size = element
-        .retained_v2_bounds(ctx)
+        .paint_bounds(ctx)
         .unwrap_or_else(|| element.content_size(ctx));
     let position = element
         .pos()
@@ -98,7 +98,7 @@ fn collect_bounds(element: &dyn Element, ctx: &BuildContext, bounds: &mut Vec<Re
         x: ctx.parent_pos.x + position.x,
         y: ctx.parent_pos.y + position.y,
     };
-    if element.can_paint_local_v2(ctx) {
+    if element.can_paint(ctx) {
         bounds.push(Rect::new(
             origin.x / ctx.scale,
             origin.y / ctx.scale,
@@ -123,7 +123,7 @@ fn collect_bounds(element: &dyn Element, ctx: &BuildContext, bounds: &mut Vec<Re
     }
     element.visit_retained_v2_children(&mut |index, child| {
         let child_ctx = element
-            .retained_v2_child_context_at(ctx, child, index)
+            .child_context_at(ctx, child, index)
             .unwrap_or_else(|| base.clone());
         collect_bounds(child, &child_ctx, bounds);
     });

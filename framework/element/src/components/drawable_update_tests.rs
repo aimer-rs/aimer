@@ -137,11 +137,11 @@ impl Rebuildable for LocalPainter {}
 impl Drawable for LocalPainter {
     fn update(&self, _ctx: &BuildContext) {}
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {
+    fn paint(&self, _ctx: &BuildContext) {
         self.painted.set(self.painted.get() + 1);
     }
 }
@@ -158,14 +158,14 @@ fn an_erased_element_reports_its_childs_local_paint_support() {
     }
     .boxed();
 
-    assert!(erased.can_paint_local_v2(&ctx));
-    assert!(erased.as_ref().can_paint_local_v2(&ctx));
-    erased.paint_local_v2(&ctx);
+    assert!(erased.can_paint(&ctx));
+    assert!(erased.as_ref().can_paint(&ctx));
+    erased.paint(&ctx);
     assert_eq!(painted.get(), 1, "the erased handle forwards the paint call");
     let boxed: Box<dyn Element> = Box::new(LocalPainter {
         painted: painted.clone(),
     });
-    assert!(boxed.can_paint_local_v2(&ctx));
-    boxed.paint_local_v2(&ctx);
+    assert!(boxed.can_paint(&ctx));
+    boxed.paint(&ctx);
     assert_eq!(painted.get(), 2);
 }

@@ -757,18 +757,18 @@ impl Rebuildable for RawLiquid {}
 
 impl Drawable for RawLiquid {
     fn update(&self, ctx: &BuildContext) {
-        // The liquid surface is painted by `paint_local_v2`; the child keeps its
+        // The liquid surface is painted by `paint`; the child keeps its
         // own render node above it.
         self.child.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite()
             && ctx.scale > 0.0
             && logical_size(ctx, self.child.computed_size(ctx)).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         let material = self.material.normalized();
         let base = material.glass_material();
@@ -831,15 +831,15 @@ impl Drawable for RawLiquid {
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
         decoration_needs_recording(self.decoration.as_ref(), self.recorded.get())
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         self.child.update(ctx);
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         surface_outsets(
             self.material.normalized().glass_material(),
             self.decoration.as_ref(),

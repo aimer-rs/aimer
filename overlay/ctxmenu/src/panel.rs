@@ -350,11 +350,11 @@ impl Drawable for RawContextMenuPanel {
         ctx.canvas.restore();
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.retained_panel_metrics(ctx).is_some()
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let metrics = self
             .retained_panel_metrics(ctx)
             .expect("retained panel paint was checked before recording");
@@ -365,7 +365,7 @@ impl Drawable for RawContextMenuPanel {
         canvas.finish();
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         let (offset, _, child_context) = self.retained_child_layout(ctx);
         ctx.canvas.save();
         ctx.canvas.translate(offset);
@@ -373,12 +373,12 @@ impl Drawable for RawContextMenuPanel {
         ctx.canvas.restore();
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         self.retained_panel_metrics(ctx)
             .map(|metrics| metrics.paint_outsets)
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -390,7 +390,7 @@ impl Drawable for RawContextMenuPanel {
         Some(self.retained_child_layout(ctx).2)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,

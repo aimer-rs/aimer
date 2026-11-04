@@ -63,7 +63,7 @@ impl WindowRenderTree {
     }
 
     fn audit_node(&self, element: &dyn Element, audit: &mut BoundsAudit) {
-        if let Some(disagreement) = element.retained_v2_interaction_disagreement() {
+        if let Some(disagreement) = element.interaction_disagreement() {
             audit.interaction_disagreements.push(disagreement);
         }
         if let Some((start, end)) = element.pos_start_end() {

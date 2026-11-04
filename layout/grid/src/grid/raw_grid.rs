@@ -701,7 +701,7 @@ impl RawGrid {
         });
         let overflow = detect_overflow(child_size, cell_size, offset);
         let render_size = child
-            .retained_v2_bounds(&child_ctx)
+            .paint_bounds(&child_ctx)
             .unwrap_or_else(|| child.content_size(&child_ctx));
         Some((
             cell_pos,
@@ -716,7 +716,7 @@ impl RawGrid {
 }
 
 impl Drawable for RawGrid {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         if !ctx.scale.is_finite() || ctx.scale <= 0.0 {
             return false;
         }
@@ -779,13 +779,13 @@ impl Drawable for RawGrid {
         })
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         if let Err(error) = self.layout_grid(ctx) {
             ErrorElement::record_message(ctx, &format!("Grid layout error: {error}"));
         }
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -795,7 +795,7 @@ impl Drawable for RawGrid {
             .map(|(_, _, child_ctx, _, _, _, _)| child_ctx)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -873,7 +873,7 @@ impl Drawable for RawGrid {
                     self.draw_item(ctx, item, *placement, &layout);
                 }
             }
-            // The message is recorded by `paint_local_v2`; there is no child to
+            // The message is recorded by `paint`; there is no child to
             // visit when the layout failed.
             Err(_) => {}
         }
@@ -1206,8 +1206,8 @@ mod tests {
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
-            assert!(grid.can_paint_local_v2(ctx));
-            grid.paint_local_v2(ctx);
+            assert!(grid.can_paint(ctx));
+            grid.paint(ctx);
         });
 
         let message = tree

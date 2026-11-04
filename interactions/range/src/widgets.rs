@@ -467,11 +467,11 @@ impl Drawable for RawSliderVisualSlot {
         self.child.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
     fn retained_clip(&self, _ctx: &BuildContext) -> Option<Rect> {
         self.geometry.get().clip
@@ -601,7 +601,7 @@ impl<T: RangeValue> RawSlider<T> {
     ///
     /// The render tree reads a slot's position when it syncs, which is before
     /// this slider's `update` runs, so the placement has to be available from
-    /// `retained_v2_bounds` as well: a position written only while drawing
+    /// `paint_bounds` as well: a position written only while drawing
     /// reaches the tree one frame late, and a first frame nothing follows left
     /// the visuals at the slider's origin.
     fn place_visuals(&self, ctx: &BuildContext) -> (ResolvedSize, SliderPlacement) {
@@ -823,17 +823,17 @@ impl<T: RangeValue> Drawable for RawSlider<T> {
     /// Hit-tested against the rectangle this element reports as its own size,
     /// which can be larger than the content box its render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("RawSlider")
@@ -859,12 +859,12 @@ impl<T: RangeValue> Drawable for RawSlider<T> {
     /// Publishes the visuals' placement before the render tree reads their
     /// positions. See [`RawSlider::place_visuals`]; it does not change the
     /// bounds themselves.
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         self.place_visuals(ctx);
         None
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         if !ctx.scale.is_finite() || ctx.scale <= 0.0 {
             return false;
         }
@@ -879,7 +879,7 @@ impl<T: RangeValue> Drawable for RawSlider<T> {
             && height <= 1_000_000.0
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 }
 
 impl<T: RangeValue> Rebuildable for RawSlider<T> {}
@@ -1487,17 +1487,17 @@ impl<T: RangeValue> Drawable for RawRangeSlider<T> {
     /// Hit-tested against the rectangle this element reports as its own size,
     /// which can be larger than the content box its render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("RawRangeSlider")
@@ -1522,12 +1522,12 @@ impl<T: RangeValue> Drawable for RawRangeSlider<T> {
 
     /// Publishes the visuals' placement before the render tree reads their
     /// positions. See [`RawSlider::place_visuals`].
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         self.place_visuals(ctx);
         None
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         if !ctx.scale.is_finite() || ctx.scale <= 0.0 {
             return false;
         }
@@ -1542,7 +1542,7 @@ impl<T: RangeValue> Drawable for RawRangeSlider<T> {
             && height <= 1_000_000.0
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 }
 
 impl<T: RangeValue> Rebuildable for RawRangeSlider<T> {}

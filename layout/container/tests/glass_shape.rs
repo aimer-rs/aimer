@@ -165,12 +165,12 @@ async fn the_decoration_paints_behind_the_glass_and_widens_the_paint_bounds() {
     assert!(matches!(commands.last(), Some(DrawCommand::DrawCustom { .. })));
 
     let bare = glass().child(child()).to_element(&ctx);
-    assert_eq!(bare.retained_v2_paint_outsets(&ctx), None, "no shadow, no outsets");
+    assert_eq!(bare.paint_outsets(&ctx), None, "no shadow, no outsets");
     let shadowed = glass()
         .decoration(BoxShadow::new().blur(8.0))
         .child(child())
         .to_element(&ctx);
-    let outsets = shadowed.retained_v2_paint_outsets(&ctx).expect("shadow outsets");
+    let outsets = shadowed.paint_outsets(&ctx).expect("shadow outsets");
     assert!(outsets.iter().any(|outset| *outset > 0.0), "{outsets:?}");
     assert!(outsets.iter().all(|outset| outset.is_finite() && *outset >= 0.0));
 }

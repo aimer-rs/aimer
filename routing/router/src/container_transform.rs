@@ -746,7 +746,7 @@ mod tests {
             let tree = RenderTree::new();
             let node = tree.add_root(bounds).unwrap();
             let retained = tree.context(node).unwrap();
-            context.with_local_v2_paint_context(retained, |context| element.sync_local_v2_state(context));
+            context.with_local_v2_paint_context(retained, |context| element.sync_paint_state(context));
             (element, tree)
         }
 

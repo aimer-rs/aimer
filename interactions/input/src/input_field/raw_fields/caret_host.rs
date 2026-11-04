@@ -205,11 +205,11 @@ impl Drawable for RawCaretPlacement {
         ctx.canvas.restore();
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
         self.child.sync_paint_geometry(ctx);
@@ -224,50 +224,50 @@ impl Drawable for RawTextFieldHost {
         self.caret.update(ctx);
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
-        if !self.field.sync_local_v2_state(ctx) {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
+        if !self.field.sync_paint_state(ctx) {
             return false;
         }
         self.sync_caret_placement(ctx);
         true
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
-        self.field.draw_local_v2_compatibility(ctx);
+    fn update_retained(&self, ctx: &BuildContext) {
+        self.field.update_retained(ctx);
         self.sync_caret_placement(ctx);
         self.caret.update(ctx);
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
-        self.field.retained_v2_paint_outsets(ctx)
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+        self.field.paint_outsets(ctx)
     }
 
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
-        self.field.local_v2_paint_needs_recording(ctx)
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+        self.field.paint_needs_recording(ctx)
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
-        self.field.can_paint_local_v2(ctx)
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
+        self.field.can_paint(ctx)
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
-        self.field.paint_local_v2(ctx);
+    fn paint(&self, ctx: &BuildContext) {
+        self.field.paint(ctx);
     }
 
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
-        self.field.retained_v2_interaction_size(ctx)
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+        self.field.interaction_size(ctx)
     }
 
-    fn retained_v2_interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
-        self.field.retained_v2_interaction_offset(ctx)
+    fn interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
+        self.field.interaction_offset(ctx)
     }
 
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
-        self.field.adopt_retained_v2_interaction_source(source);
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
+        self.field.adopt_interaction_source(source);
     }
 
-    fn retained_v2_interaction_disagreement(&self) -> Option<aimer_widget::InteractionDisagreement> {
-        self.field.retained_v2_interaction_disagreement()
+    fn interaction_disagreement(&self) -> Option<aimer_widget::InteractionDisagreement> {
+        self.field.interaction_disagreement()
     }
 }
 
@@ -423,8 +423,8 @@ mod tests {
             .unwrap();
         let node_context = tree.context(root).unwrap();
         context.with_local_v2_paint_context(node_context, |context| {
-            assert!(caret.can_paint_local_v2(context));
-            caret.paint_local_v2(context);
+            assert!(caret.can_paint(context));
+            caret.paint(context);
         });
         tree.draw_list_snapshot(root)
             .unwrap()

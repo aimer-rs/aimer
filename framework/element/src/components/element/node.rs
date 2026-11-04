@@ -46,7 +46,7 @@ impl<E: Element + 'static> ElementNode<E> {
     #[inline]
     fn draw_local_v2_compatibility_live(&self, ctx: &BuildContext) {
         let before = element_tree_generation();
-        self.element.draw_local_v2_compatibility(ctx);
+        self.element.update_retained(ctx);
         let after = element_tree_generation();
         if after != before {
             self.set_subtree_generation(after);
@@ -69,14 +69,14 @@ impl<E: Element + 'static> ElementNode<E> {
         render_context: &V2RenderContext,
         render_node: RenderNodeId,
     ) -> bool {
-        if !self.element.can_paint_local_v2(ctx) {
+        if !self.element.can_paint(ctx) {
             return false;
         }
         let Ok(build_context) = render_context.tree.context(render_node) else {
             return false;
         };
         ctx.with_local_v2_paint_context(build_context, |ctx| {
-            self.element.paint_local_v2(ctx)
+            self.element.paint(ctx)
         });
         // An element that paints nothing, a layout container for one, never
         // commits a list. The tree still has to learn that its paint is current.
@@ -101,15 +101,15 @@ impl<E: Element + 'static> ElementNode<E> {
             .tree
             .paint_source(render_node)
             .unwrap_or(RenderPaintSource::Unresolved);
-        if (source == RenderPaintSource::LocalV2 || self.element.can_paint_local_v2(ctx))
-            && !self.sync_local_v2_state(ctx, scope, render_node)
+        if (source == RenderPaintSource::LocalV2 || self.element.can_paint(ctx))
+            && !self.sync_paint_state(ctx, scope, render_node)
         {
             return false;
         }
         if source == RenderPaintSource::LocalV2
             && (super::take_event_paint_invalidated(self.id.get())
                 || take_local_paint_invalidated(self.id.get())
-                || self.element.local_v2_paint_needs_recording(ctx))
+                || self.element.paint_needs_recording(ctx))
         {
             // Recorded again, and damaged only if the picture turns out to differ.
             let _ = scope.tree.refresh_paint(render_node);
@@ -120,7 +120,7 @@ impl<E: Element + 'static> ElementNode<E> {
     }
 
     #[inline]
-    fn sync_local_v2_state(
+    fn sync_paint_state(
         &self,
         ctx: &BuildContext,
         render_context: &V2RenderContext,
@@ -130,7 +130,7 @@ impl<E: Element + 'static> ElementNode<E> {
             return false;
         };
         ctx.with_local_v2_paint_context(paint_context, |ctx| {
-            self.element.sync_local_v2_state(ctx)
+            self.element.sync_paint_state(ctx)
         })
     }
 
@@ -170,7 +170,7 @@ impl<E: Element + 'static> ElementNode<E> {
         #[cfg(not(target_arch = "wasm32"))]
         let retained_animation_candidate = render_context.as_ref().is_some_and(|scope| {
             scope.node_for_element(self.id.get()).is_some()
-                && self.element.can_paint_local_v2(ctx)
+                && self.element.can_paint(ctx)
         });
         #[cfg(not(target_arch = "wasm32"))]
         if retained_animation_candidate {
@@ -180,7 +180,7 @@ impl<E: Element + 'static> ElementNode<E> {
                     // animation, so a later frame without one has to clear it.
                     note_compositor_animation_applied(self.id.get());
                     if frame.valid
-                        && self.element.can_paint_local_v2(ctx)
+                        && self.element.can_paint(ctx)
                         && let Some(scope) = render_context.as_ref()
                         && let Some(render_node) = scope.node_for_element(self.id.get())
                         && scope
@@ -282,7 +282,7 @@ impl<E: Element + 'static> ElementNode<E> {
     }
 
     /// Handles an element that has no retained paint this frame: it cannot
-    /// record one (`can_paint_local_v2` is false), or its state is not valid
+    /// record one (`can_paint` is false), or its state is not valid
     /// enough to paint (a non-finite animation value, say).
     ///
     /// Such an element paints nothing. A node that already holds a list loses
@@ -732,18 +732,18 @@ impl<E: Element + 'static> Drawable for ElementNode<E> {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
-        self.element.can_paint_local_v2(ctx)
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
+        self.element.can_paint(ctx)
     }
 
     #[inline]
-    fn paint_local_v2(&self, ctx: &BuildContext) {
-        self.element.paint_local_v2(ctx)
+    fn paint(&self, ctx: &BuildContext) {
+        self.element.paint(ctx)
     }
 
     #[inline]
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
-        self.element.sync_local_v2_state(ctx)
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
+        self.element.sync_paint_state(ctx)
     }
 
     #[inline]
@@ -752,65 +752,65 @@ impl<E: Element + 'static> Drawable for ElementNode<E> {
     }
 
     #[inline]
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
-        self.element.retained_v2_bounds(ctx)
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+        self.element.paint_bounds(ctx)
     }
 
     #[inline]
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
-        self.element.retained_v2_paint_outsets(ctx)
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+        self.element.paint_outsets(ctx)
     }
 
     #[inline]
-    fn retained_v2_interaction_size(
+    fn interaction_size(
         &self,
         ctx: &BuildContext,
     ) -> Option<aimer_attribute::size::ResolvedSize> {
-        self.element.retained_v2_interaction_size(ctx)
+        self.element.interaction_size(ctx)
     }
 
     #[inline]
-    fn retained_v2_interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
-        self.element.retained_v2_interaction_offset(ctx)
+    fn interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
+        self.element.interaction_offset(ctx)
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(
+    fn adopt_interaction_source(
         &self,
         source: crate::components::interaction_bounds::InteractionSource,
     ) {
-        self.element.adopt_retained_v2_interaction_source(source)
+        self.element.adopt_interaction_source(source)
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<crate::components::interaction_bounds::InteractionDisagreement> {
-        self.element.retained_v2_interaction_disagreement()
+        self.element.interaction_disagreement()
     }
 
     #[inline]
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
     ) -> Option<BuildContext<'a>> {
-        self.element.retained_v2_child_context(ctx, child)
+        self.element.child_context(ctx, child)
     }
 
     #[inline]
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<BuildContext<'a>> {
         self.element
-            .retained_v2_child_context_at(ctx, child, child_index)
+            .child_context_at(ctx, child, child_index)
     }
 
     #[inline]
-    fn retained_v2_child_geometry(
+    fn child_geometry(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -818,11 +818,11 @@ impl<E: Element + 'static> Drawable for ElementNode<E> {
         aimer_cupid::draw_cmd::Rect,
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
-        self.element.retained_v2_child_geometry(ctx, child)
+        self.element.child_geometry(ctx, child)
     }
 
     #[inline]
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -832,17 +832,17 @@ impl<E: Element + 'static> Drawable for ElementNode<E> {
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         self.element
-            .retained_v2_child_geometry_at(ctx, child, child_index)
+            .child_geometry_at(ctx, child, child_index)
     }
 
     #[inline]
-    fn retained_v2_child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
-        self.element.retained_v2_child_clip_radius(ctx, child)
+    fn child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
+        self.element.child_clip_radius(ctx, child)
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
-        self.element.local_v2_paint_needs_recording(ctx)
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+        self.element.paint_needs_recording(ctx)
     }
 
     #[inline]
@@ -1135,13 +1135,13 @@ impl Drawable for AnyElement {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
-        self.as_ref().can_paint_local_v2(ctx)
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
+        self.as_ref().can_paint(ctx)
     }
 
     #[inline]
-    fn paint_local_v2(&self, ctx: &BuildContext) {
-        self.as_ref().paint_local_v2(ctx)
+    fn paint(&self, ctx: &BuildContext) {
+        self.as_ref().paint(ctx)
     }
 
     #[inline]
@@ -1150,8 +1150,8 @@ impl Drawable for AnyElement {
     }
 
     #[inline]
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
-        self.as_ref().sync_local_v2_state(ctx)
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
+        self.as_ref().sync_paint_state(ctx)
     }
 
     #[inline]
@@ -1165,65 +1165,65 @@ impl Drawable for AnyElement {
     }
 
     #[inline]
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
-        self.as_ref().retained_v2_bounds(ctx)
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+        self.as_ref().paint_bounds(ctx)
     }
 
     #[inline]
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
-        self.as_ref().retained_v2_paint_outsets(ctx)
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+        self.as_ref().paint_outsets(ctx)
     }
 
     #[inline]
-    fn retained_v2_interaction_size(
+    fn interaction_size(
         &self,
         ctx: &BuildContext,
     ) -> Option<aimer_attribute::size::ResolvedSize> {
-        self.as_ref().retained_v2_interaction_size(ctx)
+        self.as_ref().interaction_size(ctx)
     }
 
     #[inline]
-    fn retained_v2_interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
-        self.as_ref().retained_v2_interaction_offset(ctx)
+    fn interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
+        self.as_ref().interaction_offset(ctx)
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(
+    fn adopt_interaction_source(
         &self,
         source: crate::components::interaction_bounds::InteractionSource,
     ) {
-        self.as_ref().adopt_retained_v2_interaction_source(source)
+        self.as_ref().adopt_interaction_source(source)
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<crate::components::interaction_bounds::InteractionDisagreement> {
-        self.as_ref().retained_v2_interaction_disagreement()
+        self.as_ref().interaction_disagreement()
     }
 
     #[inline]
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
     ) -> Option<BuildContext<'a>> {
-        self.as_ref().retained_v2_child_context(ctx, child)
+        self.as_ref().child_context(ctx, child)
     }
 
     #[inline]
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<BuildContext<'a>> {
         self.as_ref()
-            .retained_v2_child_context_at(ctx, child, child_index)
+            .child_context_at(ctx, child, child_index)
     }
 
     #[inline]
-    fn retained_v2_child_geometry(
+    fn child_geometry(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -1231,11 +1231,11 @@ impl Drawable for AnyElement {
         aimer_cupid::draw_cmd::Rect,
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
-        self.as_ref().retained_v2_child_geometry(ctx, child)
+        self.as_ref().child_geometry(ctx, child)
     }
 
     #[inline]
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -1245,17 +1245,17 @@ impl Drawable for AnyElement {
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         self.as_ref()
-            .retained_v2_child_geometry_at(ctx, child, child_index)
+            .child_geometry_at(ctx, child, child_index)
     }
 
     #[inline]
-    fn retained_v2_child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
-        self.as_ref().retained_v2_child_clip_radius(ctx, child)
+    fn child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
+        self.as_ref().child_clip_radius(ctx, child)
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
-        self.as_ref().local_v2_paint_needs_recording(ctx)
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+        self.as_ref().paint_needs_recording(ctx)
     }
 
     #[inline]
@@ -1495,13 +1495,13 @@ impl Drawable for Box<dyn Element> {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
-        self.as_ref().can_paint_local_v2(ctx)
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
+        self.as_ref().can_paint(ctx)
     }
 
     #[inline]
-    fn paint_local_v2(&self, ctx: &BuildContext) {
-        self.as_ref().paint_local_v2(ctx)
+    fn paint(&self, ctx: &BuildContext) {
+        self.as_ref().paint(ctx)
     }
 
     #[inline]
@@ -1510,8 +1510,8 @@ impl Drawable for Box<dyn Element> {
     }
 
     #[inline]
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
-        self.as_ref().sync_local_v2_state(ctx)
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
+        self.as_ref().sync_paint_state(ctx)
     }
 
     #[inline]
@@ -1525,65 +1525,65 @@ impl Drawable for Box<dyn Element> {
     }
 
     #[inline]
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
-        self.as_ref().retained_v2_bounds(ctx)
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+        self.as_ref().paint_bounds(ctx)
     }
 
     #[inline]
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
-        self.as_ref().retained_v2_paint_outsets(ctx)
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+        self.as_ref().paint_outsets(ctx)
     }
 
     #[inline]
-    fn retained_v2_interaction_size(
+    fn interaction_size(
         &self,
         ctx: &BuildContext,
     ) -> Option<aimer_attribute::size::ResolvedSize> {
-        self.as_ref().retained_v2_interaction_size(ctx)
+        self.as_ref().interaction_size(ctx)
     }
 
     #[inline]
-    fn retained_v2_interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
-        self.as_ref().retained_v2_interaction_offset(ctx)
+    fn interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
+        self.as_ref().interaction_offset(ctx)
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(
+    fn adopt_interaction_source(
         &self,
         source: crate::components::interaction_bounds::InteractionSource,
     ) {
-        self.as_ref().adopt_retained_v2_interaction_source(source)
+        self.as_ref().adopt_interaction_source(source)
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<crate::components::interaction_bounds::InteractionDisagreement> {
-        self.as_ref().retained_v2_interaction_disagreement()
+        self.as_ref().interaction_disagreement()
     }
 
     #[inline]
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
     ) -> Option<BuildContext<'a>> {
-        self.as_ref().retained_v2_child_context(ctx, child)
+        self.as_ref().child_context(ctx, child)
     }
 
     #[inline]
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
         child_index: usize,
     ) -> Option<BuildContext<'a>> {
         self.as_ref()
-            .retained_v2_child_context_at(ctx, child, child_index)
+            .child_context_at(ctx, child, child_index)
     }
 
     #[inline]
-    fn retained_v2_child_geometry(
+    fn child_geometry(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -1591,11 +1591,11 @@ impl Drawable for Box<dyn Element> {
         aimer_cupid::draw_cmd::Rect,
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
-        self.as_ref().retained_v2_child_geometry(ctx, child)
+        self.as_ref().child_geometry(ctx, child)
     }
 
     #[inline]
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -1605,17 +1605,17 @@ impl Drawable for Box<dyn Element> {
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
         self.as_ref()
-            .retained_v2_child_geometry_at(ctx, child, child_index)
+            .child_geometry_at(ctx, child, child_index)
     }
 
     #[inline]
-    fn retained_v2_child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
-        self.as_ref().retained_v2_child_clip_radius(ctx, child)
+    fn child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
+        self.as_ref().child_clip_radius(ctx, child)
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
-        self.as_ref().local_v2_paint_needs_recording(ctx)
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+        self.as_ref().paint_needs_recording(ctx)
     }
 
     #[inline]

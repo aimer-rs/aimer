@@ -307,7 +307,7 @@ struct DefaultCaretElement {
 }
 
 impl Drawable for DefaultCaretElement {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite()
             && ctx.scale > 0.0
             && ctx.parent_size.width.is_finite()
@@ -316,7 +316,7 @@ impl Drawable for DefaultCaretElement {
             && ctx.parent_size.height >= 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = Canvas::of(ctx);
         if self.context.is_focused() && self.context.is_visible() {
             let (red, green, blue, alpha) = self.color.get().to_rgba();

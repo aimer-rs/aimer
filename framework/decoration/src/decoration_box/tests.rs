@@ -246,8 +246,8 @@ pub(super) fn record(element: &impl Drawable, ctx: &BuildContext) -> Vec<DrawCom
     let tree = RenderTree::new();
     let root = tree.add_root(Rect::new(0.0, 0.0, 200.0, 160.0)).unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
-        assert!(element.can_paint_local_v2(ctx));
-        element.paint_local_v2(ctx);
+        assert!(element.can_paint(ctx));
+        element.paint(ctx);
     });
     tree.draw_list_snapshot(root).unwrap().commands.to_vec()
 }
@@ -282,7 +282,7 @@ async fn decoration_box_paints_the_childs_size_without_border_insets() {
     );
     element.visit_children(&mut |child| {
         assert_eq!(child.computed_size(&ctx), element.computed_size(&ctx));
-        assert_eq!(element.retained_v2_child_clip_radius(&ctx, child), [0.0; 4]);
+        assert_eq!(element.child_clip_radius(&ctx, child), [0.0; 4]);
     });
     assert_eq!(element.retained_clip(&ctx), None);
     let commands = record(&element, &ctx);
@@ -322,11 +322,11 @@ async fn decoration_box_shadow_and_outline_bounds_keep_the_box_at_its_layout_ori
         .to_element(&ctx);
 
     assert_eq!(
-        element.retained_v2_paint_outsets(&ctx),
+        element.paint_outsets(&ctx),
         Some([3.0, 5.0, 6.0, 3.0])
     );
     assert_eq!(
-        element.retained_v2_bounds(&ctx),
+        element.paint_bounds(&ctx),
         Some(ResolvedSize {
             width: 48.0,
             height: 24.0
@@ -336,10 +336,10 @@ async fn decoration_box_shadow_and_outline_bounds_keep_the_box_at_its_layout_ori
         [DrawCommand::DrawShadowRect { rect: shadow, .. }, DrawCommand::FillRect { rect, .. }]
         if *shadow == Rect::new(3.0, 5.0, 24.0, 12.0) && *rect == *shadow));
     element.visit_children(&mut |child| {
-        let child_ctx = element.retained_v2_child_context(&ctx, child).unwrap();
+        let child_ctx = element.child_context(&ctx, child).unwrap();
         assert_eq!(child_ctx.box_constraint, ctx.box_constraint);
         assert_eq!(child_ctx.parent_size, ctx.parent_size);
-        assert_eq!(element.retained_v2_child_geometry(&ctx, child), None);
+        assert_eq!(element.child_geometry(&ctx, child), None);
     });
 }
 
@@ -364,12 +364,12 @@ async fn decoration_box_accepts_owned_and_shared_trait_objects() {
         .child(SizedBox::new().width(24.0).height(12.0))
         .to_element(&ctx);
     record(&element, &ctx);
-    assert!(!element.local_v2_paint_needs_recording(&ctx));
+    assert!(!element.paint_needs_recording(&ctx));
     source.update_color(Color::GREEN);
-    assert!(element.local_v2_paint_needs_recording(&ctx));
+    assert!(element.paint_needs_recording(&ctx));
     assert!(matches!(record(&element, &ctx).as_slice(),
         [DrawCommand::FillRect { color, .. }] if color.g == 255 && color.a == 255));
-    assert!(!element.local_v2_paint_needs_recording(&ctx));
+    assert!(!element.paint_needs_recording(&ctx));
 }
 
 #[tokio::test]
@@ -384,7 +384,7 @@ async fn decoration_box_invalid_geometry_records_an_empty_stable_list() {
             .child(SizedBox::new().width(24.0).height(12.0))
             .to_element(&ctx);
         assert!(record(&element, &ctx).is_empty(), "invalid scale {scale}");
-        assert!(!element.local_v2_paint_needs_recording(&ctx));
+        assert!(!element.paint_needs_recording(&ctx));
     }
     let ctx = context(1.0);
     for width in [-1.0, f32::NAN, f32::INFINITY] {
@@ -393,7 +393,7 @@ async fn decoration_box_invalid_geometry_records_an_empty_stable_list() {
             .child(SizedBox::new().width(width).height(12.0))
             .to_element(&ctx);
         assert!(record(&element, &ctx).is_empty(), "invalid width {width}");
-        assert!(!element.local_v2_paint_needs_recording(&ctx));
+        assert!(!element.paint_needs_recording(&ctx));
     }
 }
 
@@ -420,7 +420,7 @@ async fn decoration_box_invalid_outsets_do_not_poison_the_paint_origin() {
         .to_element(&ctx);
 
     assert_eq!(
-        element.retained_v2_paint_outsets(&ctx),
+        element.paint_outsets(&ctx),
         Some([0.0, 0.0, 0.0, 3.0])
     );
     assert!(matches!(record(&element, &ctx).as_slice(),
@@ -450,7 +450,7 @@ async fn decoration_box_nested_wrappers_preserve_spacing_and_flex_layout() {
         assert_eq!(wrapped.get_size_from_child(), plain.get_size_from_child());
         assert_eq!(wrapped.is_layout_stable(), plain.is_layout_stable());
         wrapped.visit_children(&mut |child| {
-            let child_ctx = wrapped.retained_v2_child_context(&ctx, child).unwrap();
+            let child_ctx = wrapped.child_context(&ctx, child).unwrap();
             assert_eq!(child_ctx.box_constraint, ctx.box_constraint);
             assert_eq!(child_ctx.visible_rect, ctx.visible_rect);
         });
@@ -470,7 +470,7 @@ async fn decoration_box_empty_and_zero_sized_children_are_supported() {
         .to_element(&ctx);
     assert_eq!(empty.layout(&ctx), ResolvedSize::default());
     assert!(record(&empty, &ctx).is_empty());
-    assert!(!empty.local_v2_paint_needs_recording(&ctx));
+    assert!(!empty.paint_needs_recording(&ctx));
 
     let decorated = DecorationBox::new()
         .decoration(BoxDecoration::new().background_color(Color::RED))
@@ -520,13 +520,13 @@ async fn decoration_box_scale_changes_refresh_its_local_paint() {
         .child(SizedBox::new().width(24.0).height(12.0))
         .to_element(&ctx);
     record(&element, &ctx);
-    assert!(!element.local_v2_paint_needs_recording(&ctx));
+    assert!(!element.paint_needs_recording(&ctx));
     ctx.scale = 2.0;
-    assert!(element.local_v2_paint_needs_recording(&ctx));
+    assert!(element.paint_needs_recording(&ctx));
     assert!(matches!(record(&element, &ctx).as_slice(),
         [DrawCommand::DrawShadowRect { shadow_params, rect, .. }, DrawCommand::FillRect { .. }]
         if shadow_params[2] == 2.0 && *rect == Rect::new(6.0, 6.0, 24.0, 12.0)));
-    assert!(!element.local_v2_paint_needs_recording(&ctx));
+    assert!(!element.paint_needs_recording(&ctx));
 }
 
 #[tokio::test]
@@ -543,8 +543,8 @@ async fn decoration_box_constraint_changes_refresh_its_local_paint() {
     assert!(matches!(record(&element, &ctx).as_slice(),
         [DrawCommand::FillRect { rect, .. }] if *rect == Rect::new(0.0, 0.0, 100.0, 12.0)));
     ctx.box_constraint.max_width = 100.0;
-    assert!(element.local_v2_paint_needs_recording(&ctx));
+    assert!(element.paint_needs_recording(&ctx));
     assert!(matches!(record(&element, &ctx).as_slice(),
         [DrawCommand::FillRect { rect, .. }] if *rect == Rect::new(0.0, 0.0, 50.0, 12.0)));
-    assert!(!element.local_v2_paint_needs_recording(&ctx));
+    assert!(!element.paint_needs_recording(&ctx));
 }

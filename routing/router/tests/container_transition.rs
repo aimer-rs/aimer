@@ -60,7 +60,7 @@ fn registered(element: AnyElement, bounds: Rect, ctx: &BuildContext) -> Item {
     let tree = RenderTree::new();
     let node = tree.add_root(bounds).unwrap();
     let retained = tree.context(node).unwrap();
-    assert!(ctx.with_local_v2_paint_context(retained, |ctx| element.sync_local_v2_state(ctx)));
+    assert!(ctx.with_local_v2_paint_context(retained, |ctx| element.sync_paint_state(ctx)));
     Item { element, tree, node }
 }
 

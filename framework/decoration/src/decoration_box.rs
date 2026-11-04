@@ -279,11 +279,11 @@ impl<D: Decoration> Drawable for RawDecorationBox<D> {
         self.with_child_paint_context(ctx, |child_ctx| self.child.sync_paint_geometry(child_ctx));
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let key = self.paint_key(ctx);
         let canvas = Canvas::of(ctx);
         // The marker must head the list; see `COVERAGE_MASK_PIPELINE_NAME`.
@@ -308,25 +308,25 @@ impl<D: Decoration> Drawable for RawDecorationBox<D> {
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         self.recorded.get() != Some(self.paint_key(ctx))
     }
 
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(
             self.paint_geometry(ctx)
                 .map_or(ResolvedSize::default(), |geometry| geometry.size),
         )
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         Some(
             self.paint_geometry(ctx)
                 .map_or([0.0; 4], |geometry| self.paint_outsets(geometry)),
         )
     }
 
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,

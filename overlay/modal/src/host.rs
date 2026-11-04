@@ -328,15 +328,15 @@ impl Drawable for OverlayFollower {
         self.child.update(&child_ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         aimer_canvas::Canvas::of(ctx).finish();
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         self.sync_paint_geometry(ctx);
         let anchor = self.anchor();
         let now = (self.position)();
@@ -348,7 +348,7 @@ impl Drawable for OverlayFollower {
         ctx.set_local_v2_child_presentation_at(0, shift, 1.0)
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         _child: &dyn Element,
@@ -592,11 +592,11 @@ impl Drawable for RawModalHost {
         self.overlay.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         // ModalHost owns no paint of its own. Its app child and modal overlay
         // are separate render nodes. Hosted entries keep independent local
         // lists while their animation updates opacity and transform state.
@@ -720,11 +720,11 @@ impl Drawable for RawModalOverlay {
         self.draw_entries(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         // The hosted entries are retained children. The overlay's own list
         // holds the layers, which paint above every one of them.
         let canvas = aimer_canvas::Canvas::of(ctx);
@@ -733,7 +733,7 @@ impl Drawable for RawModalOverlay {
         canvas.finish();
     }
 
-    fn local_v2_paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
         // A layer may paint something else every frame, and the list recorded
         // while one was installed has to be replaced once the last one goes.
         OverlayLayer::is_installed() || self.recorded_layers.get()
@@ -1251,7 +1251,7 @@ mod tests {
             .unwrap();
         let node_context = tree.context(root).unwrap();
         ctx.with_local_v2_paint_context(node_context, |ctx| {
-            overlay.paint_local_v2(ctx);
+            overlay.paint(ctx);
         });
         tree.draw_list_snapshot(root).unwrap().commands
     }
@@ -1265,7 +1265,7 @@ mod tests {
         super::clear_registry();
         let ctx = headless_context();
         let overlay = super::RawModalOverlay::default();
-        assert!(!overlay.local_v2_paint_needs_recording(&ctx));
+        assert!(!overlay.paint_needs_recording(&ctx));
         assert!(record_overlay(&overlay, &ctx).is_empty());
 
         let handle = super::OverlayLayer::install(Rc::new(|_ctx, canvas| {
@@ -1275,24 +1275,24 @@ mod tests {
             );
             true
         }));
-        assert!(overlay.local_v2_paint_needs_recording(&ctx));
+        assert!(overlay.paint_needs_recording(&ctx));
         let commands = record_overlay(&overlay, &ctx);
         assert!(commands.iter().any(|command| matches!(
             command,
             aimer_cupid::draw_cmd::DrawCommand::FillRect { .. }
         )));
         assert!(
-            overlay.local_v2_paint_needs_recording(&ctx),
+            overlay.paint_needs_recording(&ctx),
             "a layer may paint something else next frame"
         );
 
         handle.remove();
         assert!(
-            overlay.local_v2_paint_needs_recording(&ctx),
+            overlay.paint_needs_recording(&ctx),
             "the list recorded with the layer has to be replaced"
         );
         assert!(record_overlay(&overlay, &ctx).is_empty());
-        assert!(!overlay.local_v2_paint_needs_recording(&ctx));
+        assert!(!overlay.paint_needs_recording(&ctx));
     }
 
     /// Content hosted by an overlay layer is a retained child of the overlay:

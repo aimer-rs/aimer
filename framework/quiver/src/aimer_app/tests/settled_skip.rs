@@ -54,11 +54,11 @@ impl Drawable for CountingRowElement {
         self.updates.set(self.updates.get() + 1);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let shade = 40 + (self.index % 7) as u8 * 30;
         let canvas = Canvas::of(ctx);
         canvas.fill_rect(

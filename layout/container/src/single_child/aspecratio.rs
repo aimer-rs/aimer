@@ -173,7 +173,7 @@ struct RawAspectRatio {
 }
 
 impl Drawable for RawAspectRatio {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let size = self.computed_size(ctx);
         ctx.scale.is_finite()
             && ctx.scale > 0.0
@@ -185,7 +185,7 @@ impl Drawable for RawAspectRatio {
             && size.height <= 1_000_000.0
     }
 
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         _child: &dyn Element,

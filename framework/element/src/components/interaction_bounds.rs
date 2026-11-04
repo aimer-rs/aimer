@@ -4,7 +4,7 @@
 //! Elements used to measure their interaction rectangle while updating, by
 //! reading the legacy canvas transform. The retained render tree already knows
 //! every node's world position, so an element that opts in through
-//! [`Drawable::retained_v2_interaction_size`](crate::Drawable) is handed a live
+//! [`Drawable::interaction_size`](crate::Drawable) is handed a live
 //! [`InteractionSource`] after each tree synchronization. [`InteractionBounds`]
 //! owns the transition: until the first adoption it behaves like a plain
 //! [`CacheBounds`]; afterwards the render tree answers hit tests, read when they

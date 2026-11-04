@@ -572,8 +572,8 @@ impl VisitorElement for NavigationFrameElement {
 }
 
 impl Drawable for NavigationFrameElement {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool { ctx.scale.is_finite() && ctx.scale > 0.0 }
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool { ctx.scale.is_finite() && ctx.scale > 0.0 }
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         // A trackpad swipe glides on after the fingers lift, and nothing says when it
         // stops but the events drying up, so every frame asks whether they have.
         if self.is_swipe() {
@@ -632,21 +632,21 @@ impl Drawable for NavigationFrameElement {
     }
     fn retained_clip(&self, ctx: &BuildContext) -> Option<Rect> {
         let playback = self.playback.as_ref()?;
-        if playback.finished.get() || !self.can_paint_local_v2(ctx) { return None; }
+        if playback.finished.get() || !self.can_paint(ctx) { return None; }
         let size = self.logical_size(ctx);
         (size.width.is_finite() && size.height.is_finite() && size.width >= 0.0 && size.height >= 0.0)
             .then_some(Rect::new(0.0, 0.0, size.width, size.height))
     }
     /// The backing is as large as the host and at its corner; it paints the window
     /// within that, so it is neither moved nor clipped.
-    fn retained_v2_child_geometry_at(&self, ctx: &BuildContext, child: &dyn Element, _: usize)
+    fn child_geometry_at(&self, ctx: &BuildContext, child: &dyn Element, _: usize)
         -> Option<(Rect, Option<Rect>)>
     {
         if !self.backing().is_some_and(|backing| std::ptr::eq(child, backing.as_ref())) { return None; }
         let size = self.logical_size(ctx);
         Some((Rect::new(0.0, 0.0, size.width, size.height), None))
     }
-    fn retained_v2_child_context<'a>(&self, ctx: &BuildContext<'a>, _: &dyn Element) -> Option<BuildContext<'a>> {
+    fn child_context<'a>(&self, ctx: &BuildContext<'a>, _: &dyn Element) -> Option<BuildContext<'a>> {
         // This is an overlay, not a layout container. With two children the
         // generic walker cannot infer transparency and would constrain padded
         // pages again to their already-reduced content sizes.
@@ -664,7 +664,7 @@ impl Drawable for NavigationFrameElement {
         }
         self.cleanup();
     }
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         if let Some(child) = self.outgoing() { child.update(ctx); }
         self.incoming.update(ctx);
         if let Some(child) = self.anchor() { child.update(ctx); }
@@ -753,9 +753,9 @@ impl VisitorElement for PageElement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) { visitor(self.child.as_ref()); }
 }
 impl Drawable for PageElement {
-    fn can_paint_local_v2(&self, _: &BuildContext) -> bool { true }
+    fn can_paint(&self, _: &BuildContext) -> bool { true }
     fn update(&self, ctx: &BuildContext) { self.scoped(ctx, |ctx| self.child.update(ctx)); }
-    fn retained_v2_child_context<'a>(&self, ctx: &BuildContext<'a>, _: &dyn Element) -> Option<BuildContext<'a>> {
+    fn child_context<'a>(&self, ctx: &BuildContext<'a>, _: &dyn Element) -> Option<BuildContext<'a>> {
         self.scoped(ctx, |ctx| {
             let mut child = ctx.clone();
             child.inherited_states = Rc::new(RefCell::new(ctx.inherited_states.borrow().clone()));

@@ -260,7 +260,7 @@ fn is_unbounded(value: f32) -> bool {
 macro_rules! impl_spacing_element {
     ($raw:ident, $field:ident, $name:literal) => {
         impl Drawable for $raw {
-            fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+            fn can_paint(&self, ctx: &BuildContext) -> bool {
                 let spacing = self.resolved(ctx);
                 let size = self.computed_size(ctx);
                 ctx.scale.is_finite()
@@ -279,7 +279,7 @@ macro_rules! impl_spacing_element {
                     && size.height <= 1_000_000.0
             }
 
-            fn retained_v2_child_context<'a>(
+            fn child_context<'a>(
                 &self,
                 ctx: &BuildContext<'a>,
                 _child: &dyn Element,
@@ -290,7 +290,7 @@ macro_rules! impl_spacing_element {
                 Some(translated_context(ctx, self.resolved(ctx)))
             }
 
-            fn retained_v2_child_geometry(
+            fn child_geometry(
                 &self,
                 ctx: &BuildContext,
                 child: &dyn Element,
@@ -304,7 +304,7 @@ macro_rules! impl_spacing_element {
                 let spacing = self.resolved(ctx);
                 let child_ctx = translated_context(ctx, spacing);
                 let size = child
-                    .retained_v2_bounds(&child_ctx)
+                    .paint_bounds(&child_ctx)
                     .unwrap_or_else(|| child.content_size(&child_ctx));
                 let position = child.pos().unwrap_or_default();
                 let bounds = aimer_cupid::draw_cmd::Rect::new(

@@ -27,7 +27,7 @@ pub struct RecordedPaint {
 /// Records the retained list of every element under (and including) `root`
 /// that can paint locally, in paint order, the way the frame loop does.
 ///
-/// Recording only reads: it does not run `sync_local_v2_state`, which saves hit
+/// Recording only reads: it does not run `sync_paint_state`, which saves hit
 /// bounds from the canvas transform and would overwrite the positions an
 /// earlier `update` stored. Run `layout`/`update` first when the paint depends
 /// on state they establish.
@@ -56,18 +56,18 @@ pub fn all_commands(recorded: &[RecordedPaint]) -> Vec<&DrawCommand> {
 
 fn record(element: &dyn Element, ctx: &BuildContext<'_>, recorded: &mut Vec<RecordedPaint>) {
     let size = element
-        .retained_v2_bounds(ctx)
+        .paint_bounds(ctx)
         .unwrap_or_else(|| element.content_size(ctx));
     let position = element.pos().unwrap_or_default();
 
-    if element.can_paint_local_v2(ctx) {
+    if element.can_paint(ctx) {
         let tree = RenderTree::new();
         let node = tree
             .add_root(Rect::new(0.0, 0.0, 1_000_000.0, 1_000_000.0))
             .expect("a finite root rectangle");
         let node_context = tree.context(node).expect("a fresh node has a context");
         ctx.with_local_v2_paint_context(node_context, |ctx| {
-            element.paint_local_v2(ctx);
+            element.paint(ctx);
         });
         if let Ok(snapshot) = tree.draw_list_snapshot(node) {
             recorded.push(RecordedPaint {
@@ -104,7 +104,7 @@ fn record(element: &dyn Element, ctx: &BuildContext<'_>, recorded: &mut Vec<Reco
     }
     element.visit_retained_v2_children(&mut |index, child| {
         let child_ctx = element
-            .retained_v2_child_context_at(ctx, child, index)
+            .child_context_at(ctx, child, index)
             .unwrap_or_else(|| base.clone());
         record(child, &child_ctx, recorded);
     });

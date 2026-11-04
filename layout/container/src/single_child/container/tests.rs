@@ -295,8 +295,8 @@ fn record_local_v2(
         .unwrap();
     let node_context = tree.context(root).unwrap();
     ctx.with_local_v2_paint_context(node_context, |ctx| {
-        assert!(element.can_paint_local_v2(ctx));
-        element.paint_local_v2(ctx);
+        assert!(element.can_paint(ctx));
+        element.paint(ctx);
     });
     tree.draw_list_snapshot(root).unwrap().commands
 }
@@ -412,14 +412,14 @@ fn rounded_child_clip(decoration: BoxDecoration, scale: f32) -> (bool, [f32; 4])
         .child(crate::ZeroSizedBox)
         .to_element(&ctx);
     // The render tree walker asks the inner node, not the `AnyElement`
-    // wrapper, which does not forward `can_paint_local_v2`.
+    // wrapper, which does not forward `can_paint`.
     let node: &dyn Element = element.as_ref();
     let mut child = None;
     node.visit_children(&mut |element| child = Some(element));
     let child = child.expect("the container exposes its child");
     (
-        node.can_paint_local_v2(&ctx),
-        node.retained_v2_child_clip_radius(&ctx, child),
+        node.can_paint(&ctx),
+        node.child_clip_radius(&ctx, child),
     )
 }
 
@@ -494,14 +494,14 @@ fn unbounded_container(max_width: f32, max_height: f32) -> UnboundedProbe {
     node.visit_children(&mut |element| child = Some(element));
     let child = child.expect("the container exposes its child");
     UnboundedProbe {
-        can_paint: node.can_paint_local_v2(&ctx),
+        can_paint: node.can_paint(&ctx),
         clip: node
-            .retained_v2_child_geometry(&ctx, child)
+            .child_geometry(&ctx, child)
             .and_then(|(_, clip)| clip),
         child_max: node
-            .retained_v2_child_context(&ctx, child)
+            .child_context(&ctx, child)
             .map(|ctx| (ctx.box_constraint.max_width, ctx.box_constraint.max_height)),
-        outsets: node.retained_v2_paint_outsets(&ctx),
+        outsets: node.paint_outsets(&ctx),
     }
 }
 
@@ -908,10 +908,10 @@ async fn custom_decoration_geometry_is_applied_in_logical_pixels_through_trait_o
     );
     element.visit_children(&mut |child| {
         assert_eq!(
-            element.retained_v2_child_clip_radius(&ctx, child),
+            element.child_clip_radius(&ctx, child),
             [5.0, 6.0, 7.0, 8.0]
         );
-        let (bounds, clip) = element.retained_v2_child_geometry(&ctx, child).unwrap();
+        let (bounds, clip) = element.child_geometry(&ctx, child).unwrap();
         assert_eq!(bounds, Rect::new(10.0, 12.0, 24.0, 12.0));
         assert_eq!(clip, Some(Rect::new(-3.0, -3.0, 72.0, 28.0)));
     });
@@ -941,22 +941,22 @@ async fn custom_decoration_revisions_refresh_paint_and_invalid_insets_are_saniti
     );
     element.visit_children(&mut |child| {
         assert_eq!(
-            element.retained_v2_child_geometry(&ctx, child).unwrap().1,
+            element.child_geometry(&ctx, child).unwrap().1,
             None
         );
     });
     record_local_v2(&element, &ctx);
-    assert!(!element.local_v2_paint_needs_recording(&ctx));
+    assert!(!element.paint_needs_recording(&ctx));
     for next in [1, 1 << 32, u64::MAX, 0] {
         revision.set(next);
-        assert!(element.local_v2_paint_needs_recording(&ctx));
+        assert!(element.paint_needs_recording(&ctx));
         let commands = record_local_v2(&element, &ctx);
         let expected = if next == 0 { (255, 0) } else { (0, 255) };
         assert!(
             matches!(commands.as_ref(), [aimer_cupid::draw_cmd::DrawCommand::FillRect { color, .. }]
             if (color.r, color.b) == expected)
         );
-        assert!(!element.local_v2_paint_needs_recording(&ctx));
+        assert!(!element.paint_needs_recording(&ctx));
     }
 }
 
@@ -985,7 +985,7 @@ async fn decoration_method_preserves_box_borders_clipping_and_fallback_color() {
         }
     );
     element.visit_children(&mut |child| {
-        assert_eq!(element.retained_v2_child_clip_radius(&ctx, child), [8.0; 4]);
+        assert_eq!(element.child_clip_radius(&ctx, child), [8.0; 4]);
     });
     let commands = record_local_v2(&element, &ctx);
     assert!(
@@ -1024,7 +1024,7 @@ async fn generic_decoration_conversion_and_retained_checks_allocate_nothing_afte
     );
     record_local_v2(&element, &ctx);
     let before = allocations();
-    let unchanged = (0..1_024).all(|_| !element.local_v2_paint_needs_recording(&ctx));
+    let unchanged = (0..1_024).all(|_| !element.paint_needs_recording(&ctx));
     let checking = allocations() - before;
     assert!(unchanged);
     assert_eq!(checking, 0);

@@ -453,7 +453,7 @@ impl<P: ImageProvider> RawImageWidget<P> {
 
 impl<P: ImageProvider> Drawable for RawImageWidget<P> {
     fn update(&self, ctx: &BuildContext) {
-        // The image, or the error checkerboard, is painted by `paint_local_v2`.
+        // The image, or the error checkerboard, is painted by `paint`.
         // This traversal advances the provider and visits the retained loading
         // and error elements, which own their own render nodes.
         match self.refresh(ctx) {
@@ -473,13 +473,13 @@ impl<P: ImageProvider> Drawable for RawImageWidget<P> {
 
     /// Every state has a local list: the image, the error checkerboard, or
     /// nothing while loading (the loading and error elements are retained
-    /// children). Provider work is done by `sync_local_v2_state`, not here.
+    /// children). Provider work is done by `sync_paint_state`, not here.
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         self.sync_paint_geometry(ctx);
         self.refresh(ctx);
         self.sync_animation(ctx);
@@ -487,11 +487,11 @@ impl<P: ImageProvider> Drawable for RawImageWidget<P> {
     }
 
     #[inline]
-    fn local_v2_paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
         self.paint_changed.get()
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         let (_, target, geometry, _) = self.local_v2_image_paint(ctx)?;
         if geometry.use_cover {
             return None;
@@ -510,7 +510,7 @@ impl<P: ImageProvider> Drawable for RawImageWidget<P> {
             .then_some(outsets)
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         self.paint_changed.set(false);
         let canvas = aimer_canvas::Canvas::of(ctx);
         let scale = ctx.scale;
@@ -742,10 +742,10 @@ mod tests {
             bytes: two_frame_gif(),
         });
 
-        image.sync_local_v2_state(&ctx);
+        image.sync_paint_state(&ctx);
 
         assert!(
-            image.local_v2_paint_needs_recording(&ctx),
+            image.paint_needs_recording(&ctx),
             "the first animation frame must be recorded"
         );
         let (id, _, _, resource) = image
@@ -771,12 +771,12 @@ mod tests {
         });
         image.animation = GifSlot::new(GifOptions::new().controller(controller.clone()));
 
-        image.sync_local_v2_state(&ctx);
+        image.sync_paint_state(&ctx);
         let first = image.local_v2_image_paint(&ctx).unwrap().3.unwrap();
         image.paint_changed.set(false);
-        image.sync_local_v2_state(&ctx);
+        image.sync_paint_state(&ctx);
 
-        assert!(!image.local_v2_paint_needs_recording(&ctx));
+        assert!(!image.paint_needs_recording(&ctx));
         let still_first = image.local_v2_image_paint(&ctx).unwrap().3.unwrap();
         assert_eq!(first.texture_id(), still_first.texture_id());
         assert_eq!(controller.current_frame(), 0);
@@ -830,9 +830,9 @@ mod tests {
         let image_node = tree.add_root(image_bounds).unwrap();
         let sibling_bounds = Rect::new(30.0, 0.0, 8.0, 8.0);
         let sibling_node = tree.add_root(sibling_bounds).unwrap();
-        assert!(image.can_paint_local_v2(&ctx));
+        assert!(image.can_paint(&ctx));
         let image_context = tree.context(image_node).unwrap();
-        ctx.with_local_v2_paint_context(image_context, |ctx| image.paint_local_v2(ctx));
+        ctx.with_local_v2_paint_context(image_context, |ctx| image.paint(ctx));
         tree.set_paint_source(image_node, RenderPaintSource::LocalV2)
             .unwrap();
 
@@ -863,7 +863,7 @@ mod tests {
         tree.take_damage();
         tree.invalidate_paint(image_node).unwrap();
         let image_context = tree.context(image_node).unwrap();
-        ctx.with_local_v2_paint_context(image_context, |ctx| image.paint_local_v2(ctx));
+        ctx.with_local_v2_paint_context(image_context, |ctx| image.paint(ctx));
 
         assert_eq!(
             tree.draw_list_revision(image_node).unwrap(),
@@ -880,7 +880,7 @@ mod tests {
         let tree = RenderTree::new();
         let node = tree.add_root(Rect::new(0.0, 0.0, 16.0, 16.0)).unwrap();
         let node_context = tree.context(node).unwrap();
-        ctx.with_local_v2_paint_context(node_context, |ctx| image.paint_local_v2(ctx));
+        ctx.with_local_v2_paint_context(node_context, |ctx| image.paint(ctx));
         tree.draw_list_snapshot(node).unwrap()
     }
 
@@ -891,7 +891,7 @@ mod tests {
         let loading = loading_then_error_image(calls.clone());
 
         assert!(
-            loading.can_paint_local_v2(&ctx),
+            loading.can_paint(&ctx),
             "a loading image is an empty local list, never a legacy island"
         );
         assert!(record_paint(&loading, &ctx).commands.is_empty());
@@ -910,11 +910,11 @@ mod tests {
         assert_eq!(record_paint(&stale, &ctx).commands.len(), 1);
 
         let _new_texture = ctx.canvas.load_image(&[5, 6, 7, 8], 1, 1);
-        assert!(stale.can_paint_local_v2(&ctx));
+        assert!(stale.can_paint(&ctx));
         assert!(record_paint(&stale, &ctx).commands.is_empty());
         assert_eq!(stale_calls.get(), 0, "recording must not poll the provider");
 
-        assert!(stale.sync_local_v2_state(&ctx));
+        assert!(stale.sync_paint_state(&ctx));
         assert_eq!(stale_calls.get(), 1, "syncing revalidates the stale image");
         assert_eq!(record_paint(&stale, &ctx).commands.len(), 1);
     }
@@ -925,25 +925,25 @@ mod tests {
         let calls = Rc::new(Cell::new(0));
         let image = loading_then_error_image(calls.clone());
 
-        assert!(image.sync_local_v2_state(&ctx));
-        assert!(image.local_v2_paint_needs_recording(&ctx));
+        assert!(image.sync_paint_state(&ctx));
+        assert!(image.paint_needs_recording(&ctx));
         record_paint(&image, &ctx);
         assert!(
-            !image.local_v2_paint_needs_recording(&ctx),
+            !image.paint_needs_recording(&ctx),
             "recording consumes the pending paint change"
         );
 
-        assert!(image.sync_local_v2_state(&ctx));
+        assert!(image.sync_paint_state(&ctx));
         assert_eq!(calls.get(), 2);
         assert!(
-            image.local_v2_paint_needs_recording(&ctx),
+            image.paint_needs_recording(&ctx),
             "loading to error changes what the node must paint"
         );
         record_paint(&image, &ctx);
 
-        assert!(image.sync_local_v2_state(&ctx));
+        assert!(image.sync_paint_state(&ctx));
         assert!(
-            !image.local_v2_paint_needs_recording(&ctx),
+            !image.paint_needs_recording(&ctx),
             "an unchanged result must not re-record"
         );
     }
@@ -952,8 +952,8 @@ mod tests {
     fn a_failed_image_paints_the_error_checkerboard_locally() {
         let ctx = context();
         let image = loading_then_error_image(Rc::new(Cell::new(0)));
-        image.sync_local_v2_state(&ctx);
-        image.sync_local_v2_state(&ctx);
+        image.sync_paint_state(&ctx);
+        image.sync_paint_state(&ctx);
 
         let snapshot = record_paint(&image, &ctx);
         assert!(matches!(
@@ -986,9 +986,9 @@ mod tests {
             vec![loading],
             "an unsettled image shows its loading element"
         );
-        image.sync_local_v2_state(&ctx);
+        image.sync_paint_state(&ctx);
         assert_eq!(count(&image), vec![loading]);
-        image.sync_local_v2_state(&ctx);
+        image.sync_paint_state(&ctx);
         assert_eq!(count(&image), vec![error]);
     }
 
@@ -1002,9 +1002,9 @@ mod tests {
         let texture_id = ctx.canvas.load_image(&[1, 2, 3, 4], 1, 1);
         image.cache_result(ImageResult::Success(texture_id), &ctx);
 
-        assert!(image.can_paint_local_v2(&ctx));
+        assert!(image.can_paint(&ctx));
         assert_eq!(
-            image.retained_v2_paint_outsets(&ctx),
+            image.paint_outsets(&ctx),
             Some([8.0, 8.0, 8.0, 8.0]),
             "a 2x image overflows its 16px box by half its size on every side"
         );

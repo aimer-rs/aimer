@@ -72,11 +72,11 @@ fn assert_unchanged_checks_allocate_nothing(element: &dyn Element, ctx: &BuildCo
     let tree = RenderTree::new();
     let root = tree.add_root(Rect::new(0.0, 0.0, 24.0, 12.0)).unwrap();
     ctx.with_local_v2_paint_context(tree.context(root).unwrap(), |ctx| {
-        element.paint_local_v2(ctx)
+        element.paint(ctx)
     });
     let revision = tree.draw_list_revision(root).unwrap();
     let before = ALLOCATIONS.with(Cell::get);
-    let unchanged = (0..1_024).all(|_| !element.local_v2_paint_needs_recording(ctx));
+    let unchanged = (0..1_024).all(|_| !element.paint_needs_recording(ctx));
     let checking = ALLOCATIONS.with(Cell::get) - before;
     assert!(unchanged, "{what}");
     assert_eq!(tree.draw_list_revision(root).unwrap(), revision);
@@ -133,7 +133,7 @@ async fn a_foreground_layer_reuses_its_recording_without_allocating() {
     element.visit_children(&mut |child| layer = Some(child));
     let layer = layer.expect("the foreground layer");
     let layer_ctx = element
-        .retained_v2_child_context_at(&ctx, layer, 1)
+        .child_context_at(&ctx, layer, 1)
         .expect("the wrapper sizes its layer");
     assert_eq!(layer.debug_name(), "ForegroundDecorationLayer");
     assert_unchanged_checks_allocate_nothing(layer, &layer_ctx, "foreground layer");

@@ -455,11 +455,11 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
         self.child.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
@@ -467,17 +467,17 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
     /// The region hit-tests the border box its child reports, which can be
     /// larger than the content box the render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.child.computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.cached_bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.cached_bounds.disagreement("MouseRegion")
@@ -834,7 +834,7 @@ mod tests {
         };
         let tree = RenderTree::new();
         let node = tree.add_root(Rect::new(200.0, 200.0, 10.0, 10.0)).unwrap();
-        region.adopt_retained_v2_interaction_source(aimer_widget::InteractionSource::new(
+        region.adopt_interaction_source(aimer_widget::InteractionSource::new(
             tree,
             node,
             (50.0, 50.0),
@@ -880,7 +880,7 @@ mod tests {
         );
 
         assert_eq!(
-            region.retained_v2_interaction_size(&ctx),
+            region.interaction_size(&ctx),
             Some(region.child.computed_size(&ctx))
         );
     }

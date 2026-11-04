@@ -45,11 +45,11 @@ impl LayoutElement for WidthProbe {
 }
 
 impl Drawable for WidthProbe {
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         aimer_canvas::Canvas::of(ctx).finish();
     }
 }

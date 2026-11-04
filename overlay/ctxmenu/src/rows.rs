@@ -401,17 +401,17 @@ impl RawContextMenuRows {
 impl Drawable for RawContextMenuRows {
     /// The menu hit-tests the rows' whole area, which is also its node.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.computed_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("ContextMenuRows")
@@ -422,19 +422,19 @@ impl Drawable for RawContextMenuRows {
         // elements themselves. This traversal publishes where the rows are and
         // visits them.
         self.sync_paint_geometry(ctx);
-        self.draw_local_v2_compatibility(ctx);
+        self.update_retained(ctx);
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         !self.items.is_empty() && scale_of(ctx).is_finite() && scale_of(ctx) > 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         let scale = scale_of(ctx);
         let local = self.local_row_rects(ctx);
         for (index, row) in self.row_elements.iter().enumerate() {
@@ -458,7 +458,7 @@ impl Drawable for RawContextMenuRows {
         }
     }
 
-    fn local_v2_paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
         false
     }
 
@@ -488,7 +488,7 @@ impl Drawable for RawContextMenuRows {
         let _ = self.text_metrics(ctx);
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -506,7 +506,7 @@ impl Drawable for RawContextMenuRows {
         Some(child_ctx)
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -577,7 +577,7 @@ impl RawContextMenuRow {
 }
 
 impl Drawable for RawContextMenuRow {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let size = ctx.parent_size;
         scale_of(ctx).is_finite()
             && scale_of(ctx) > 0.0
@@ -587,7 +587,7 @@ impl Drawable for RawContextMenuRow {
             && size.height >= 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let scale = scale_of(ctx);
         let size = ResolvedSize {
             width: ctx.parent_size.width / scale,
@@ -647,7 +647,7 @@ impl Drawable for RawContextMenuRow {
         self.painted_highlight.set(lit);
     }
 
-    fn local_v2_paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
         (self.paint_state.highlighted.get() == Some(self.index)) != self.painted_highlight.get()
     }
 }

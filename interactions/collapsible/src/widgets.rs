@@ -194,17 +194,17 @@ impl AnimatedCollapseElement {
 
 impl Drawable for AnimatedCollapseElement {
     /// Hit-tested over the body as it currently occupies space.
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.current_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("AnimatedCollapse")
@@ -231,14 +231,14 @@ impl Drawable for AnimatedCollapseElement {
     }
 
     #[inline]
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
     #[inline]
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         let progress = self.progress();
         let natural = self.natural_size(ctx);
         let size = ResolvedSize {
@@ -251,7 +251,7 @@ impl Drawable for AnimatedCollapseElement {
         true
     }
 
-    fn draw_local_v2_compatibility(&self, ctx: &BuildContext) {
+    fn update_retained(&self, ctx: &BuildContext) {
         let progress = self.progress();
         let natural = self.natural_size(ctx);
         let size = ResolvedSize {
@@ -279,7 +279,7 @@ impl Drawable for AnimatedCollapseElement {
         ))
     }
 
-    fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn paint_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         let natural = self.natural_size(ctx);
         Some(ResolvedSize {
             width: nonnegative_extent(natural.width),
@@ -287,7 +287,7 @@ impl Drawable for AnimatedCollapseElement {
         })
     }
 
-    fn retained_v2_child_context<'a>(
+    fn child_context<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,

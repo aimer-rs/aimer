@@ -382,7 +382,7 @@ impl RawTextField {
             if let Some((text, style)) = placeholder {
                 let text_widget = self.build_text_widget(text, &style, self.text_align);
                 let _ = text_widget.computed_size(&text_ctx);
-                if !text_widget.can_paint_local_v2(&text_ctx) {
+                if !text_widget.can_paint(&text_ctx) {
                     return None;
                 }
             }
@@ -394,7 +394,7 @@ impl RawTextField {
                 self.horizontal_text_align(),
             );
             let _ = text_widget.computed_size(&text_ctx);
-            if !text_widget.can_paint_local_v2(&text_ctx) {
+            if !text_widget.can_paint(&text_ctx) {
                 return None;
             }
         }
@@ -405,7 +405,7 @@ impl RawTextField {
                 let (preedit, _) = presentation_preedit(self.input_type, preedit, None);
                 let text_widget = self.build_text_widget(preedit.as_ref(), &style, TextAlign::TopLeft);
                 let _ = text_widget.computed_size(&text_ctx);
-                text_widget.can_paint_local_v2(&text_ctx)
+                text_widget.can_paint(&text_ctx)
             });
             if !supports_preedit {
                 return None;
@@ -449,29 +449,29 @@ impl RawTextField {
 
 impl Drawable for RawTextField {
     /// Hit-tested over the box inside the outline, sized as it is drawn.
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         let (width, height) = self.compute_dimensions(ctx);
         Some(ResolvedSize { width, height })
     }
 
     /// The box starts inside the outline strokes.
-    fn retained_v2_interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
+    fn interaction_offset(&self, ctx: &BuildContext) -> (f32, f32) {
         let (width, height) = self.compute_dimensions(ctx);
         let (left, top, _, _) = self.outline_strokes(width, height, ctx.scale);
         (left, top)
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.cached_bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(&self) -> Option<aimer_widget::InteractionDisagreement> {
+    fn interaction_disagreement(&self) -> Option<aimer_widget::InteractionDisagreement> {
         self.cached_bounds.disagreement("TextField")
     }
 
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         if self.observed_revision.get() != self.controller.revision() {
             self.sync_cursor_from_controller();
             self.sync_preedit_from_controller();
@@ -802,7 +802,7 @@ impl Drawable for RawTextField {
         true
     }
 
-    fn draw_local_v2_compatibility(&self, _ctx: &BuildContext) {}
+    fn update_retained(&self, _ctx: &BuildContext) {}
 
     fn update(&self, ctx: &BuildContext) {
         if self.observed_revision.get() != self.controller.revision() {
@@ -1046,7 +1046,7 @@ impl Drawable for RawTextField {
                 self.publish_caret(cursor_x, cursor_top, 1.5 * scale, cursor_height, scale);
                 if self.is_composing() {
                     // The insertion point inside a composition is published here;
-                    // the composition itself is painted by `paint_local_v2`.
+                    // the composition itself is painted by `paint`.
                     self.with_preedit(|preedit| {
                         self.sync_preedit_caret(
                             preedit,
@@ -1062,7 +1062,7 @@ impl Drawable for RawTextField {
 
             }
         } else {
-            // --- Text (painted by `paint_local_v2`) ---
+            // --- Text (painted by `paint`) ---
             let is_multiline = self.max_lines != Some(1);
 
             if is_multiline {
@@ -1134,7 +1134,7 @@ impl Drawable for RawTextField {
                     );
                     if self.is_composing() {
                         // The insertion point inside a composition is published here;
-                        // the composition itself is painted by `paint_local_v2`.
+                        // the composition itself is painted by `paint`.
                         self.with_preedit(|preedit| {
                             self.sync_preedit_caret(
                                 preedit,
@@ -1195,7 +1195,7 @@ impl Drawable for RawTextField {
                     self.publish_caret(cursor_x, cursor_top, 1.5 * scale, cursor_height, scale);
                     if self.is_composing() {
                         // The insertion point inside a composition is published here;
-                        // the composition itself is painted by `paint_local_v2`.
+                        // the composition itself is painted by `paint`.
                         self.with_preedit(|preedit| {
                             self.sync_preedit_caret(
                                 preedit,
@@ -1221,7 +1221,7 @@ impl Drawable for RawTextField {
 
     }
 
-    fn retained_v2_paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
+    fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         let layout = self.local_v2_layout(ctx)?;
         let full_size = self.computed_size(ctx);
         let scale = layout.scale;
@@ -1256,19 +1256,19 @@ impl Drawable for RawTextField {
         outsets.iter().any(|outset| *outset > 0.0).then_some(outsets)
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.local_v2_layout(ctx).is_some()
     }
 
-    fn local_v2_paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, _ctx: &BuildContext) -> bool {
         self.retained_v2_paint_state.get() != Some(self.retained_v2_paint_state())
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let layout = self
             .local_v2_layout(ctx)
             .expect("RawTextField v2 support must be checked before painting");
-        let paint_outsets = self.retained_v2_paint_outsets(ctx).unwrap_or([0.0; 4]);
+        let paint_outsets = self.paint_outsets(ctx).unwrap_or([0.0; 4]);
         let canvas = Canvas::of(ctx);
         let translated = paint_outsets[0] != 0.0 || paint_outsets[1] != 0.0;
         if translated {

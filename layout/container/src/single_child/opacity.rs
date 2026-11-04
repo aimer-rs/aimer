@@ -96,15 +96,15 @@ impl Drawable for RawOpacity {
         self.child.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }
 
-    fn paint_local_v2(&self, _ctx: &BuildContext) {}
+    fn paint(&self, _ctx: &BuildContext) {}
 
     /// The alpha is the child node's presentation, so the child keeps its
     /// recorded paint and the render tree dims whatever it shows.
-    fn sync_local_v2_state(&self, ctx: &BuildContext) -> bool {
+    fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
         self.child.sync_paint_geometry(ctx);
         ctx.set_local_v2_child_presentation_at(0, aimer_canvas::Mat3::identity(), self.opacity)
     }

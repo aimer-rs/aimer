@@ -1964,11 +1964,11 @@ mod tests {
     }
 
     impl Drawable for HeadlessVirtualizedRowElement {
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             self.paints.set(self.paints.get() + 1);
             let (red, green, blue, alpha) =
                 headless_virtualized_row_color(self.row_index).to_rgba();
@@ -2215,11 +2215,11 @@ mod tests {
     }
 
     impl Drawable for HeadlessHorizontalVirtualizedItemElement {
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             paint_horizontal_item(
                 ctx,
                 self.paints.as_ref(),
@@ -2251,11 +2251,11 @@ mod tests {
     }
 
     impl Drawable for HeadlessHorizontalStatefulItemElement {
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             paint_horizontal_item(ctx, self.paints.as_ref(), self.color, self.height);
         }
     }
@@ -2996,11 +2996,11 @@ mod tests {
             self.child.update(ctx);
         }
 
-        fn can_paint_local_v2(&self, _ctx: &BuildContext) -> bool {
+        fn can_paint(&self, _ctx: &BuildContext) -> bool {
             true
         }
 
-        fn paint_local_v2(&self, ctx: &BuildContext) {
+        fn paint(&self, ctx: &BuildContext) {
             self.paints.set(self.paints.get() + 1);
             let canvas = aimer_canvas::Canvas::of(ctx);
             canvas.fill_rect(

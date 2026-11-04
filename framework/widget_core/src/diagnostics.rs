@@ -154,11 +154,11 @@ impl ErrorElement {
 }
 
 impl Drawable for ErrorElement {
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         Self::can_record_message(ctx)
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         Self::record_message(ctx, &self.message);
     }
 }
@@ -272,11 +272,11 @@ impl Drawable for RawOverflowIndicator {
         self.child.update(ctx);
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite() && ctx.scale > 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         aimer_canvas::Canvas::of(ctx).finish();
     }
 
@@ -289,7 +289,7 @@ impl Drawable for RawOverflowIndicator {
         });
     }
 
-    fn retained_v2_child_context_at<'a>(
+    fn child_context_at<'a>(
         &self,
         ctx: &BuildContext<'a>,
         child: &dyn Element,
@@ -303,7 +303,7 @@ impl Drawable for RawOverflowIndicator {
         (child.id() == expected).then(|| ctx.clone())
     }
 
-    fn retained_v2_child_geometry_at(
+    fn child_geometry_at(
         &self,
         ctx: &BuildContext,
         child: &dyn Element,
@@ -312,7 +312,7 @@ impl Drawable for RawOverflowIndicator {
         aimer_cupid::draw_cmd::Rect,
         Option<aimer_cupid::draw_cmd::Rect>,
     )> {
-        let child_ctx = self.retained_v2_child_context_at(ctx, child, child_index)?;
+        let child_ctx = self.child_context_at(ctx, child, child_index)?;
         let scale = ctx.scale;
         if !scale.is_finite() || scale <= 0.0 {
             return None;
@@ -320,7 +320,7 @@ impl Drawable for RawOverflowIndicator {
         let paint = self.paint.get();
         if child_index == 0 {
             let size = child
-                .retained_v2_bounds(&child_ctx)
+                .paint_bounds(&child_ctx)
                 .unwrap_or_else(|| child.content_size(&child_ctx));
             let position = child.pos().unwrap_or_default();
             return Some((
@@ -381,7 +381,7 @@ struct RawOverflowDecoration {
 impl Drawable for RawOverflowDecoration {
     fn update(&self, _ctx: &BuildContext) {}
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let paint = self.paint.get();
         ctx.scale.is_finite()
             && ctx.scale > 0.0
@@ -392,7 +392,7 @@ impl Drawable for RawOverflowDecoration {
     }
 
     #[cfg(debug_assertions)]
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let paint = self.paint.get();
         let scale = ctx.scale;
         let canvas = aimer_canvas::Canvas::of(ctx);
@@ -507,13 +507,13 @@ impl Drawable for RawOverflowDecoration {
     }
 
     #[cfg(not(debug_assertions))]
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         aimer_canvas::Canvas::of(ctx).finish();
         self.last_v2_paint
             .set(Some((self.paint.get(), ctx.scale.to_bits())));
     }
 
-    fn local_v2_paint_needs_recording(&self, ctx: &BuildContext) -> bool {
+    fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         self.last_v2_paint.get() != Some((self.paint.get(), ctx.scale.to_bits()))
     }
 }

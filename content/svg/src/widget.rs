@@ -699,14 +699,14 @@ impl Drawable for RawSvgAsset {
         }
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.phase.get() == SvgAssetPhase::Ready
             && self
                 .active_element()
-                .is_some_and(|element| element.can_paint_local_v2(ctx))
+                .is_some_and(|element| element.can_paint(ctx))
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let canvas = aimer_canvas::Canvas::of(ctx);
         canvas.finish();
     }
@@ -1030,24 +1030,24 @@ impl Drawable for RawSvg {
     /// Hit-tested against the rectangle this element reports as its own size,
     /// which can be larger than the content box its render node is laid out as.
     #[inline]
-    fn retained_v2_interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
+    fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.resolved_size(ctx))
     }
 
     #[inline]
-    fn adopt_retained_v2_interaction_source(&self, source: aimer_widget::InteractionSource) {
+    fn adopt_interaction_source(&self, source: aimer_widget::InteractionSource) {
         self.bounds.adopt(source);
     }
 
     #[inline]
-    fn retained_v2_interaction_disagreement(
+    fn interaction_disagreement(
         &self,
     ) -> Option<aimer_widget::InteractionDisagreement> {
         self.bounds.disagreement("Svg")
     }
 
     fn update(&self, ctx: &BuildContext) {
-        // The document is painted by `paint_local_v2`.
+        // The document is painted by `paint`.
         let size = self.resolved_size(ctx);
         self.save_bounds(ctx, size);
     }
@@ -1056,7 +1056,7 @@ impl Drawable for RawSvg {
         self.save_bounds(ctx, self.resolved_size(ctx));
     }
 
-    fn can_paint_local_v2(&self, ctx: &BuildContext) -> bool {
+    fn can_paint(&self, ctx: &BuildContext) -> bool {
         let size = self.resolved_size(ctx);
         ctx.scale.is_finite()
             && ctx.scale > 0.0
@@ -1066,7 +1066,7 @@ impl Drawable for RawSvg {
             && size.height >= 0.0
     }
 
-    fn paint_local_v2(&self, ctx: &BuildContext) {
+    fn paint(&self, ctx: &BuildContext) {
         let size = self.resolved_size(ctx);
         let scale = ctx.scale;
         let destination =
@@ -1665,7 +1665,7 @@ mod tests {
         let tree = RenderTree::new();
         let node = tree.add_root(Rect::new(0.0, 0.0, 32.0, 32.0)).unwrap();
         let node_context = tree.context(node).unwrap();
-        context.with_local_v2_paint_context(node_context, |ctx| element.paint_local_v2(ctx));
+        context.with_local_v2_paint_context(node_context, |ctx| element.paint(ctx));
         tree.draw_list_snapshot(node).unwrap()
     }
 
@@ -1683,7 +1683,7 @@ mod tests {
 
         // SVG overflow is hidden at the root, so the widget stays inside its
         // box and never needs the legacy live path.
-        assert!(element.can_paint_local_v2(&context));
+        assert!(element.can_paint(&context));
         let snapshot = recorded_commands(element.as_ref(), &context);
         assert!(matches!(
             snapshot.commands.as_ref(),
