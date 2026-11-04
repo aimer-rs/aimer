@@ -45,6 +45,13 @@ impl Drawable for RawFrameWatch {
             aimer_events::window::request_animation_frame();
         }
     }
+
+    // No pixels of its own, but `false` would report it as an element that declined
+    // to paint; an empty paint is how a watcher says it has nothing to draw.
+    #[inline]
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
+        true
+    }
 }
 
 impl EventElement for RawFrameWatch {

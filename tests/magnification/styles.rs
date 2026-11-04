@@ -1,8 +1,8 @@
 use super::fixtures::*;
 use aimer::canvas::Canvas;
+use aimer::{ResolvedSize, Vec2d};
 use aimer_cupid::draw_cmd::Rect;
 use aimer_cupid::frame::FramePacket;
-use aimer::{ResolvedSize, Vec2d};
 use aimer_decoration::{Decoration, Magnification, MagnificationStyle as S};
 use aimer_style::*;
 
@@ -64,6 +64,49 @@ fn refraction(point: [f32; 2], scale: f32) -> [f32; 2] {
     ]
 }
 
+/// The radial pull at `point`, measured from the box center: nothing at the center,
+/// growing with the square of the position across the band to the glass thickness at
+/// the rim. The band is the whole box (half the shorter side), as it is when no
+/// width is set; it follows the box's rounded shape like the shader's `lens_band`.
+fn radial(point: [f32; 2], scale: f32) -> [f32; 2] {
+    let half = [32.0 * scale, 16.0 * scale];
+    let radius = 8.0 * scale;
+    let depth = 12.0 * scale;
+    let width = half[0].min(half[1]);
+
+    let edge_q = [
+        point[0].abs() - half[0] + radius,
+        point[1].abs() - half[1] + radius,
+    ];
+    let edge_outer = [edge_q[0].max(0.0), edge_q[1].max(0.0)];
+    let inset = (-(edge_outer[0].hypot(edge_outer[1]) + edge_q[0].max(edge_q[1]).min(0.0) - radius))
+        .max(0.0);
+
+    let inner_half = [(half[0] - width).max(0.0), (half[1] - width).max(0.0)];
+    let inner_radius = radius.min(inner_half[0].min(inner_half[1]));
+    let q = [
+        point[0].abs() - inner_half[0] + inner_radius,
+        point[1].abs() - inner_half[1] + inner_radius,
+    ];
+    let outer = [q[0].max(0.0), q[1].max(0.0)];
+    let outer_length = outer[0].hypot(outer[1]);
+    let gap = (outer_length + q[0].max(q[1]).min(0.0) - inner_radius).max(0.0);
+    let outward = if outer_length > 0.0 {
+        [outer[0] / outer_length, outer[1] / outer_length]
+    } else if q[0] > q[1] {
+        [1.0, 0.0]
+    } else {
+        [0.0, 1.0]
+    };
+
+    let pull = 1.0 - inset / (inset + gap).max(0.0001);
+    let strength = depth * pull * pull;
+    [
+        -outward[0] * point[0].signum() * strength,
+        -outward[1] * point[1].signum() * strength,
+    ]
+}
+
 pub(super) fn styles_match_sampling_and_preserve_disabled_axes(
     mut render: impl FnMut(&FramePacket) -> Vec<u8>,
 ) {
@@ -92,14 +135,14 @@ pub(super) fn styles_match_sampling_and_preserve_disabled_axes(
                         .notype(),
                 ]
                 .paint(
-                        &canvas,
-                        Vec2d::default(),
-                        ResolvedSize {
-                            width: 64.0,
-                            height: 32.0,
-                        },
-                        scale,
-                    );
+                    &canvas,
+                    Vec2d::default(),
+                    ResolvedSize {
+                        width: 64.0,
+                        height: 32.0,
+                    },
+                    scale,
+                );
                 canvas.finish();
                 packet_from_tree(&tree, scale)
             };
@@ -171,14 +214,15 @@ pub(super) fn styles_match_sampling_and_preserve_disabled_axes(
                         1.0
                     };
                     let zoom = if style.contains(S::UNIFORM) { 1.8 } else { 1.0 };
-                    let offset = if style.contains(S::REFRACTION) {
-                        refraction(
-                            [
-                                point[0] - (FILTER_X + 32) as f32 * scale,
-                                point[1] - 16.0 * scale,
-                            ],
-                            scale,
-                        )
+                    let from_center = [
+                        point[0] - (FILTER_X + 32) as f32 * scale,
+                        point[1] - 16.0 * scale,
+                    ];
+                    // Radial decides when both are selected.
+                    let offset = if style.contains(S::RADIAL) {
+                        radial(from_center, scale)
+                    } else if style.contains(S::REFRACTION) {
+                        refraction(from_center, scale)
                     } else {
                         [0.0; 2]
                     };
