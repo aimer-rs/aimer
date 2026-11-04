@@ -142,6 +142,10 @@ drives them is platform independent.
 ## Behaviour worth knowing
 
 - `position()` is refreshed about every 30 ms while a track plays.
+- `seek()` publishes the new position at once. Seeks that queue up for one
+  track (a seek bar dragged faster than the audio thread applies them) collapse
+  into the latest. A seek bar is still best built with `Slider::on_change_end`:
+  show the dragged value while the finger is down and seek once on release.
 - A streamed track is also ticked while it is paused until its length is known
   and all of it is downloaded, so `duration()` and `buffered()` keep updating.
 - `play()` before `load()` does nothing; `play()` while loading starts the

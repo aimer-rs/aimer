@@ -82,9 +82,7 @@ fn pump(tick: bool) {
         let Some(runtime) = runtime.as_mut() else {
             return;
         };
-        while let Ok(command) = runtime.inbox.try_recv() {
-            runtime.engine.handle(command);
-        }
+        runtime.engine.handle_pending(None, &runtime.inbox);
         if tick {
             runtime.engine.tick();
         }

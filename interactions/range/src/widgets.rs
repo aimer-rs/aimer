@@ -539,6 +539,13 @@ impl<T: RangeValue> RawSlider<T> {
         }
     }
 
+    /// Reports the value a completed gesture or keyboard step settled on.
+    fn end_change(&self) {
+        if let Some(callback) = self.model.on_change_end.as_ref() {
+            callback(self.runtime.current.get());
+        }
+    }
+
     fn key_action(key: &NamedKey) -> Option<SliderKey> {
         match key {
             NamedKey::ArrowLeft => Some(SliderKey::ArrowLeft),
@@ -569,6 +576,8 @@ impl<T: RangeValue> RawSlider<T> {
         };
         if changed {
             self.propose(candidate.current_value());
+            // A key press is a whole change: there is no release to wait for.
+            self.end_change();
         }
         EventResult::consumed().with_redraw()
     }
@@ -724,6 +733,7 @@ impl<T: RangeValue> EventElement for RawSlider<T> {
                 self.runtime.active_pointer.set(None);
                 self.runtime.pressed.set(false);
                 self.runtime.request_visual_rebuild();
+                self.end_change();
                 EventResult::consumed()
                     .with_pointer_release(key)
                     .with_redraw()
@@ -755,6 +765,8 @@ impl<T: RangeValue> EventElement for RawSlider<T> {
                     self.runtime.active_pointer.set(None);
                     self.runtime.pressed.set(false);
                     self.runtime.request_visual_rebuild();
+                    // A cancelled drag keeps the value it reached.
+                    self.end_change();
                     EventResult::consumed().with_redraw()
                 } else {
                     EventResult::ignored()

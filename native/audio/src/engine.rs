@@ -175,13 +175,41 @@ impl<B: Backend> Engine<B> {
                     Err(_) => return,
                 }
             };
-            if let Some(command) = first {
-                self.handle(command);
-                while let Ok(command) = rx.try_recv() {
-                    self.handle(command);
-                }
+            if first.is_some() {
+                self.handle_pending(first, &rx);
             }
             self.tick();
+        }
+    }
+
+    /// Applies `first` and then everything already queued in `rx`.
+    ///
+    /// A run of seeks to one track collapses into its last: dragging a seek
+    /// bar queues a seek per pointer move, and each would make the platform
+    /// flush and refill its buffers (or, on a stream, wait for the network)
+    /// for a position already abandoned. A seek is never moved past any other
+    /// command, so the order of everything else is kept.
+    pub(crate) fn handle_pending(&mut self, first: Option<Command>, rx: &Receiver<Command>) {
+        let mut held: Option<(u64, f64)> = None;
+        let mut next = first;
+        while let Some(command) = next.take().or_else(|| rx.try_recv().ok()) {
+            if let Command::Seek { id, seconds } = command {
+                match held.replace((id, seconds)) {
+                    Some((held_id, held_seconds)) if held_id != id => self.handle(Command::Seek {
+                        id: held_id,
+                        seconds: held_seconds,
+                    }),
+                    _ => {}
+                }
+                continue;
+            }
+            if let Some((id, seconds)) = held.take() {
+                self.handle(Command::Seek { id, seconds });
+            }
+            self.handle(command);
+        }
+        if let Some((id, seconds)) = held {
+            self.handle(Command::Seek { id, seconds });
         }
     }
 

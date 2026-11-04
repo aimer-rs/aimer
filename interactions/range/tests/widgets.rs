@@ -706,3 +706,107 @@ async fn zero_width_slider_is_layout_safe_and_not_hit_testable() {
             .is_consumed()
     );
 }
+
+/// A slider recording both its `on_change` and its `on_change_end` values.
+fn recording_slider(
+    ctx: &BuildContext,
+) -> (
+    aimer_widget::AnyElement,
+    Rc<RefCell<Vec<f64>>>,
+    Rc<RefCell<Vec<f64>>>,
+) {
+    let changes = Rc::new(RefCell::new(Vec::<f64>::new()));
+    let ends = Rc::new(RefCell::new(Vec::<f64>::new()));
+    let (on_change, on_end) = (Rc::clone(&changes), Rc::clone(&ends));
+    let element = Slider::new()
+        .range(0.0..100.0)
+        .step(10.0)
+        .value(20.0)
+        .width(200.0)
+        .on_change(move |value| on_change.borrow_mut().push(value))
+        .on_change_end(move |value| on_end.borrow_mut().push(value))
+        .to_element(ctx);
+    element.layout(ctx);
+    element.update(ctx);
+    (element, changes, ends)
+}
+
+#[tokio::test]
+async fn a_drag_reports_its_final_value_to_on_change_end_once_on_release() {
+    let ctx = context();
+    let (element, changes, ends) = recording_slider(&ctx);
+    let mut dispatcher = EventDispatcher::new();
+    let down = PointerInfo::mouse(Vec2d { x: 20.0, y: 20.0 }, PointerButton::Primary);
+    dispatcher.dispatch(element.as_ref(), down.pos, &ElementEvent::PointerDown(down));
+    for x in [60.0, 100.0, 140.0] {
+        let moved = down.at(Vec2d { x, y: 20.0 });
+        dispatcher.dispatch(element.as_ref(), moved.pos, &ElementEvent::PointerMove(moved));
+    }
+    assert!(ends.borrow().is_empty(), "nothing ends while the finger is down");
+    assert!(changes.borrow().len() >= 3, "{:?}", changes.borrow());
+
+    let up = down.at(Vec2d { x: 140.0, y: 20.0 });
+    dispatcher.dispatch(element.as_ref(), up.pos, &ElementEvent::PointerUp(up));
+    assert_eq!(*ends.borrow(), vec![70.0]);
+    assert_eq!(changes.borrow().last(), Some(&70.0));
+}
+
+#[tokio::test]
+async fn a_press_and_release_in_place_still_ends_the_change() {
+    let ctx = context();
+    let (element, _changes, ends) = recording_slider(&ctx);
+    let mut dispatcher = EventDispatcher::new();
+    let down = PointerInfo::mouse(Vec2d { x: 100.0, y: 20.0 }, PointerButton::Primary);
+    dispatcher.dispatch(element.as_ref(), down.pos, &ElementEvent::PointerDown(down));
+    dispatcher.dispatch(element.as_ref(), down.pos, &ElementEvent::PointerUp(down));
+    assert_eq!(ends.borrow().len(), 1, "a tap on the track is a complete change");
+}
+
+#[tokio::test]
+async fn each_keyboard_step_is_a_complete_change() {
+    let ctx = context();
+    let (element, _changes, ends) = recording_slider(&ctx);
+    let mut dispatcher = EventDispatcher::new();
+    let pointer = PointerInfo::mouse(Vec2d { x: 40.0, y: 20.0 }, PointerButton::Primary);
+    // Focus the slider with a tap, then forget the tap's own end.
+    dispatcher.dispatch(element.as_ref(), pointer.pos, &ElementEvent::PointerDown(pointer));
+    dispatcher.dispatch(element.as_ref(), pointer.pos, &ElementEvent::PointerUp(pointer));
+    ends.borrow_mut().clear();
+
+    for _ in 0..2 {
+        let key = ElementEvent::KeyInput {
+            key: NamedKey::ArrowRight,
+            action: KeyAction::Pressed,
+            modifiers: Modifiers::default(),
+        };
+        dispatcher.dispatch(element.as_ref(), pointer.pos, &key);
+    }
+    assert_eq!(*ends.borrow(), vec![30.0, 40.0]);
+
+    // At the maximum, a step changes nothing and ends nothing.
+    let end_key = ElementEvent::KeyInput {
+        key: NamedKey::End,
+        action: KeyAction::Pressed,
+        modifiers: Modifiers::default(),
+    };
+    dispatcher.dispatch(element.as_ref(), pointer.pos, &end_key);
+    dispatcher.dispatch(element.as_ref(), pointer.pos, &end_key);
+    assert_eq!(*ends.borrow(), vec![30.0, 40.0, 100.0]);
+}
+
+#[tokio::test]
+async fn a_cancelled_drag_ends_at_the_value_it_reached() {
+    let ctx = context();
+    let (element, _changes, ends) = recording_slider(&ctx);
+    let mut dispatcher = EventDispatcher::new();
+    let down = PointerInfo::mouse(Vec2d { x: 20.0, y: 20.0 }, PointerButton::Primary);
+    dispatcher.dispatch(element.as_ref(), down.pos, &ElementEvent::PointerDown(down));
+    let moved = down.at(Vec2d { x: 100.0, y: 20.0 });
+    dispatcher.dispatch(element.as_ref(), moved.pos, &ElementEvent::PointerMove(moved));
+    let _ = dispatcher.broadcast(element.as_ref(), &ElementEvent::Cancel);
+    assert_eq!(*ends.borrow(), vec![50.0]);
+
+    // Nothing is dragging any more, so a second cancel ends nothing.
+    let _ = dispatcher.broadcast(element.as_ref(), &ElementEvent::Cancel);
+    assert_eq!(ends.borrow().len(), 1);
+}

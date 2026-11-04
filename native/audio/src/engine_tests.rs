@@ -27,6 +27,8 @@ struct VoiceState {
     /// Opened through `Backend::open_sound`.
     for_sound: bool,
     polls: u32,
+    /// Every seek applied, in order.
+    seeks: Vec<f64>,
     /// The engine dropped the voice.
     released: bool,
 }
@@ -84,7 +86,9 @@ impl Voice for FakeVoice {
         state.position = 0.0;
     }
     fn seek(&mut self, seconds: f64) {
-        self.0.borrow_mut().position = seconds;
+        let mut state = self.0.borrow_mut();
+        state.position = seconds;
+        state.seeks.push(seconds);
     }
     fn set_volume(&mut self, volume: f32) {
         self.0.borrow_mut().volume = volume;
@@ -1056,4 +1060,43 @@ fn a_stream_that_cannot_report_its_buffer_settles_once_its_length_is_known() {
     voices()[0].borrow_mut().position = 5.0;
     rig.engine.tick();
     assert_eq!(shared.lock().buffered, 5.0, "a playing track keeps publishing it");
+}
+
+#[test]
+fn queued_seeks_of_one_track_collapse_into_the_latest() {
+    let mut rig = Rig::new();
+    let _first = rig.loaded_track(1);
+    let _second = rig.loaded_track(2);
+    let (tx, rx) = mpsc::channel();
+    // A scrub: many seeks of track 1 queue up while the engine is busy.
+    for seconds in [1.0, 2.0, 3.0, 4.0, 5.0] {
+        tx.send(Command::Seek { id: 1, seconds }).unwrap();
+    }
+    tx.send(Command::Seek { id: 2, seconds: 7.0 }).unwrap();
+    tx.send(Command::Play { id: 1 }).unwrap();
+    tx.send(Command::Seek { id: 1, seconds: 6.0 }).unwrap();
+    tx.send(Command::Seek { id: 1, seconds: 8.0 }).unwrap();
+
+    rig.engine.handle_pending(None, &rx);
+
+    let opened = voices();
+    assert_eq!(opened[0].borrow().seeks, vec![5.0, 8.0], "one seek per run of seeks");
+    assert_eq!(opened[1].borrow().seeks, vec![7.0]);
+    assert!(opened[0].borrow().playing, "the play between them still applied");
+    assert_eq!(opened[0].borrow().plays, 1);
+}
+
+#[test]
+fn a_seek_is_never_moved_past_another_command_of_its_track() {
+    let mut rig = Rig::new();
+    let _shared = rig.loaded_track(1);
+    let (tx, rx) = mpsc::channel();
+    tx.send(Command::Seek { id: 1, seconds: 2.0 }).unwrap();
+    tx.send(Command::Stop { id: 1 }).unwrap();
+
+    rig.engine.handle_pending(Some(Command::Seek { id: 1, seconds: 1.0 }), &rx);
+
+    let voice = voices()[0].clone();
+    assert_eq!(voice.borrow().seeks, vec![2.0], "the stop came after the seek");
+    assert_eq!(voice.borrow().position, 0.0, "and the stop rewound it");
 }
