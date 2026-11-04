@@ -5,6 +5,7 @@ edition = "2024"
 description = "The GPU backend contract and shared shader sources for the Cupid rendering engine"
 
 [dependencies]
+aimer_tls.workspace = true
 
 [dev-dependencies]
 # Tests feed real transpiler output through the GLSL package reader.

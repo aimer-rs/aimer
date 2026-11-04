@@ -18,7 +18,11 @@ mod test_support;
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 mod apple;
-#[cfg(not(any(target_os = "ios", target_os = "macos")))]
+#[cfg(target_arch = "wasm32")]
+mod web;
+#[cfg(all(test, target_arch = "wasm32"))]
+mod web_tests;
+#[cfg(not(any(target_os = "ios", target_os = "macos", target_arch = "wasm32")))]
 mod unsupported;
 
 pub use captions::{CaptionError, CaptionSource, CaptionTrack, Chapter, Chapters, Cue};
@@ -31,15 +35,17 @@ pub use widget::{Video, VideoFit};
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 use apple::open as platform_open;
-#[cfg(not(any(target_os = "ios", target_os = "macos")))]
+#[cfg(target_arch = "wasm32")]
+use web::open as platform_open;
+#[cfg(not(any(target_os = "ios", target_os = "macos", target_arch = "wasm32")))]
 use unsupported::open as platform_open;
 
-/// Whether this platform has a video backend: macOS and iOS for now.
+/// Whether this platform has a video backend: macOS, iOS and the web for now.
 ///
 /// Where it returns `false`, every load fails with [`VideoError::Unsupported`]
 /// and the controls do nothing, so call sites need no platform guard; use this
 /// to hide video controls instead.
 #[inline]
 pub const fn is_supported() -> bool {
-    cfg!(any(target_os = "ios", target_os = "macos"))
+    cfg!(any(target_os = "ios", target_os = "macos", target_arch = "wasm32"))
 }

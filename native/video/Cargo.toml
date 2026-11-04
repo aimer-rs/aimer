@@ -43,3 +43,28 @@ objc2-quartz-core = { workspace = true, features = ["std", "CABase"] }
 # The audio session only exists on iOS.
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-avf-audio = { workspace = true, features = ["std", "AVAudioSession", "AVAudioSessionTypes"] }
+
+# `HTMLVideoElement`: the browser fetches, streams, decodes and plays the
+# sound; the renderer's backend copies its picture into a texture on the GPU.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+aimer_cupid_gpu.workspace = true
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = [
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlMediaElement",
+    "HtmlVideoElement",
+    "MediaError",
+    "TimeRanges",
+    "Window",
+] }
+
+# Browser tests: they run in headless Chromium through wasm-bindgen-test. The
+# `web` feature picks the renderer backends a wasm build of Cupid needs.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+aimer_cupid = { workspace = true, features = ["web"] }
+wasm-bindgen-test.workspace = true
+web-sys = { workspace = true, features = ["Blob", "BlobPropertyBag", "Url"] }

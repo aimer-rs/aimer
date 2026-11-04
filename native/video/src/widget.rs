@@ -302,6 +302,7 @@ impl LayoutElement for RawVideo {
     }
 }
 
-#[cfg(test)]
+// These build a `BuildContext` with a tokio runtime handle, which wasm lacks.
+#[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "widget_tests.rs"]
 mod tests;

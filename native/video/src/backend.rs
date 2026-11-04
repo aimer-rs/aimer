@@ -60,8 +60,8 @@ unsafe impl Send for StoredFrame {}
 unsafe impl Sync for StoredFrame {}
 
 impl StoredFrame {
-    /// Only the Apple backend (and tests) produce frames so far.
-    #[cfg_attr(not(any(target_os = "ios", target_os = "macos", test)), allow(dead_code))]
+    /// Only the platform backends (and tests) produce frames.
+    #[cfg_attr(not(any(target_os = "ios", target_os = "macos", target_arch = "wasm32", test)), allow(dead_code))]
     /// # Safety
     ///
     /// `texture` must be a valid `width` x `height` texture whose contents stay

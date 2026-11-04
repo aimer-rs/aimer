@@ -10,6 +10,8 @@ pub(crate) use aimer_cupid_gpu as backend;
 
 mod pipeline;
 mod trait_impl;
+#[cfg(test)]
+mod video_tests;
 
 pub use pipeline::{
     WebGl2BindGroup, WebGl2BindGroupLayout, WebGl2Buffer, WebGl2CommandEncoder,
@@ -55,6 +57,15 @@ impl std::error::Error for WebGl2Error {}
 /// A direct WebGL2 implementation of Cupid's generic GPU backend.
 pub struct WebGl2Backend {
     pub(crate) shared: Rc<WebGl2Shared>,
+    /// The texture each video element is copied into, by registration id.
+    videos: RefCell<HashMap<u32, VideoTexture>>,
+}
+
+/// A video element's texture and the picture last copied into it.
+struct VideoTexture {
+    texture: WebGl2Texture,
+    size: (u32, u32),
+    serial: u64,
 }
 
 pub(crate) struct WebGl2Shared {
@@ -112,7 +123,10 @@ impl WebGl2Backend {
             next_id: Cell::new(1),
             framebuffer_cache: RefCell::new(HashMap::new()),
         });
-        Ok(Self { shared })
+        Ok(Self {
+            shared,
+            videos: RefCell::new(HashMap::new()),
+        })
     }
 
     /// Returns a view of the canvas drawing buffer for rendering and presentation.
@@ -131,6 +145,77 @@ impl WebGl2Backend {
     #[inline]
     pub fn present(&self) {
         self.shared.gl.flush();
+    }
+}
+
+impl WebGl2Backend {
+    /// A view of the picture a registered `<video>` element shows as
+    /// `serial`, copying it into the element's texture first when that is not
+    /// the picture already there.
+    ///
+    /// The copy runs on the GPU inside the browser: the pixels are never read
+    /// back to the CPU. Returns `None` when `id` names no video element, the
+    /// picture has no size yet, or the browser refuses the copy (a video the
+    /// page may not read, for example one from another origin without CORS).
+    pub(crate) fn import_video(
+        &self,
+        id: u32,
+        serial: u64,
+        width: u32,
+        height: u32,
+    ) -> Option<WebGl2TextureView> {
+        use crate::backend::{GpuBackend, TextureDescriptor, TextureDimension, TextureUsage};
+
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let element = aimer_cupid_gpu::web_video::lookup(id)?
+            .downcast::<web_sys::HtmlVideoElement>()
+            .ok()?;
+        let mut videos = self.videos.borrow_mut();
+        // Registrations that ended: their textures are only held here.
+        if videos.len() > 1 {
+            videos.retain(|id, _| aimer_cupid_gpu::web_video::lookup(*id).is_some());
+        }
+        let size = (width, height);
+        if videos.get(&id).is_none_or(|video| video.size != size) {
+            let texture = self.create_texture(&TextureDescriptor {
+                label: Some("video".into()),
+                size: (width, height, 1),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: WebGl2TextureFormat::Rgba8Unorm,
+                usage: vec![TextureUsage::TextureBinding, TextureUsage::CopyDst],
+            });
+            // A new texture holds nothing yet, whatever `serial` says.
+            videos.insert(id, VideoTexture { texture, size, serial: u64::MAX });
+        }
+        let video = videos.get_mut(&id)?;
+        if video.serial != serial {
+            let gl = &self.shared.gl;
+            gl.bind_texture(video.texture.0.target, Some(&video.texture.0.object));
+            gl.pixel_storei(WebGl2RenderingContext::UNPACK_FLIP_Y_WEBGL, 0);
+            gl.pixel_storei(WebGl2RenderingContext::UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+            let copied = gl
+                .tex_sub_image_2d_with_i32_and_i32_and_u32_and_type_and_html_video_element(
+                    video.texture.0.target,
+                    0,
+                    0,
+                    0,
+                    width as i32,
+                    height as i32,
+                    WebGl2RenderingContext::RGBA,
+                    WebGl2RenderingContext::UNSIGNED_BYTE,
+                    &element,
+                );
+            gl.bind_texture(video.texture.0.target, None);
+            if copied.is_err() {
+                return None;
+            }
+            video.serial = serial;
+        }
+        Some(self.create_texture_view(&video.texture, "video"))
     }
 }
 

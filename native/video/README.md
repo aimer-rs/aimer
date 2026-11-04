@@ -107,14 +107,33 @@ your own frame-by-frame UI (a position readout, say) the same way.
 |---------------|-----------------------------------------------------------------|
 | macOS         | `AVPlayer` + `AVPlayerItemVideoOutput`, frames as Metal textures |
 | iOS           | the same, with a *playback* audio session                       |
+| web           | `HTMLVideoElement`, its picture copied into a texture on the GPU |
 | others        | none yet: loads fail with `VideoError::Unsupported`; see `is_supported()` |
 
-Linux (FFmpeg loaded at run time), Android, Windows and the web are planned.
+Linux (FFmpeg loaded at run time), Android and Windows are planned.
 The player core is platform independent and talks to a small `PlatformVideo`
 trait; a backend also needs its renderer to import its texture kind, through
 `GpuBackend::import_native_texture`.
 
 The macOS and iOS backend has been compiled but not yet run on a device.
+
+### On the web
+
+The browser fetches, streams, decodes and plays the sound, so the backend is a
+detached `<video>` element. A browser offers no video texture to share, so the
+renderer's backend (WebGL2 or WebGPU) copies the element's current picture into
+a texture of its own, on the GPU, once per picture: no pixel reaches the CPU.
+Things to know:
+
+- Playback must start from an input handler; a browser refuses it otherwise,
+  and the player then reports `VideoError::Playback`.
+- Elements are created with `crossorigin="anonymous"`, because a picture the
+  page may not read cannot be copied into a texture. A video from another
+  origin must be served with CORS headers.
+- A bundled asset is fetched from the site root; `VideoSource::file` is
+  `Unsupported`.
+- Sidecar captions and chapters cannot be read from files on the web; parse
+  their text (`CaptionTrack::parse`, say from `include_str!`).
 
 ## Behaviour worth knowing
 

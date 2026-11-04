@@ -14,6 +14,7 @@ use std::num::NonZeroU32;
 use std::ops::Range;
 
 pub mod glsl_package;
+pub mod web_video;
 
 // ──────────────────────────────────────────────
 //  Descriptor types shared by all backends
@@ -832,6 +833,21 @@ impl BuiltinShader {
 pub enum NativeTextureHandle {
     /// An `id<MTLTexture>`, not retained by this value.
     Metal(std::ptr::NonNull<std::ffi::c_void>),
+    /// A browser `<video>` element registered with [`web_video::register`],
+    /// whose picture is `serial`.
+    ///
+    /// The backend copies the picture into a texture of its own when `serial`
+    /// differs from the one it copied last.
+    WebVideo {
+        /// The id from [`web_video::register`].
+        id: u32,
+        /// Changes whenever the element shows a new picture.
+        serial: u64,
+        /// The picture's size in pixels.
+        width: u32,
+        /// The picture's size in pixels.
+        height: u32,
+    },
 }
 
 pub trait GpuBackend: Sized + 'static {

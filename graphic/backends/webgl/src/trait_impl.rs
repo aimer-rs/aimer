@@ -214,6 +214,16 @@ impl GpuBackend for WebGl2Backend {
         }))
     }
 
+    unsafe fn import_native_texture(&self, handle: NativeTextureHandle) -> Option<Self::TextureView> {
+        match handle {
+            NativeTextureHandle::WebVideo { id, serial, width, height } => {
+                self.import_video(id, serial, width, height)
+            }
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler {
         let object = self
             .shared

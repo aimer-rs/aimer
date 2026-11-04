@@ -21,6 +21,19 @@ pub enum NativeTexture {
     /// (`BGRA8Unorm` for video). Not retained by this value; see
     /// [`NativeFrame::new`].
     Metal(NonNull<c_void>),
+    /// A browser `<video>` element, by the id its producer registered it
+    /// under, showing frame `serial`.
+    ///
+    /// Browsers hand out no texture for a video, so the backend copies the
+    /// element's current picture into a texture of its own on the GPU (no CPU
+    /// readback). `serial` changes with every new picture, so the copy is
+    /// made once per picture and not once per render.
+    WebVideo {
+        /// The id the element was registered under.
+        id: u32,
+        /// Changes whenever the element shows a new picture.
+        serial: u64,
+    },
 }
 
 /// One frame of an external producer: a GPU texture and what keeps it alive.

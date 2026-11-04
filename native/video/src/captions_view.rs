@@ -7,7 +7,7 @@ use aimer_flex::{BoxAlignment, Column};
 use aimer_style::{BoxDecoration, LayoutSpacing, TextAlign, TextStyle};
 use aimer_text::Text;
 use aimer_widget::base::{BuildContext, Color};
-use aimer_widget::{AnyElement, AnyWidget, Element, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, AnyWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
 
 use crate::frame_watch::FrameWatch;
 use crate::{CaptionTrack, VideoPlayer};

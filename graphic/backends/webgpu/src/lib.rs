@@ -11,6 +11,8 @@ pub(crate) use aimer_cupid_gpu as backend;
 mod pipeline;
 mod trait_impl;
 mod util;
+#[cfg(test)]
+mod video_tests;
 
 pub use pipeline::{
     WebGpuBindGroup, WebGpuBindGroupLayout, WebGpuBuffer, WebGpuCommandEncoder,
@@ -75,6 +77,15 @@ impl std::error::Error for WebGpuError {}
 /// A direct browser WebGPU implementation of Cupid's generic GPU backend.
 pub struct WebGpuBackend {
     pub(crate) shared: Rc<WebGpuShared>,
+    /// The texture each video element is copied into, by registration id.
+    videos: std::cell::RefCell<std::collections::HashMap<u32, VideoTexture>>,
+}
+
+/// A video element's texture and the picture last copied into it.
+struct VideoTexture {
+    texture: WebGpuTexture,
+    size: (u32, u32),
+    serial: u64,
 }
 
 pub(crate) struct WebGpuShared {
@@ -90,6 +101,82 @@ pub(crate) struct WebGpuShared {
 pub type WebGpuTextureFormat = GpuTextureFormat;
 
 impl WebGpuBackend {
+    /// A view of the picture a registered `<video>` element shows as
+    /// `serial`, copying it into the element's texture first when that is not
+    /// the picture already there.
+    ///
+    /// The copy is queued on the GPU (`copyExternalImageToTexture`), so the
+    /// pixels never reach the CPU. WebGPU's zero-copy `importExternalTexture`
+    /// yields a texture type the image pipeline cannot sample, which is why
+    /// this is a GPU-side copy. Returns `None` when `id` names no video
+    /// element, the picture has no size yet, or the browser refuses the copy
+    /// (a video the page may not read, for example).
+    pub(crate) fn import_video(
+        &self,
+        id: u32,
+        serial: u64,
+        width: u32,
+        height: u32,
+    ) -> Option<WebGpuTextureView> {
+        use crate::backend::GpuBackend;
+        use crate::util::{dictionary, object, set, set_bool, set_ref, set_str, set_u32};
+
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let element = aimer_cupid_gpu::web_video::lookup(id)?
+            .downcast::<web_sys::HtmlVideoElement>()
+            .ok()?;
+        let mut videos = self.videos.borrow_mut();
+        // Registrations that ended: their textures are only held here.
+        if videos.len() > 1 {
+            videos.retain(|id, _| aimer_cupid_gpu::web_video::lookup(*id).is_some());
+        }
+        let size = (width, height);
+        if videos.get(&id).is_none_or(|video| video.size != size) {
+            let texture = self.create_texture(&crate::backend::TextureDescriptor {
+                label: Some("video".into()),
+                size: (width, height, 1),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: crate::backend::TextureDimension::D2,
+                format: GpuTextureFormat::Rgba8unorm,
+                // `copyExternalImageToTexture` needs the destination to be a
+                // render attachment as well as a copy target.
+                usage: vec![
+                    crate::backend::TextureUsage::TextureBinding,
+                    crate::backend::TextureUsage::CopyDst,
+                    crate::backend::TextureUsage::RenderAttachment,
+                    // Lets a screenshot or a test read the picture back.
+                    crate::backend::TextureUsage::CopySrc,
+                ],
+            });
+            videos.insert(id, VideoTexture { texture, size, serial: u64::MAX });
+        }
+        let video = videos.get_mut(&id)?;
+        if video.serial != serial {
+            let source = object();
+            set_ref(&source, "source", &*element);
+            set_bool(&source, "flipY", false);
+            let destination = object();
+            set_ref(&destination, "texture", &video.texture.0.raw);
+            set_bool(&destination, "premultipliedAlpha", false);
+            set_str(&destination, "colorSpace", "srgb");
+            let extent = dictionary::<js_sys::Object>();
+            set_u32(&extent, "width", width);
+            set_u32(&extent, "height", height);
+            set(&extent, "depthOrArrayLayers", &JsValue::from_f64(1.0));
+            let queue: &JsValue = self.shared.queue.as_ref();
+            let method = Reflect::get(queue, &JsValue::from_str("copyExternalImageToTexture")).ok()?;
+            let method: js_sys::Function = method.dyn_into().ok()?;
+            method
+                .call3(queue, source.as_ref(), destination.as_ref(), extent.as_ref())
+                .ok()?;
+            video.serial = serial;
+        }
+        Some(self.create_texture_view(&video.texture, "video"))
+    }
+
     /// Requests a browser WebGPU adapter and device, then configures the canvas.
     pub async fn new(canvas: HtmlCanvasElement) -> Result<Self, WebGpuError> {
         let navigator = web_sys::window()
@@ -160,7 +247,10 @@ impl WebGpuBackend {
             },
         });
 
-        Ok(Self { shared })
+        Ok(Self {
+            shared,
+            videos: Default::default(),
+        })
     }
 
     /// Returns a view of the canvas drawing buffer for rendering and presentation.

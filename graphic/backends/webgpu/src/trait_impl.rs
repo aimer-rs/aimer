@@ -172,6 +172,16 @@ impl GpuBackend for WebGpuBackend {
         WebGpuTextureView::texture(texture.clone(), raw)
     }
 
+    unsafe fn import_native_texture(&self, handle: crate::backend::NativeTextureHandle) -> Option<Self::TextureView> {
+        match handle {
+            crate::backend::NativeTextureHandle::WebVideo { id, serial, width, height } => {
+                self.import_video(id, serial, width, height)
+            }
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+
     fn create_sampler(&self, desc: &SamplerDescriptor) -> Self::Sampler {
         let descriptor: GpuSamplerDescriptor = dictionary();
         if let Some(label) = &desc.label {
@@ -1026,23 +1036,28 @@ fn set_attachment_operations<T: Copy + Into<f64>>(
     );
 }
 
-fn buffer_copy_layout(layout: crate::backend::TexelCopyBufferLayout) -> GpuTexelCopyBufferLayout {
-    let raw: GpuTexelCopyBufferLayout = dictionary();
-    set_f64(raw.unchecked_ref(), "offset", layout.offset as f64);
+/// Writes `layout` into `raw` as flat fields: a `GPUTexelCopyBufferInfo` is a
+/// `GPUTexelCopyBufferLayout` plus a buffer, not a buffer holding a layout.
+fn set_buffer_copy_layout(raw: &js_sys::Object, layout: crate::backend::TexelCopyBufferLayout) {
+    set_f64(raw, "offset", layout.offset as f64);
     if let Some(bytes_per_row) = layout.bytes_per_row {
-        set_u32(raw.unchecked_ref(), "bytesPerRow", bytes_per_row);
+        set_u32(raw, "bytesPerRow", bytes_per_row);
     }
     if let Some(rows_per_image) = layout.rows_per_image {
-        set_u32(raw.unchecked_ref(), "rowsPerImage", rows_per_image);
+        set_u32(raw, "rowsPerImage", rows_per_image);
     }
+}
+
+fn buffer_copy_layout(layout: crate::backend::TexelCopyBufferLayout) -> GpuTexelCopyBufferLayout {
+    let raw: GpuTexelCopyBufferLayout = dictionary();
+    set_buffer_copy_layout(raw.unchecked_ref(), layout);
     raw
 }
 
 fn buffer_copy_info(info: &TexelCopyBufferInfo<WebGpuBackend>) -> GpuTexelCopyBufferInfo {
     let raw: GpuTexelCopyBufferInfo = dictionary();
     set_ref(raw.unchecked_ref(), "buffer", &info.buffer.raw);
-    let layout = buffer_copy_layout(info.layout);
-    set_ref(raw.unchecked_ref(), "layout", &layout);
+    set_buffer_copy_layout(raw.unchecked_ref(), info.layout);
     raw
 }
 

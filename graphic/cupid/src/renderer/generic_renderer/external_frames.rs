@@ -13,6 +13,22 @@ use crate::external_texture::{ExternalTexture, NativeFrame, NativeTexture};
 /// drawables in flight (`CAMetalLayer`'s maximum); one more is margin.
 const KEPT_RENDERS: usize = 4;
 
+/// The backend handle for `frame`'s texture, or `None` for a kind of texture
+/// this build does not know.
+fn handle_of(frame: &NativeFrame) -> Option<NativeTextureHandle> {
+    Some(match frame.texture() {
+        NativeTexture::Metal(pointer) => NativeTextureHandle::Metal(pointer),
+        NativeTexture::WebVideo { id, serial } => NativeTextureHandle::WebVideo {
+            id,
+            serial,
+            width: frame.width(),
+            height: frame.height(),
+        },
+        #[allow(unreachable_patterns)]
+        _ => return None,
+    })
+}
+
 /// Imported frames, one slot per render, reused round-robin.
 pub(super) struct ExternalFrames {
     slots: [Vec<NativeFrame>; KEPT_RENDERS],
@@ -44,11 +60,7 @@ impl ExternalFrames {
         texture: &ExternalTexture,
     ) -> Option<B::TextureView> {
         let frame = texture.current_frame()?;
-        let handle = match frame.texture() {
-            NativeTexture::Metal(pointer) => NativeTextureHandle::Metal(pointer),
-            #[allow(unreachable_patterns)]
-            _ => return None,
-        };
+        let handle = handle_of(&frame)?;
         // SAFETY: `NativeFrame::new`'s contract keeps the texture valid while
         // `frame` lives, and `frame` is kept in this render's slot until
         // `KEPT_RENDERS` renders later, after the GPU has sampled it.
@@ -101,6 +113,25 @@ mod tests {
 
     fn hold_current(frames: &mut ExternalFrames, texture: &ExternalTexture) {
         frames.hold(texture.current_frame().expect("the source always has a frame"));
+    }
+
+    #[test]
+    fn a_web_video_frame_names_its_element_picture_and_size() {
+        let texture = NativeTexture::WebVideo { id: 3, serial: 9 };
+        // SAFETY: the handle is a pair of numbers; nothing is dereferenced.
+        let frame = unsafe { NativeFrame::new(texture, 1280, 720, Arc::new(())) };
+        assert_eq!(
+            handle_of(&frame),
+            Some(NativeTextureHandle::WebVideo { id: 3, serial: 9, width: 1280, height: 720 })
+        );
+    }
+
+    #[test]
+    fn a_metal_frame_keeps_its_pointer() {
+        let pointer = NonNull::dangling();
+        // SAFETY: the pointer is never dereferenced.
+        let frame = unsafe { NativeFrame::new(NativeTexture::Metal(pointer), 16, 9, Arc::new(())) };
+        assert_eq!(handle_of(&frame), Some(NativeTextureHandle::Metal(pointer)));
     }
 
     #[test]

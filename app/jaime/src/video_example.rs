@@ -10,7 +10,7 @@
 
 use aimer::style::{FontWeight, LayoutSpacing, TextStyle, Theme, ThemeData};
 use aimer::video::{
-    CaptionSource, CaptionTrack, Chapters, VideoFit, VideoPlayer, VideoPlayerView, VideoSource,
+    CaptionTrack, Chapters, VideoFit, VideoPlayer, VideoPlayerView, VideoSource,
 };
 use aimer::{
     BuildContext, Column, Container, Row, ScrollAxis, Scrollable, SizedBox, State, StateUpdater,
@@ -62,10 +62,9 @@ impl StatefulWidget for VideoExample {
     fn create_state(self) -> VideoExampleState {
         let player = VideoPlayer::from_source(bundled_clip());
         player.set_volume(0.6);
-        let captions =
-            CaptionTrack::load(&CaptionSource::Bundled(Assets::TEST_PATTERN_CAPTIONS.path().into())).ok();
-        let chapters = Chapters::load(&CaptionSource::Bundled(Assets::TEST_PATTERN_CHAPTERS.path().into()))
-            .unwrap_or_default();
+        // Embedded, so they load on every platform (the web has no files).
+        let captions = CaptionTrack::parse(include_str!("../assets/test_pattern.vtt")).ok();
+        let chapters = Chapters::parse(include_str!("../assets/test_pattern_chapters.vtt")).unwrap_or_default();
         VideoExampleState {
             player,
             streaming: false,
