@@ -108,15 +108,35 @@ your own frame-by-frame UI (a position readout, say) the same way.
 | macOS         | `AVPlayer` + `AVPlayerItemVideoOutput`, frames as Metal textures |
 | iOS           | the same, with a *playback* audio session                       |
 | Windows       | `MediaPlayer` (Media Foundation), frames as shared Direct3D textures |
+| Linux         | `ffmpeg` decodes (software), pictures uploaded once each; sound through `aimer_audio` |
 | web           | `HTMLVideoElement`, its picture copied into a texture on the GPU |
 | others        | none yet: loads fail with `VideoError::Unsupported`; see `is_supported()` |
 
-Linux (FFmpeg loaded at run time) and Android are planned.
+Android is planned, and so is hardware-decoded zero-copy video on Linux.
 The player core is platform independent and talks to a small `PlatformVideo`
 trait; a backend also needs its renderer to import its texture kind, through
 `GpuBackend::import_native_texture`.
 
 The macOS and iOS backend has been compiled but not yet run on a device.
+
+### On Linux
+
+There is no system player, so the backend runs the `ffmpeg` program (and
+`ffprobe` to learn the size and length) and reads raw RGBA pictures from its
+output. Installing FFmpeg is the app's or the user's job; without it a load
+fails with `VideoError::Playback` saying so. A program, not a linked library,
+keeps this independent of which FFmpeg version the system has. FFmpeg streams
+`http(s)` and HLS itself.
+
+- The soundtrack plays through `aimer_audio` and is the clock when it runs:
+  pictures are shown when the sound reaches them. A video without sound, or on
+  a machine with no audio device, runs on the wall clock.
+- Decoding happens on the CPU and each picture is uploaded to the GPU once
+  (`NativeTexture::Rgba8`), so this is not zero-copy. Four pictures are decoded
+  ahead and no more, so a paused video decodes nothing.
+- Seeking restarts FFmpeg at the new position; it is accurate, not instant.
+- Hardware decoding straight into GPU memory (VAAPI to Vulkan) is not
+  implemented yet.
 
 ### On Windows
 

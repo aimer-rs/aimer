@@ -6,6 +6,7 @@
 //! the next few renders: the producer may recycle a frame's memory once it is
 //! released, and the GPU can still be sampling it from a frame in flight.
 
+use super::pixel_uploads::PixelUploads;
 use crate::backend::{GpuBackend, NativeTextureHandle};
 use crate::external_texture::{ExternalTexture, NativeFrame, NativeTexture};
 
@@ -33,6 +34,8 @@ fn handle_of(frame: &NativeFrame) -> Option<NativeTextureHandle> {
             width: frame.width(),
             height: frame.height(),
         },
+        // Uploaded by the renderer, not imported by the backend.
+        NativeTexture::Rgba8 { .. } => return None,
         #[allow(unreachable_patterns)]
         _ => return None,
     })
@@ -66,9 +69,22 @@ impl ExternalFrames {
     pub(super) fn import<B: GpuBackend>(
         &mut self,
         backend: &B,
+        uploads: &mut PixelUploads<B>,
         texture: &ExternalTexture,
     ) -> Option<B::TextureView> {
         let frame = texture.current_frame()?;
+        // Pixels in system memory are uploaded by the renderer itself.
+        if let NativeTexture::Rgba8 { source, data, serial } = frame.texture() {
+            let (width, height) = (frame.width(), frame.height());
+            let length = width as usize * height as usize * 4;
+            // SAFETY: `NativeTexture::Rgba8`'s contract makes `length` bytes
+            // from `data` readable and unchanged while `frame` lives, which it
+            // does until this function returns (and after, in its slot).
+            let pixels = unsafe { std::slice::from_raw_parts(data.as_ptr(), length) };
+            let view = uploads.view(backend, source, serial, (width, height), pixels)?;
+            self.hold(frame);
+            return Some(view);
+        }
         let handle = handle_of(&frame)?;
         // SAFETY: `NativeFrame::new`'s contract keeps the texture valid while
         // `frame` lives, and `frame` is kept in this render's slot until

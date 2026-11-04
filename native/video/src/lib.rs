@@ -18,13 +18,19 @@ mod test_support;
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 mod apple;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+mod linux_ffmpeg;
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests;
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_arch = "wasm32")]
 mod web;
 #[cfg(all(test, target_arch = "wasm32"))]
 mod web_tests;
-#[cfg(not(any(target_os = "ios", target_os = "macos", target_arch = "wasm32", target_os = "windows")))]
+#[cfg(not(any(target_os = "ios", target_os = "macos", target_arch = "wasm32", target_os = "windows", target_os = "linux")))]
 mod unsupported;
 
 pub use captions::{CaptionError, CaptionSource, CaptionTrack, Chapter, Chapters, Cue};
@@ -39,17 +45,19 @@ pub use widget::{Video, VideoFit};
 use apple::open as platform_open;
 #[cfg(target_arch = "wasm32")]
 use web::open as platform_open;
+#[cfg(target_os = "linux")]
+use linux::open as platform_open;
 #[cfg(target_os = "windows")]
 use self::windows::open as platform_open;
-#[cfg(not(any(target_os = "ios", target_os = "macos", target_arch = "wasm32", target_os = "windows")))]
+#[cfg(not(any(target_os = "ios", target_os = "macos", target_arch = "wasm32", target_os = "windows", target_os = "linux")))]
 use unsupported::open as platform_open;
 
-/// Whether this platform has a video backend: macOS, iOS, Windows and the web for now.
+/// Whether this platform has a video backend: macOS, iOS, Windows, Linux (with FFmpeg installed) and the web for now.
 ///
 /// Where it returns `false`, every load fails with [`VideoError::Unsupported`]
 /// and the controls do nothing, so call sites need no platform guard; use this
 /// to hide video controls instead.
 #[inline]
 pub const fn is_supported() -> bool {
-    cfg!(any(target_os = "ios", target_os = "macos", target_arch = "wasm32", target_os = "windows"))
+    cfg!(any(target_os = "ios", target_os = "macos", target_arch = "wasm32", target_os = "windows", target_os = "linux"))
 }

@@ -53,6 +53,29 @@ pub enum NativeTexture {
         /// The fence value that is reached once the texture is written.
         value: u64,
     },
+    /// Straight-alpha `R8G8B8A8` pixels in system memory, `width * 4` bytes a
+    /// row with no padding.
+    ///
+    /// This is the fallback for a decoder with no GPU texture to share (a
+    /// software decoder): the renderer uploads the pixels itself, once per
+    /// `serial`, into textures it owns, so the producer's memory only has to
+    /// stay unchanged for as long as the frame lives.
+    Rgba8 {
+        /// Names the producer, from [`new_source_id`]; all its frames share
+        /// the textures the renderer keeps for it.
+        source: u32,
+        /// The first pixel. `width * height * 4` readable bytes follow.
+        data: NonNull<u8>,
+        /// Changes whenever the pixels do.
+        serial: u64,
+    },
+}
+
+/// A fresh id for a producer of [`NativeTexture::Rgba8`] frames, unique within
+/// the process.
+pub fn new_source_id() -> u32 {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// One frame of an external producer: a GPU texture and what keeps it alive.

@@ -50,6 +50,7 @@ use super::{
 mod damage_clear;
 #[path = "generic_renderer/external_frames.rs"]
 mod external_frames;
+mod pixel_uploads;
 mod frame_recovery;
 mod morph_group;
 use damage_clear::DamageClearTextureGeneric;
@@ -158,6 +159,8 @@ pub struct Renderer<B: GpuBackend = crate::backend::DefaultGpuBackend> {
     retained_layers: HashMap<u64, RetainedLayerGeneric<B>>,
     /// Video and other external frames, held while the GPU may sample them.
     external_frames: external_frames::ExternalFrames,
+    /// Pixels of software-decoded video, uploaded once per picture.
+    pixel_uploads: pixel_uploads::PixelUploads<B>,
     frame_index: u64,
     compositor_stats: CompositorStats,
     scene_tree: RetainedSceneTree,
@@ -379,6 +382,7 @@ impl<B: GpuBackend> Renderer<B> {
             clip_stack: Vec::new(),
             retained_layers: HashMap::new(),
             external_frames: external_frames::ExternalFrames::new(),
+            pixel_uploads: pixel_uploads::PixelUploads::new(),
             frame_index: 0,
             compositor_stats: CompositorStats::default(),
             scene_tree: RetainedSceneTree::new(),
@@ -618,6 +622,7 @@ impl<B: GpuBackend> Renderer<B> {
         let startup_timing = false;
         self.frame_index = self.frame_index.wrapping_add(1);
         self.external_frames.begin_render(self.frame_index);
+        self.pixel_uploads.begin_render(self.frame_index);
 
         let retained_started = dx12_stage_start!(startup_timing);
         self.prepare_retained_layers(backend, draw_list, is_srgb);
@@ -1051,6 +1056,7 @@ impl<B: GpuBackend> Renderer<B> {
 
         self.frame_index = self.frame_index.wrapping_add(1);
         self.external_frames.begin_render(self.frame_index);
+        self.pixel_uploads.begin_render(self.frame_index);
         self.prepare_retained_layers(backend, draw_list, is_srgb);
         let key = opacity_target_key;
         let result = self.scene_target.ensure(backend, self.format, key);
@@ -3000,7 +3006,7 @@ impl<B: GpuBackend> Renderer<B> {
                     // No frame yet, or a backend that cannot import this kind
                     // of texture: draw nothing rather than a stale picture.
                     if let Some(image_pipeline) = self.image_pipeline.as_ref()
-                        && let Some(view) = self.external_frames.import(backend, texture)
+                        && let Some(view) = self.external_frames.import(backend, &mut self.pixel_uploads, texture)
                     {
                         let bind_group = image_pipeline.create_external_bind_group(backend, &view);
                         let (x1, y1) = current_transform.transform_point(rect.x, rect.y);

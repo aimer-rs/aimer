@@ -44,6 +44,10 @@ objc2-quartz-core = { workspace = true, features = ["std", "CABase"] }
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-avf-audio = { workspace = true, features = ["std", "AVAudioSession", "AVAudioSessionTypes"] }
 
+# FFmpeg runs as a child process; the soundtrack plays through `aimer_audio`.
+[target.'cfg(target_os = "linux")'.dependencies]
+aimer_audio.workspace = true
+
 # WinRT `MediaPlayer` in frame-server mode; Media Foundation decodes and
 # streams, and each picture is copied into a shared Direct3D 11 texture that the
 # renderer's Direct3D 12 backend opens.
