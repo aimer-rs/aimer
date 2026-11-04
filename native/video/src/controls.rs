@@ -33,6 +33,18 @@ const THUMB: f32 = 12.0;
 const RAIL: f32 = 4.0;
 /// The width of the volume slider.
 const VOLUME_WIDTH: f32 = 72.0;
+/// The side of a bar button.
+const BUTTON: f32 = 36.0;
+/// The bar's padding: horizontal, then vertical.
+const BAR_PADDING: (i32, i32) = (12, 8);
+/// The gap between the seek bar and the buttons.
+const BAR_GAP: f32 = 4.0;
+/// The seek bar's height: the thumb plus room for it to grow under a press.
+const SEEK_HEIGHT: f32 = THUMB + 6.0;
+/// The bar's full height. It is fixed because a placed child that declares no
+/// size of its own fills its parent, which would spread the bar (and its
+/// background) over the whole picture.
+pub(crate) const BAR_HEIGHT: f32 = BAR_PADDING.1 as f32 * 2.0 + SEEK_HEIGHT + BAR_GAP + BUTTON;
 
 /// A toggle the controls show a button for: its state and what to call.
 #[derive(Clone)]
@@ -297,13 +309,16 @@ impl VideoControlsState {
             row.push(icon_button(icon, move || (toggle.on_toggle)(!toggle.on)));
         }
 
+        let (pad_x, pad_y) = BAR_PADDING;
         Container::new()
-            .padding(LayoutSpacing::new().left(12).right(12).top(8).bottom(8))
+            .width(Dimension::Percent(100.0))
+            .height(BAR_HEIGHT)
+            .padding(LayoutSpacing::new().left(pad_x).right(pad_x).top(pad_y).bottom(pad_y))
             .box_decoration(BoxDecoration::new().background_color(Color::Rgb(0, 0, 0).with_opacity(140)))
             .child(
                 Column::new().children(vec![
-                    self.seek_bar(player, position, duration, (width - 24.0).max(0.0)),
-                    SizedBox::new().height(4).boxed(),
+                    self.seek_bar(player, position, duration, (width - pad_x as f32 * 2.0).max(0.0)),
+                    SizedBox::new().height(BAR_GAP).boxed(),
                     Row::new()
                         .vertical_alignment(BoxAlignment::Center)
                         .children(row)
@@ -337,7 +352,7 @@ impl VideoControlsState {
             .value(position.as_secs_f64())
             .disabled(duration.is_none())
             .width(width)
-            .height(THUMB + 6.0)
+            .height(SEEK_HEIGHT)
             .track(rail([255, 255, 255, 70], Some((buffered, [255, 255, 255, 130]))))
             .trail(rail(accent, None))
             .thumb(SliderThumb::new().size(THUMB).radius(THUMB / 2.0).color(self.config.accent))
@@ -391,7 +406,7 @@ impl VideoControlsState {
             .step(0.05)
             .value(value)
             .width(VOLUME_WIDTH)
-            .height(THUMB + 6.0)
+            .height(SEEK_HEIGHT)
             .trail(SliderTrail::new().height(3.0).radius(1.5).color(Color::Rgb(255, 255, 255)))
             .thumb(SliderThumb::new().size(10.0).radius(5.0).color(Color::Rgb(255, 255, 255)))
             .on_change(move |volume| {
@@ -445,8 +460,8 @@ fn icon_button(icon: &'static StaticSvg, on_press: impl Fn() + 'static) -> AnyWi
         .decoration(BoxDecoration::new().background_color(Color::Transparent).border_radius(18))
         .child(
             Container::new()
-                .width(36)
-                .height(36)
+                .width(BUTTON)
+                .height(BUTTON)
                 .child(Align::new().alignment(Alignment::MidCenter).child(icon_image(icon, 20.0))),
         )
         .boxed()
@@ -459,7 +474,9 @@ fn label(text: String) -> AnyWidget {
 }
 
 fn chapter_pill(title: &str) -> AnyWidget {
+    // Fitted, or the row would stretch it to the buttons' height.
     Container::new()
+        .fit_content()
         .padding(LayoutSpacing::new().left(10).right(10).top(3).bottom(3))
         .box_decoration(BoxDecoration::new().background_color(Color::Rgb(255, 255, 255).with_opacity(40)).border_radius(12))
         .child(label(title.to_string()))

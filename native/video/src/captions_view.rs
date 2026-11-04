@@ -213,7 +213,9 @@ impl State<Captions> for CaptionsState {
 }
 
 fn caption_box(text: &str, style: &CaptionStyle) -> AnyWidget {
+    // Fitted, so the box is as wide as the line, not the picture.
     Container::new()
+        .fit_content()
         .padding(LayoutSpacing::new().left(10).right(10).top(4).bottom(4))
         .box_decoration(BoxDecoration::new().background_color(style.background).border_radius(4))
         .child(

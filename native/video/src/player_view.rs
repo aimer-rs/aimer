@@ -5,15 +5,17 @@ use std::sync::Arc;
 use aimer_attribute::Dimension;
 use aimer_container::Container;
 use aimer_modal::{Modal, ModalHandle};
-use aimer_space::{Align, Alignment, Positioned, Stack};
-use aimer_style::BoxDecoration;
+use aimer_space::{Align, Alignment, Stack};
+use aimer_style::{BoxDecoration, LayoutSpacing};
 use aimer_widget::base::{BuildContext, Color, WindowHandle};
 use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
 
+use crate::controls::BAR_HEIGHT;
 use crate::{CaptionStyle, CaptionTrack, Captions, Chapters, Video, VideoControls, VideoFit, VideoPlayer};
 
-/// How far above the bottom captions sit, clear of the controls.
-const CAPTION_LIFT: i32 = 72;
+/// How far above the bottom captions sit: clear of the control bar, with a
+/// small gap.
+const CAPTION_LIFT: i32 = BAR_HEIGHT as i32 + 8;
 
 /// A complete video player: the picture, its captions and the standard
 /// controls.
@@ -227,15 +229,21 @@ impl State<VideoPlayerView> for VideoPlayerViewState {
             if let Some(track) = config.captions.clone()
                 && captions_on
             {
+                // A layer as large as the picture, so the box is centred in it;
+                // a `Positioned` would hug the box and pin it to one edge.
                 layers = layers.add_child(
-                    Positioned::new().left(0).right(0).bottom(CAPTION_LIFT).child(
-                        Align::new().alignment(Alignment::BotCenter).child(
-                            Captions::new()
-                                .player(player.clone())
-                                .shared_track(track)
-                                .style(config.caption_style),
+                    Container::new()
+                        .width(Dimension::Percent(100.0))
+                        .height(Dimension::Percent(100.0))
+                        .padding(LayoutSpacing::new().bottom(CAPTION_LIFT))
+                        .child(
+                            Align::new().alignment(Alignment::BotCenter).child(
+                                Captions::new()
+                                    .player(player.clone())
+                                    .shared_track(track)
+                                    .style(config.caption_style),
+                            ),
                         ),
-                    ),
                 );
             }
 
