@@ -16,7 +16,7 @@ use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-use crate::backend::{Backend, Voice, VoiceData};
+use crate::backend::{Backend, Voice, VoiceData, is_http_url};
 use crate::state::{Phase, Shared};
 use crate::{AudioError, AudioLoops, AudioSource};
 
@@ -96,6 +96,21 @@ struct Track {
     passes_left: i64,
     /// A seek asked for before the source finished opening.
     pending_seek: Option<f64>,
+    /// A stream with nothing left to report: its length is known and all of it
+    /// is buffered. Until then a paused stream is still ticked.
+    settled: bool,
+}
+
+impl Track {
+    /// Whether the voice plays a URL while it downloads.
+    fn streaming(&self) -> bool {
+        matches!(self.data, Some(VoiceData::Stream(_)))
+    }
+
+    /// Restores the repeats of a fresh run.
+    fn reset_passes(&mut self) {
+        self.passes_left = passes(self.extra_loops, self.streaming());
+    }
 }
 
 /// A short effect: a pool of voices over one shared copy of the data.
@@ -134,7 +149,8 @@ impl<B: Backend> Engine<B> {
     pub(crate) fn needs_tick(&self) -> bool {
         self.entries
             .values()
-            .any(|entry| matches!(entry, Entry::Track(t) if t.intent_play && t.voice.is_some()))
+            .any(|entry| matches!(entry, Entry::Track(t) if t.voice.is_some()
+                && (t.intent_play || (t.streaming() && !t.settled))))
     }
 
     /// Runs until the process exits. The engine holds a sender of its own, so
@@ -179,6 +195,7 @@ impl<B: Backend> Engine<B> {
                         extra_loops: 0,
                         passes_left: 0,
                         pending_seek: None,
+                        settled: false,
                     }),
                 );
             }
@@ -216,7 +233,7 @@ impl<B: Backend> Engine<B> {
                     track.intent_play = false;
                     track.at_end = false;
                     track.pending_seek = None;
-                    track.passes_left = track.extra_loops.max(0);
+                    track.reset_passes();
                     if let Some(voice) = track.voice.as_mut() {
                         voice.stop();
                     }
@@ -259,9 +276,10 @@ impl<B: Backend> Engine<B> {
             Command::SetLoops { id, loops } => {
                 if let Some(Entry::Track(track)) = self.entries.get_mut(&id) {
                     track.extra_loops = loops.extra_plays();
-                    track.passes_left = track.extra_loops.max(0);
+                    track.reset_passes();
+                    let native = native_loops(track.extra_loops, track.streaming());
                     if let Some(voice) = track.voice.as_mut() {
-                        voice.set_extra_loops(native_loops(track.extra_loops));
+                        voice.set_extra_loops(native);
                     }
                 }
             }
@@ -277,6 +295,9 @@ impl<B: Backend> Engine<B> {
         let backend = &mut self.backend;
         for entry in self.entries.values_mut() {
             let Entry::Track(track) = entry else { continue };
+            if track.streaming() && !track.settled {
+                watch_stream(track);
+            }
             if !track.intent_play {
                 continue;
             }
@@ -319,7 +340,8 @@ impl<B: Backend> Engine<B> {
                 track.intent_play = false;
                 track.at_end = false;
                 track.pending_seek = None;
-                track.passes_left = track.extra_loops.max(0);
+                track.settled = false;
+                track.reset_passes();
                 (track.generation, false, track.shared.clone())
             }
             Some(Entry::Sound(sound)) => {
@@ -354,8 +376,11 @@ impl<B: Backend> Engine<B> {
             Some(Entry::Track(track)) if track.generation == generation => {
                 match result.and_then(|data| backend.open(&data).map(|voice| (data, voice))) {
                     Ok((data, mut voice)) => {
+                        track.data = Some(data);
+                        let streaming = track.streaming();
+                        track.reset_passes();
                         voice.set_volume(track.volume);
-                        voice.set_extra_loops(native_loops(track.extra_loops));
+                        voice.set_extra_loops(native_loops(track.extra_loops, streaming));
                         let duration = voice.duration();
                         if let Some(seconds) = track.pending_seek.take() {
                             voice.seek(clamp_seconds(seconds, duration));
@@ -363,9 +388,11 @@ impl<B: Backend> Engine<B> {
                         {
                             let mut snapshot = track.shared.lock();
                             snapshot.phase = Phase::Loaded;
-                            snapshot.duration = Some(duration);
+                            snapshot.duration = duration.is_finite().then_some(duration);
+                            snapshot.buffered = voice.buffered();
+                            snapshot.buffering = voice.is_buffering();
                         }
-                        track.data = Some(data);
+                        track.settled = !streaming;
                         track.voice = Some(voice);
                         // A `play` that arrived while loading was recorded in
                         // `intent_play` by `Command::Play`.
@@ -425,7 +452,7 @@ impl<B: Backend> Engine<B> {
 fn start_track<B: Backend>(backend: &mut B, track: &mut Track) {
     let started = if track.at_end {
         track.at_end = false;
-        track.passes_left = track.extra_loops.max(0);
+        track.reset_passes();
         restart(backend, track)
     } else {
         match track.voice.as_mut() {
@@ -446,13 +473,21 @@ fn start_track<B: Backend>(backend: &mut B, track: &mut Track) {
 /// workaround worked only some of the time when probed. A fresh player always
 /// starts, so a track that must play again gets one.
 fn restart<B: Backend>(backend: &mut B, track: &mut Track) -> Result<(), AudioError> {
+    if track.streaming()
+        && let Some(voice) = track.voice.as_mut()
+    {
+        // A stream's data is already buffered by the player, so rewind it
+        // instead of opening a new connection.
+        voice.seek(0.0);
+        return voice.play();
+    }
     let data = track
         .data
         .clone()
         .ok_or_else(|| AudioError::Playback("no audio is loaded".into()))?;
     let mut voice = backend.open(&data)?;
     voice.set_volume(track.volume);
-    voice.set_extra_loops(native_loops(track.extra_loops));
+    voice.set_extra_loops(native_loops(track.extra_loops, false));
     let result = voice.play();
     track.voice = Some(voice);
     result
@@ -493,16 +528,57 @@ fn replay(voice: &mut Box<dyn Voice>, shared: &Shared) {
     }
 }
 
-/// The repeat count handed to the platform: only "forever" (`-1`) is native;
-/// finite repeats are driven by [`Engine::tick`].
-fn native_loops(extra: i64) -> i64 {
-    if extra < 0 { -1 } else { 0 }
+/// The repeat count handed to the platform: only "forever" (`-1`) is native,
+/// and not for a stream; every other repeat is driven by [`Engine::tick`].
+fn native_loops(extra: i64, streaming: bool) -> i64 {
+    if extra < 0 && !streaming { -1 } else { 0 }
+}
+
+/// How many repeats [`Engine::tick`] drives itself. "Forever" is the
+/// platform's job except for a stream, which the engine rewinds without end.
+fn passes(extra: i64, streaming: bool) -> i64 {
+    match (extra < 0, streaming) {
+        (true, true) => i64::MAX,
+        (true, false) => 0,
+        (false, _) => extra,
+    }
+}
+
+/// Publishes what a stream learns while it plays: its length, how much of it
+/// has arrived, whether it is waiting for more, and why it died.
+fn watch_stream(track: &mut Track) {
+    let Some(voice) = track.voice.as_ref() else {
+        return;
+    };
+    if let Some(error) = voice.error() {
+        // A dead connection stops the player, which must not read as the end.
+        track.intent_play = false;
+        track.settled = true;
+        track.voice = None;
+        track.shared.lock().fail(error);
+        return;
+    }
+    let duration = voice.duration();
+    let buffered = voice.buffered();
+    {
+        let mut snapshot = track.shared.lock();
+        if duration.is_finite() {
+            snapshot.duration = Some(duration);
+        }
+        snapshot.buffered = buffered;
+        snapshot.buffering = voice.is_buffering();
+    }
+    track.settled = duration.is_finite() && buffered >= duration;
 }
 
 /// Clamps a requested playhead into `0..=duration`; a NaN becomes the start.
+/// A duration that is not known yet (`NaN`) only bounds the playhead below.
 pub(crate) fn clamp_seconds(seconds: f64, duration: f64) -> f64 {
     if seconds.is_nan() {
         return 0.0;
+    }
+    if duration.is_nan() {
+        return seconds.clamp(0.0, f64::MAX);
     }
     seconds.clamp(0.0, duration.max(0.0))
 }
@@ -513,7 +589,17 @@ pub(crate) fn clamp_seconds(seconds: f64, duration: f64) -> f64 {
 /// (`want_bytes`) read the whole file once so every voice shares it.
 fn prepare<B: Backend>(source: &AudioSource, want_bytes: bool) -> Result<VoiceData, AudioError> {
     match source {
-        AudioSource::Url(url) => B::fetch(url).map(|bytes| VoiceData::Bytes(bytes.into())),
+        AudioSource::Stream(url) if !want_bytes => {
+            if is_http_url(url) {
+                Ok(VoiceData::Stream(url.clone()))
+            } else {
+                Err(AudioError::Network(format!("not an http(s) URL: {url}")))
+            }
+        }
+        // A sound needs every byte to overlap itself, so it cannot stream.
+        AudioSource::Url(url) | AudioSource::Stream(url) => {
+            B::fetch(url).map(|bytes| VoiceData::Bytes(bytes.into()))
+        }
         AudioSource::File(path) => from_path(path.clone(), want_bytes),
         AudioSource::Bundled(key) => {
             let exe = std::env::current_exe().ok();

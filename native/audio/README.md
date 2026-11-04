@@ -29,17 +29,50 @@ tap.play();
 |----------------------------|------------------------------------------------------------------------|
 | `AudioSource::bundled(..)` | The key from `[assets]` in `Aimer.toml`, e.g. `Assets::THEME.path()`.   |
 | `AudioSource::file(..)`    | A path on the host file system.                                        |
-| `AudioSource::url(..)`     | `http`/`https`. The whole file downloads first; there is no streaming. |
+| `AudioSource::url(..)`     | `http`/`https`. The whole file downloads first, then seeks and loops are instant. |
+| `AudioSource::stream(..)`  | `http`/`https`, played while it downloads; see [Streaming](#streaming). |
 
 A track opens files by path, so the system streams them from disk. A sound
 reads the whole file into memory once, so keep effects short.
+
+## Streaming
+
+`AudioSource::stream(url)` starts playing once enough has arrived instead of
+waiting for the whole file, which suits podcasts and long tracks.
+
+```rust,no_run
+use aimer_audio::{AudioPlayer, AudioSource, PlaybackState};
+
+let player = AudioPlayer::from_source(AudioSource::stream("https://example.com/episode.mp3"));
+player.play();
+
+// From a frame callback:
+match player.state() {
+    PlaybackState::Buffering => { /* show a spinner */ }
+    _ => { /* progress bar: player.position() of player.duration(), */
+           /* with player.buffered() as the loaded part */ }
+}
+```
+
+- `duration()` is `None` until the first bytes reveal it. `position()` and
+  `buffered()` update with the same 30 ms tick as a local track.
+- `PlaybackState::Buffering` means "asked to play, waiting for data"; it
+  resumes by itself and `is_playing()` stays `true`.
+- A dropped connection fails the track (`AudioError::Network`) instead of
+  finishing it.
+- Seeking past the buffered part waits for the network, then resumes.
+- Loops are driven by the engine by rewinding the same player, so a looping
+  stream does not download again.
+- Only an `AudioPlayer` streams. A `Sound` that is given a stream source
+  downloads it like `AudioSource::url`.
+- Streams are not cached: a new `load` of the same URL downloads it again.
 
 ## Platforms
 
 | Platform | Backend                                  |
 |----------|------------------------------------------|
-| macOS    | `AVAudioPlayer`                          |
-| iOS      | `AVAudioPlayer`, with a playback session |
+| macOS    | `AVAudioPlayer`; `AVPlayer` for streams  |
+| iOS      | `AVAudioPlayer`, with a playback session; `AVPlayer` for streams |
 | others   | none: loads fail with `AudioError::Unsupported`; see `is_supported()` |
 
 Android and wasm have no backend yet. The engine is platform independent and
@@ -54,6 +87,8 @@ two traits.
 ## Behaviour worth knowing
 
 - `position()` is refreshed about every 30 ms while a track plays.
+- A streamed track is also ticked while it is paused until its length is known
+  and all of it is downloaded, so `duration()` and `buffered()` keep updating.
 - `play()` before `load()` does nothing; `play()` while loading starts the
   track the moment it is ready.
 - A finished track reads `PlaybackState::Finished`, and `play()` restarts it.

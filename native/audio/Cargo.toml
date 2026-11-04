@@ -11,6 +11,9 @@ aimer_tls.workspace = true
 objc2.workspace = true
 objc2-foundation = { workspace = true, features = ["std", "NSData", "NSError", "NSString", "NSURL"] }
 objc2-avf-audio = { workspace = true, features = ["std", "AVAudioPlayer"] }
+# `AVPlayer` plays a URL while it downloads; `AVAudioPlayer` cannot.
+objc2-av-foundation = { workspace = true, features = ["std", "AVPlayer", "AVPlayerItem", "AVTime", "objc2-core-media"] }
+objc2-core-media = { workspace = true, features = ["std", "CMTime", "CMTimeRange"] }
 
 # The audio session only exists on iOS; macOS plays without one.
 [target.'cfg(target_os = "ios")'.dependencies]

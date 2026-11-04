@@ -10,6 +10,8 @@ mod state;
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 mod apple;
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+mod apple_stream;
 #[cfg(not(any(target_os = "ios", target_os = "macos")))]
 mod unsupported;
 

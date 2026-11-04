@@ -172,9 +172,23 @@ impl AudioPlayer {
         self.handle.shared.lock().state()
     }
 
-    /// Whether the player is, or is about to start, producing sound.
+    /// Whether the player is, or is about to start, producing sound. A stream
+    /// that is [buffering](Self::is_buffering) still counts: it resumes by
+    /// itself.
     pub fn is_playing(&self) -> bool {
-        self.state() == PlaybackState::Playing
+        matches!(self.state(), PlaybackState::Playing | PlaybackState::Buffering)
+    }
+
+    /// Whether playback is waiting for streamed data to arrive.
+    pub fn is_buffering(&self) -> bool {
+        self.state() == PlaybackState::Buffering
+    }
+
+    /// How far into the track audio is available without waiting for the
+    /// network. For anything but an [`AudioSource::Stream`] that is the whole
+    /// track as soon as it is loaded.
+    pub fn buffered(&self) -> Duration {
+        Duration::try_from_secs_f64(self.handle.shared.lock().buffered).unwrap_or_default()
     }
 
     /// The playhead.
@@ -182,7 +196,8 @@ impl AudioPlayer {
         Duration::try_from_secs_f64(self.handle.shared.lock().position).unwrap_or_default()
     }
 
-    /// The track's length, once it is loaded.
+    /// The track's length, once it is known. A stream reveals it after its
+    /// first bytes arrive.
     pub fn duration(&self) -> Option<Duration> {
         let duration = self.handle.shared.lock().duration?;
         Duration::try_from_secs_f64(duration).ok()

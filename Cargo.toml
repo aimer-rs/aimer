@@ -467,6 +467,10 @@ objc2-core-haptics = "0.3.2"
 # through `objc2-core-haptics`; default features are off so only the two
 # classes in use are bound.
 objc2-avf-audio = { version = "0.3.2", default-features = false }
+# AVPlayer for `aimer_audio`' streamed tracks (AVAudioPlayer cannot play a URL
+# while it downloads), and the CMTime it seeks with.
+objc2-av-foundation = { version = "0.3.2", default-features = false }
+objc2-core-media = { version = "0.3.2", default-features = false }
 objc2-app-kit = { version = "0.3.2", default-features = false }
 # `disable-encoding-assertions` drops the check objc2 runs on *every* message
 # send in a debug build: it re-parses the method's type encoding and compares it

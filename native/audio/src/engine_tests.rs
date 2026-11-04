@@ -16,6 +16,11 @@ struct VoiceState {
     extra_loops: i64,
     plays: u32,
     from_bytes: bool,
+    /// Opened from `VoiceData::Stream`.
+    streamed: bool,
+    buffering: bool,
+    buffered: f64,
+    error: Option<AudioError>,
     /// The engine dropped the voice.
     released: bool,
 }
@@ -76,6 +81,15 @@ impl Voice for FakeVoice {
     fn set_extra_loops(&mut self, extra: i64) {
         self.0.borrow_mut().extra_loops = extra;
     }
+    fn is_buffering(&self) -> bool {
+        self.0.borrow().buffering
+    }
+    fn buffered(&self) -> f64 {
+        self.0.borrow().buffered
+    }
+    fn error(&self) -> Option<AudioError> {
+        self.0.borrow().error.clone()
+    }
 }
 
 struct FakeBackend;
@@ -89,10 +103,14 @@ impl Backend for FakeBackend {
         if FAIL_OPEN.with(Cell::get) {
             return Err(AudioError::Decode("not audio".into()));
         }
+        let streamed = matches!(data, VoiceData::Stream(_));
         let state = Rc::new(RefCell::new(VoiceState {
-            duration: 10.0,
+            // A stream does not know its length until the first bytes arrive.
+            duration: if streamed { f64::NAN } else { 10.0 },
             volume: 1.0,
             from_bytes: matches!(data, VoiceData::Bytes(_)),
+            streamed,
+            buffering: streamed,
             ..VoiceState::default()
         }));
         OPENED.with(|opened| opened.borrow_mut().push(state.clone()));
@@ -661,4 +679,196 @@ fn seconds_clamp_into_the_track() {
     assert_eq!(clamp_seconds(f64::NAN, 10.0), 0.0);
     assert_eq!(clamp_seconds(f64::INFINITY, 10.0), 10.0);
     assert_eq!(clamp_seconds(5.0, 0.0), 0.0);
+}
+
+const STREAM_URL: &str = "https://example.test/live.mp3";
+
+impl Rig {
+    /// A track opened on a stream whose length is not known yet.
+    fn streaming_track(&mut self, id: u64) -> Arc<Shared> {
+        let shared = self.track(id);
+        shared.lock().begin_load();
+        self.load(id, AudioSource::stream(STREAM_URL));
+        self.pump();
+        shared
+    }
+}
+
+/// The stream reports its first bytes: a length and some buffered audio.
+fn stream_becomes_playable(voice: &VoiceRef, duration: f64, buffered: f64) {
+    let mut voice = voice.borrow_mut();
+    voice.duration = duration;
+    voice.buffered = buffered;
+    voice.buffering = false;
+}
+
+#[test]
+fn a_stream_opens_without_a_download_and_its_length_is_not_invented() {
+    let mut rig = Rig::new();
+    let shared = rig.streaming_track(1);
+
+    let snapshot = shared.lock();
+    assert_eq!(snapshot.phase, Phase::Loaded);
+    assert_eq!(snapshot.duration, None, "an unknown length stays unknown");
+    assert!(snapshot.buffering);
+    drop(snapshot);
+    let opened = voices();
+    assert_eq!(opened.len(), 1);
+    assert!(opened[0].borrow().streamed && !opened[0].borrow().from_bytes);
+}
+
+#[test]
+fn a_stream_url_that_is_not_http_fails_before_any_voice_opens() {
+    let mut rig = Rig::new();
+    let shared = rig.track(1);
+    shared.lock().begin_load();
+    rig.load(1, AudioSource::stream("ftp://example.test/a.mp3"));
+    rig.pump();
+
+    assert!(matches!(shared.lock().error, Some(AudioError::Network(_))));
+    assert!(voices().is_empty());
+}
+
+#[test]
+fn a_playing_stream_reads_buffering_until_the_first_bytes_arrive() {
+    let mut rig = Rig::new();
+    let shared = rig.streaming_track(1);
+    shared.lock().want_play = true;
+    rig.engine.handle(Command::Play { id: 1 });
+    assert_eq!(shared.lock().state(), PlaybackState::Buffering);
+    assert!(rig.engine.needs_tick(), "buffering has to be watched");
+
+    rig.engine.tick();
+    assert_eq!(shared.lock().state(), PlaybackState::Buffering);
+
+    stream_becomes_playable(&voices()[0], 30.0, 4.0);
+    rig.engine.tick();
+    let snapshot = shared.lock();
+    assert_eq!(snapshot.state(), PlaybackState::Playing);
+    assert_eq!(snapshot.duration, Some(30.0));
+    assert_eq!(snapshot.buffered, 4.0);
+}
+
+#[test]
+fn a_paused_stream_keeps_ticking_until_it_is_fully_buffered() {
+    let mut rig = Rig::new();
+    let shared = rig.streaming_track(1);
+    assert!(rig.engine.needs_tick(), "the length is still unknown");
+
+    stream_becomes_playable(&voices()[0], 30.0, 10.0);
+    rig.engine.tick();
+    assert_eq!(shared.lock().duration, Some(30.0));
+    assert!(rig.engine.needs_tick(), "20 s are still to download");
+
+    voices()[0].borrow_mut().buffered = 30.0;
+    rig.engine.tick();
+    assert_eq!(shared.lock().buffered, 30.0);
+    assert!(!rig.engine.needs_tick(), "nothing left to watch while paused");
+}
+
+#[test]
+fn a_stream_that_fails_midway_reports_the_error_instead_of_finishing() {
+    let mut rig = Rig::new();
+    let shared = rig.streaming_track(1);
+    shared.lock().want_play = true;
+    rig.engine.handle(Command::Play { id: 1 });
+
+    {
+        let voice = &voices()[0];
+        let mut voice = voice.borrow_mut();
+        voice.playing = false; // the player stops when the connection dies
+        voice.error = Some(AudioError::Network("connection lost".into()));
+    }
+    rig.engine.tick();
+
+    let snapshot = shared.lock();
+    assert_eq!(snapshot.state(), PlaybackState::Failed);
+    assert_eq!(snapshot.error, Some(AudioError::Network("connection lost".into())));
+    assert!(!snapshot.finished);
+}
+
+#[test]
+fn a_paused_stream_that_fails_is_reported_too() {
+    let mut rig = Rig::new();
+    let shared = rig.streaming_track(1);
+    voices()[0].borrow_mut().error = Some(AudioError::Network("404".into()));
+    rig.engine.tick();
+
+    assert_eq!(shared.lock().state(), PlaybackState::Failed);
+}
+
+#[test]
+fn a_seek_on_a_stream_of_unknown_length_is_not_clamped_to_zero() {
+    let mut rig = Rig::new();
+    let _shared = rig.streaming_track(1);
+    rig.engine.handle(Command::Seek { id: 1, seconds: 42.0 });
+
+    assert_eq!(voices()[0].borrow().position, 42.0);
+}
+
+#[test]
+fn a_looping_stream_rewinds_the_same_voice_instead_of_downloading_again() {
+    let mut rig = Rig::new();
+    let shared = rig.track(1);
+    rig.engine.handle(Command::SetLoops {
+        id: 1,
+        loops: AudioLoops::Count(2),
+    });
+    shared.lock().begin_load();
+    rig.load(1, AudioSource::stream(STREAM_URL));
+    rig.pump();
+    shared.lock().want_play = true;
+    rig.engine.handle(Command::Play { id: 1 });
+    stream_becomes_playable(&voices()[0], 10.0, 10.0);
+
+    voices()[0].borrow_mut().position = 10.0;
+    voices()[0].borrow_mut().playing = false; // the first pass ran out
+    rig.engine.tick();
+
+    assert_eq!(voices().len(), 1, "no second connection");
+    let voice = voices()[0].clone();
+    assert!(voice.borrow().playing);
+    assert_eq!(voice.borrow().position, 0.0);
+    assert_eq!(voice.borrow().plays, 2);
+    assert!(!shared.lock().finished);
+
+    voices()[0].borrow_mut().playing = false; // the last pass
+    rig.engine.tick();
+    assert!(shared.lock().finished);
+}
+
+#[test]
+fn an_infinite_stream_loop_is_driven_by_the_engine_not_the_platform() {
+    let mut rig = Rig::new();
+    let shared = rig.track(1);
+    rig.engine.handle(Command::SetLoops {
+        id: 1,
+        loops: AudioLoops::Infinite,
+    });
+    shared.lock().begin_load();
+    rig.load(1, AudioSource::stream(STREAM_URL));
+    rig.pump();
+    shared.lock().want_play = true;
+    rig.engine.handle(Command::Play { id: 1 });
+    stream_becomes_playable(&voices()[0], 10.0, 10.0);
+
+    assert_eq!(voices()[0].borrow().extra_loops, 0, "a player has no native loop for a stream");
+    for round in 2..=4 {
+        voices()[0].borrow_mut().playing = false;
+        rig.engine.tick();
+        assert_eq!(voices()[0].borrow().plays, round);
+    }
+    assert!(!shared.lock().finished);
+}
+
+#[test]
+fn a_sound_cannot_stream_so_a_stream_source_is_downloaded_for_it() {
+    let mut rig = Rig::new();
+    let shared = rig.sound(1);
+    shared.lock().begin_load();
+    rig.load(1, AudioSource::stream("https://example.test/ok.mp3"));
+    rig.pump();
+
+    assert_eq!(shared.lock().phase, Phase::Loaded);
+    assert!(voices()[0].borrow().from_bytes);
 }

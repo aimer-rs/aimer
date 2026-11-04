@@ -244,6 +244,7 @@ fn progress_view(player: &AudioPlayer, app_theme: ThemeData) -> AnyWidget {
         PlaybackState::Loading => "Loading".to_string(),
         PlaybackState::Ready => "Ready".to_string(),
         PlaybackState::Playing => "Playing".to_string(),
+        PlaybackState::Buffering => "Buffering".to_string(),
         PlaybackState::Paused => "Paused".to_string(),
         PlaybackState::Finished => "Finished".to_string(),
         PlaybackState::Failed => player
