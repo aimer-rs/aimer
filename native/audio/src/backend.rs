@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::AudioError;
+use crate::{AudioError, AudioSource};
 
 /// Encoded audio, ready for a backend to open.
 // Platforms without a backend never open the data, so never read it.
@@ -19,6 +19,9 @@ pub(crate) enum VoiceData {
     Bytes(Arc<[u8]>),
     /// An `http(s)` URL the backend plays while it downloads; used by tracks.
     Stream(String),
+    /// A bundled asset the backend opens itself, by its key, because it does
+    /// not live on the file system (an Android APK).
+    Asset(String),
 }
 
 /// One playable instance of loaded audio.
@@ -54,6 +57,9 @@ pub(crate) trait Voice {
     fn error(&self) -> Option<AudioError> {
         None
     }
+    /// Called on every engine tick before the voice is read, for players that
+    /// apply deferred work (a seek asked for before they finished opening).
+    fn poll(&mut self) {}
 }
 
 /// A platform's way of opening voices and downloading files.
@@ -63,8 +69,33 @@ pub(crate) trait Backend: 'static {
     where
         Self: Sized;
 
-    /// Opens `data` as a paused voice. Runs on the engine thread.
+    /// Opens `data` as a paused voice for a track. Runs on the engine thread.
     fn open(&mut self, data: &VoiceData) -> Result<Box<dyn Voice>, AudioError>;
+
+    /// Opens `data` as a paused voice for a sound: short, triggered often, and
+    /// overlapping itself. Backends that decode themselves keep its samples
+    /// across voices; the default opens it like a track.
+    fn open_sound(&mut self, data: &VoiceData) -> Result<Box<dyn Voice>, AudioError> {
+        self.open(data)
+    }
+
+    /// Prepares `source` without a helper thread, when that needs no slow
+    /// work. `None` (the default) reads or downloads it on a helper thread.
+    fn prepare_now(_source: &AudioSource, _want_bytes: bool) -> Option<Result<VoiceData, AudioError>>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
+    /// Resolves a bundled asset that is not a plain file, on the helper
+    /// thread. `None` (the default) looks it up on the file system.
+    fn resolve_bundled(_key: &str, _want_bytes: bool) -> Option<Result<VoiceData, AudioError>>
+    where
+        Self: Sized,
+    {
+        None
+    }
 
     /// Downloads `url`. Runs on a short-lived helper thread, so it may block.
     fn fetch(url: &str) -> Result<Vec<u8>, AudioError>

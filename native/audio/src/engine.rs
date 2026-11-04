@@ -11,8 +11,12 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, OnceLock};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::OnceLock;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
@@ -21,7 +25,7 @@ use crate::state::{Phase, Shared};
 use crate::{AudioError, AudioLoops, AudioSource};
 
 /// How often a playing track publishes its playhead.
-const TICK: Duration = Duration::from_millis(30);
+pub(crate) const TICK: Duration = Duration::from_millis(30);
 /// The most overlapping instances of one [`Sound`](crate::Sound); a further
 /// trigger restarts the oldest.
 pub(crate) const MAX_VOICES: usize = 8;
@@ -96,8 +100,9 @@ struct Track {
     passes_left: i64,
     /// A seek asked for before the source finished opening.
     pending_seek: Option<f64>,
-    /// A stream with nothing left to report: its length is known and all of it
-    /// is buffered. Until then a paused stream is still ticked.
+    /// Nothing left to report: the length is known and all of it is
+    /// buffered. Until then even a paused track is ticked, because a stream,
+    /// or a player that opens asynchronously, learns both over time.
     settled: bool,
 }
 
@@ -145,16 +150,17 @@ impl<B: Backend> Engine<B> {
         }
     }
 
-    /// Whether any track is producing sound and needs ticking.
+    /// Whether any track is producing sound, or still learning its length or
+    /// buffer, and needs ticking.
     pub(crate) fn needs_tick(&self) -> bool {
-        self.entries
-            .values()
-            .any(|entry| matches!(entry, Entry::Track(t) if t.voice.is_some()
-                && (t.intent_play || (t.streaming() && !t.settled))))
+        self.entries.values().any(|entry| {
+            matches!(entry, Entry::Track(t) if t.voice.is_some() && (t.intent_play || !t.settled))
+        })
     }
 
     /// Runs until the process exits. The engine holds a sender of its own, so
     /// the channel never disconnects.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn run(&mut self, rx: Receiver<Command>) {
         loop {
             let first = if self.needs_tick() {
@@ -295,8 +301,21 @@ impl<B: Backend> Engine<B> {
         let backend = &mut self.backend;
         for entry in self.entries.values_mut() {
             let Entry::Track(track) = entry else { continue };
-            if track.streaming() && !track.settled {
-                watch_stream(track);
+            let Some(voice) = track.voice.as_mut() else {
+                continue;
+            };
+            voice.poll();
+            if let Some(error) = voice.error() {
+                // A player that died (a dropped connection, a corrupt frame)
+                // stops, and that must not read as reaching the end.
+                track.intent_play = false;
+                track.settled = true;
+                track.voice = None;
+                track.shared.lock().fail(error);
+                continue;
+            }
+            if !track.settled || track.intent_play {
+                observe(track);
             }
             if !track.intent_play {
                 continue;
@@ -321,11 +340,12 @@ impl<B: Backend> Engine<B> {
                 track.intent_play = false;
                 track.at_end = true;
                 let duration = voice.duration();
+                let end = if duration.is_finite() { duration } else { voice.position() };
                 let mut snapshot = track.shared.lock();
                 if snapshot.want_play {
                     snapshot.want_play = false;
                     snapshot.finished = true;
-                    snapshot.position = duration;
+                    snapshot.position = end;
                 }
             }
         }
@@ -354,6 +374,12 @@ impl<B: Backend> Engine<B> {
             }
             None => return,
         };
+        // A backend that needs no slow work (the web hands the browser a URL)
+        // prepares in place, which also serves platforms without threads.
+        if let Some(result) = B::prepare_now(&source, want_bytes) {
+            self.prepared(id, generation, result);
+            return;
+        }
         let tx = self.tx.clone();
         let spawned = thread::Builder::new()
             .name("aimer-audio-load".into())
@@ -385,15 +411,9 @@ impl<B: Backend> Engine<B> {
                         if let Some(seconds) = track.pending_seek.take() {
                             voice.seek(clamp_seconds(seconds, duration));
                         }
-                        {
-                            let mut snapshot = track.shared.lock();
-                            snapshot.phase = Phase::Loaded;
-                            snapshot.duration = duration.is_finite().then_some(duration);
-                            snapshot.buffered = voice.buffered();
-                            snapshot.buffering = voice.is_buffering();
-                        }
-                        track.settled = !streaming;
+                        track.shared.lock().phase = Phase::Loaded;
                         track.voice = Some(voice);
+                        observe(track);
                         // A `play` that arrived while loading was recorded in
                         // `intent_play` by `Command::Play`.
                         if track.intent_play {
@@ -407,7 +427,7 @@ impl<B: Backend> Engine<B> {
                 }
             }
             Some(Entry::Sound(sound)) if sound.generation == generation => {
-                match result.and_then(|data| backend.open(&data).map(|voice| (data, voice))) {
+                match result.and_then(|data| backend.open_sound(&data).map(|voice| (data, voice))) {
                     Ok((data, mut voice)) => {
                         voice.set_volume(sound.volume);
                         let duration = voice.duration();
@@ -506,7 +526,7 @@ fn trigger<B: Backend>(backend: &mut B, sound: &mut Sound) {
         return;
     }
     if sound.voices.len() < MAX_VOICES {
-        match backend.open(&data) {
+        match backend.open_sound(&data) {
             Ok(mut voice) => {
                 voice.set_volume(sound.volume);
                 replay(&mut voice, &sound.shared);
@@ -544,22 +564,16 @@ fn passes(extra: i64, streaming: bool) -> i64 {
     }
 }
 
-/// Publishes what a stream learns while it plays: its length, how much of it
-/// has arrived, whether it is waiting for more, and why it died.
-fn watch_stream(track: &mut Track) {
+/// Publishes what a track learns over time: its length, how much of it has
+/// arrived, and whether it is waiting for more.
+fn observe(track: &mut Track) {
     let Some(voice) = track.voice.as_ref() else {
         return;
     };
-    if let Some(error) = voice.error() {
-        // A dead connection stops the player, which must not read as the end.
-        track.intent_play = false;
-        track.settled = true;
-        track.voice = None;
-        track.shared.lock().fail(error);
-        return;
-    }
     let duration = voice.duration();
-    let buffered = voice.buffered();
+    let reported = voice.buffered();
+    // A player that cannot tell (`NaN`) has certainly buffered what it played.
+    let buffered = if reported.is_nan() { voice.position() } else { reported };
     {
         let mut snapshot = track.shared.lock();
         if duration.is_finite() {
@@ -568,7 +582,8 @@ fn watch_stream(track: &mut Track) {
         snapshot.buffered = buffered;
         snapshot.buffering = voice.is_buffering();
     }
-    track.settled = duration.is_finite() && buffered >= duration;
+    // Once the length is known, an unknown buffer will not become known.
+    track.settled = duration.is_finite() && (reported.is_nan() || reported >= duration);
 }
 
 /// Clamps a requested playhead into `0..=duration`; a NaN becomes the start.
@@ -602,6 +617,9 @@ fn prepare<B: Backend>(source: &AudioSource, want_bytes: bool) -> Result<VoiceDa
         }
         AudioSource::File(path) => from_path(path.clone(), want_bytes),
         AudioSource::Bundled(key) => {
+            if let Some(resolved) = B::resolve_bundled(key, want_bytes) {
+                return resolved;
+            }
             let exe = std::env::current_exe().ok();
             let path = bundled_candidates(key, exe.as_deref())
                 .into_iter()
@@ -642,6 +660,7 @@ pub(crate) fn bundled_candidates(key: &str, exe: Option<&Path>) -> Vec<PathBuf> 
 }
 
 /// The process-wide engine thread's inbox, starting the thread on first use.
+#[cfg(not(target_arch = "wasm32"))]
 fn sender() -> &'static Sender<Command> {
     static SENDER: OnceLock<Sender<Command>> = OnceLock::new();
     SENDER.get_or_init(|| {
@@ -662,15 +681,24 @@ fn sender() -> &'static Sender<Command> {
 }
 
 /// Starts the engine thread now rather than on the first handle.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn start() {
     sender();
 }
 
 /// Sends `command` to the engine thread, starting it on first use. Returns
 /// `false` if the engine thread could not be started.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn send(command: Command) -> bool {
     sender().send(command).is_ok()
 }
+
+// The web has no threads: the engine runs on the page's thread instead.
+#[cfg(target_arch = "wasm32")]
+#[path = "engine_web.rs"]
+mod web;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use web::{send, start};
 
 #[cfg(test)]
 #[path = "engine_tests.rs"]

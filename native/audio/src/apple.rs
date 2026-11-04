@@ -49,6 +49,8 @@ impl Backend for AppleBackend {
                 (player, None)
             }
             VoiceData::Stream(_) => unreachable!("handled above"),
+            // Apple bundles are plain directories, so assets resolve to paths.
+            VoiceData::Asset(key) => return Err(AudioError::NotFound(key.clone())),
             VoiceData::Bytes(bytes) => {
                 let data = NSData::with_bytes(bytes);
                 let player =

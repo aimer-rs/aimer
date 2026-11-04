@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc;
 
 use super::*;
 use crate::PlaybackState;
@@ -21,6 +22,11 @@ struct VoiceState {
     buffering: bool,
     buffered: f64,
     error: Option<AudioError>,
+    /// Opened like a player that reads its header asynchronously.
+    opening: bool,
+    /// Opened through `Backend::open_sound`.
+    for_sound: bool,
+    polls: u32,
     /// The engine dropped the voice.
     released: bool,
 }
@@ -31,6 +37,11 @@ aimer_tls::thread_local! {
     static OPENED: RefCell<Vec<VoiceRef>> = const { RefCell::new(Vec::new()) };
     static FAIL_OPEN: Cell<bool> = const { Cell::new(false) };
     static FAIL_PLAY: Cell<bool> = const { Cell::new(false) };
+    /// Voices open without knowing their length, like a player that opens
+    /// asynchronously.
+    static OPEN_ASYNC: Cell<bool> = const { Cell::new(false) };
+    /// `prepare_now` handles every source, like the web backend.
+    static PREPARE_NOW: Cell<bool> = const { Cell::new(false) };
 }
 
 fn voices() -> Vec<VoiceRef> {
@@ -85,10 +96,15 @@ impl Voice for FakeVoice {
         self.0.borrow().buffering
     }
     fn buffered(&self) -> f64 {
-        self.0.borrow().buffered
+        let state = self.0.borrow();
+        // Only a stream or a still-opening player has partial data.
+        if state.streamed || state.opening { state.buffered } else { state.duration }
     }
     fn error(&self) -> Option<AudioError> {
         self.0.borrow().error.clone()
+    }
+    fn poll(&mut self) {
+        self.0.borrow_mut().polls += 1;
     }
 }
 
@@ -100,21 +116,31 @@ impl Backend for FakeBackend {
     }
 
     fn open(&mut self, data: &VoiceData) -> Result<Box<dyn Voice>, AudioError> {
-        if FAIL_OPEN.with(Cell::get) {
-            return Err(AudioError::Decode("not audio".into()));
+        fake_open(data, false)
+    }
+
+    fn open_sound(&mut self, data: &VoiceData) -> Result<Box<dyn Voice>, AudioError> {
+        fake_open(data, true)
+    }
+
+    fn prepare_now(source: &AudioSource, _want_bytes: bool) -> Option<Result<VoiceData, AudioError>> {
+        if !PREPARE_NOW.with(Cell::get) {
+            return None;
         }
-        let streamed = matches!(data, VoiceData::Stream(_));
-        let state = Rc::new(RefCell::new(VoiceState {
-            // A stream does not know its length until the first bytes arrive.
-            duration: if streamed { f64::NAN } else { 10.0 },
-            volume: 1.0,
-            from_bytes: matches!(data, VoiceData::Bytes(_)),
-            streamed,
-            buffering: streamed,
-            ..VoiceState::default()
-        }));
-        OPENED.with(|opened| opened.borrow_mut().push(state.clone()));
-        Ok(Box::new(FakeVoice(state)))
+        Some(match source {
+            AudioSource::File(_) => Err(AudioError::Unsupported),
+            AudioSource::Bundled(key) => Ok(VoiceData::Stream(format!("/{key}"))),
+            AudioSource::Url(url) | AudioSource::Stream(url) => Ok(VoiceData::Stream(url.clone())),
+        })
+    }
+
+    fn resolve_bundled(key: &str, want_bytes: bool) -> Option<Result<VoiceData, AudioError>> {
+        let key = key.strip_prefix("apk/")?;
+        Some(Ok(if want_bytes {
+            VoiceData::Bytes(key.as_bytes().into())
+        } else {
+            VoiceData::Asset(key.to_string())
+        }))
     }
 
     fn fetch(url: &str) -> Result<Vec<u8>, AudioError> {
@@ -124,6 +150,27 @@ impl Backend for FakeBackend {
             Err(AudioError::Network("offline".into()))
         }
     }
+}
+
+fn fake_open(data: &VoiceData, for_sound: bool) -> Result<Box<dyn Voice>, AudioError> {
+    if FAIL_OPEN.with(Cell::get) {
+        return Err(AudioError::Decode("not audio".into()));
+    }
+    let streamed = matches!(data, VoiceData::Stream(_));
+    let opening = OPEN_ASYNC.with(Cell::get);
+    let state = Rc::new(RefCell::new(VoiceState {
+        // A stream does not know its length until the first bytes arrive.
+        duration: if streamed || opening { f64::NAN } else { 10.0 },
+        volume: 1.0,
+        from_bytes: matches!(data, VoiceData::Bytes(_)),
+        streamed,
+        opening,
+        for_sound,
+        buffering: streamed,
+        ..VoiceState::default()
+    }));
+    OPENED.with(|opened| opened.borrow_mut().push(state.clone()));
+    Ok(Box::new(FakeVoice(state)))
 }
 
 struct Rig {
@@ -136,6 +183,8 @@ impl Rig {
         OPENED.with(|opened| opened.borrow_mut().clear());
         FAIL_OPEN.with(|flag| flag.set(false));
         FAIL_PLAY.with(|flag| flag.set(false));
+        OPEN_ASYNC.with(|flag| flag.set(false));
+        PREPARE_NOW.with(|flag| flag.set(false));
         let (tx, rx) = mpsc::channel();
         Self {
             engine: Engine::new(FakeBackend, tx),
@@ -871,4 +920,140 @@ fn a_sound_cannot_stream_so_a_stream_source_is_downloaded_for_it() {
 
     assert_eq!(shared.lock().phase, Phase::Loaded);
     assert!(voices()[0].borrow().from_bytes);
+}
+
+#[test]
+fn a_track_that_opens_asynchronously_is_watched_until_its_length_is_known() {
+    let mut rig = Rig::new();
+    OPEN_ASYNC.with(|flag| flag.set(true));
+    let shared = rig.loaded_track(1);
+    assert_eq!(shared.lock().duration, None);
+    assert!(rig.engine.needs_tick(), "a paused track still has to learn its length");
+
+    stream_becomes_playable(&voices()[0], 12.0, 12.0);
+    rig.engine.tick();
+    assert_eq!(shared.lock().duration, Some(12.0));
+    assert!(!rig.engine.needs_tick());
+}
+
+#[test]
+fn every_tick_polls_the_voice_before_reading_it() {
+    let mut rig = Rig::new();
+    OPEN_ASYNC.with(|flag| flag.set(true));
+    let _shared = rig.loaded_track(1);
+    rig.engine.tick();
+    rig.engine.tick();
+    assert_eq!(voices()[0].borrow().polls, 2);
+}
+
+#[test]
+fn a_local_track_that_fails_while_playing_reports_the_error_instead_of_finishing() {
+    let mut rig = Rig::new();
+    let shared = rig.loaded_track(1);
+    shared.lock().want_play = true;
+    rig.engine.handle(Command::Play { id: 1 });
+    {
+        let voice = &voices()[0];
+        let mut voice = voice.borrow_mut();
+        voice.playing = false;
+        voice.error = Some(AudioError::Decode("corrupt frame".into()));
+    }
+    rig.engine.tick();
+
+    let snapshot = shared.lock();
+    assert_eq!(snapshot.state(), PlaybackState::Failed);
+    assert!(!snapshot.finished);
+    drop(snapshot);
+    assert!(voices()[0].borrow().released);
+    assert!(!rig.engine.needs_tick());
+}
+
+#[test]
+fn the_end_of_a_track_of_unknown_length_keeps_the_playhead_where_it_stopped() {
+    let mut rig = Rig::new();
+    let shared = rig.streaming_track(1);
+    shared.lock().want_play = true;
+    rig.engine.handle(Command::Play { id: 1 });
+    {
+        let voice = &voices()[0];
+        let mut voice = voice.borrow_mut();
+        voice.buffering = false;
+        voice.position = 7.5;
+        voice.playing = false; // a live stream that ended
+    }
+    rig.engine.tick();
+
+    let snapshot = shared.lock();
+    assert!(snapshot.finished);
+    assert_eq!(snapshot.position, 7.5);
+}
+
+#[test]
+fn sounds_open_through_open_sound_and_tracks_through_open() {
+    let mut rig = Rig::new();
+    let track = rig.loaded_track(1);
+    let sound = rig.loaded_sound(2);
+    rig.engine.handle(Command::Play { id: 2 });
+    rig.engine.handle(Command::Play { id: 2 });
+    drop((track, sound));
+
+    let opened = voices();
+    assert!(!opened[0].borrow().for_sound);
+    assert!(opened[1..].iter().all(|voice| voice.borrow().for_sound));
+    assert_eq!(opened.len(), 3, "the overlapping trigger opened a second sound voice");
+}
+
+#[test]
+fn a_backend_that_prepares_in_place_needs_no_helper_thread() {
+    let mut rig = Rig::new();
+    PREPARE_NOW.with(|flag| flag.set(true));
+    let shared = rig.track(1);
+    shared.lock().begin_load();
+    rig.load(1, AudioSource::bundled("assets/theme.mp3"));
+
+    // No `pump`: the load finished inside `handle`.
+    assert_eq!(shared.lock().phase, Phase::Loaded);
+    assert!(rig.rx.try_recv().is_err(), "nothing was sent back by a helper thread");
+    assert!(voices()[0].borrow().streamed);
+
+    rig.load(1, AudioSource::file("/a.mp3"));
+    assert_eq!(shared.lock().error, Some(AudioError::Unsupported));
+}
+
+#[test]
+fn a_backend_can_resolve_bundled_assets_that_are_not_files() {
+    let mut rig = Rig::new();
+    let track = rig.track(1);
+    track.lock().begin_load();
+    rig.load(1, AudioSource::bundled("apk/theme.mp3"));
+    rig.pump();
+    let sound = rig.sound(2);
+    sound.lock().begin_load();
+    rig.load(2, AudioSource::bundled("apk/tap.wav"));
+    rig.pump();
+
+    assert_eq!(track.lock().phase, Phase::Loaded);
+    assert_eq!(sound.lock().phase, Phase::Loaded);
+    let opened = voices();
+    assert!(!opened[0].borrow().from_bytes, "a track opens the asset by key");
+    assert!(opened[1].borrow().from_bytes, "a sound reads the asset into memory");
+}
+
+#[test]
+fn a_stream_that_cannot_report_its_buffer_settles_once_its_length_is_known() {
+    let mut rig = Rig::new();
+    let shared = rig.streaming_track(1);
+    stream_becomes_playable(&voices()[0], 30.0, f64::NAN);
+    voices()[0].borrow_mut().position = 3.0;
+    rig.engine.tick();
+
+    assert_eq!(shared.lock().duration, Some(30.0));
+    assert_eq!(shared.lock().buffered, 3.0, "unknown: only what has played is certain");
+    assert!(!rig.engine.needs_tick(), "nothing more will be learned while paused");
+
+    shared.lock().want_play = true;
+    rig.engine.handle(Command::Play { id: 1 });
+    voices()[0].borrow_mut().position = 5.0;
+    rig.engine.tick();
+    assert_eq!(shared.lock().buffered, 5.0, "a playing track keeps publishing it");
 }
