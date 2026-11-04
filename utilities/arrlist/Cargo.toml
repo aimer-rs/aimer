@@ -1,0 +1,10 @@
+[package]
+name = "aimer_arrlist"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aimer_widget_core.workspace = true
+
+[lints]
+workspace = true

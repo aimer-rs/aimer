@@ -69,6 +69,7 @@ aimer_canvas.workspace = true
 aimer_cupid.workspace = true
 aimer_std.workspace = true
 aimer_time.workspace = true
+aimer_arrlist.workspace = true
 
 
 [dev-dependencies]
@@ -183,7 +184,8 @@ members = [
     "contracts/data_view",
     "contracts/i18n",
     "contracts/media",
-    # support
+    # utilities
+    "utilities/arrlist",
     "utilities/attribute",
     "utilities/utils",
     "utilities/events",
@@ -273,7 +275,7 @@ members = [
     "app/jaime",
     # experiments
     "experiments/laboratory",
-    "experiments/polymorphism"
+    "experiments/polymorphism",
 ]
 
 [workspace.dependencies]
@@ -329,6 +331,7 @@ aimer_attribute = { path = "utilities/attribute" }
 aimer_utils = { path = "utilities/utils" }
 aimer_events = { path = "utilities/events" }
 aimer_tls = { path = "utilities/tls" }
+aimer_arrlist = { path = "utilities/arrlist" }
 aimer_time = { path = "utilities/time" }
 aimer_focus = { path = "framework/focus" }
 aimer_text = { path = "content/text" }

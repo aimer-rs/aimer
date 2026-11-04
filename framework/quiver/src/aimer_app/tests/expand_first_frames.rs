@@ -78,14 +78,17 @@ fn routes(page: Page) -> AnyWidget {
     }
 }
 
-/// The rectangles the backing paints in this frame, in the window.
+/// The rectangles the backing shows in this frame, in the window: what it records, as the
+/// node that carries it is presented.
 fn backing_rects<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Vec<Rect> {
     app.app.render_tree().render_all().into_iter().filter_map(|operation| match operation {
-        RenderOp::Draw(item) => {
-            let origin = (item.bounds.x, item.bounds.y);
+        RenderOp::Draw(item) if item.opacity > 0.0 => {
             item.snapshot().commands.iter().find_map(|command| match command {
                 LocalCommand::FillRect { rect, color, .. } if (color.r, color.g, color.b) == BACKING => {
-                    Some(Rect::new(origin.0 + rect.x, origin.1 + rect.y, rect.width, rect.height))
+                    let (left, top) = item.transform.transform_point(item.origin.0 + rect.x, item.origin.1 + rect.y);
+                    let (right, bottom) = item.transform.transform_point(
+                        item.origin.0 + rect.x + rect.width, item.origin.1 + rect.y + rect.height);
+                    Some(Rect::new(left, top, right - left, bottom - top))
                 }
                 _ => None,
             })
@@ -95,7 +98,7 @@ fn backing_rects<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Vec<Rect> {
 }
 
 #[test]
-fn the_backing_of_an_expanding_push_paints_only_the_window_in_every_frame() {
+fn the_backing_of_an_expanding_push_is_only_the_window_in_every_frame() {
     let _serial = VIRTUALIZED_RENDER_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let transition = ExpandTransition::new()
         .tag(|page: &Page| (*page == Page::Post).then(|| Key::from("expand-card")))

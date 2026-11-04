@@ -1,5 +1,6 @@
 extern crate self as aimer;
 
+
 pub use aimer_accessibility as accessibility;
 pub use aimer_assets::img_widget::image_widget::Image;
 pub use aimer_assets::img_widget::source::ImageSource;
@@ -20,6 +21,8 @@ pub use aimer_ctxmenu::{
 };
 
 pub use aimer_grid as grid;
+
+pub use aimer_arrlist::list;
 
 #[cfg(feature = "cupid")]
 pub use aimer_cupid as cupid;

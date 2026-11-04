@@ -98,6 +98,36 @@ fn a_cancelled_swipe_returns_to_the_start() {
 }
 
 #[test]
+fn a_timed_transition_that_finishes_asks_for_the_frame_that_cleans_up_after_it() {
+    // The frames of a transition are animation-only passes, which leave the cleanup
+    // of the host to a full one. Nothing else is bound to ask for it, so a transition
+    // that ends and asks for no frame leaves its layers on screen until an input
+    // happens to bring one: the last window it drew, over the item it closed into.
+    let requests = Rc::new(Cell::new(0u32));
+    let counted = requests.clone();
+    let previous = aimer_events::window::set_thread_redraw_requester(move || counted.set(counted.get() + 1));
+
+    let controller = AnimationController::new(Duration::from_millis(100), curves::LINEAR);
+    controller.forward_from_first_tick();
+    let playback = Playback { controller, effect: progress_effect(false), finished: Cell::new(false), swipe: None,
+        outgoing: RefCell::new(Some(ChildBuilder::from_widget(ErrorWidget::new("outgoing")))) };
+    let now = AnimInstant::now();
+    playback.sample(now, SIZE);
+    let while_running = requests.get();
+    playback.sample(now + Duration::from_millis(50), SIZE);
+    assert_eq!(requests.get(), while_running, "nothing is asked for while it runs");
+
+    playback.sample(now + Duration::from_millis(100), SIZE);
+    assert!(playback.finished.get());
+    assert_eq!(requests.get(), while_running + 1, "one frame, when it finishes");
+
+    playback.sample(now + Duration::from_millis(200), SIZE);
+    assert_eq!(requests.get(), while_running + 1, "and not again");
+
+    aimer_events::window::restore_thread_redraw_requester(previous);
+}
+
+#[test]
 fn a_swipe_that_finishes_asks_for_the_frame_that_cleans_up_after_it() {
     // The host drops the page beneath on the first frame that sees the swipe
     // finished. A trackpad's fingers lifted long before, so no input is coming to
@@ -1537,10 +1567,11 @@ mod presentation {
     }
 
     #[test]
-    fn the_backing_paints_the_window_itself_so_it_takes_no_presentation_of_its_own() {
-        // A layer that the host moved and clipped could be drawn, for a frame, with
-        // the move and without the clip: a host-sized rectangle over everything
-        // behind. This one has nothing to clip: it paints the window.
+    fn the_backing_is_the_host_scaled_onto_the_window_and_is_not_clipped() {
+        // The layer is as large as the host, and is presented as the window: moved to
+        // its corner and scaled to its size. A layer that was clipped to the window
+        // instead could be drawn, for a frame, with the move and without the clip: a
+        // host-sized rectangle over everything behind. This one has no clip to lose.
         let context = context();
         let element = host(backed_effect(crate::TransitionPage::Incoming, false), &context);
         let (tree, root, nodes) = veiled_tree();
@@ -1548,9 +1579,14 @@ mod presentation {
         assert!(sync(&element, &tree, root, &context));
 
         // Paint order: the departing page, the backing, the arriving page.
-        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::identity(), 1.0), "the backing is left as it is");
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (onto_window(), 1.0), "the host, onto the window, and opaque");
         assert_eq!(tree.presentation(nodes[0]).unwrap().1, 0.25, "the page below is presented");
         assert_eq!(tree.presentation(nodes[2]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75), "and so is the page on top");
+    }
+
+    /// The 100 x 100 host moved and scaled onto `window()`: 40 x 30 at (10, 20).
+    fn onto_window() -> Mat3 {
+        Mat3::translate(10.0, 20.0).mul(&Mat3::scale(0.4, 0.3))
     }
 
     #[test]
@@ -1572,7 +1608,23 @@ mod presentation {
     }
 
     #[test]
-    fn a_backing_can_stand_under_the_departing_page_when_that_is_the_one_on_top() {
+    fn a_finished_transition_hides_the_backing_until_the_frame_that_removes_it() {
+        let context = context();
+        let (element, playback) = host_with_playback(backed_effect(crate::TransitionPage::Incoming, false), &context);
+        let (tree, root, nodes) = veiled_tree();
+        assert!(sync(&element, &tree, root, &context));
+        assert_eq!(tree.presentation(nodes[1]).unwrap().1, 1.0, "shown while the transition runs");
+
+        // The frame that ends it is not the frame that removes the layers, and the
+        // layer must not go on showing the window it was last given.
+        playback.finish();
+        assert!(sync(&element, &tree, root, &context));
+
+        assert_eq!(tree.presentation(nodes[1]).unwrap().1, 0.0);
+    }
+
+    #[test]
+    fn a_backing_follows_the_departing_page_when_that_is_the_one_on_top() {
         let context = context();
         let effect = ResolvedNavigationTransition::new(Duration::from_millis(100), curves::LINEAR, |_, _| {
             NavigationTransitionFrame { outgoing: window(), incoming: opacity(0.5) }
@@ -1587,7 +1639,7 @@ mod presentation {
 
         // Paint order: the arriving page, the backing, the departing page.
         assert_eq!(tree.presentation(nodes[0]).unwrap().1, 0.5, "the arriving page below");
-        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::identity(), 1.0));
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (onto_window(), 1.0), "the window of the departing page");
         assert_eq!(tree.presentation(nodes[2]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75), "the departing page on top");
     }
 
@@ -1618,7 +1670,7 @@ mod presentation {
         assert!(sync(&element, &tree, root, &context));
 
         // Painted: departing page, backing, arriving page, the item's copy, the veil.
-        assert_eq!(tree.presentation(nodes[1]).unwrap(), (Mat3::identity(), 1.0), "the backing takes none");
+        assert_eq!(tree.presentation(nodes[1]).unwrap(), (onto_window(), 1.0), "the backing");
         assert_eq!(tree.presentation(nodes[2]).unwrap(), (Mat3::translate(10.0, 20.0), 0.75), "the arriving page");
         assert_eq!(tree.presentation(nodes[3]).unwrap().1, 0.5, "the copy keeps its own presentation");
         assert_eq!(tree.presentation(nodes[4]).unwrap(), (Mat3::translate(10.0, 20.0), 1.0), "veil");

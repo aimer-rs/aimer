@@ -4,41 +4,44 @@
 //! place and revealing only as much of itself as the item is large. A page that
 //! has not been given a background of its own is see-through, and whatever is
 //! beneath it would show in the window. This layer is the page's missing
-//! background, and it is a rectangle painted at the window rather than a host-sized
-//! layer that the host moves and clips: there is no clip to go missing for the
-//! frame the layer first appears in, and nothing to show outside the window.
+//! background.
+//!
+//! It is recorded once, as a rectangle the size of the host, and the host moves and
+//! scales it onto the window with its presentation. A transition runs in
+//! animation-only frames, which change nodes' transforms, opacities and clips and
+//! leave their recorded paint alone, so a layer that had to be re-recorded for
+//! each window would trail the page it backs. And there is no clip: the layer is
+//! the window's shape, so there is nothing to go missing and leave a host-sized
+//! rectangle over everything behind.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
-use aimer_canvas::Canvas;
+use aimer_canvas::{Canvas, Mat3};
 use aimer_cupid::utilities::{Color as PaintColor, Rect};
 use aimer_widget::base::{BuildContext, Color, ResolvedSize, Size, Vec2d};
 use aimer_widget::{Drawable, EventElement, EventTreeRole, LayoutElement, Rebuildable, VisitorElement};
 
 use crate::PaintPresentation;
 
-/// Where the backing paints, in the host's logical pixels from its top-left corner.
+/// Where the backing is in the host, in the host's logical pixels from its top-left corner.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Window {
     /// `[x, y, width, height]`.
     pub rect: [f32; 4],
-    /// The corner radius of the window as it is shown.
-    pub radius: f32,
-    /// The size of the host the window is in, which is the size of the layer.
+    /// The size of the host the window is in.
     pub host: (f32, f32),
 }
 
-/// What the host last published for the layer to paint.
-pub(super) type SharedWindow = Rc<Cell<Option<Window>>>;
+/// The size of the host, as the host last published it for the layer to fill.
+pub(super) type SharedHost = Rc<Cell<(f32, f32)>>;
 
 /// The window of `presentation` in a host of `host` logical pixels.
 ///
 /// A page is presented moved and scaled, and clipped to a part of itself: the
 /// window is that part, moved and scaled with it, or the whole host when nothing
-/// is revealed. `None` when there is no window to paint: the presentation is not
-/// finite or has no area, or the host has none. The opacity of the page is not
-/// part of it: the layer is opaque however much of the page is showing.
+/// is revealed. `None` when there is no window: the presentation is not finite or
+/// has no area, or the host has none. The opacity of the page is not part of it.
 pub(super) fn window_of(presentation: &PaintPresentation, host: ResolvedSize) -> Option<Window> {
     if !presentation.is_finite() || !host.width.is_finite() || !host.height.is_finite()
         || host.width <= 0.0 || host.height <= 0.0 { return None; }
@@ -48,21 +51,41 @@ pub(super) fn window_of(presentation: &PaintPresentation, host: ResolvedSize) ->
         None => [x, y, scale_x * host.width, scale_y * host.height],
     };
     (rect.iter().all(|value| value.is_finite()) && rect[2] > 0.0 && rect[3] > 0.0)
-        .then_some(Window { rect, radius: presentation.corner_radius, host: (host.width, host.height) })
+        .then_some(Window { rect, host: (host.width, host.height) })
 }
 
-/// The leaf that paints the window. The host publishes the window on every frame
-/// and this records it when it has changed.
+/// How the host presents the backing: the layer, which is the size of the host, moved
+/// and scaled onto the window of the page it backs, and always opaque, however much
+/// of the page itself is showing. Hidden once the transition has `finished`, or when
+/// there is no window to show.
+///
+/// The layer outlives the transition by up to a frame, until the frame that cleans up
+/// after it; a finished transition has no window, and the layer must not go on showing
+/// the last one.
+pub(super) fn backing_presentation(finished: bool, followed: &PaintPresentation, host: ResolvedSize) -> PaintPresentation {
+    const HIDDEN: PaintPresentation = PaintPresentation { opacity: 0.0, ..PaintPresentation::IDENTITY_OPAQUE };
+    if finished { return HIDDEN; }
+    let Some(Window { rect: [x, y, width, height], host: (host_width, host_height) }) = window_of(followed, host) else {
+        return HIDDEN;
+    };
+    PaintPresentation {
+        transform: Mat3::translate(x, y).mul(&Mat3::scale(width / host_width, height / host_height)),
+        ..PaintPresentation::IDENTITY_OPAQUE
+    }
+}
+
+/// The leaf that is the backing: a rectangle as large as the host, recorded when the
+/// host's size changes and never for the window, which is the host's presentation of it.
 pub(super) struct BackingLayer {
     color: Color,
-    window: SharedWindow,
-    /// What was last recorded, `None` before the first recording.
-    recorded: Cell<Option<Option<Window>>>,
+    host: SharedHost,
+    /// The size last recorded, `None` before the first recording.
+    recorded: Cell<Option<(f32, f32)>>,
 }
 
 impl BackingLayer {
-    pub(super) fn new(color: Color, window: SharedWindow) -> Self {
-        Self { color, window, recorded: Cell::new(None) }
+    pub(super) fn new(color: Color, host: SharedHost) -> Self {
+        Self { color, host, recorded: Cell::new(None) }
     }
 
     fn paint_color(&self) -> PaintColor {
@@ -85,12 +108,12 @@ impl Drawable for BackingLayer {
 
     fn paint_local_v2(&self, ctx: &BuildContext) {
         let canvas = Canvas::of(ctx);
-        let window = self.window.get();
-        if let Some(Window { rect: [x, y, width, height], radius, .. }) = window {
+        let (width, height) = self.host.get();
+        if width > 0.0 && height > 0.0 {
             canvas.fill_rect_styled(
-                Rect::new(x, y, width, height),
+                Rect::new(0.0, 0.0, width, height),
                 self.paint_color(),
-                [radius; 4],
+                [0.0; 4],
                 [0.0; 4],
                 PaintColor::transparent(),
                 [0.0; 4],
@@ -98,18 +121,16 @@ impl Drawable for BackingLayer {
             );
         }
         canvas.finish();
-        self.recorded.set(Some(window));
+        self.recorded.set(Some((width, height)));
     }
 
     fn local_v2_paint_needs_recording(&self, _: &BuildContext) -> bool {
-        self.recorded.get() != Some(self.window.get())
+        self.recorded.get() != Some(self.host.get())
     }
 
     fn retained_v2_bounds(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
-        Some(self.window.get().map_or(ResolvedSize::default(), |window| ResolvedSize {
-            width: window.host.0 * ctx.scale,
-            height: window.host.1 * ctx.scale,
-        }))
+        let (width, height) = self.host.get();
+        Some(ResolvedSize { width: width * ctx.scale, height: height * ctx.scale })
     }
 }
 
@@ -150,7 +171,6 @@ mod tests {
         ).unwrap();
 
         assert_eq!(window.rect, [10.0, 260.0, 380.0, 160.0]);
-        assert_eq!(window.radius, 12.0);
         assert_eq!(window.host, (400.0, 640.0));
     }
 
@@ -190,6 +210,53 @@ mod tests {
             assert_eq!(window_of(presentation, HOST), None, "{presentation:?}");
         }
         assert_eq!(window_of(&presentation(Mat3::identity(), None, 0.0), ResolvedSize { width: 0.0, height: 100.0 }), None);
+    }
+
+    #[test]
+    fn the_backing_is_the_host_moved_and_scaled_onto_the_window() {
+        // The layer is recorded once, as large as the host, and every frame is only a
+        // transform of it: that is all an animation-only frame can change.
+        let shown = presentation(Mat3::translate(10.0, 260.0), Some(ElementBounds::new(0.0, 0.0, 380.0, 160.0)), 12.0);
+
+        let backing = backing_presentation(false, &shown, HOST);
+
+        assert_eq!(backing.transform.transform_point(0.0, 0.0), (10.0, 260.0));
+        assert_eq!(backing.transform.transform_point(400.0, 640.0), (390.0, 420.0));
+        assert_eq!(backing.opacity, 1.0, "opaque, whatever the page's own opacity");
+        assert_eq!(backing.reveal, None, "and not clipped: there is nothing to clip");
+        assert_eq!(backing.corner_radius, 0.0);
+    }
+
+    #[test]
+    fn a_page_that_fills_the_host_has_the_backing_as_the_host() {
+        let backing = backing_presentation(false, &presentation(Mat3::identity(), None, 0.0), HOST);
+
+        assert_eq!(backing.transform, Mat3::identity());
+        assert_eq!(backing.opacity, 1.0);
+    }
+
+    #[test]
+    fn a_finished_transition_hides_the_backing() {
+        // The layer is only dropped by the frame that cleans up after the transition,
+        // which can be a frame away: until then it must show nothing, not the last
+        // window it was given, which is a flat rectangle over the item the page closed into.
+        let shown = presentation(Mat3::translate(0.0, 100.0), Some(ElementBounds::new(0.0, 0.0, 400.0, 160.0)), 12.0);
+
+        assert_eq!(backing_presentation(false, &shown, HOST).opacity, 1.0);
+        assert_eq!(backing_presentation(true, &shown, HOST).opacity, 0.0);
+    }
+
+    #[test]
+    fn a_window_that_cannot_be_drawn_hides_the_backing() {
+        for nowhere in [
+            presentation(Mat3::translate(f32::NAN, 0.0), None, 0.0),
+            presentation(Mat3::scale(0.0, 1.0), None, 0.0),
+            presentation(Mat3::identity(), Some(ElementBounds::new(0.0, 0.0, 0.0, 10.0)), 0.0),
+        ] {
+            let backing = backing_presentation(false, &nowhere, HOST);
+            assert_eq!(backing.opacity, 0.0, "{nowhere:?}");
+            assert!(backing.is_finite(), "a presentation the host can apply: {backing:?}");
+        }
     }
 
     #[test]

@@ -11,7 +11,7 @@ use aimer_widget::{AnyElement, AnyWidget, ChildBuilder, Drawable, Element, Event
 use aimer_attribute::Dimension;
 use aimer_container::SizedBox;
 
-use self::backing::{BackingLayer, SharedWindow, window_of};
+use self::backing::{BackingLayer, SharedHost, backing_presentation};
 use crate::outlet::RouteChildContext;
 use crate::swipe_back::SwipeLink;
 use crate::{AnchoredFrame, NavigationAction, NavigationContext, NavigationTransition,
@@ -189,8 +189,15 @@ impl Playback {
     }
 
     fn finish(&self) {
-        self.finished.set(true);
+        let already = self.finished.replace(true);
         self.controller.set_value(1.0);
+        if !already {
+            // The frames of a transition are animation-only passes, which leave the host's
+            // cleanup to a full one, and a transition that has finished asks for no more
+            // of its own. Without this the layers stay on screen, as the last frame left
+            // them, until an input happens to bring a frame.
+            aimer_events::window::request_animation_frame();
+        }
         if let Some(drive) = &self.swipe {
             // Another navigation got there first: the swipe did not complete.
             drive.cancel_if_unsettled();
@@ -368,19 +375,19 @@ impl Widget for NavigationFrame {
                     .to_element(ctx))
             });
         // The solid layer under the page on top, which the page's own transparency
-        // would otherwise leave the page beneath showing through. It paints the
-        // window itself, from what the host publishes on every frame.
-        let backing_window: SharedWindow = Rc::new(Cell::new(None));
+        // would otherwise leave the page beneath showing through. It is recorded
+        // once, at the size of the host, and presented onto the window.
+        let backing_host: SharedHost = Rc::new(Cell::new((0.0, 0.0)));
         let backing = self.playback.as_ref().filter(|_| outgoing.is_some())
             .and_then(|playback| playback.effect.backing())
-            .map(|(color, _)| BackingLayer::new(color, Rc::clone(&backing_window)).boxed());
+            .map(|(color, _)| BackingLayer::new(color, Rc::clone(&backing_host)).boxed());
         NavigationFrameElement {
             incoming: self.child.build(ctx), outgoing: UnsafeCell::new(outgoing), anchor: UnsafeCell::new(anchor),
             veil: UnsafeCell::new(veil), backing: UnsafeCell::new(backing),
             playback: self.playback, swipe: self.swipe,
             incoming_clip: PresentationClip::default(), outgoing_clip: PresentationClip::default(),
             anchor_clip: PresentationClip::default(), veil_clip: PresentationClip::default(),
-            backing_window,
+            backing_host, backing_clip: PresentationClip::default(),
         }.boxed()
     }
 }
@@ -404,6 +411,8 @@ struct Ordinals {
     anchor: usize,
     /// The veil, wherever it is painted; meaningful only while there is one.
     veil: usize,
+    /// The backing under the page on top; meaningful only while there is one.
+    backing: usize,
 }
 
 struct NavigationFrameElement {
@@ -423,8 +432,9 @@ struct NavigationFrameElement {
     outgoing_clip: PresentationClip,
     anchor_clip: PresentationClip,
     veil_clip: PresentationClip,
-    /// Where the backing paints; published here on every frame, read by the layer.
-    backing_window: SharedWindow,
+    /// The size of the host, for the backing to fill; published on every frame.
+    backing_host: SharedHost,
+    backing_clip: PresentationClip,
 }
 
 // Safety: element traversal and structural mutation run exclusively on the
@@ -482,6 +492,8 @@ impl NavigationFrameElement {
             } else {
                 1
             },
+            // Directly under the page on top, and over the veil between the pages.
+            backing: top.saturating_sub(1),
         }
     }
 
@@ -612,17 +624,20 @@ impl Drawable for NavigationFrameElement {
                 if !veil.apply_to_child(ctx, ordinals.veil, size, &self.veil_clip) { return false; }
             }
         }
-        // The backing is the window of the page it backs, painted by the layer
-        // itself and always at full strength: a page that is still fading in, as in
-        // a crossfade, must not let the page behind show through the window, and so
-        // be blurred with it.
+        // The backing is the host moved and scaled onto the window of the page it backs,
+        // and always at full strength: a page that is still fading in, as in a
+        // crossfade, must not let the page behind show through the window, and so be
+        // blurred with it. It has no clip of its own; the window is its shape.
         if let Some((_, page)) = self.playback.as_ref().and_then(|playback| playback.effect.backing()) {
             if has_old && self.backing().is_some() {
                 let followed = match page {
                     TransitionPage::Incoming => frame.frame.incoming,
                     TransitionPage::Outgoing => frame.frame.outgoing,
                 };
-                self.backing_window.set(window_of(&followed, size));
+                let finished = self.playback.as_ref().is_some_and(|playback| playback.finished.get());
+                self.backing_host.set((size.width, size.height));
+                let backing = backing_presentation(finished, &followed, size);
+                if !backing.apply_to_child(ctx, ordinals.backing, size, &self.backing_clip) { return false; }
             }
         }
         // The item copy is last, and is as large as the item was.
