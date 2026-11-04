@@ -1,0 +1,34 @@
+[package]
+name = "aimer_video"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Video playback drawn straight from the decoder's GPU memory"
+
+[dependencies]
+aimer_attribute.workspace = true
+aimer_canvas.workspace = true
+aimer_cupid.workspace = true
+aimer_events.workspace = true
+aimer_widget.workspace = true
+
+[dev-dependencies]
+aimer_tls.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+# AVPlayer decodes and streams; AVPlayerItemVideoOutput hands out
+# IOSurface-backed pixel buffers, which CVMetalTextureCache wraps as Metal
+# textures without a copy.
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+objc2.workspace = true
+objc2-core-foundation = { workspace = true, features = ["std", "CFDictionary", "CFString", "CFNumber", "CFCGTypes"] }
+objc2-foundation = { workspace = true, features = ["std", "NSDictionary", "NSError", "NSString", "NSURL", "NSValue", "NSArray"] }
+objc2-av-foundation = { workspace = true, features = ["std", "AVPlayer", "AVPlayerItem", "AVPlayerItemOutput", "AVTime", "objc2-core-foundation", "objc2-core-media", "objc2-core-video"] }
+objc2-core-media = { workspace = true, features = ["std", "CMTime", "CMTimeRange"] }
+objc2-core-video = { workspace = true, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVMetalTexture", "CVMetalTextureCache", "CVReturn", "objc2-metal"] }
+objc2-metal = { workspace = true, features = ["std", "MTLDevice", "MTLTexture", "MTLPixelFormat", "MTLResource", "MTLTypes"] }
+objc2-quartz-core = { workspace = true, features = ["std", "CABase"] }
+
+# The audio session only exists on iOS.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-avf-audio = { workspace = true, features = ["std", "AVAudioSession", "AVAudioSessionTypes"] }

@@ -25,6 +25,7 @@ aimer_grid.workspace = true
 aimer_device.workspace = true
 aimer_haptics.workspace = true
 aimer_audio.workspace = true
+aimer_video.workspace = true
 aimer_quiver.workspace = true
 aimer_input.workspace = true
 aimer_screen.workspace = true
@@ -194,6 +195,7 @@ members = [
     "native/clipboard",
     "native/haptics",
     "native/audio",
+    "native/video",
     "native/device",
     "native/screen",
     # services
@@ -364,6 +366,7 @@ aimer_collapsible = { path = "interactions/collapsible" }
 aimer_clipboard = { path = "native/clipboard" }
 aimer_haptics = { path = "native/haptics" }
 aimer_audio = { path = "native/audio" }
+aimer_video = { path = "native/video" }
 aimer_device = { path = "native/device" }
 aimer_screen = { path = "native/screen" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
@@ -485,6 +488,9 @@ objc2-avf-audio = { version = "0.3.2", default-features = false }
 # while it downloads), and the CMTime it seeks with.
 objc2-av-foundation = { version = "0.3.2", default-features = false }
 objc2-core-media = { version = "0.3.2", default-features = false }
+# CVPixelBuffer and CVMetalTextureCache for `aimer_video`, which turns decoded
+# frames into Metal textures without copying them.
+objc2-core-video = { version = "0.3.2", default-features = false }
 objc2-app-kit = { version = "0.3.2", default-features = false }
 # `disable-encoding-assertions` drops the check objc2 runs on *every* message
 # send in a debug build: it re-parses the method's type encoding and compares it

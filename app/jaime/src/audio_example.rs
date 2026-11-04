@@ -329,16 +329,16 @@ fn seek_bar(
         .boxed()
 }
 
-fn format_time(time: Duration) -> String {
+pub(crate) fn format_time(time: Duration) -> String {
     let seconds = time.as_secs();
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
-fn gap() -> AnyWidget {
+pub(crate) fn gap() -> AnyWidget {
     SizedBox::new().width(12).boxed()
 }
 
-fn label(text: &'static str, app_theme: ThemeData) -> AnyWidget {
+pub(crate) fn label(text: &'static str, app_theme: ThemeData) -> AnyWidget {
     Text::new(text)
         .text_style(
             TextStyle::new()
@@ -349,7 +349,7 @@ fn label(text: &'static str, app_theme: ThemeData) -> AnyWidget {
         .boxed()
 }
 
-fn control_button(
+pub(crate) fn control_button(
     label: &'static str,
     app_theme: ThemeData,
     primary: bool,

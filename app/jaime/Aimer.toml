@@ -19,6 +19,7 @@ cat_svgrepo_com = "assets/cat-svgrepo-com.svg"
 giphy = "assets/giphy.gif"
 tap = "assets/tap.wav"
 trimmed_music = "assets/TrimmedAudio.wav"
+test_pattern = "assets/test_pattern.mp4"
 
 
 [font]
