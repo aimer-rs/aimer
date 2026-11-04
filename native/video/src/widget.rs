@@ -176,8 +176,10 @@ impl RawVideo {
         if !size.width.is_finite() || !size.height.is_finite() || size.width < 0.0 || size.height < 0.0 {
             return None;
         }
+        // From the player's own state: checking for a repaint must not call
+        // the platform every frame.
         let (generation, video) = match &self.player {
-            Some(player) => (player.texture().generation(), player.size()),
+            Some(player) => player.paint_state(),
             None => (0, None),
         };
         let key = PaintKey {
@@ -201,9 +203,10 @@ impl Drawable for RawVideo {
         let Some(player) = &self.player else {
             return;
         };
-        // Frames are needed while the video plays or is still opening. A
-        // paused or finished video asks for nothing.
-        if player.is_playing() || (!player.has_frame() && player.error().is_none() && player.size().is_none()) {
+        // Frames are needed while the video plays, opens, or fetches the
+        // picture a seek produced. A paused or finished video asks for none,
+        // and this check does not call the platform.
+        if player.wants_frames() {
             aimer_events::window::request_animation_frame();
         }
     }

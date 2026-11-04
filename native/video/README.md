@@ -41,8 +41,12 @@ into GPU memory, and the renderer samples that memory directly:
    tree repaints the widget only when a new frame arrives, and the renderer
    keeps each frame alive until the GPU has finished drawing it.
 
-The widget asks for frames only while the video plays or is still opening, so
-a paused video costs nothing per frame.
+The widget asks for frames only while the video plays, is still opening, or
+is fetching the one picture a seek, load or stop produced while paused. A
+paused video costs nothing per frame: while it rests, the player answers the
+widget from its own state and makes no platform call, even when something
+else keeps the window redrawing. Check `VideoPlayer::wants_frames` to drive
+your own frame-by-frame UI (a position readout, say) the same way.
 
 ## Platforms
 

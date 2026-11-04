@@ -4,7 +4,8 @@
 //!
 //! The [`VideoPlayer`] lives in the page's state, so rebuilding the page never
 //! restarts it. The [`Video`] widget asks for frames only while the video
-//! plays; a repeating animation controller drives the readout's frames.
+//! plays. The readout is driven by an animation controller that runs only
+//! while the player wants frames, so a paused page draws nothing at all.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -50,7 +51,8 @@ pub struct VideoExampleState {
     player: VideoPlayer,
     streaming: bool,
     fit: VideoFit,
-    /// Only drives the readout's frames: its value is never read.
+    /// Only drives the readout's frames: its value is never read. It runs
+    /// while the player wants frames and is reset as soon as it does not.
     ticker: AnimationController,
     /// Where the seek bar is being dragged to, in seconds; `None` when it
     /// follows the playhead.
@@ -106,11 +108,19 @@ impl State<VideoExample> for VideoExampleState {
 
         let toggle = {
             let player = player.clone();
-            control_button("Play / Pause", app_theme, true, move || player.toggle())
+            let ticker = self.ticker.clone();
+            control_button("Play / Pause", app_theme, true, move || {
+                player.toggle();
+                wake(&ticker);
+            })
         };
         let stop = {
             let player = player.clone();
-            control_button("Stop", app_theme, false, move || player.stop())
+            let ticker = self.ticker.clone();
+            control_button("Stop", app_theme, false, move || {
+                player.stop();
+                wake(&ticker);
+            })
         };
         let looping = {
             let player = player.clone();
@@ -163,6 +173,7 @@ impl State<VideoExample> for VideoExampleState {
                     };
                     player.load(source);
                     player.play();
+                    wake(&state.ticker);
                 });
             })
         };
@@ -172,7 +183,16 @@ impl State<VideoExample> for VideoExampleState {
         let progress = {
             let player = player.clone();
             let scrub = self.scrub.clone();
-            AnimatedBuilder::new(self.ticker.clone(), move |_| progress_view(&player, &scrub, app_theme))
+            let ticker = self.ticker.clone();
+            AnimatedBuilder::new(self.ticker.clone(), move |_| {
+                let view = progress_view(&player, &scrub, &ticker, app_theme);
+                // Once the video settles (paused, finished, failed) the
+                // readout has shown its last change: stop asking for frames.
+                if !player.wants_frames() && ticker.is_animating() {
+                    ticker.reset();
+                }
+                view
+            })
         };
 
         Container::new()
@@ -211,7 +231,12 @@ impl State<VideoExample> for VideoExampleState {
 }
 
 /// The time readout, the seek bar, and the player's state.
-fn progress_view(player: &VideoPlayer, scrub: &Rc<Cell<Option<f64>>>, app_theme: ThemeData) -> AnyWidget {
+fn progress_view(
+    player: &VideoPlayer,
+    scrub: &Rc<Cell<Option<f64>>>,
+    ticker: &AnimationController,
+    app_theme: ThemeData,
+) -> AnyWidget {
     let duration = player.duration();
     // While dragging, show where the thumb is, not where the video is.
     let position = scrub
@@ -250,7 +275,7 @@ fn progress_view(player: &VideoPlayer, scrub: &Rc<Cell<Option<f64>>>, app_theme:
                 )
                 .boxed(),
             SizedBox::new().height(8).boxed(),
-            seek_bar(player, scrub, position, duration, app_theme),
+            seek_bar(player, scrub, ticker, position, duration, app_theme),
             SizedBox::new().height(8).boxed(),
             Text::new(format!("{status}{size}"))
                 .text_style(TextStyle::new().font_size(13).color(theme::muted_text(&app_theme)))
@@ -264,6 +289,7 @@ fn progress_view(player: &VideoPlayer, scrub: &Rc<Cell<Option<f64>>>, app_theme:
 fn seek_bar(
     player: &VideoPlayer,
     scrub: &Rc<Cell<Option<f64>>>,
+    ticker: &AnimationController,
     position: Duration,
     duration: Option<Duration>,
     app_theme: ThemeData,
@@ -272,6 +298,7 @@ fn seek_bar(
     let dragged = scrub.clone();
     let settled = scrub.clone();
     let player = player.clone();
+    let ticker = ticker.clone();
     Slider::new()
         // The range must not be empty while the length is still unknown.
         .range(0.0..total.max(SEEK_STEP))
@@ -281,12 +308,28 @@ fn seek_bar(
         .width(PICTURE.0)
         .trail(SliderTrail::new().height(6.0).radius(3.0).color(app_theme.primary_color))
         .thumb(SliderThumb::new().size(16.0).radius(8.0).color(app_theme.primary_color))
-        .on_change(move |seconds| dragged.set(Some(seconds)))
+        .on_change({
+            let ticker = ticker.clone();
+            move |seconds| {
+                dragged.set(Some(seconds));
+                // The readout follows the thumb, also while paused.
+                wake(&ticker);
+            }
+        })
         .on_change_end(move |seconds| {
             player.seek(Duration::from_secs_f64(seconds.max(0.0)));
             settled.set(None);
+            // Show the new position, and the frame it decodes, while paused.
+            wake(&ticker);
         })
         .boxed()
+}
+
+/// Runs the readout again after a control changed the player.
+fn wake(ticker: &AnimationController) {
+    if !ticker.is_animating() {
+        ticker.forward_from_first_tick();
+    }
 }
 
 #[cfg(test)]

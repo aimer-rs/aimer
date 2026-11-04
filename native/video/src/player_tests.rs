@@ -222,3 +222,83 @@ fn the_frame_source_is_the_same_across_textures() {
     assert_eq!(a, b);
     let _ = <FrameSlot as ExternalTextureSource>::current_frame;
 }
+
+fn calls() -> u32 {
+    last().lock().unwrap().calls
+}
+
+#[test]
+fn a_paused_player_makes_no_platform_calls_per_frame() {
+    let player = ready_player();
+    last().lock().unwrap().pending_frames.push(1);
+    player.play();
+    player.poll();
+    player.pause();
+    // Let the pause settle: anything pending from before it is taken.
+    for _ in 0..3 {
+        player.poll();
+    }
+    assert!(!player.wants_frames(), "a settled pause asks for no frames");
+
+    let before = calls();
+    for _ in 0..100 {
+        player.poll();
+        let _ = player.wants_frames();
+        let _ = player.paint_state();
+    }
+    assert_eq!(calls(), before, "idle frames reached the platform");
+}
+
+#[test]
+fn a_seek_while_paused_fetches_the_new_frame_then_goes_idle() {
+    let player = ready_player();
+    player.play();
+    player.pause();
+    for _ in 0..3 {
+        player.poll();
+    }
+    let before = player.poll();
+    player.seek(Duration::from_secs(4));
+    assert!(player.wants_frames(), "the seeked picture has to be fetched");
+
+    last().lock().unwrap().pending_frames.push(7);
+    let after = player.poll();
+    assert_ne!(after, before, "the seeked frame was taken");
+    assert!(!player.wants_frames(), "idle again once it arrived");
+}
+
+#[test]
+fn a_frame_that_never_arrives_does_not_keep_the_player_busy() {
+    let player = ready_player();
+    player.seek(Duration::from_secs(2));
+    let mut polls = 0;
+    while player.wants_frames() {
+        player.poll();
+        polls += 1;
+        assert!(polls < 10_000, "still asking for frames");
+    }
+    assert!(polls > 1, "it waited a while for the frame");
+}
+
+#[test]
+fn a_playing_player_wants_frames_and_notices_its_end() {
+    let player = ready_player();
+    player.play();
+    assert!(player.wants_frames());
+    last().lock().unwrap().playing = false; // the end
+    player.poll();
+    assert_eq!(player.state(), PlaybackState::Finished);
+    for _ in 0..3 {
+        player.poll();
+    }
+    assert!(!player.wants_frames(), "a finished video asks for nothing");
+}
+
+#[test]
+fn the_size_painted_with_comes_from_the_frame_without_asking_the_platform() {
+    let player = ready_player();
+    last().lock().unwrap().pending_frames.push(1);
+    player.poll();
+    let (_, size) = player.paint_state();
+    assert_eq!(size, Some((1920, 1080)));
+}

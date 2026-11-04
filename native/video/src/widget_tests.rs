@@ -104,6 +104,8 @@ async fn a_frame_is_drawn_fitted_and_a_new_one_is_recorded_again() {
     assert_eq!(first[0].0, RenderRect::new(0.0, 35.0, 160.0, 90.0));
     assert!(!element.paint_needs_recording(&ctx), "nothing changed since");
 
+    // Frames keep coming while it plays.
+    player.play();
     last().lock().unwrap().pending_frames.push(2);
     player.poll();
     assert!(element.paint_needs_recording(&ctx), "a new frame is a new picture");
@@ -135,4 +137,30 @@ async fn without_a_player_it_lays_out_and_draws_nothing() {
     paint_frame(&ctx, &element, &tree, node);
     assert!(video_commands(&tree, node).is_empty());
     assert_eq!(element.event_tree_role(), EventTreeRole::Transparent);
+}
+
+#[tokio::test]
+async fn frames_over_a_paused_video_never_reach_the_platform() {
+    let ctx = context(1.0);
+    let player = ready_player();
+    let element = Video::new()
+        .player(player.clone())
+        .width(160.0)
+        .height(90.0)
+        .to_element(&ctx);
+    let tree = RenderTree::new();
+    let node = tree.add_root(RenderRect::new(0.0, 0.0, 160.0, 90.0)).unwrap();
+    player.play();
+    last().lock().unwrap().pending_frames.push(1);
+    paint_frame(&ctx, &element, &tree, node);
+    player.pause();
+    paint_frame(&ctx, &element, &tree, node);
+
+    // Something else on screen keeps the window redrawing.
+    let before = last().lock().unwrap().calls;
+    for _ in 0..60 {
+        paint_frame(&ctx, &element, &tree, node);
+    }
+    assert_eq!(last().lock().unwrap().calls, before, "a paused video did work per frame");
+    assert_eq!(video_commands(&tree, node).len(), 1, "and still shows its last frame");
 }

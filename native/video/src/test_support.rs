@@ -23,6 +23,8 @@ pub(crate) struct FakeState {
     /// Frames waiting to be taken, by id.
     pub(crate) pending_frames: Vec<u32>,
     pub(crate) shown_frame: Option<u32>,
+    /// Every call into the platform, to prove an idle player makes none.
+    pub(crate) calls: u32,
 }
 
 pub(crate) type FakeRef = Arc<Mutex<FakeState>>;
@@ -43,46 +45,59 @@ struct Fake(FakeRef);
 
 impl PlatformVideo for Fake {
     fn play(&self) {
+        self.0.lock().unwrap().calls += 1;
         let mut state = self.0.lock().unwrap();
         state.playing = true;
         state.plays += 1;
     }
     fn pause(&self) {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().playing = false;
     }
     fn seek(&self, seconds: f64) {
+        self.0.lock().unwrap().calls += 1;
         let mut state = self.0.lock().unwrap();
         state.position = seconds;
         state.seeks.push(seconds);
     }
     fn set_volume(&self, volume: f32) {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().volume = volume;
     }
     fn is_ready(&self) -> bool {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().ready
     }
     fn position(&self) -> f64 {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().position
     }
     fn duration(&self) -> f64 {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().duration
     }
     fn buffered(&self) -> f64 {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().duration
     }
     fn is_playing(&self) -> bool {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().playing
     }
     fn is_buffering(&self) -> bool {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().buffering
     }
     fn error(&self) -> Option<VideoError> {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().error.clone()
     }
     fn size(&self) -> Option<(u32, u32)> {
+        self.0.lock().unwrap().calls += 1;
         self.0.lock().unwrap().ready.then_some((1920, 1080))
     }
     fn take_frame(&self, frames: &FrameSlot) -> bool {
+        self.0.lock().unwrap().calls += 1;
         let mut state = self.0.lock().unwrap();
         if state.pending_frames.is_empty() {
             return false;
