@@ -136,6 +136,88 @@ venus.spawn_idle(async {
 venus.run_idle(&venus.idle_budget());
 ```
 
+## Time
+
+Venus has no clock thread of its own; timers are the host's, supplied through
+`PollContext::sleep`, so they wake a parked loop and are cancelled by dropping
+them. A host without timers gets `TimeoutError::TimerUnavailable` rather than a
+sleep that silently never ends.
+
+```rust
+use std::time::Duration;
+use aimer_venus::Venus;
+
+let venus = Venus::new();
+
+// Await inside a task. Every one of these also has a free function that uses
+// the runtime installed for the thread: `sleep`, `delayed`, `timeout`, ...
+let runtime = venus.clone();
+venus.spawn(async move {
+    let _ = runtime.sleep(Duration::from_millis(250)).await;
+    let _ = runtime.delayed(Duration::from_secs(1), || "tooltip").await;
+});
+
+// Fire and forget; abort the task, or drop its scope, to cancel.
+let _ = venus.spawn_delayed(Duration::from_secs(2), || { /* hide toast */ });
+
+// A drift-free ticker that skips ticks it missed instead of bursting.
+let mut ticker = venus.interval(Duration::from_secs(1));
+venus.spawn(async move {
+    while ticker.tick().await.is_ok() { /* refresh clock */ }
+});
+```
+
+Bursty events are rate limited by two timer-driven helpers, so nothing has to
+poll them each frame. Both cancel what they hold when dropped, so an element
+that owns one cleans up on unmount.
+
+```rust
+use std::time::Duration;
+use aimer_venus::Venus;
+
+let venus = Venus::new();
+
+// Runs once, with the last action, after the calls stop for 250 ms.
+let search = venus.debouncer(Duration::from_millis(250));
+let _ = search.call(|| { /* run the query */ });
+
+// The first call runs now; the newest call made inside the window runs when
+// it closes, so the final value of a burst is never lost.
+let scroll = venus.throttler(Duration::from_millis(100));
+let _ = scroll.call(|| { /* save the offset */ });
+```
+
+## Combining futures
+
+Plain combinators, polled by the task that awaits them: nothing is spawned,
+nothing needs to be `Send`, and dropping one drops every future inside it, so a
+scope cancellation reaches them.
+
+```rust
+use aimer_venus::{Either, Venus, join, join_all, race, try_join};
+
+let venus = Venus::new();
+venus.spawn(async {
+    // Different types, run together, one tuple back.
+    let (width, name) = join!(async { 320 }, async { "avatar" }).await;
+
+    // Any number of the same type, results in input order.
+    let squares = join_all((0..4).map(|n| async move { n * n })).await;
+
+    // Stops at the first error and cancels the rest.
+    let both = try_join!(async { Ok::<_, ()>(1) }, async { Ok(2) }).await;
+
+    // The first to finish wins and the other is dropped.
+    let first = race(async { "a" }, std::future::pending::<()>()).await;
+    assert!(matches!(first, Either::Left("a")));
+    # let _ = (width, name, squares, both);
+});
+venus.run_microtasks();
+```
+
+Also: `try_join_all`, `race_all`, and a free `spawn_blocking` that uses the
+installed runtime (the method form is `Venus::spawn_blocking`).
+
 ## Driving it from an event loop
 
 ```text

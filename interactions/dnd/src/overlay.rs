@@ -18,7 +18,7 @@ use std::time::Duration;
 use aimer_animation::{AnimInstant, Curve, curves};
 use aimer_attribute::position::Vec2d;
 use aimer_events::window::request_animation_frame;
-use aimer_modal::{OverlayContentHandle, OverlayLayer, OverlayLayerHandle};
+use aimer_modal::{ModalScope, OverlayContentHandle, OverlayLayer, OverlayLayerHandle};
 use aimer_widget::base::BuildContext;
 use aimer_widget::{AnyWidget, Widget};
 
@@ -92,6 +92,9 @@ struct OverlayState {
     /// `None` for a drag with no feedback. The state still exists, because it
     /// is also what settles the drop.
     build: Option<Rc<dyn Fn() -> AnyWidget>>,
+    /// What the feedback inherits: the overlay it is built and kept in has no
+    /// providers of its own, so it is given those of the card it stands for.
+    scope: Option<ModalScope>,
     /// The feedback, once built: hosted by the overlay and taken down with the
     /// drag.
     hosted: Option<OverlayContentHandle>,
@@ -137,9 +140,33 @@ impl DragOverlay {
         start: Vec2d,
         axis: DragAxis,
     ) {
+        Self::show_scoped(None, build, grab_offset, start, axis);
+    }
+
+    /// Starts painting `build`'s output at the pointer, as [`Self::show`] does,
+    /// with what `scope` holds in place for the feedback: it reads, and follows,
+    /// the providers of the place the scope was taken, which is the card's.
+    pub fn show_in(
+        scope: ModalScope,
+        build: Option<Rc<dyn Fn() -> AnyWidget>>,
+        grab_offset: Vec2d,
+        start: Vec2d,
+        axis: DragAxis,
+    ) {
+        Self::show_scoped(Some(scope), build, grab_offset, start, axis);
+    }
+
+    fn show_scoped(
+        scope: Option<ModalScope>,
+        build: Option<Rc<dyn Fn() -> AnyWidget>>,
+        grab_offset: Vec2d,
+        start: Vec2d,
+        axis: DragAxis,
+    ) {
         OVERLAY.with_borrow_mut(|overlay| {
             *overlay = Some(OverlayState {
                 build,
+                scope,
                 hosted: None,
                 scale: Rc::new(Cell::new(1.0)),
                 last_position: Rc::new(Cell::new(start)),
@@ -319,11 +346,14 @@ fn tick(ctx: &BuildContext) -> bool {
         if state.hosted.is_none()
             && let Some(build) = state.build.clone()
         {
-            let element = build().to_element(ctx);
-            state.hosted = Some(OverlayLayer::host_element(
-                element,
-                follower_position(&state.scale, &state.last_position),
-            ));
+            let position = follower_position(&state.scale, &state.last_position);
+            state.hosted = Some(match &state.scope {
+                Some(scope) => {
+                    let element = scope.with(ctx, |ctx| build().to_element(ctx));
+                    OverlayLayer::host_element_in(element, position, scope.clone())
+                }
+                None => OverlayLayer::host_element(build().to_element(ctx), position),
+            });
         }
         true
     })

@@ -1,7 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use aimer_attribute::BoxConstraint;
 use aimer_attribute::bounds::Bounds;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::{ResolvedSize, Size};
@@ -18,7 +17,8 @@ use aimer_widget::{
 use crate::anchor::AnchorHandle;
 use crate::animated_content::wrap_animated_content;
 use crate::host::{self, ModalHandle, ModalId, ModalTimeline};
-use crate::paint::{contains, overlay_child_context};
+use crate::scope::ModalScope;
+use crate::paint::{contains, overlay_child_context, viewport_constraint};
 use crate::placement::{FloatingAlign, FloatingSide, OverflowPolicy, PlacementSpec};
 use crate::{ModalAnimation, resolve_placement};
 
@@ -70,6 +70,7 @@ pub struct Floating<W = RequiredChild> {
     escape_dismissible: bool,
     viewport_margin: f32,
     respect_safe_area: bool,
+    scope: Option<ModalScope>,
 }
 
 impl Default for Floating {
@@ -93,7 +94,19 @@ impl Floating {
             escape_dismissible: true,
             viewport_margin: 0.0,
             respect_safe_area: true,
+            scope: None,
         }
+    }
+
+    /// Gives the panel what is provided where [`ModalScope::capture`] took
+    /// `scope`.
+    ///
+    /// Without it the panel is presented outside of the application's
+    /// providers and finds none of them.
+    #[inline]
+    pub fn scope(mut self, scope: ModalScope) -> Self {
+        self.scope = Some(scope);
+        self
     }
 
     /// Pins the panel to the rectangle reported by `anchor`.
@@ -216,6 +229,7 @@ impl Floating {
             escape_dismissible: self.escape_dismissible,
             viewport_margin: self.viewport_margin,
             respect_safe_area: self.respect_safe_area,
+            scope: self.scope,
         }
     }
 
@@ -254,8 +268,14 @@ impl<W: Widget + 'static> Floating<W> {
             .to_element(ctx);
         let animate_barrier = barrier_animation.is_some();
         let barrier = wrap_animated_content(barrier, barrier_animation, timeline.clone(), false);
+        // The content is rebuilt and repainted by the overlay, which has no
+        // providers of its own, so it is given the scope each time.
+        let content = match &self.scope {
+            Some(scope) => scope.wrap(scope.with(ctx, |ctx| self.child.to_element(ctx))),
+            None => self.child.to_element(ctx),
+        };
         let child = wrap_animated_content(
-            self.child.to_element(ctx),
+            content,
             self.animation.clone(),
             timeline.clone(),
             true,
@@ -410,18 +430,14 @@ impl RawFloating {
             return None;
         }
 
+        // As in `overlay_child_context`: the panel is a child of the viewport,
+        // so what it resolves a share of is the viewport, once.
         let mut child_ctx = ctx.clone();
-        child_ctx.parent_size = child_size;
         child_ctx.parent_pos = Vec2d {
             x: ctx.parent_pos.x + offset.x,
             y: ctx.parent_pos.y + offset.y,
         };
-        child_ctx.box_constraint = BoxConstraint {
-            min_width: 0.0,
-            min_height: 0.0,
-            max_width: child_size.width,
-            max_height: child_size.height,
-        };
+        child_ctx.box_constraint = viewport_constraint(ctx);
         child_ctx.visible_rect = ctx
             .visible_rect
             .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height));

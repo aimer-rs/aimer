@@ -2,9 +2,11 @@
 
 mod budget;
 mod completion;
+mod delay;
 // The browser has no threads to run a lane on.
 #[cfg(not(target_arch = "wasm32"))]
 mod lane;
+mod join;
 mod lifecycle;
 mod panic_hook;
 // The browser has no threads to offload onto, and `requestIdleCallback` plus a
@@ -12,8 +14,12 @@ mod panic_hook;
 #[cfg(not(target_arch = "wasm32"))]
 mod offload;
 mod poll_context;
+mod race;
+mod rate_limit;
 mod scheduler;
 mod task;
+#[cfg(test)]
+mod test_host;
 mod timeout;
 mod venus;
 // Only the offload pool hands wakers across threads.
@@ -27,15 +33,23 @@ pub use crate::budget::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::offload::{OffloadPool, Offloaded};
 pub use crate::completion::{Completer, Completion, Interrupted, completion};
+pub use crate::delay::{Interval, Sleep, delayed, interval, sleep, sleep_until, spawn_delayed, timeout};
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::lane::{Lane, LaneState};
+pub use crate::join::{
+    IntoJoin, IntoTryJoin, JoinAll, TryJoinAll, join, join_all, try_join, try_join_all,
+};
 pub use crate::lifecycle::{Lifecycle, LifecycleSubscription, notify_lifecycle, on_lifecycle};
 pub use crate::panic_hook::install_panic_hook;
 pub use crate::poll_context::PollContext;
+pub use crate::race::{Either, Race, RaceAll, race, race_all};
+pub use crate::rate_limit::{Debouncer, Throttler, debouncer, throttler};
 pub use crate::scheduler::{LocalScheduler, is_polling_task};
 pub use crate::task::{Notifier, Phase, ScopeId, TaskId, TaskScope};
 pub use crate::timeout::TimeoutError;
 pub use crate::venus::{Venus, spawn_local};
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::venus::spawn_blocking;
 pub use crate::yielding::{YieldNow, yield_if_over_budget, yield_now};
 
 #[cfg(test)]

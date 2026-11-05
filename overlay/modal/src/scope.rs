@@ -32,7 +32,10 @@ impl ModalScope {
         Self(InheritedScope::capture(ctx))
     }
 
-    pub(crate) fn with<'a, R>(
+    /// Runs `callback` with the scope in place over `ctx`'s own, and puts `ctx`
+    /// back as it was afterwards: for building what a modal, or the overlay,
+    /// will show, where the context at hand is the overlay's.
+    pub fn with<'a, R>(
         &self,
         ctx: &BuildContext<'a>,
         callback: impl FnOnce(&BuildContext<'a>) -> R,

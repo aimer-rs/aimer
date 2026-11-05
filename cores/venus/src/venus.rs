@@ -426,6 +426,42 @@ pub fn spawn_local(future: impl Future<Output = ()> + 'static) -> Option<TaskId>
     Venus::current().map(|venus| venus.spawn(future))
 }
 
+/// [`Venus::spawn_blocking`] on the runtime installed for this thread.
+///
+/// `None` when no runtime is installed, for the same reason as [`spawn_local`]:
+/// there is no pool to run the work on, and running it inline would block the
+/// caller, which is exactly what this exists to avoid.
+///
+/// # Examples
+///
+/// ```
+/// use aimer_venus::{Venus, spawn_blocking};
+///
+/// // Nothing installed: the work is declined, not run on this thread.
+/// assert!(spawn_blocking(|| 1).is_none());
+///
+/// let venus = Venus::new();
+/// venus.install();
+/// let sum = spawn_blocking(|| (1..=10).sum::<u32>()).expect("a runtime is installed");
+/// Venus::uninstall();
+///
+/// venus.spawn(async move {
+///     assert_eq!(sum.await, 55);
+/// });
+/// while venus.task_count() > 0 {
+///     venus.run_microtasks();
+/// }
+/// ```
+#[cfg(not(target_arch = "wasm32"))]
+#[inline]
+pub fn spawn_blocking<T, F>(work: F) -> Option<Offloaded<T>>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    Venus::current().map(|venus| venus.spawn_blocking(work))
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;

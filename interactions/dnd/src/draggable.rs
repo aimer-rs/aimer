@@ -21,6 +21,7 @@ use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_events::element::ElementEvent;
 use aimer_events::pointer::PointerSource;
 use aimer_input::gesture::{LONG_PRESS_DURATION, tap_slop};
+use aimer_modal::ModalScope;
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
@@ -223,6 +224,7 @@ impl<W: Widget + 'static> Widget for Draggable<W> {
             start_mode: self.start_mode,
             axis: self.axis,
             on_drag_completed: self.on_drag_completed.clone(),
+            scope: ModalScope::capture(ctx),
             bounds: InteractionBounds::new(),
             press: RefCell::new(None),
             dragging: Cell::new(false),
@@ -250,6 +252,9 @@ struct RawDraggable {
     start_mode: Option<DragStartMode>,
     axis: DragAxis,
     on_drag_completed: Option<Rc<dyn Fn(bool)>>,
+    /// What the card inherits, for the feedback to inherit it too: the feedback
+    /// is shown by the overlay, which is outside of every provider.
+    scope: ModalScope,
     bounds: InteractionBounds,
     press: RefCell<Option<Press>>,
     dragging: Cell<bool>,
@@ -302,7 +307,13 @@ impl RawDraggable {
             x: press.at.x - corner.x,
             y: press.at.y - corner.y,
         };
-        DragOverlay::show(self.feedback.clone(), grab_offset, press.at, self.axis);
+        DragOverlay::show_in(
+            self.scope.clone(),
+            self.feedback.clone(),
+            grab_offset,
+            press.at,
+            self.axis,
+        );
         self.dragging.set(true);
         true
     }

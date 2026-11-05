@@ -613,3 +613,75 @@ fn an_item_of_the_list_can_be_carried_up_the_list() {
     assert_eq!(*completed.borrow(), vec![(2, true)]);
     assert!(!DragSession::is_active(), "the session outlived the drop");
 }
+
+#[derive(Clone, Debug, PartialEq)]
+struct Greeting(&'static str);
+
+thread_local! {
+    static BANNER_SAW: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The drag feedback: reads what the application provides.
+#[derive(Clone, StatelessWidget)]
+struct Banner;
+
+impl StatelessWidget for Banner {
+    fn build(&self, ctx: &BuildContext) -> impl Widget {
+        let greeting = ctx
+            .try_watch::<Greeting>()
+            .map_or("no provider in scope", |greeting| greeting.0);
+        BANNER_SAW.with(|saw| saw.borrow_mut().push(greeting));
+        Container::new().width(100).height(100).child(ZeroSizedBox)
+    }
+}
+
+/// The overlay hosts the feedback of a drag, outside of what the application
+/// provides. The feedback is still the card's, so it reads and follows the
+/// providers the card does.
+#[test]
+fn the_feedback_of_a_drag_reads_and_follows_the_providers_of_its_card() {
+    DragSession::cancel_any();
+    BANNER_SAW.with(|saw| saw.borrow_mut().clear());
+    let greeting = ProviderHandle::new(Greeting("hello"));
+    let card = Draggable::new()
+        .data(CardId(7))
+        .feedback(|| Banner)
+        .child(Container::new().width(100).height(100).child(ZeroSizedBox));
+    let mut app = AimerApp::start_headless_with(
+        Provider::new()
+            .handle(greeting.clone())
+            .child(Row::new().children(vec![card.boxed()])),
+        HeadlessOptions {
+            size: PhysicalSize::new(400, 200),
+            scale_factor: 1.0,
+        },
+    );
+    app.pump_frames(3);
+
+    move_to(&mut app, 50.0, 50.0);
+    button(&mut app, ElementState::Pressed);
+    app.render_frame();
+    for step in 1..=8 {
+        move_to(&mut app, 50.0 + 12.0 * step as f64, 50.0);
+        app.render_frame();
+    }
+    assert!(DragSession::is_active(), "the card was never picked up");
+    app.pump_frames(2);
+    assert_eq!(
+        BANNER_SAW.with(|saw| saw.borrow().last().copied()),
+        Some("hello"),
+        "the feedback should find the provider its card is under"
+    );
+
+    greeting.update(|value| *value = Greeting("goodbye"));
+    app.pump_frames(3);
+    assert_eq!(
+        BANNER_SAW.with(|saw| saw.borrow().last().copied()),
+        Some("goodbye"),
+        "and follow it"
+    );
+
+    button(&mut app, ElementState::Released);
+    app.pump_frames(3);
+    DragSession::cancel_any();
+}

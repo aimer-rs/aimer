@@ -173,6 +173,20 @@ impl OverlayLayer {
     /// The element takes no events: it is not part of the overlay's routed
     /// children.
     #[doc(hidden)]
+    pub fn host_element_in(
+        element: AnyElement,
+        position: Rc<dyn Fn() -> aimer_attribute::Vec2d>,
+        scope: crate::scope::ModalScope,
+    ) -> OverlayContentHandle {
+        Self::host_element(scope.wrap(element), position)
+    }
+
+    /// Hosts `element` as [`Self::host_element`] does, for an element built where
+    /// `scope` was taken.
+    ///
+    /// The overlay rebuilds and repaints what it hosts without the providers of
+    /// the place it was built, so the element is given the scope each time.
+    #[doc(hidden)]
     pub fn host_element(
         element: AnyElement,
         position: Rc<dyn Fn() -> aimer_attribute::Vec2d>,
@@ -262,6 +276,17 @@ struct OverlayFollower {
 }
 
 impl OverlayFollower {
+    /// The context the child is laid out and painted in: that of a child of the
+    /// window, which it may be as big as, so a size it is given as a share of
+    /// its parent is a share of the window, once. Handing it its own size as the
+    /// parent's would take that share of itself, a second time, after
+    /// `computed_size` took it of the window.
+    fn child_viewport_context<'a>(&self, ctx: &BuildContext<'a>) -> BuildContext<'a> {
+        let mut child_ctx = ctx.clone();
+        child_ctx.box_constraint = crate::paint::viewport_constraint(ctx);
+        child_ctx
+    }
+
     fn anchor(&self) -> aimer_attribute::Vec2d {
         match self.anchor.get() {
             Some(anchor) => anchor,
@@ -316,15 +341,7 @@ impl LayoutElement for OverlayFollower {
 
 impl Drawable for OverlayFollower {
     fn update(&self, ctx: &BuildContext) {
-        let size = self.computed_size(ctx);
-        let mut child_ctx = ctx.clone();
-        child_ctx.parent_size = size;
-        child_ctx.box_constraint = aimer_attribute::BoxConstraint {
-            min_width: 0.0,
-            min_height: 0.0,
-            max_width: size.width,
-            max_height: size.height,
-        };
+        let mut child_ctx = self.child_viewport_context(ctx);
         child_ctx.visible_rect = None;
         self.child.update(&child_ctx);
     }
@@ -355,15 +372,7 @@ impl Drawable for OverlayFollower {
         _child: &dyn Element,
         _child_index: usize,
     ) -> Option<BuildContext<'a>> {
-        let size = self.computed_size(ctx);
-        let mut child_ctx = ctx.clone();
-        child_ctx.parent_size = size;
-        child_ctx.box_constraint = aimer_attribute::BoxConstraint {
-            min_width: 0.0,
-            min_height: 0.0,
-            max_width: size.width,
-            max_height: size.height,
-        };
+        let mut child_ctx = self.child_viewport_context(ctx);
         child_ctx.visible_rect = None;
         Some(child_ctx)
     }
