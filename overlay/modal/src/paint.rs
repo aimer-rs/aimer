@@ -19,19 +19,28 @@ pub(crate) fn overlay_child_context<'a>(
     let (origin, end) = overlay_content_bounds(ctx.parent_pos, child_size, offset);
     *child_bounds.borrow_mut() = Some((origin, end));
 
+    // The content is a child of the viewport, so a size it is given as a share
+    // of its parent is a share of the viewport: both `parent_size` and the
+    // constraint stay the viewport's, as for any child of the root. Handing the
+    // content its own size for either would resolve a percentage against
+    // itself, a second time, after layout resolved it against the viewport.
     let mut child_ctx = ctx.clone();
-    child_ctx.parent_size = child_size;
     child_ctx.parent_pos = origin;
-    child_ctx.box_constraint = BoxConstraint {
-        min_width: 0.0,
-        min_height: 0.0,
-        max_width: child_size.width,
-        max_height: child_size.height,
-    };
+    child_ctx.box_constraint = viewport_constraint(ctx);
     child_ctx.visible_rect = ctx
         .visible_rect
         .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height));
     child_ctx
+}
+
+/// The room the viewport offers its content: all of it, at most.
+pub(crate) fn viewport_constraint(ctx: &BuildContext) -> BoxConstraint {
+    BoxConstraint {
+        min_width: 0.0,
+        min_height: 0.0,
+        max_width: ctx.parent_size.width,
+        max_height: ctx.parent_size.height,
+    }
 }
 
 fn overlay_content_bounds(

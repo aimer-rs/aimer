@@ -6,6 +6,7 @@ pub(crate) mod host;
 mod modal;
 mod paint;
 mod placement;
+mod scope;
 
 pub use anchor::{Anchor, AnchorHandle};
 pub use animation::ModalAnimation;
@@ -15,6 +16,7 @@ pub use host::{
     OverlayLayerHandle, OverlayPainter, WindowModalState, prepare_retained_render_tree,
 };
 pub use modal::Modal;
+pub use scope::ModalScope;
 pub use placement::{
     FloatingAlign, FloatingPlacement, FloatingSide, OverflowPolicy, PlacementSpec,
     resolve_placement,

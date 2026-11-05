@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use aimer_attribute::BoxConstraint;
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_container::{Container, ZeroSizedBox};
@@ -17,7 +16,8 @@ use aimer_widget::{
 use crate::ModalAnimation;
 use crate::animated_content::wrap_animated_content;
 use crate::host::{self, ModalHandle, ModalId, ModalTimeline};
-use crate::paint::{contains, overlay_child_context};
+use crate::paint::{contains, overlay_child_context, viewport_constraint};
+use crate::scope::ModalScope;
 
 /// Displays content above the entire application render tree.
 ///
@@ -49,6 +49,7 @@ pub struct Modal<W = RequiredChild> {
     animation: Option<ModalAnimation>,
     barrier_dismissible: bool,
     escape_dismissible: bool,
+    scope: Option<ModalScope>,
 }
 
 impl Default for Modal {
@@ -67,6 +68,7 @@ impl Modal {
             animation: None,
             barrier_dismissible: true,
             escape_dismissible: true,
+            scope: None,
         }
     }
 
@@ -100,6 +102,16 @@ impl Modal {
         self
     }
 
+    /// Gives the content what is provided where [`ModalScope::capture`] took
+    /// `scope`.
+    ///
+    /// Without it the content is presented outside of the application's
+    /// providers and finds none of them.
+    pub fn scope(mut self, scope: ModalScope) -> Self {
+        self.scope = Some(scope);
+        self
+    }
+
     /// Attaches the required modal content and completes this builder.
     pub fn child<W: Widget>(self, child: W) -> Modal<W> {
         Modal {
@@ -109,6 +121,7 @@ impl Modal {
             animation: self.animation,
             barrier_dismissible: self.barrier_dismissible,
             escape_dismissible: self.escape_dismissible,
+            scope: self.scope,
         }
     }
 
@@ -149,8 +162,14 @@ impl<W: Widget + 'static> Modal<W> {
             timeline.clone(),
             false,
         );
+        // The content is built and, later, rebuilt and repainted by the overlay,
+        // which has no providers of its own, so it is given the scope each time.
+        let content = match &self.scope {
+            Some(scope) => scope.wrap(scope.with(ctx, |ctx| self.child.to_element(ctx))),
+            None => self.child.to_element(ctx),
+        };
         let child = wrap_animated_content(
-            self.child.to_element(ctx),
+            content,
             self.animation.clone(),
             timeline.clone(),
             true,
@@ -335,18 +354,15 @@ impl RawModal {
             y: offset_y,
         };
 
+        // As in `overlay_child_context`: the content is a child of the viewport,
+        // so `parent_size` stays the viewport's and a share of it is resolved
+        // against that once, and not again against the content itself.
         let mut child_context = ctx.clone();
-        child_context.parent_size = child_size;
         child_context.parent_pos = Vec2d {
             x: ctx.parent_pos.x + offset.x,
             y: ctx.parent_pos.y + offset.y,
         };
-        child_context.box_constraint = BoxConstraint {
-            min_width: 0.0,
-            min_height: 0.0,
-            max_width: child_size.width,
-            max_height: child_size.height,
-        };
+        child_context.box_constraint = viewport_constraint(ctx);
         child_context.visible_rect = ctx
             .visible_rect
             .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height));

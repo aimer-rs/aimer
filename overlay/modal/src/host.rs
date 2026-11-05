@@ -10,6 +10,7 @@ use aimer_events::window::request_animation_frame;
 use aimer_macro::Rebuildable;
 use aimer_widget::base::BuildContext;
 use aimer_widget::focus::FocusTrap;
+use aimer_widget::{COVERED_CURSOR, request_pointer_view_frame};
 use aimer_widget::{
     AnyElement, Drawable, Element, EventDispatcher, EventElement, EventResult, EventTreeRole,
     LayoutElement, PointerKey, Rebuildable as RebuildableTrait, RequiredChild, VisitorElement,
@@ -534,6 +535,7 @@ impl<W: Widget + 'static> Widget for ModalHost<W> {
         RawModalHost {
             child: self.child.to_element(ctx),
             overlay: RawModalOverlay::default().boxed(),
+            page_covered: Cell::new(false),
         }
         .boxed()
     }
@@ -546,6 +548,9 @@ impl<W: Widget + 'static> Widget for ModalHost<W> {
 struct RawModalHost {
     child: AnyElement,
     overlay: AnyElement,
+    /// Whether the page was last painted under a modal, so a change can ask for
+    /// the frame on which the page finds out.
+    page_covered: Cell<bool>,
 }
 
 impl aimer_widget::Rebuildable for RawModalHost {
@@ -555,6 +560,24 @@ impl aimer_widget::Rebuildable for RawModalHost {
 }
 
 impl RawModalHost {
+    /// The context the page is painted in.
+    ///
+    /// A modal is a mode: while one is presented its barrier covers the whole
+    /// window, so the pointer is never over the page. A region decides its hover
+    /// from the cursor it is handed while painting, so the page is handed none,
+    /// as a layer under a covering one is in a `Stack`: what it hovered stops
+    /// being hovered, and nothing starts.
+    fn page_context<'a>(&self, ctx: &BuildContext<'a>) -> Option<BuildContext<'a>> {
+        let covered = with_entries(|entries| !entries.is_empty());
+        if self.page_covered.replace(covered) != covered {
+            request_pointer_view_frame();
+        }
+        covered.then(|| BuildContext {
+            cursor_pos: COVERED_CURSOR,
+            ..ctx.clone()
+        })
+    }
+
     fn prepare_pending_commands(&self, ctx: &BuildContext) {
         if process_commands(ctx) {
             let _ = broadcast_event(self.child.as_ref(), &ElementEvent::Cancel);
@@ -588,8 +611,23 @@ impl Drop for RawModalHost {
 impl Drawable for RawModalHost {
     fn update(&self, ctx: &BuildContext) {
         self.prepare_pending_commands(ctx);
-        self.child.update(ctx);
+        match self.page_context(ctx) {
+            Some(covered) => self.child.update(&covered),
+            None => self.child.update(ctx),
+        }
         self.overlay.update(ctx);
+    }
+
+    fn child_context<'a>(
+        &self,
+        ctx: &BuildContext<'a>,
+        child: &dyn Element,
+    ) -> Option<BuildContext<'a>> {
+        if std::ptr::eq(child, self.child.as_ref()) {
+            self.page_context(ctx)
+        } else {
+            None
+        }
     }
 
     fn can_paint(&self, _ctx: &BuildContext) -> bool {
@@ -1355,6 +1393,7 @@ mod tests {
             }
             .boxed(),
             overlay: super::RawModalOverlay::default().boxed(),
+            page_covered: Cell::new(false),
         };
 
         assert_eq!(host.event_tree_role(), EventTreeRole::IndexedTarget);
@@ -1557,6 +1596,7 @@ mod tests {
             }
             .boxed(),
             overlay: super::RawModalOverlay::default().boxed(),
+            page_covered: Cell::new(false),
         }
         .boxed();
         let mut dispatcher = EventDispatcher::new();
