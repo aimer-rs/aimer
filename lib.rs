@@ -78,7 +78,7 @@ pub use aimer_time as time;
 pub mod modal {
     pub use aimer_modal::{
         Anchor, AnchorHandle, Floating, FloatingAlign, FloatingPlacement, FloatingSide, Modal,
-        ModalAnimation, ModalController, ModalHandle, ModalHost, ModalId, OverflowPolicy,
+        ModalAnimation, ModalController, ModalHandle, ModalHost, ModalId, ModalScope, OverflowPolicy,
         OverlayLayer, OverlayLayerHandle, PlacementSpec, resolve_placement,
     };
 }

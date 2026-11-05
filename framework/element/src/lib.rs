@@ -62,7 +62,7 @@ impl CalledCounter {
 pub static CALLED: CalledCounter = CalledCounter::new();
 
 // #[doc(hidden)]
-pub use crate::components::context::{InheritedStates, RetainedNodeHandle};
+pub use crate::components::context::{InheritedScope, InheritedStates, RetainedNodeHandle};
 // #[doc(hidden)]
 pub use crate::components::drawable::{
     CompositorAnimationDecision, CompositorAnimationFrame, CompositorTransform, Drawable,
@@ -159,7 +159,7 @@ pub use crate::platform_brightness::{Brightness, platform_brightness, set_platfo
 pub use crate::pointer_claim::{
     claim_pointer, claimed_pointer_count, is_pointer_claimed, release_all_pointers, release_pointer,
 };
-pub use crate::pointer_occlusion::pointer_occluded_at;
+pub use crate::pointer_occlusion::{COVERED_CURSOR, pointer_occluded_at};
 // #[doc(hidden)]
 pub use crate::pointer_occlusion::request_pointer_view_frame;
 pub use crate::reconciliation_plan::{

@@ -7,7 +7,7 @@ use aimer_macro::{LayoutElement, Rebuildable};
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, VisitorElement, Widget,
-    pointer_occluded_at, request_pointer_view_frame,
+    COVERED_CURSOR, pointer_occluded_at, request_pointer_view_frame,
 };
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -168,16 +168,6 @@ pub struct RawStackElement {
     /// a change can ask for the frame on which the layers below find out.
     pointer_covered: Cell<bool>,
 }
-
-/// Where a layer that something above it covers is told the cursor is.
-///
-/// A region decides its hover from the cursor it is given while painting, so
-/// handing a covered layer a cursor that is nowhere ends a hover it should not
-/// hold and keeps it from starting one.
-const COVERED_CURSOR: Vec2d = Vec2d {
-    x: -1.0e9,
-    y: -1.0e9,
-};
 
 impl RawStackElement {
     /// Whether a higher layer covering the pointer hides the lower ones from it.

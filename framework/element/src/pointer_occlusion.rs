@@ -2,6 +2,16 @@ use aimer_attribute::Vec2d;
 
 use crate::Element;
 
+/// Where a layer that something above it covers is told the cursor is.
+///
+/// A region decides its hover from the cursor it is given while painting, so
+/// handing a covered layer a cursor that is nowhere ends a hover it should not
+/// hold and keeps it from starting one.
+pub const COVERED_CURSOR: Vec2d = Vec2d {
+    x: -1.0e9,
+    y: -1.0e9,
+};
+
 /// Returns whether something inside `element` hides what is painted behind it
 /// at `pos` from the pointer.
 ///

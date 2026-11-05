@@ -15,6 +15,7 @@ use tokio::runtime::Handle;
 use crate::components::element::DirtySource;
 
 mod current;
+mod inherited_scope;
 mod retain;
 mod type_id_hasher;
 mod window_handle;
@@ -22,6 +23,7 @@ mod window_handle;
 pub use current::{ActiveBuildContext, NoActiveBuildContext};
 pub use window_handle::{HeadlessWindowState, WindowHandle};
 
+pub use inherited_scope::InheritedScope;
 pub use type_id_hasher::{InheritedStates, TypeIdHasher};
 
 /// An owned copy of a [`BuildContext`] taken by [`BuildContext::snapshot`].
