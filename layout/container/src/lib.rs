@@ -1,11 +1,14 @@
 mod single_child;
 
 pub use single_child::aspecratio::{AspectRatio, RatioOption};
+pub use single_child::center::Center;
 pub use single_child::container::Container;
 #[doc(hidden)]
 pub use single_child::container::RetainedBoxDecoration;
 pub use single_child::custom_shape::CustomShape;
 pub use single_child::glass::{Glass, GlassMaterial, MaterialMotionPolicy};
+#[doc(hidden)]
+pub use single_child::hug::hugged_size;
 pub use single_child::liquid::{Liquid, LiquidMaterial};
 pub use single_child::opacity::Opacity;
 pub use single_child::resizable::band::ResizeBand;

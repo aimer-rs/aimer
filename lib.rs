@@ -354,8 +354,8 @@ mod tests {
         use aimer::input::mouse_region::MouseRegion;
         use aimer::style::AnimatedTheme;
         use aimer::{
-            Align, AnyWidget, AspectRatio, Container, Expanded, Opacity, Positioned, Scrollable,
-            SizedBox, ZeroSizedBox,
+            Align, AnyWidget, AspectRatio, Center, Container, Expanded, Opacity, Positioned,
+            Scrollable, SizedBox, ZeroSizedBox,
         };
 
         #[cfg(feature = "provider")]
@@ -372,6 +372,7 @@ mod tests {
             assert_any_widget(Opacity::new().box_child(ZeroSizedBox));
             assert_any_widget(SizedBox::new().box_child(ZeroSizedBox));
             assert_any_widget(Align::new().box_child(ZeroSizedBox));
+            assert_any_widget(Center::new().box_child(ZeroSizedBox));
             assert_any_widget(Positioned::new().box_child(ZeroSizedBox));
             assert_any_widget(Button::new().box_child(ZeroSizedBox));
             assert_any_widget(GestureDetector::new().dyn_child(ZeroSizedBox));
@@ -1062,7 +1063,7 @@ mod tests {
 
         // Test-only fixture: production builds do not pull the optional
         // bundled-fonts feature merely to exercise registration validation.
-        const TEST_FONT: &[u8] = include_bytes!("../graphic/vectors/font/fonts/JetBrainsMono-Regular.ttf");
+        const TEST_FONT: &[u8] = include_bytes!("graphic/vectors/font/fonts/JetBrainsMono-Regular.ttf");
 
         #[test]
         fn named_font_registration_is_validated_and_stable() {

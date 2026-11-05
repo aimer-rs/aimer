@@ -14,8 +14,6 @@ categories = ["asynchronous", "gui"]
 # Adds per-microtask timing diagnostics without burdening the default poll path.
 venus-debug = []
 
-[lints.rust]
-
 # Venus sits underneath the widget tree, so it depends on nothing from the
 # framework. A monotonic clock is the only thing it cannot implement itself:
 # `std::time::Instant` panics in the browser.
