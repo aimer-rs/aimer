@@ -310,6 +310,7 @@ mod tests {
             clip_rect: [0.0, 0.0, 320.0, 40.0],
             clip_border_radius: [0.0; 4],
             spans: Vec::new(),
+            alpha_ramp: None,
         }
     }
 

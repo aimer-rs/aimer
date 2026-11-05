@@ -957,6 +957,20 @@ pub trait GpuBackend: Sized + 'static {
         shader.wgsl_source()
     }
 
+    /// The text shader that also scales each glyph's alpha by a linear ramp, if
+    /// this backend has one.
+    ///
+    /// A fade over text is drawn offscreen, in several render passes, unless the
+    /// glyphs can take the ramp where they are drawn. A backend that supplies this
+    /// shader says it can: it must keep the entry points and bindings of the
+    /// built-in text shader, and read the ramp from four extra per-instance
+    /// attributes, `8..=11`, as `aimer_text_pipeline` lays them out. The default is
+    /// `None`, which leaves every fade to the offscreen path.
+    #[doc(hidden)]
+    fn text_ramp_shader_source(&self) -> Option<&'static [u8]> {
+        None
+    }
+
     /// The language this backend compiles for shaders supplied at run time.
     ///
     /// [`GpuBackend::builtin_shader_source`] ships each built-in shader in the

@@ -895,6 +895,9 @@ impl<B: GpuBackend> TextPipelineV2<B> {
 
         self.instances.clear();
         self.color_instances.clear();
+        if let Some(ramped) = self.ramped.as_mut() {
+            ramped.instances.clear();
+        }
         self.decoration_instances.clear();
         self.decoration_instances.extend(
             decorations
@@ -911,6 +914,10 @@ impl<B: GpuBackend> TextPipelineV2<B> {
             // `[start, len_after)` in each list.
             let alpha_start = self.instances.len() as u32;
             let color_start = self.color_instances.len() as u32;
+            let ramp_start = self
+                .ramped
+                .as_ref()
+                .map_or(0, |ramped| ramped.instances.len() as u32);
 
             // Off-screen text draws nothing this frame. Its range stays empty
             // so the ranges still line up with `requests`, which is what lets
@@ -921,6 +928,8 @@ impl<B: GpuBackend> TextPipelineV2<B> {
                     alpha_end: alpha_start,
                     color_start,
                     color_end: color_start,
+                    ramp_start,
+                    ramp_end: ramp_start,
                 });
                 continue;
             }
@@ -1054,7 +1063,20 @@ impl<B: GpuBackend> TextPipelineV2<B> {
                     };
 
                     if paint_glyph.color_atlas {
+                        // A fade does not reach a color glyph, so a request that is
+                        // to be faded must not produce one: the renderer only asks
+                        // for a ramp on text that cannot.
+                        debug_assert!(
+                            req.alpha_ramp.is_none(),
+                            "a color glyph in text that carries an alpha ramp"
+                        );
                         self.color_instances.push(instance);
+                    } else if let (Some(ramp), Some(ramped)) =
+                        (req.alpha_ramp, self.ramped.as_mut())
+                    {
+                        ramped
+                            .instances
+                            .push(RampedGlyphInstance::new(instance, ramp));
                     } else {
                         self.instances.push(instance);
                     }
@@ -1069,6 +1091,11 @@ impl<B: GpuBackend> TextPipelineV2<B> {
                 alpha_end: self.instances.len() as u32,
                 color_start,
                 color_end: self.color_instances.len() as u32,
+                ramp_start,
+                ramp_end: self
+                    .ramped
+                    .as_ref()
+                    .map_or(0, |ramped| ramped.instances.len() as u32),
             });
         }
 
@@ -1087,6 +1114,13 @@ impl<B: GpuBackend> TextPipelineV2<B> {
         let (cw, ch) = (self.color_atlas.width, self.color_atlas.height);
         for instance in &mut self.color_instances {
             instance.uv_rect = normalize_pixel_uv_rect(instance.uv_rect, cw, ch);
+        }
+        // Ramped glyphs are alpha glyphs: they read the same atlas.
+        if let Some(ramped) = self.ramped.as_mut() {
+            for instance in &mut ramped.instances {
+                instance.glyph.uv_rect =
+                    normalize_pixel_uv_rect(instance.glyph.uv_rect, aw, ah);
+            }
         }
 
         // Upload both atlases if new glyphs were added.
@@ -1163,6 +1197,22 @@ impl<B: GpuBackend> TextPipelineV2<B> {
             self.color_instance_upload.invalidate();
         }
 
+        if let Some(ramped) = self.ramped.as_mut() {
+            let previous = ramped.policy.capacity();
+            ramped.policy.record_usage(ramped.instances.len());
+            if ramped.policy.capacity() != previous {
+                ramped.buffer = backend.create_buffer(&crate::backend::BufferDescriptor {
+                    label: Some("text ramp instance buffer".to_string()),
+                    size: (ramped.policy.capacity() * size_of::<RampedGlyphInstance>()) as u64,
+                    usage: vec![
+                        crate::backend::BufferUsage::Vertex,
+                        crate::backend::BufferUsage::CopyDst,
+                    ],
+                });
+                ramped.upload.invalidate();
+            }
+        }
+
         let previous_decoration_capacity = self.decoration_instance_policy.capacity();
         self.decoration_instance_policy
             .record_usage(self.decoration_instances.len());
@@ -1190,6 +1240,9 @@ impl<B: GpuBackend> TextPipelineV2<B> {
             &self.color_instance_buffer,
             &self.color_instances,
         );
+        if let Some(ramped) = self.ramped.as_mut() {
+            ramped.upload.upload(backend, &ramped.buffer, &ramped.instances);
+        }
         self.decoration_instance_upload.upload(
             backend,
             &self.decoration_instance_buffer,

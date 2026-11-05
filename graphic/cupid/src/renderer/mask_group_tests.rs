@@ -68,6 +68,22 @@ pub(super) fn record(tree: &RenderTree, node: RenderNodeId, commands: Vec<DrawCo
 
 /// Renders `tree` and returns its RGBA8 pixels.
 pub(super) fn render(antialiasing: AntiAlias, tree: &RenderTree) -> Vec<u8> {
+    render_counting(antialiasing, tree).0
+}
+
+/// Renders `tree` and returns its RGBA8 pixels, and how many command buffers
+/// rendering it submitted (the read-back that follows is not counted).
+pub(super) fn render_counting(antialiasing: AntiAlias, tree: &RenderTree) -> (Vec<u8>, u64) {
+    render_with(antialiasing, tree, true)
+}
+
+/// As [`render_counting`], drawing a fade over text as a ramp on its glyphs when
+/// `ramped_fades` is true and as a group when it is not.
+pub(super) fn render_with(
+    antialiasing: AntiAlias,
+    tree: &RenderTree,
+    ramped_fades: bool,
+) -> (Vec<u8>, u64) {
     let backend = MetalBackend::new().expect("mask pixel regression requires Metal");
     let format = <MetalBackend as GpuBackend>::rgba8_unorm_format();
     let target = backend.create_texture(&TextureDescriptor {
@@ -81,6 +97,7 @@ pub(super) fn render(antialiasing: AntiAlias, tree: &RenderTree) -> Vec<u8> {
     });
     let view = backend.create_texture_view(&target, "mask group pixels");
     let mut renderer = RendererImpl::<MetalBackend>::with_antialiasing(&backend, format, antialiasing);
+    renderer.set_alpha_ramp_fast_path(ramped_fades);
     let packet = FramePacket::from_v2_direct(
         RenderFrame {
             damage: vec![Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32)],
@@ -89,7 +106,9 @@ pub(super) fn render(antialiasing: AntiAlias, tree: &RenderTree) -> Vec<u8> {
         FrameRenderMetadata::new(1.0, 7, 1, 1, 1, DamageSet::new(SIZE, SIZE)),
     )
     .expect("lower the masked groups");
+    let before = backend.submitted_command_buffers();
     renderer.render_packet(&backend, &view, &packet, false);
+    let submitted = backend.submitted_command_buffers() - before;
 
     let row = (SIZE * 4).div_ceil(256) * 256;
     let readback = backend.create_buffer(&BufferDescriptor {
@@ -126,7 +145,7 @@ pub(super) fn render(antialiasing: AntiAlias, tree: &RenderTree) -> Vec<u8> {
     for line in padded.chunks(row as usize).take(SIZE as usize) {
         pixels.extend_from_slice(&line[..(SIZE * 4) as usize]);
     }
-    pixels
+    (pixels, submitted)
 }
 
 pub(super) fn pixel(pixels: &[u8], x: u32, y: u32) -> [u8; 4] {
@@ -384,4 +403,16 @@ fn a_backdrop_filter_is_confined_to_its_nodes_rounded_clip() {
         // The window's corner is rounded by 16: the very corner pixel is outside it.
         near(pixel(&pixels, 33, 41), [255, 0, 0, 255], 4, "the rounded corner is untouched");
     }
+}
+
+/// A coverage mask has a target for the content and one for the coverage: both
+/// are cleared by the first pass that draws into them, not by passes of their own.
+#[test]
+fn a_coverage_mask_clears_its_targets_in_the_passes_that_draw_into_them() {
+    let (_, submitted) =
+        render_counting(AntiAlias::Analytic, &masked_scene(Color::rgba8(0, 255, 0, 255)));
+    assert!(
+        submitted <= 5,
+        "a coverage mask submitted {submitted} command buffers; its two clears should not be among them"
+    );
 }

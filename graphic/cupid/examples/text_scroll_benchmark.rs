@@ -89,6 +89,7 @@ fn document(line_count: usize, scroll_offset: f32) -> Vec<TextDrawRequest> {
             clip_rect: clip,
             clip_border_radius: [0.0; 4],
             spans: Vec::new(),
+            alpha_ramp: None,
         })
         .collect()
 }

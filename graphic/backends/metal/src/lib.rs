@@ -95,6 +95,10 @@ pub struct MetalBackend {
     device: Retained<ProtocolObject<dyn MTLDevice>>,
     queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
     queue_state: Mutex<MetalQueueState>,
+    /// Command buffers committed through [`GpuBackend::submit`], for tests and
+    /// diagnostics: how many a frame takes is what keeps a busy queue from
+    /// blocking the encoder.
+    submitted: std::sync::atomic::AtomicU64,
     #[cfg(feature = "frame-stats")]
     active_gpu_frame: Mutex<Option<Arc<GpuFrameCapture>>>,
 }
@@ -225,6 +229,7 @@ impl MetalBackend {
             device,
             queue,
             queue_state: Mutex::new(MetalQueueState::default()),
+            submitted: std::sync::atomic::AtomicU64::new(0),
             #[cfg(feature = "frame-stats")]
             active_gpu_frame: Mutex::new(None),
         })
@@ -636,6 +641,16 @@ impl GpuBackend for MetalBackend {
                 include_str!("../shaders/metal/morph.metal").as_bytes()
             }
         }
+    }
+
+    fn text_ramp_shader_source(&self) -> Option<&'static [u8]> {
+        Some(
+            concat!(
+                include_str!("../shaders/metal/text_common.metal"),
+                include_str!("../shaders/metal/text_ramp.metal")
+            )
+            .as_bytes(),
+        )
     }
 
     fn runtime_shader_language(&self) -> Option<crate::backend::ShaderLanguage> {
@@ -1255,6 +1270,8 @@ impl GpuBackend for MetalBackend {
             }
         }
         encoder.command_buffer.commit();
+        self.submitted
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // Reuse the existing queue lock and transfer ownership: no extra lock,
         // allocation or retain is needed to remember this frame's GPU producer.
         queue_state.last_submission = Some(encoder.command_buffer);
@@ -1277,6 +1294,14 @@ impl GpuBackend for MetalBackend {
 }
 
 impl MetalBackend {
+    /// How many command buffers [`GpuBackend::submit`] has committed so far.
+    ///
+    /// A diagnostic for tests and profiling, not part of the rendering API.
+    #[doc(hidden)]
+    pub fn submitted_command_buffers(&self) -> u64 {
+        self.submitted.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Fetch the vertex entry point named by `state`.
     fn entry_point(
         &self,

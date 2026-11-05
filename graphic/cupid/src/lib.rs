@@ -1090,6 +1090,7 @@ mod resized_text_preparation {
             clip_rect: [0.0, 0.0, -1.0, 0.0],
             clip_border_radius: [0.0; 4],
             spans: Vec::new(),
+            alpha_ramp: None,
         }
     }
 
@@ -1368,6 +1369,7 @@ mod scrolled_text_culling {
             clip_rect: [0.0, 0.0, -1.0, 0.0],
             clip_border_radius: [0.0; 4],
             spans: Vec::new(),
+            alpha_ramp: None,
         }
     }
 

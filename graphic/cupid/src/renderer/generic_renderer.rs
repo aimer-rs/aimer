@@ -53,6 +53,8 @@ mod external_frames;
 mod pixel_uploads;
 mod frame_recovery;
 mod morph_group;
+mod ramped_fades;
+use ramped_fades::{RampedFades, SliceRole};
 use damage_clear::DamageClearTextureGeneric;
 use morph_group::{MorphFrame, MorphSource, ends_host, next_group_depth};
 
@@ -166,6 +168,14 @@ pub struct Renderer<B: GpuBackend = crate::backend::DefaultGpuBackend> {
     scene_tree: RetainedSceneTree,
     scene_history_key: Option<(u64, u64, u64, u64, u32, u32)>,
     v2_command_cache: HashMap<u64, CachedV2CommandList>,
+    /// The fades of the frame being drawn that are drawn as ramps on text, not as
+    /// groups; see [`ramped_fades`].
+    ramped_fades: RampedFades,
+    /// The role of each slice of commands about to be collected, in order.
+    slice_roles: Vec<SliceRole>,
+    /// Whether a fade over text may be drawn as a ramp. On unless a test turns it
+    /// off to compare the two ways of drawing it.
+    alpha_ramp_fast_path: bool,
     #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
     first_render_timing_enabled: bool,
 }
@@ -284,6 +294,29 @@ struct ActiveOpacityGroup<B: GpuBackend> {
     /// frame to its target, which a target started from the frame leaves the same
     /// for everything that does not sample the backdrop.
     seeded: bool,
+    /// Whether the group's target still holds what an earlier frame left in it,
+    /// and has to start from nothing before anything is read from it or drawn
+    /// over it.
+    ///
+    /// A clear is a render pass, and a render pass is a command buffer; a pass of
+    /// its own that draws nothing but the clear is a buffer spent on nothing,
+    /// because the first pass that draws into the target can clear it as it
+    /// begins. The group is cleared that way when it is first drawn into
+    /// ([`Self::take_load_op`]), and by [`Renderer::materialize_clear`] before
+    /// anything else uses it.
+    clear_pending: std::cell::Cell<bool>,
+}
+
+impl<B: GpuBackend> ActiveOpacityGroup<B> {
+    /// How the next pass that draws into this group begins: clearing it, if it
+    /// has not been cleared yet, which is then done.
+    fn take_load_op(&self) -> LoadOp<[f64; 4]> {
+        if self.clear_pending.replace(false) {
+            LoadOp::Clear([0.0; 4])
+        } else {
+            LoadOp::Load
+        }
+    }
 }
 
 /// Where backdrop surfaces read the backdrop from while they are drawn into a
@@ -388,6 +421,9 @@ impl<B: GpuBackend> Renderer<B> {
             scene_tree: RetainedSceneTree::new(),
             scene_history_key: None,
             v2_command_cache: HashMap::new(),
+            ramped_fades: RampedFades::default(),
+            slice_roles: Vec::new(),
+            alpha_ramp_fast_path: true,
             #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
             first_render_timing_enabled: false,
         }
@@ -501,6 +537,7 @@ impl<B: GpuBackend> Renderer<B> {
             clip_rect: [0.0, 0.0, width as f32, height as f32],
             clip_border_radius: [0.0; 4],
             spans: Vec::new(),
+            alpha_ramp: None,
         };
         self.text_pipeline
             .as_mut()
@@ -1273,17 +1310,23 @@ impl<B: GpuBackend> Renderer<B> {
         }
 
         let mut slices = Vec::with_capacity(operations.len() * 3);
+        let mut roles = Vec::new();
         for operation in operations.iter().copied() {
             match &operation.kind {
                 RetainedRenderOperationKind::LocalV2(item) => {
                     if let Some(index) = retained_indices.get(&item.element.get()) {
                         slices.push(retained_lists[*index].1.commands.as_slice());
+                        roles.push(self.ramped_fades.role_of(
+                            operation as *const crate::frame::RetainedRenderOperation
+                                as *const (),
+                        ));
                     }
                 }
                 RetainedRenderOperationKind::OpacityGroupBegin { .. }
                 | RetainedRenderOperationKind::OpacityGroupEnd { .. } => {}
             }
         }
+        self.slice_roles = roles;
         self.render_contents_with_slices(
             backend,
             view,
@@ -1331,6 +1374,7 @@ impl<B: GpuBackend> Renderer<B> {
         let mut morph_frames = Vec::<MorphFrame<B>>::new();
         let mut chunk = Vec::new();
         let seeded_groups = groups_sampling_backdrop(operations);
+        self.plan_ramped_fades(operations, device_scale);
         for operation in operations.iter().copied() {
             match operation.kind {
                 RetainedRenderOperationKind::OpacityGroupBegin {
@@ -1340,6 +1384,11 @@ impl<B: GpuBackend> Renderer<B> {
                     fade,
                     morph,
                 } => {
+                    // A fade drawn as a ramp has no group: what is inside it is
+                    // drawn with its parent.
+                    if self.ramped_fades.skips_group(element) {
+                        continue;
+                    }
                     self.flush_opacity_group_chunk(
                         backend,
                         view,
@@ -1383,12 +1432,20 @@ impl<B: GpuBackend> Renderer<B> {
                     } else if fade {
                         group.mask = MaskRole::AwaitingAlpha;
                     }
-                    self.clear_render_target(
-                        backend,
-                        &group.render_view,
-                        group.resolve_target.as_ref(),
-                        [0.0; 4],
-                    );
+                    // The first pass that draws into the group clears it, so a pass of
+                    // its own would only repeat that. A morph source is read later
+                    // by a host that may find nothing drawn in it, so it is cleared
+                    // now.
+                    if group.morph_source.is_some() {
+                        self.clear_render_target(
+                            backend,
+                            &group.render_view,
+                            group.resolve_target.as_ref(),
+                            [0.0; 4],
+                        );
+                    } else {
+                        group.clear_pending.set(true);
+                    }
                     // An ordinary group that holds a surface sampling the backdrop
                     // starts from what is behind it: the frame, or, inside another
                     // group, that group as it is so far, which a group of its own
@@ -1412,6 +1469,9 @@ impl<B: GpuBackend> Renderer<B> {
                     groups.push(group);
                 }
                 RetainedRenderOperationKind::OpacityGroupEnd { element } => {
+                    if self.ramped_fades.skips_group(element) {
+                        continue;
+                    }
                     self.flush_opacity_group_chunk(
                         backend,
                         view,
@@ -1456,6 +1516,9 @@ impl<B: GpuBackend> Renderer<B> {
                                 composite_region.width,
                                 composite_region.height,
                             );
+                            if let Some(parent) = groups.last() {
+                                self.materialize_clear(backend, parent);
+                            }
                             self.composite_morph_group(
                                 backend,
                                 &frame,
@@ -1494,6 +1557,7 @@ impl<B: GpuBackend> Renderer<B> {
                                 (content.render_view.clone(), content.resolve_target.clone());
                             let (content_width, content_height) =
                                 (content.bounds.width, content.bounds.height);
+                            self.materialize_clear(backend, content);
                             self.composite_opacity_group(
                                 backend,
                                 &coverage,
@@ -1525,6 +1589,7 @@ impl<B: GpuBackend> Renderer<B> {
                                 content_region.width,
                                 content_region.height,
                             );
+                            self.materialize_clear(backend, &content);
                             self.composite_opacity_group(
                                 backend,
                                 alpha,
@@ -1589,6 +1654,9 @@ impl<B: GpuBackend> Renderer<B> {
                         composite_region.width,
                         composite_region.height,
                     );
+                    if let Some(parent) = groups.last() {
+                        self.materialize_clear(backend, parent);
+                    }
                     self.composite_opacity_group(
                         backend,
                         &group,
@@ -1648,12 +1716,7 @@ impl<B: GpuBackend> Renderer<B> {
                             opacity_target_key,
                         );
                         content.mask = MaskRole::Content;
-                        self.clear_render_target(
-                            backend,
-                            &content.render_view,
-                            content.resolve_target.as_ref(),
-                            [0.0; 4],
-                        );
+                        content.clear_pending.set(true);
                         groups.push(content);
                         if !is_alpha {
                             chunk.push(operation);
@@ -1703,12 +1766,7 @@ impl<B: GpuBackend> Renderer<B> {
                         opacity_target_key,
                     );
                     coverage.mask = MaskRole::Coverage;
-                    self.clear_render_target(
-                        backend,
-                        &coverage.render_view,
-                        coverage.resolve_target.as_ref(),
-                        [0.0; 4],
-                    );
+                    coverage.clear_pending.set(true);
                     groups.push(coverage);
                     if !is_content {
                         chunk.push(operation);
@@ -1733,6 +1791,150 @@ impl<B: GpuBackend> Renderer<B> {
         );
         debug_assert!(groups.is_empty());
         debug_assert!(morph_frames.is_empty());
+        self.ramped_fades.clear();
+    }
+
+    /// Finds the fades of `operations` that are drawn as ramps on their text, not
+    /// as groups, and records how each of their items is to be drawn.
+    ///
+    /// A fade qualifies when it is not inside another mask or fade, its own item
+    /// is only a linear ramp, and what it fades is only text that cannot be an
+    /// emoji (see [`ramped_fades`]). Every other fade is left to the offscreen
+    /// path, which draws any of them.
+    fn plan_ramped_fades(
+        &mut self,
+        operations: &[&crate::frame::RetainedRenderOperation],
+        device_scale: f32,
+    ) {
+        self.ramped_fades.clear();
+        let supported = self
+            .text_pipeline
+            .as_ref()
+            .is_some_and(|text| text.supports_alpha_ramp());
+        if !self.alpha_ramp_fast_path || !supported {
+            return;
+        }
+
+        // The groups open at the operation being looked at, each with whether it
+        // isolates what is inside it, as a mask or a fade does.
+        let mut open: Vec<bool> = Vec::new();
+        let mut index = 0;
+        while index < operations.len() {
+            match &operations[index].kind {
+                RetainedRenderOperationKind::OpacityGroupBegin {
+                    element,
+                    opacity,
+                    masked,
+                    fade,
+                    morph,
+                } => {
+                    let isolated_above = open.iter().any(|isolating| *isolating);
+                    if *fade && !*masked && morph.is_none() && !isolated_above {
+                        if let Some(end) =
+                            self.plan_ramped_fade(operations, index, *element, *opacity, device_scale)
+                        {
+                            // Nothing inside a ramped fade is a group, so the whole
+                            // of it is planned: go on after it.
+                            index = end + 1;
+                            continue;
+                        }
+                    }
+                    open.push(*masked || *fade || morph.is_some());
+                }
+                RetainedRenderOperationKind::OpacityGroupEnd { .. } => {
+                    open.pop();
+                }
+                RetainedRenderOperationKind::LocalV2(_) => {}
+            }
+            index += 1;
+        }
+    }
+
+    /// Plans the fade that begins at `begin`, if it is one that is drawn as a
+    /// ramp, and returns the index of its end.
+    fn plan_ramped_fade(
+        &mut self,
+        operations: &[&crate::frame::RetainedRenderOperation],
+        begin: usize,
+        element: u64,
+        opacity: f32,
+        device_scale: f32,
+    ) -> Option<usize> {
+        // The fade's own item comes first and is the ramp.
+        let RetainedRenderOperationKind::LocalV2(alpha) = &operations.get(begin + 1)?.kind else {
+            return None;
+        };
+        if alpha.element.get() != element {
+            return None;
+        }
+        if !self.lowered_commands_satisfy(alpha, device_scale, |commands| {
+            ramped_fades::alpha_item_request(commands).is_some()
+        }) {
+            return None;
+        }
+
+        // Everything after it, up to the end, is text.
+        let mut texts = 0;
+        let mut content = Vec::new();
+        let mut cursor = begin + 2;
+        let end = loop {
+            match &operations.get(cursor)?.kind {
+                RetainedRenderOperationKind::LocalV2(item) => {
+                    let mut scan = ramped_fades::ContentScan::default();
+                    if !self.lowered_commands_satisfy(item, device_scale, |commands| {
+                        scan = ramped_fades::scan_content(commands);
+                        scan.drawable
+                    }) {
+                        return None;
+                    }
+                    texts += scan.texts;
+                    content.push(operations[cursor] as *const crate::frame::RetainedRenderOperation);
+                }
+                RetainedRenderOperationKind::OpacityGroupEnd { element: ended } if *ended == element => {
+                    break cursor;
+                }
+                // A group inside the fade: it is not only text.
+                RetainedRenderOperationKind::OpacityGroupBegin { .. }
+                | RetainedRenderOperationKind::OpacityGroupEnd { .. } => return None,
+            }
+            cursor += 1;
+        };
+        if texts == 0 {
+            return None;
+        }
+
+        self.ramped_fades.insert_group(element);
+        self.ramped_fades.set_role(
+            operations[begin + 1] as *const crate::frame::RetainedRenderOperation as *const (),
+            SliceRole::RampAlpha { opacity },
+        );
+        for operation in content {
+            self.ramped_fades
+                .set_role(operation as *const (), SliceRole::RampContent);
+        }
+        Some(end)
+    }
+
+    /// Whether `check` holds of the commands `item` lowers to. The lowered list is
+    /// the one the frame is drawn from, so it is kept for it.
+    fn lowered_commands_satisfy(
+        &mut self,
+        item: &crate::frame::RetainedV2Item,
+        device_scale: f32,
+        check: impl FnOnce(&[DrawCommand]) -> bool,
+    ) -> bool {
+        let element = item.element.get();
+        let cached = self.take_v2_command_list(item, device_scale);
+        let verdict = check(&cached.commands);
+        self.v2_command_cache.insert(element, cached);
+        verdict
+    }
+
+    /// Turns the ramped drawing of fades over text on or off, to compare it with
+    /// the offscreen drawing of the same fade.
+    #[cfg(test)]
+    pub(crate) fn set_alpha_ramp_fast_path(&mut self, enabled: bool) {
+        self.alpha_ramp_fast_path = enabled;
     }
 
     fn flush_opacity_group_chunk(
@@ -1777,6 +1979,11 @@ impl<B: GpuBackend> Renderer<B> {
             scissor.height,
         );
         let operations = std::mem::take(chunk);
+        // The chunk is drawn in a pass that always begins, so it is the pass that
+        // clears a target that was left to be cleared by the first that draws.
+        let initial_load = groups
+            .last()
+            .map_or(LoadOp::Load, ActiveOpacityGroup::take_load_op);
         // A seeded group is its own backdrop: what it drew so far is on top of the
         // frame it started from.
         self.group_backdrop = groups
@@ -1799,7 +2006,7 @@ impl<B: GpuBackend> Renderer<B> {
             device_scale,
             target_offset,
             startup_timing,
-            LoadOp::Load,
+            initial_load,
             Some((
                 local_scissor.x,
                 local_scissor.y,
@@ -1915,6 +2122,21 @@ impl<B: GpuBackend> Renderer<B> {
             render_view,
             resolve_target,
             seeded: false,
+            clear_pending: std::cell::Cell::new(false),
+        }
+    }
+
+    /// Clears `group` now if it was left to be cleared by the pass that first
+    /// draws into it, for a use that is not such a pass: sampling it, or
+    /// compositing into it.
+    fn materialize_clear(&self, backend: &B, group: &ActiveOpacityGroup<B>) {
+        if group.clear_pending.replace(false) {
+            self.clear_render_target(
+                backend,
+                &group.render_view,
+                group.resolve_target.as_ref(),
+                [0.0; 4],
+            );
         }
     }
 
@@ -1941,6 +2163,13 @@ impl<B: GpuBackend> Renderer<B> {
         is_srgb: bool,
     ) -> bool {
         use crate::backend::{Extent3d, Origin3d, TexelCopyTextureInfo, TextureAspect};
+
+        // It copies from the parent and draws over the group: neither can still be
+        // waiting for its clear.
+        if let Some(parent) = parent {
+            self.materialize_clear(backend, parent);
+        }
+        self.materialize_clear(backend, group);
 
         // What is copied from, where the group is in it, and how much of it there is.
         let (source, x, y, available_width, available_height) = match parent {
@@ -2056,6 +2285,7 @@ impl<B: GpuBackend> Renderer<B> {
             render_view: group.render_view.clone(),
             resolve_target: group.resolve_target.clone(),
             seeded: false,
+            clear_pending: std::cell::Cell::new(false),
         };
         self.composite_opacity_group(
             backend,
@@ -2085,6 +2315,8 @@ impl<B: GpuBackend> Renderer<B> {
         scissor: DamageRect,
         mask: bool,
     ) {
+        // It is read from below, so it has to be cleared.
+        self.materialize_clear(backend, group);
         let image = ImageInstance {
             position: [
                 (group.bounds.x - parent_origin.0) as f32,
@@ -2696,7 +2928,51 @@ impl<B: GpuBackend> Renderer<B> {
         let target_translation = target_relative_transform(Mat3::identity(), target_offset);
         let fallback_slices = [draw_list.commands()];
         let command_slices = command_slices.unwrap_or(&fallback_slices);
-        for command in command_slices.iter().flat_map(|commands| commands.iter()) {
+        // How each slice is drawn, when it belongs to a fade drawn as a ramp.
+        let roles = std::mem::take(&mut self.slice_roles);
+        let mut ramp: Option<aimer_text_pipeline::AlphaRamp> = None;
+        for (slice_index, command) in command_slices
+            .iter()
+            .enumerate()
+            .flat_map(|(index, commands)| commands.iter().map(move |command| (index, command)))
+        {
+            let role = roles.get(slice_index).copied().unwrap_or(SliceRole::Normal);
+            if let SliceRole::RampAlpha { opacity } = role
+                && let DrawCommand::Custom {
+                    pipeline_name,
+                    data,
+                } = command
+            {
+                // A fade's own item draws nothing: its gradient is the ramp the
+                // text after it is drawn through. It is what the material
+                // pipeline would have drawn, resolved the same way.
+                if pipeline_name == MATERIAL_PIPELINE_NAME {
+                    ramp = data
+                        .downcast_ref::<Vec<u8>>()
+                        .and_then(|bytes| {
+                            crate::pipeline::material::MaterialRequest::decode(bytes).ok()
+                        })
+                        .map(|request| {
+                            resolve_material_request(
+                                request,
+                                &current_transform,
+                                current_scales,
+                                self.clip_stack.last(),
+                                alpha_state.current(),
+                            )
+                        })
+                        .and_then(|request| ramped_fades::ramp_from_resolved(&request))
+                        .map(|ramp| ramp.scaled(opacity));
+                }
+                continue;
+            }
+            let text_ramp = match role {
+                SliceRole::RampContent => {
+                    debug_assert!(ramp.is_some(), "a ramped fade's text has no ramp");
+                    ramp
+                }
+                _ => None,
+            };
             match command {
                 DrawCommand::PushTransform { matrix } => {
                     self.transform_stack.push(current_transform);
@@ -2839,6 +3115,7 @@ impl<B: GpuBackend> Renderer<B> {
                         clip_rect: clip_to_array(self.clip_stack.last()),
                         clip_border_radius: clip_border_radius(self.clip_stack.last()),
                         spans: Vec::new(),
+                        alpha_ramp: text_ramp,
                     });
                     self.resolved.push(ResolvedCommand::Text(request_index));
                 }
@@ -2898,6 +3175,7 @@ impl<B: GpuBackend> Renderer<B> {
                                 italic: span.italic,
                             })
                             .collect(),
+                        alpha_ramp: None,
                     });
                     self.resolved.push(ResolvedCommand::Text(request_index));
                 }

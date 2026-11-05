@@ -12,12 +12,14 @@ pub(crate) use aimer_primitives as utilities;
 pub(crate) use aimer_cupid_font::font_resolver;
 pub use aimer_cupid_font::{glyph_rasterizer, text_layout};
 
+mod alpha_ramp;
 mod cache_key;
 mod deferred_preparation;
 pub mod glyph_atlas;
 mod layout_cache;
 mod paint_cache;
 mod preparation_batch;
+pub use self::alpha_ramp::{AlphaRamp, MAX_RAMP_STOPS};
 pub use self::text_layout::{TextHorizontalAlign, TextWritingMode};
 #[cfg(test)]
 mod phase6_verification;
@@ -309,6 +311,69 @@ impl GlyphInstance {
     ];
 }
 
+/// One glyph and the ramp its alpha is scaled by.
+///
+/// It is a [`GlyphInstance`] with four more vectors after it, so the glyph's own
+/// attributes keep their locations and the ramp takes `8..=11`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct RampedGlyphInstance {
+    glyph: GlyphInstance,
+    /// `[x0, y0, x1, y1]`, the ramp's axis in target pixels.
+    ramp_line: [f32; 4],
+    /// `[x, y, width, height]`, where the ramp is defined.
+    ramp_rect: [f32; 4],
+    ramp_offsets: [f32; MAX_RAMP_STOPS],
+    ramp_alphas: [f32; MAX_RAMP_STOPS],
+}
+
+impl RampedGlyphInstance {
+    fn new(glyph: GlyphInstance, ramp: AlphaRamp) -> Self {
+        Self {
+            glyph,
+            ramp_line: ramp.line,
+            ramp_rect: ramp.rect,
+            ramp_offsets: ramp.offsets,
+            ramp_alphas: ramp.alphas,
+        }
+    }
+
+    const GENERIC_ATTRIBUTES: [crate::backend::VertexAttribute; 12] = {
+        use crate::backend::{VertexAttribute, VertexFormat};
+        const fn at(format: VertexFormat, offset: usize, location: u32) -> VertexAttribute {
+            VertexAttribute {
+                format,
+                offset: offset as u64,
+                shader_location: location,
+            }
+        }
+        [
+            at(VertexFormat::Float32x2, std::mem::offset_of!(Self, glyph.position), 0),
+            at(VertexFormat::Float32x2, std::mem::offset_of!(Self, glyph.size), 1),
+            at(VertexFormat::Float32x4, std::mem::offset_of!(Self, glyph.uv_rect), 2),
+            at(VertexFormat::Unorm8x4, std::mem::offset_of!(Self, glyph.color), 3),
+            at(VertexFormat::Float32x4, std::mem::offset_of!(Self, glyph.clip_rect), 4),
+            at(VertexFormat::Float32x4, std::mem::offset_of!(Self, glyph.clip_border_radius), 5),
+            at(VertexFormat::Float32, std::mem::offset_of!(Self, glyph.skew), 6),
+            at(VertexFormat::Float32, std::mem::offset_of!(Self, glyph.coverage_exponent), 7),
+            at(VertexFormat::Float32x4, std::mem::offset_of!(Self, ramp_line), 8),
+            at(VertexFormat::Float32x4, std::mem::offset_of!(Self, ramp_rect), 9),
+            at(VertexFormat::Float32x4, std::mem::offset_of!(Self, ramp_offsets), 10),
+            at(VertexFormat::Float32x4, std::mem::offset_of!(Self, ramp_alphas), 11),
+        ]
+    };
+}
+
+/// What a backend with a ramped text shader adds to the pipeline: the pipeline,
+/// and the glyphs drawn through it.
+struct RampedGlyphs<B: crate::backend::GpuBackend> {
+    pipeline: B::RenderPipeline,
+    buffer: B::Buffer,
+    policy: InstanceBufferPolicy,
+    instances: Vec<RampedGlyphInstance>,
+    upload: FrameUpload<RampedGlyphInstance>,
+}
+
 /// Per-instance data for one decoration line quad (underline/overline/strike).
 /// The line geometry is a plain quad; the actual stroke (and its dotted/dashed/
 /// wavy shape) is produced procedurally by `text_decoration.wgsl`.
@@ -473,6 +538,15 @@ pub struct TextDrawRequest {
     pub clip_rect: [f32; 4],
     pub clip_border_radius: [f32; 4],
     pub spans: Vec<RichTextSpan>,
+    /// A ramp the glyphs' alpha is scaled by where they are drawn: a fade over
+    /// this text, without an offscreen pass for it.
+    ///
+    /// Only honored by a backend whose [`text_ramp_shader_source`] is `Some`, and
+    /// only for glyphs from the alpha atlas; a request the caller means to fade
+    /// must not be able to produce color glyphs. See [`AlphaRamp`].
+    ///
+    /// [`text_ramp_shader_source`]: crate::backend::GpuBackend::text_ramp_shader_source
+    pub alpha_ramp: Option<AlphaRamp>,
 }
 
 #[derive(Clone, Debug)]
@@ -521,6 +595,9 @@ struct TextRequestRange {
     alpha_end: u32,
     color_start: u32,
     color_end: u32,
+    /// The glyphs of a request that carries an [`AlphaRamp`], in their own list.
+    ramp_start: u32,
+    ramp_end: u32,
 }
 
 /// Exact inputs that produced the retained instance lists.
@@ -622,6 +699,20 @@ fn same_text(left: &Arc<str>, right: &Arc<str>) -> bool {
 }
 
 #[inline]
+fn same_ramp(left: Option<AlphaRamp>, right: Option<AlphaRamp>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            same_f32_array(&left.line, &right.line)
+                && same_f32_array(&left.rect, &right.rect)
+                && same_f32_array(&left.offsets, &right.offsets)
+                && same_f32_array(&left.alphas, &right.alphas)
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+#[inline]
 fn same_shadow(left: Option<TextShadowRequest>, right: Option<TextShadowRequest>) -> bool {
     match (left, right) {
         (Some(left), Some(right)) => {
@@ -666,6 +757,7 @@ fn same_text_request(left: &TextDrawRequest, right: &TextDrawRequest) -> bool {
         && left.italic == right.italic
         && same_f32_array(&left.clip_rect, &right.clip_rect)
         && same_f32_array(&left.clip_border_radius, &right.clip_border_radius)
+        && same_ramp(left.alpha_ramp, right.alpha_ramp)
         && left.spans.len() == right.spans.len()
         && left
             .spans
@@ -767,6 +859,8 @@ pub struct TextPipelineV2<B: crate::backend::GpuBackend> {
     color_instance_policy: InstanceBufferPolicy,
     color_instances: Vec<GlyphInstance>,
     color_instance_upload: FrameUpload<GlyphInstance>,
+    /// Present when the backend has a text shader that takes an alpha ramp.
+    ramped: Option<RampedGlyphs<B>>,
     decoration_pipeline: B::RenderPipeline,
     decoration_instance_buffer: B::Buffer,
     decoration_instance_policy: InstanceBufferPolicy,
@@ -992,6 +1086,52 @@ impl<B: crate::backend::GpuBackend> TextPipelineV2<B> {
             usage: vec![BufferUsage::Vertex, BufferUsage::CopyDst],
         });
 
+        // Only a backend that ships the ramped shader has the pipeline; the others
+        // leave a fade over text to the offscreen path.
+        let ramped = backend.text_ramp_shader_source().map(|source| {
+            let module = backend.create_shader_module(source, "text ramp shader");
+            let buffers = [Some(VertexBufferLayout {
+                array_stride: size_of::<RampedGlyphInstance>() as u64,
+                step_mode: VertexStepMode::Instance,
+                attributes: &RampedGlyphInstance::GENERIC_ATTRIBUTES,
+            })];
+            let pipeline = backend.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("text ramp pipeline".to_string()),
+                layout: Some(&pipeline_layout),
+                vertex: VertexState {
+                    module: &module,
+                    entry_point: "vs_main",
+                    buffers: &buffers,
+                },
+                fragment: Some(FragmentState {
+                    module: &module,
+                    entry_point: "fs_main",
+                    targets: &[Some(ColorTargetState {
+                        format,
+                        blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        write_mask: ColorWriteMask::ALL,
+                    })],
+                }),
+                primitive: PrimitiveState {
+                    topology: PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: aimer_pipeline_core::multisample_state(antialiasing),
+            });
+            RampedGlyphs {
+                pipeline,
+                buffer: backend.create_buffer(&BufferDescriptor {
+                    label: Some("text ramp instance buffer".to_string()),
+                    size: (Self::INITIAL_CAPACITY * size_of::<RampedGlyphInstance>()) as u64,
+                    usage: vec![BufferUsage::Vertex, BufferUsage::CopyDst],
+                }),
+                policy: InstanceBufferPolicy::new(Self::INITIAL_CAPACITY),
+                instances: Vec::new(),
+                upload: FrameUpload::new(),
+            }
+        });
+
         let decoration_instance_buffer = backend.create_buffer(&BufferDescriptor {
             label: Some("text decoration instance buffer".to_string()),
             size: (Self::INITIAL_CAPACITY * size_of::<DecorationInstance>()) as u64,
@@ -1019,6 +1159,7 @@ impl<B: crate::backend::GpuBackend> TextPipelineV2<B> {
             color_instance_policy: InstanceBufferPolicy::new(Self::INITIAL_CAPACITY),
             color_instances: Vec::new(),
             color_instance_upload: FrameUpload::new(),
+            ramped,
             decoration_pipeline,
             decoration_instance_buffer,
             decoration_instance_policy: InstanceBufferPolicy::new(Self::INITIAL_CAPACITY),
@@ -1147,6 +1288,21 @@ impl<B: crate::backend::GpuBackend> TextPipelineV2<B> {
             pass.set_vertex_buffer(0, &self.color_instance_buffer, 0);
             pass.draw(0..6, range.color_start..range.color_end);
         }
+        if let Some(ramped) = &self.ramped
+            && range.ramp_end > range.ramp_start
+        {
+            pass.set_pipeline(&ramped.pipeline);
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_vertex_buffer(0, &ramped.buffer, 0);
+            pass.draw(0..6, range.ramp_start..range.ramp_end);
+        }
+    }
+
+    /// Whether requests may carry an [`AlphaRamp`] and have it honored: the
+    /// backend has a text shader that scales each glyph's alpha by one.
+    #[inline]
+    pub fn supports_alpha_ramp(&self) -> bool {
+        self.ramped.is_some()
     }
 
     /// Draws the decoration instances in `start..end` into `pass`.
@@ -1242,6 +1398,7 @@ mod tests {
             clip_rect: [0.0, 0.0, 240.0, 24.0],
             clip_border_radius: [0.0; 4],
             spans: Vec::new(),
+            alpha_ramp: None,
         }
     }
 
