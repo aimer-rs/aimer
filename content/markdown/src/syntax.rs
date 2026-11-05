@@ -37,7 +37,9 @@ use self::syntect::{SyntectBackend as Backend, revision};
 use self::synoptic::SynopticBackend as Backend;
 use crate::cache::LruCache;
 
-const HIGHLIGHT_CACHE_CAPACITY: usize = 64;
+/// Highlighted code blocks kept, sized like the document cache for the same
+/// cyclic-walk reason, with room for a couple of blocks per document.
+const HIGHLIGHT_CACHE_CAPACITY: usize = 512;
 type HighlightEntries = LruCache<(Rc<str>, Option<Rc<str>>), Rc<[CaptureSpan]>>;
 
 aimer_tls::thread_local! {
@@ -105,6 +107,20 @@ mod tests {
         let second = cache.highlight("fn main() {}", Some("rust"));
 
         assert!(Rc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn highlight_cache_holds_a_long_transcript() {
+        let blocks: Vec<String> = (0..160).map(|n| format!("fn block_{n}() {{}}")).collect();
+        let mut cache = HighlightCache::new(HIGHLIGHT_CACHE_CAPACITY);
+        let first: Vec<_> = blocks
+            .iter()
+            .map(|code| cache.highlight(code, Some("rust")))
+            .collect();
+
+        for (code, spans) in blocks.iter().zip(&first) {
+            assert!(Rc::ptr_eq(spans, &cache.highlight(code, Some("rust"))));
+        }
     }
 
     #[test]

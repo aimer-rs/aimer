@@ -35,7 +35,10 @@ pub use syntax::{CaptureSpan, highlight};
 #[cfg(feature = "syntect")]
 pub use syntax::{add_syntax_from_dir, add_syntax_from_file, add_syntax_from_str};
 
-const DOCUMENT_CACHE_CAPACITY: usize = 16;
+/// Documents kept parsed. A chat transcript rebuilds every message in the same
+/// order, so a cache smaller than the transcript evicts each entry just before
+/// it is needed again and every rebuild re-parses everything.
+const DOCUMENT_CACHE_CAPACITY: usize = 256;
 
 aimer_tls::thread_local! {
     static DOCUMENT_CACHE: RefCell<DocumentCache> = RefCell::new(DocumentCache::new(DOCUMENT_CACHE_CAPACITY));
@@ -375,6 +378,24 @@ mod tests {
 
         assert!(first.is_err());
         assert!(Shared::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn document_cache_holds_a_long_transcript() {
+        // A chat transcript is walked in the same order on every rebuild, which
+        // evicts every entry before it is reused once it outgrows the cache.
+        let sources: Vec<Shared<str>> = (0..64)
+            .map(|index| Shared::from(format!("# Reply {index}")))
+            .collect();
+        let mut cache = DocumentCache::new(DOCUMENT_CACHE_CAPACITY);
+        let first: Vec<_> = sources
+            .iter()
+            .map(|source| cache.parse(source.as_share_ref()))
+            .collect();
+
+        for (source, parsed) in sources.iter().zip(&first) {
+            assert!(Shared::ptr_eq(parsed, &cache.parse(source.as_share_ref())));
+        }
     }
 
     #[test]
