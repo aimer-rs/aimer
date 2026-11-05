@@ -13,14 +13,14 @@ use aimer_modal::{Modal, ModalScope};
 use aimer_provider::{Provider, ProviderContext, ProviderHandle};
 use winit::event::{ElementState, MouseButton};
 
-fn options() -> HeadlessOptions {
+pub(super) fn options() -> HeadlessOptions {
     HeadlessOptions {
         size: PhysicalSize::new(400, 300),
         scale_factor: 1.0,
     }
 }
 
-fn move_to<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, x: f64, y: f64) {
+pub(super) fn move_to<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, x: f64, y: f64) {
     app.send_window_event(WindowEvent::CursorMoved {
         device_id: DeviceId::dummy(),
         position: PhysicalPosition::new(x, y),
@@ -28,7 +28,7 @@ fn move_to<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, x: f64, y: f64) {
     app.pump_frames(2);
 }
 
-fn click<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, x: f64, y: f64) {
+pub(super) fn click<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>, x: f64, y: f64) {
     move_to(app, x, y);
     for state in [ElementState::Pressed, ElementState::Released] {
         app.send_window_event(WindowEvent::MouseInput {
@@ -107,15 +107,15 @@ fn a_modal_sized_as_a_share_of_the_window_takes_that_share_once() {
 // Providers
 
 #[derive(Clone, Debug, PartialEq)]
-struct Greeting(&'static str);
+pub(super) struct Greeting(pub(super) &'static str);
 
 thread_local! {
-    static CAPTURED: RefCell<Option<ModalScope>> = const { RefCell::new(None) };
-    static SEEN: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    pub(super) static CAPTURED: RefCell<Option<ModalScope>> = const { RefCell::new(None) };
+    pub(super) static SEEN: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Part of the application: takes the scope it is built in.
-struct Page;
+pub(super) struct Page;
 
 impl Widget for Page {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
@@ -125,7 +125,7 @@ impl Widget for Page {
 }
 
 /// Content of the modal: reads and watches what the application provides.
-struct Reader;
+pub(super) struct Reader;
 
 impl Widget for Reader {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
@@ -200,14 +200,14 @@ fn a_modal_given_the_scope_follows_the_provider_it_reads() {
 // ---------------------------------------------------------------------------
 // Events
 
-struct Counters {
-    entered: Cell<usize>,
-    exited: Cell<usize>,
-    pressed: Cell<usize>,
+pub(super) struct Counters {
+    pub(super) entered: Cell<usize>,
+    pub(super) exited: Cell<usize>,
+    pub(super) pressed: Cell<usize>,
 }
 
 /// A page that is one big hoverable button.
-fn page(counters: &Rc<Counters>) -> impl Widget + 'static {
+pub(super) fn page(counters: &Rc<Counters>) -> impl Widget + 'static {
     let (entered, exited, pressed) = (counters.clone(), counters.clone(), counters.clone());
     MouseRegion::new()
         .on_hover_enter(move || entered.entered.set(entered.entered.get() + 1))
@@ -219,7 +219,7 @@ fn page(counters: &Rc<Counters>) -> impl Widget + 'static {
         )
 }
 
-fn counters() -> Rc<Counters> {
+pub(super) fn counters() -> Rc<Counters> {
     Rc::new(Counters {
         entered: Cell::new(0),
         exited: Cell::new(0),
@@ -227,7 +227,7 @@ fn counters() -> Rc<Counters> {
     })
 }
 
-fn open_small_modal() -> aimer_modal::ModalHandle {
+pub(super) fn open_small_modal() -> aimer_modal::ModalHandle {
     Modal::new()
         .child(SizedBox::new().width(100.0).height(60.0))
         .show()
@@ -374,5 +374,85 @@ fn the_wheel_over_a_modal_does_not_scroll_the_page_beneath() {
         events.lock().unwrap().is_empty(),
         "the page was scrolled through the modal: {:?}",
         events.lock().unwrap().len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard
+
+use aimer_events::element::{ElementEvent, KeyAction, Modifiers, NamedKey};
+use aimer_input::TextEditingController;
+use aimer_input::input::TextField;
+
+pub(super) fn press(app: &mut HeadlessAimerApp<impl Widget + 'static>, key: NamedKey) {
+    app.send_user_event(AimerNativePlatformEvent::NativeInput {
+        event: ElementEvent::KeyInput {
+            key,
+            action: KeyAction::Pressed,
+            modifiers: Modifiers::default(),
+        },
+        modifiers: Modifiers::default(),
+    });
+    app.pump_frames(2);
+}
+
+pub(super) fn type_into(app: &mut HeadlessAimerApp<impl Widget + 'static>, text: &str) {
+    super::text_field_caret::type_text(app, text);
+    app.pump_frames(2);
+}
+
+/// A page that is a text field with the keyboard, holding "ab".
+pub(super) fn page_with_focused_field() -> (HeadlessAimerApp<impl Widget + 'static>, TextEditingController) {
+    let controller = TextEditingController::with_text("");
+    let mut app = AimerApp::start_headless_with(
+        Column::new().children([TextField::new()
+            .controller(controller.clone())
+            .max_length(None)
+            .boxed()]),
+        options(),
+    );
+    app.pump_frames(3);
+    super::text_field_caret::click(&mut app, 100.0, 12.0);
+    app.pump_frames(3);
+    type_into(&mut app, "ab");
+    assert_eq!(controller.value().text(), "ab", "the field should take the keyboard before any modal");
+    (app, controller)
+}
+
+#[test]
+fn typing_with_a_modal_open_does_not_reach_the_focused_field_of_the_page() {
+    let _serial = VIRTUALIZED_RENDER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (mut app, controller) = page_with_focused_field();
+    let _handle = open_small_modal();
+    app.pump_frames(3);
+
+    type_into(&mut app, "cd");
+    assert_eq!(controller.value().text(), "ab", "text was typed into the page through the modal");
+    press(&mut app, NamedKey::Backspace);
+    assert_eq!(controller.value().text(), "ab", "a key edited the page through the modal");
+    app.send_user_event(AimerNativePlatformEvent::ForceBackspace);
+    app.pump_frames(2);
+    assert_eq!(controller.value().text(), "ab", "a backspace edited the page through the modal");
+}
+
+#[test]
+fn the_focused_field_of_the_page_gets_the_keyboard_back_when_the_modal_closes() {
+    let _serial = VIRTUALIZED_RENDER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (mut app, controller) = page_with_focused_field();
+    let handle = open_small_modal();
+    app.pump_frames(3);
+    type_into(&mut app, "cd");
+
+    handle.dismiss();
+    app.pump_frames(4);
+    type_into(&mut app, "e");
+    assert_eq!(
+        controller.value().text(),
+        "abe",
+        "the field should have the keyboard again once the modal is gone"
     );
 }

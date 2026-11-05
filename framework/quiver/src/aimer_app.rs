@@ -1734,6 +1734,7 @@ mod tests {
     mod retained_button;
     mod retained_modal;
     mod modal_isolation;
+    mod floating_isolation;
     mod retained_switcher;
     mod rows_in_resizable;
     mod scoped_sync;
