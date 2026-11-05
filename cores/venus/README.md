@@ -215,8 +215,142 @@ venus.spawn(async {
 venus.run_microtasks();
 ```
 
+A task whose result you want back is spawned with `spawn_with_handle`. The
+`JoinHandle` is a future of the output, and it **owns the task**: dropping it
+cancels the work, `detach()` lets it run on, and a task cut short by `abort` or
+its scope's end resolves the handle to `JoinError::Cancelled`.
+
+```rust
+use aimer_venus::{JoinError, Venus};
+
+let venus = Venus::new();
+let scope = venus.scope();
+let request = venus.spawn_with_handle_in(scope.id(), std::future::pending::<u8>());
+
+drop(scope); // the element unmounted
+venus.spawn(async move { assert_eq!(request.await, Err(JoinError::Cancelled)) });
+venus.run_microtasks();
+```
+
 Also: `try_join_all`, `race_all`, and a free `spawn_blocking` that uses the
 installed runtime (the method form is `Venus::spawn_blocking`).
+
+## Talking between tasks
+
+Single-threaded primitives: nothing here needs `Send`, and each is cancellation
+safe, so a task dropped while waiting never swallows a signal meant for another.
+
+| Type                      | For                                                          |
+|---------------------------|--------------------------------------------------------------|
+| `oneshot::channel`        | one value from one task to another                           |
+| `mpsc::channel(n)` / `unbounded` | many producers, one consumer; bounded gives backpressure |
+| `watch::channel`          | shared state observers re-read when it changes (latest wins) |
+| `Notify`                  | an edge: "something happened, look again"                    |
+| `Semaphore`               | cap concurrency (N decodes, N requests), first come first served |
+| `OnceCell`                | initialise once; concurrent askers wait for the one initialiser |
+| `Shared`                  | one in-flight operation, many awaiters, cancelled with the last |
+
+For a result that arrives on a platform thread, use `completion()` instead.
+
+```rust
+use aimer_venus::{Semaphore, StreamExt, Venus, mpsc};
+
+let venus = Venus::new();
+let (tx, rx) = mpsc::channel(8);
+let gate = Semaphore::new(2); // at most two jobs at once
+
+for job in 0..4 {
+    let (tx, gate) = (tx.clone(), gate.clone());
+    venus.spawn(async move {
+        let _permit = gate.acquire().await;
+        tx.send(job * job).await.ok();
+    });
+}
+drop(tx);
+
+// A receiver is a `Stream`.
+let squares = venus.run_until(rx.collect_vec());
+assert_eq!(squares.len(), 4);
+```
+
+`Stream`/`StreamExt` is a small core of its own (`next`, `map`, `filter`,
+`take`, `for_each`, `collect_vec`, `stream::iter`), because the standard library
+has no stable stream trait and Venus takes no dependencies.
+
+## Hopping phases
+
+`yield_now` comes back in the same phase. `next_frame().await` resumes at the
+next frame-task pass and so before that frame's build; `run_in_phase(Phase::Idle,
+work).await` runs `work` when the frame has slack.
+
+```rust
+# use aimer_venus::{Phase, Venus};
+let venus = Venus::new();
+let runtime = venus.clone();
+venus.spawn(async move {
+    runtime.next_frame().await.unwrap();
+    let _parsed = runtime.run_in_phase(Phase::Idle, async { 40 + 2 }).await;
+});
+```
+
+## Retrying and chaining
+
+```rust
+use std::time::Duration;
+use aimer_venus::{Backoff, FutureExt, Venus};
+
+let venus = Venus::new();
+venus.install();
+
+// 100 ms, 200 ms, 400 ms ... capped, up to 5 tries; the last error comes back.
+let _fetch = venus.retry(Backoff::exponential(Duration::from_millis(100)).attempts(5), || async {
+    Ok::<_, &str>("payload")
+});
+
+// Method forms of the combinators.
+let _bounded = async { 1 }.timeout(Duration::from_secs(5));
+let _handle = async { 2 }.into_handle(); // owned: dropping it cancels
+Venus::uninstall();
+```
+
+Backoff has no jitter: Venus has no source of randomness, and the delays stay
+deterministic and testable. With no host timer there is nothing to wait with, so
+a failed attempt is final rather than retried in a tight loop.
+
+## Latest wins
+
+`Latest` is a slot that runs one async operation at a time: starting the next
+drops the previous future, so the slow answer to an old query can never land
+after the answer to the new one. Dropping the slot cancels what is in flight.
+Pair it with a `Debouncer` for search-as-you-type.
+
+```rust
+# use aimer_venus::Venus;
+let venus = Venus::new();
+let search = venus.latest();
+
+search.run(async { /* fetch("ru").await; show(results) */ });
+search.run(async { /* fetch("rust").await; show(results) */ }); // the first is gone
+```
+
+## Driving it without an event loop
+
+Tests and tools have no loop to run the phases. `run_until` spawns a future and
+drives every phase, sleeping between looks so a result from a worker thread is
+picked up, until it finishes. It panics after ten seconds so a stuck test fails
+rather than hangs; `run_until_for` takes the limit and returns `None` on
+timeout after cancelling the future. `run_until_stalled` runs until nothing is
+ready and leaves work parked on a timer or a worker parked.
+
+```rust
+# use aimer_venus::{Venus, yield_now};
+let venus = Venus::new();
+let answer = venus.run_until(async {
+    yield_now().await;
+    6 * 7
+});
+assert_eq!(answer, 42);
+```
 
 ## Driving it from an event loop
 

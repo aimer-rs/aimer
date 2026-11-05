@@ -3,12 +3,22 @@
 mod budget;
 mod completion;
 mod delay;
+// Blocks the calling thread between polls, which a browser cannot do.
+#[cfg(not(target_arch = "wasm32"))]
+mod drive;
+mod ext;
 // The browser has no threads to run a lane on.
 #[cfg(not(target_arch = "wasm32"))]
 mod lane;
+mod handle;
 mod join;
+mod latest;
 mod lifecycle;
+pub mod mpsc;
+mod notify;
+pub mod oneshot;
 mod panic_hook;
+mod phase;
 // The browser has no threads to offload onto, and `requestIdleCallback` plus a
 // budgeted idle phase is what takes its place there.
 #[cfg(not(target_arch = "wasm32"))]
@@ -16,12 +26,18 @@ mod offload;
 mod poll_context;
 mod race;
 mod rate_limit;
+mod retry;
 mod scheduler;
+mod semaphore;
+mod shared;
+pub mod stream;
 mod task;
 #[cfg(test)]
 mod test_host;
 mod timeout;
 mod venus;
+pub mod watch;
+mod waiters;
 // Only the offload pool hands wakers across threads.
 #[cfg(not(target_arch = "wasm32"))]
 mod waker_slot;
@@ -36,18 +52,27 @@ pub use crate::completion::{Completer, Completion, Interrupted, completion};
 pub use crate::delay::{Interval, Sleep, delayed, interval, sleep, sleep_until, spawn_delayed, timeout};
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::lane::{Lane, LaneState};
+pub use crate::ext::FutureExt;
+pub use crate::handle::{JoinError, JoinHandle};
 pub use crate::join::{
     IntoJoin, IntoTryJoin, JoinAll, TryJoinAll, join, join_all, try_join, try_join_all,
 };
+pub use crate::notify::{Notified, Notify};
+pub use crate::latest::{Latest, latest};
 pub use crate::lifecycle::{Lifecycle, LifecycleSubscription, notify_lifecycle, on_lifecycle};
 pub use crate::panic_hook::install_panic_hook;
+pub use crate::phase::{Hop, next_frame, on_idle, run_in_phase};
 pub use crate::poll_context::PollContext;
 pub use crate::race::{Either, Race, RaceAll, race, race_all};
 pub use crate::rate_limit::{Debouncer, Throttler, debouncer, throttler};
+pub use crate::retry::{Backoff, retry, retry_when};
+pub use crate::semaphore::{Acquire, Permit, Semaphore};
 pub use crate::scheduler::{LocalScheduler, is_polling_task};
+pub use crate::shared::{OnceCell, Shared, shared};
+pub use crate::stream::{Stream, StreamExt};
 pub use crate::task::{Notifier, Phase, ScopeId, TaskId, TaskScope};
 pub use crate::timeout::TimeoutError;
-pub use crate::venus::{Venus, spawn_local};
+pub use crate::venus::{Venus, spawn_local, spawn_with_handle};
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::venus::spawn_blocking;
 pub use crate::yielding::{YieldNow, yield_if_over_budget, yield_now};

@@ -170,36 +170,45 @@ impl TaskSlab {
 
     /// Gives a lent future and its waker back after a `Poll::Pending`.
     ///
-    /// Returns `false` when the task was cancelled while it was running — a
-    /// widget unmounting itself from its own handler — in which case the future
-    /// is dropped here instead.
-    pub(crate) fn restore(&mut self, id: TaskId, future: LocalFuture, waker: Waker) -> bool {
+    /// Returns the future and waker back when the task was cancelled while it
+    /// was running — a widget unmounting itself from its own handler — so the
+    /// caller can drop them outside any borrow of the scheduler.
+    pub(crate) fn restore(
+        &mut self,
+        id: TaskId,
+        future: LocalFuture,
+        waker: Waker,
+    ) -> Option<(LocalFuture, Waker)> {
         match self.get_mut(id) {
             Some(task) => {
                 task.lease = Some((future, waker));
-                true
+                None
             }
-            None => false,
+            // Handed back, not dropped here: the caller drops it once the
+            // scheduler is no longer borrowed. See `LocalScheduler::abort`.
+            None => Some((future, waker)),
         }
     }
 
-    /// Drops the task `id` names, vacating its slot.
-    pub(crate) fn remove(&mut self, id: TaskId) -> bool {
-        let Some(slot) = self.slots.get_mut(id.index() as usize) else {
-            return false;
-        };
+    /// Vacates the slot `id` names and returns the task that was in it.
+    ///
+    /// The task is returned rather than dropped because dropping it runs the
+    /// destructors of its future, and those may call back into the scheduler —
+    /// a future holding a `JoinHandle` aborts its child. The caller must drop
+    /// the result only once the scheduler is no longer borrowed.
+    #[must_use = "drop the task outside any borrow of the scheduler"]
+    pub(crate) fn remove(&mut self, id: TaskId) -> Option<Task> {
+        let slot = self.slots.get_mut(id.index() as usize)?;
         if slot.generation != id.generation() {
-            return false;
+            return None;
         }
-        let Some(task) = slot.task.take() else {
-            return false;
-        };
+        let task = slot.task.take()?;
 
         slot.generation = slot.generation.wrapping_add(1);
         self.vacant.push(id.index());
         self.live -= 1;
         self.unlink(&task, id.index());
-        true
+        Some(task)
     }
 
     /// Takes a removed task out of its scope's list.
@@ -236,18 +245,21 @@ impl TaskSlab {
         }
     }
 
-    /// Drops every task belonging to `scope`, returning how many there were.
+    /// Vacates every task belonging to `scope`, returning them.
     ///
     /// This is what an unmounting element relies on: no abort handle per task,
     /// no generation counter per widget, one walk of the scope's own list. A
     /// scope that spawned nothing — most of them, since the framework keeps one
-    /// per element — costs a single missed hash lookup.
-    pub(crate) fn remove_scope(&mut self, scope: ScopeId) -> usize {
+    /// per element — costs a single missed hash lookup and allocates nothing.
+    ///
+    /// Returned rather than dropped for the reason given on [`Self::remove`].
+    #[must_use = "drop the tasks outside any borrow of the scheduler"]
+    pub(crate) fn remove_scope(&mut self, scope: ScopeId) -> Vec<Task> {
         let Some(mut index) = self.scopes.remove(&scope) else {
-            return 0;
+            return Vec::new();
         };
 
-        let mut removed = 0;
+        let mut removed = Vec::new();
         while index != NONE {
             let slot = &mut self.slots[index as usize];
             let task = slot
@@ -256,11 +268,11 @@ impl TaskSlab {
                 .expect("a scope list names only live tasks");
             slot.generation = slot.generation.wrapping_add(1);
             self.vacant.push(index);
-            removed += 1;
             index = task.next_in_scope;
+            removed.push(task);
         }
 
-        self.live -= removed;
+        self.live -= removed.len();
         removed
     }
 
@@ -291,7 +303,7 @@ mod tests {
         let mut slab = TaskSlab::new();
 
         let first = insert(&mut slab, ScopeId::ROOT);
-        assert!(slab.remove(first));
+        assert!(slab.remove(first).is_some());
 
         let second = insert(&mut slab, ScopeId::ROOT);
 
@@ -309,7 +321,7 @@ mod tests {
         let (future, waker) = slab.lend(id).expect("the future to be available");
         assert!(slab.lend(id).is_none());
 
-        assert!(slab.restore(id, future, waker));
+        assert!(slab.restore(id, future, waker).is_none());
         assert!(slab.lend(id).is_some());
     }
 
@@ -319,9 +331,9 @@ mod tests {
         let id = insert(&mut slab, ScopeId::ROOT);
 
         let (future, waker) = slab.lend(id).expect("the future to be available");
-        slab.remove(id);
+        drop(slab.remove(id));
 
-        assert!(!slab.restore(id, future, waker));
+        assert!(slab.restore(id, future, waker).is_some());
         assert_eq!(slab.len(), 0);
     }
 
@@ -330,7 +342,7 @@ mod tests {
         let mut slab = TaskSlab::new();
         let _busy = insert(&mut slab, ScopeId::new(1));
 
-        assert_eq!(slab.remove_scope(ScopeId::new(2)), 0);
+        assert_eq!(slab.remove_scope(ScopeId::new(2)).len(), 0);
         assert_eq!(slab.len(), 1);
     }
 
@@ -341,8 +353,8 @@ mod tests {
         insert(&mut slab, scope);
         insert(&mut slab, scope);
 
-        assert_eq!(slab.remove_scope(scope), 2);
-        assert_eq!(slab.remove_scope(scope), 0);
+        assert_eq!(slab.remove_scope(scope).len(), 2);
+        assert_eq!(slab.remove_scope(scope).len(), 0);
         assert_eq!(slab.len(), 0);
     }
 
@@ -360,9 +372,9 @@ mod tests {
                 insert(&mut slab, scope),
             ];
 
-            assert!(slab.remove(tasks[removed_first]));
+            assert!(slab.remove(tasks[removed_first]).is_some());
             assert_eq!(
-                slab.remove_scope(scope),
+                slab.remove_scope(scope).len(),
                 2,
                 "early finisher #{removed_first}"
             );
@@ -377,13 +389,13 @@ mod tests {
         let new = ScopeId::new(2);
 
         let first = insert(&mut slab, old);
-        assert!(slab.remove(first));
+        assert!(slab.remove(first).is_some());
         let second = insert(&mut slab, new);
         assert_eq!(first.index(), second.index(), "the slot should be reused");
 
-        assert_eq!(slab.remove_scope(old), 0);
+        assert_eq!(slab.remove_scope(old).len(), 0);
         assert!(slab.contains(second));
-        assert_eq!(slab.remove_scope(new), 1);
+        assert_eq!(slab.remove_scope(new).len(), 1);
         assert_eq!(slab.len(), 0);
     }
 
@@ -397,7 +409,7 @@ mod tests {
         let second = insert(&mut slab, kept);
         let third = insert(&mut slab, doomed);
 
-        assert_eq!(slab.remove_scope(doomed), 2);
+        assert_eq!(slab.remove_scope(doomed).len(), 2);
 
         assert!(!slab.contains(first));
         assert!(slab.contains(second));

@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use crate::budget::{FrameBudget, FrameGovernor};
+use crate::handle::JoinHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::offload::{OffloadPool, Offloaded};
 use crate::poll_context::PollContext;
@@ -137,6 +138,64 @@ impl Venus {
     #[inline]
     pub fn spawn_in(&self, scope: ScopeId, future: impl Future<Output = ()> + 'static) -> TaskId {
         self.scheduler.spawn_in(scope, future)
+    }
+
+    /// Spawns `future` as a microtask and returns a handle to its output.
+    ///
+    /// Unlike [`spawn`](Self::spawn), the result is not thrown away: await the
+    /// [`JoinHandle`] from another task. The handle owns the task, so
+    /// **dropping it cancels the work**; call [`JoinHandle::detach`] to let the
+    /// task run on regardless. Neither the future nor its output need be
+    /// [`Send`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_venus::Venus;
+    ///
+    /// let venus = Venus::new();
+    /// let handle = venus.spawn_with_handle(async { 1 + 1 });
+    ///
+    /// venus.spawn(async move {
+    ///     assert_eq!(handle.await, Ok(2));
+    /// });
+    /// venus.run_microtasks();
+    /// ```
+    #[inline]
+    pub fn spawn_with_handle<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        self.spawn_with_handle_in_phase(Phase::Microtask, ScopeId::ROOT, future)
+    }
+
+    /// [`spawn_with_handle`](Self::spawn_with_handle) owned by `scope`: ending
+    /// the scope cancels the task, and the handle resolves to
+    /// [`JoinError::Cancelled`](crate::JoinError::Cancelled).
+    #[inline]
+    pub fn spawn_with_handle_in<F>(&self, scope: ScopeId, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        self.spawn_with_handle_in_phase(Phase::Microtask, scope, future)
+    }
+
+    /// [`spawn_with_handle`](Self::spawn_with_handle) into `phase`, owned by
+    /// `scope`.
+    #[inline]
+    pub fn spawn_with_handle_in_phase<F>(
+        &self,
+        phase: Phase,
+        scope: ScopeId,
+        future: F,
+    ) -> JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        crate::handle::spawn_with_handle(&self.scheduler, phase, scope, future)
     }
 
     /// Spawns `future` as a frame task: it runs once per frame.
@@ -424,6 +483,32 @@ impl Venus {
 #[inline]
 pub fn spawn_local(future: impl Future<Output = ()> + 'static) -> Option<TaskId> {
     Venus::current().map(|venus| venus.spawn(future))
+}
+
+/// [`Venus::spawn_with_handle`] on the runtime installed for this thread.
+///
+/// `None` when no runtime is installed, as with [`spawn_local`].
+///
+/// # Examples
+///
+/// ```
+/// use aimer_venus::{Venus, spawn_with_handle};
+///
+/// assert!(spawn_with_handle(async { 1 }).is_none());
+///
+/// let venus = Venus::new();
+/// venus.install();
+/// let handle = spawn_with_handle(async { 1 }).expect("a runtime is installed");
+/// Venus::uninstall();
+/// handle.detach();
+/// ```
+#[inline]
+pub fn spawn_with_handle<F>(future: F) -> Option<JoinHandle<F::Output>>
+where
+    F: Future + 'static,
+    F::Output: 'static,
+{
+    Venus::current().map(|venus| venus.spawn_with_handle(future))
 }
 
 /// [`Venus::spawn_blocking`] on the runtime installed for this thread.

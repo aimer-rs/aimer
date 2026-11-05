@@ -206,13 +206,18 @@ impl LocalScheduler {
     /// next yields: its future has nowhere to return to, so it is dropped then.
     #[inline]
     pub fn abort(&self, task: TaskId) -> bool {
-        self.inner.borrow_mut().tasks.remove(task)
+        // Dropped after the borrow ends: the future's destructors may call back
+        // into the scheduler, as a `JoinHandle` aborting its child does.
+        let removed = self.inner.borrow_mut().tasks.remove(task);
+        removed.is_some()
     }
 
     /// Cancels every task in `scope`, returning how many there were.
     #[inline]
     pub fn cancel_scope(&self, scope: ScopeId) -> usize {
-        self.inner.borrow_mut().tasks.remove_scope(scope)
+        // Dropped after the borrow ends; see `abort`.
+        let removed = self.inner.borrow_mut().tasks.remove_scope(scope);
+        removed.len()
     }
 
     /// Whether `task` is still alive.
@@ -458,15 +463,17 @@ impl LocalScheduler {
             eprintln!("{warning}");
         }
 
-        let mut inner = self.inner.borrow_mut();
         if finished {
-            inner.tasks.remove(task);
+            let removed = self.inner.borrow_mut().tasks.remove(task);
+            drop(removed);
             return;
         }
 
-        // A `false` here means the task was cancelled while it was running, so
-        // the future has nowhere to go back to and is dropped with this scope.
-        let _ = inner.tasks.restore(task, future, waker);
+        // Handed back when the task was cancelled while it was running: the
+        // future has nowhere to go back to, and is dropped here, outside the
+        // borrow, because its destructors may call into the scheduler.
+        let orphaned = self.inner.borrow_mut().tasks.restore(task, future, waker);
+        drop(orphaned);
     }
 }
 

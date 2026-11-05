@@ -1,9 +1,9 @@
-use std::cell::{Cell, Ref, RefCell};
+use std::cell::{Ref, RefCell};
 use std::fmt;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
-use aimer_venus::{TaskId, TaskScope, TimeoutError, Venus};
+use aimer_venus::{JoinHandle, TimeoutError, Venus};
 
 use super::AsyncSnapshot;
 
@@ -40,11 +40,12 @@ impl<E: std::error::Error + 'static> std::error::Error for AsyncSnapshotError<E>
 
 struct SnapshotState<T, E> {
     snapshot: RefCell<AsyncSnapshot<T, AsyncSnapshotError<E>>>,
-    task: Cell<Option<TaskId>>,
-    timeout_task: Cell<Option<TaskId>>,
+    /// The task driving the future. The handles own their tasks, so dropping
+    /// this state — the last [`SnapshotTask`] going away — cancels them. The
+    /// tasks themselves hold only a `Weak` to the state.
+    task: RefCell<Option<JoinHandle<()>>>,
+    timer: RefCell<Option<JoinHandle<()>>>,
     runtime: Weak<Venus>,
-    // The task holds only a Weak to this state: the last handle owns cancellation.
-    scope: Option<TaskScope>,
     /// Runs after every completion, once the snapshot has been written and its
     /// borrow released, so it may read the snapshot.
     wake: Option<Box<dyn Fn()>>,
@@ -52,12 +53,10 @@ struct SnapshotState<T, E> {
 
 impl<T, E> SnapshotState<T, E> {
     fn complete(&self, snapshot: AsyncSnapshot<T, AsyncSnapshotError<E>>) {
-        self.task.set(None);
-        if let Some(timer) = self.timeout_task.take()
-            && let Some(runtime) = self.runtime.upgrade()
-        {
-            runtime.abort(timer);
-        }
+        // Whichever task is completing has already detached its own handle, so
+        // what is dropped here is the other one, which is cancelled.
+        drop(self.task.take());
+        drop(self.timer.take());
         *self.snapshot.borrow_mut() = snapshot;
         if let Some(wake) = &self.wake {
             wake();
@@ -116,34 +115,30 @@ impl<T: 'static, E: 'static> SnapshotTask<T, E> {
     ///     .timeout(Duration::from_secs(5));
     /// ```
     pub fn timeout(self, duration: Duration) -> Self {
-        if self.state.task.get().is_none() {
+        if self.state.task.borrow().is_none() {
             return self;
         }
         let Some(runtime) = self.state.runtime.upgrade() else {
             self.state.complete(AsyncSnapshot::Error(AsyncSnapshotError::RuntimeUnavailable));
             return self;
         };
-        if let Some(timer) = self.state.timeout_task.take() {
-            runtime.abort(timer);
-        }
         let deadline = runtime.timeout(duration, std::future::pending::<()>());
         let target = Rc::downgrade(&self.state);
-        let scope = self.state.scope.as_ref().expect("a running task owns a scope").id();
-        let runtime_ref = Rc::downgrade(&runtime);
-        let timer = runtime.spawn_in(scope, async move {
+        let timer = runtime.spawn_with_handle(async move {
             let error = deadline.await.expect_err("a pending future cannot complete");
             if let Some(state) = target.upgrade() {
-                // The timer is currently running; completion must not abort it.
-                state.timeout_task.set(None);
-                if let Some(task) = state.task.take()
-                    && let Some(runtime) = runtime_ref.upgrade()
-                {
-                    runtime.abort(task);
+                // This timer is running: completion must not cancel it.
+                if let Some(timer) = state.timer.take() {
+                    timer.detach();
                 }
+                // Dropping the handle cancels the future.
+                drop(state.task.take());
                 state.complete(AsyncSnapshot::Error(AsyncSnapshotError::Timeout(error)));
             }
         });
-        self.state.timeout_task.set(Some(timer));
+        // Replacing the previous deadline cancels it.
+        let previous = self.state.timer.replace(Some(timer));
+        drop(previous);
         self
     }
 }
@@ -236,31 +231,34 @@ where
     F: Future<Output = Result<T, E>> + 'static,
 {
     let runtime = Venus::current();
-    let scope = runtime.as_ref().map(|runtime| runtime.scope());
     let state = Rc::new(SnapshotState {
         snapshot: RefCell::new(if runtime.is_some() {
             AsyncSnapshot::Waiting
         } else {
             AsyncSnapshot::Error(AsyncSnapshotError::RuntimeUnavailable)
         }),
-        task: Cell::new(None),
-        timeout_task: Cell::new(None),
+        task: RefCell::new(None),
+        timer: RefCell::new(None),
         runtime: runtime.as_ref().map_or_else(Weak::new, Rc::downgrade),
-        scope,
         wake,
     });
     if let Some(runtime) = runtime {
         let target = Rc::downgrade(&state);
-        let scope = state.scope.as_ref().expect("a runtime owns a task scope").id();
-        state.task.set(Some(runtime.spawn_in(scope, async move {
+        let task = runtime.spawn_with_handle(async move {
             let result = future.await;
             if let Some(state) = target.upgrade() {
+                // This task is running and about to finish: completion must not
+                // cancel it.
+                if let Some(task) = state.task.take() {
+                    task.detach();
+                }
                 state.complete(match result {
                     Ok(value) => AsyncSnapshot::Data(value),
                     Err(error) => AsyncSnapshot::Error(AsyncSnapshotError::Future(error)),
                 });
             }
-        })));
+        });
+        *state.task.borrow_mut() = Some(task);
     }
     SnapshotTask { state }
 }

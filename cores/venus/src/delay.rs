@@ -164,7 +164,7 @@ impl Interval {
 }
 
 #[inline]
-fn sleep_on(scheduler: &LocalScheduler, duration: Duration) -> Sleep {
+pub(crate) fn sleep_on(scheduler: &LocalScheduler, duration: Duration) -> Sleep {
     Sleep::new(scheduler.sleep(duration))
 }
 
