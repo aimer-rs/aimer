@@ -15,6 +15,8 @@ use crate::container_transform_example::container_transform_example;
 use crate::custom_animated_theme::custom_animated_theme_example;
 use crate::custom_font::custom_font_example;
 use crate::color_melt_example::color_melt_example;
+use crate::fire_button_example::fire_button_example;
+use crate::lottie_example::lottie_example;
 use crate::custom_paint_example::custom_paint_example;
 use crate::custom_shape_example::custom_shape_example;
 use crate::custom_text_field_caret_example::CustomTextFieldCaretExample;
@@ -48,6 +50,7 @@ use crate::navigation_example::navigation_example;
 use crate::navigation_transitions_example::navigation_transitions_example;
 use crate::overflow_behavior_example::overflow_behavior_example;
 use crate::panic_recovery::panic_recovery_example;
+use crate::file_picker_example::file_picker_example;
 use crate::passkey_example::passkey_example;
 use crate::picker_example::picker_example;
 use crate::range_controls_example::RangeControlsExample;
@@ -476,6 +479,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::DragAndDrop => DragBoard::new().boxed(),
         ExampleId::HttpRequest => http_request_button_example().boxed(),
         ExampleId::Passkeys => passkey_example().boxed(),
+        ExampleId::FilePicker => file_picker_example().boxed(),
         ExampleId::Loading => loading_animation_example().boxed(),
         ExampleId::Overflow => overflow_behavior_example().boxed(),
         ExampleId::JustifyContent => justify_content_example().boxed(),
@@ -498,6 +502,8 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::BundledAssets => bundled_assets_example().boxed(),
         ExampleId::CustomPaint => custom_paint_example().boxed(),
         ExampleId::ColorMelt => color_melt_example().boxed(),
+        ExampleId::FireButton => fire_button_example().boxed(),
+        ExampleId::Lottie => lottie_example().boxed(),
     }
 }
 

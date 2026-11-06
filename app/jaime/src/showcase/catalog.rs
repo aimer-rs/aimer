@@ -60,6 +60,7 @@ pub(super) enum ExampleId {
     DragAndDrop,
     HttpRequest,
     Passkeys,
+    FilePicker,
     Loading,
     Overflow,
     JustifyContent,
@@ -82,6 +83,8 @@ pub(super) enum ExampleId {
     BundledAssets,
     CustomPaint,
     ColorMelt,
+    FireButton,
+    Lottie,
 }
 
 pub(super) const EXAMPLES: &[ExampleId] = &[
@@ -139,6 +142,7 @@ pub(super) const EXAMPLES: &[ExampleId] = &[
     ExampleId::DragAndDrop,
     ExampleId::HttpRequest,
     ExampleId::Passkeys,
+    ExampleId::FilePicker,
     ExampleId::Loading,
     ExampleId::Overflow,
     ExampleId::JustifyContent,
@@ -161,6 +165,8 @@ pub(super) const EXAMPLES: &[ExampleId] = &[
     ExampleId::BundledAssets,
     ExampleId::CustomPaint,
     ExampleId::ColorMelt,
+    ExampleId::FireButton,
+    ExampleId::Lottie,
 ];
 
 pub(super) struct ExampleCategory {
@@ -272,6 +278,8 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
         examples: &[
             ExampleId::CustomPaint,
             ExampleId::ColorMelt,
+            ExampleId::FireButton,
+            ExampleId::Lottie,
             ExampleId::CustomShape,
             ExampleId::SvgCompletion,
             ExampleId::Svg,
@@ -312,6 +320,7 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
         examples: &[
             ExampleId::Accessibility,
             ExampleId::Passkeys,
+            ExampleId::FilePicker,
             ExampleId::PanicRecovery,
         ],
     },
@@ -375,6 +384,7 @@ impl ExampleId {
             Self::DragAndDrop => "Drag and drop",
             Self::HttpRequest => "HTTP request",
             Self::Passkeys => "Passkeys",
+            Self::FilePicker => "File & image pickers",
             Self::Loading => "Loading animation",
             Self::Overflow => "Overflow behavior",
             Self::JustifyContent => "JustifyContent",
@@ -397,6 +407,8 @@ impl ExampleId {
             Self::BundledAssets => "Bundled assets",
             Self::CustomPaint => "Custom paint",
             Self::ColorMelt => "Color melt",
+            Self::FireButton => "Fire button",
+            Self::Lottie => "Lottie",
         }
     }
 
@@ -447,6 +459,7 @@ impl ExampleId {
             Self::Animation => "◈",
             Self::AsyncBuilder | Self::HttpRequest => "⇄",
             Self::Passkeys => "⌘",
+            Self::FilePicker => "▤",
             Self::SelectableText => "⌁",
             Self::SystemTheme | Self::AnimatedTheme | Self::CustomAnimatedTheme => "◐",
             Self::DragAndDrop => "✥",
@@ -467,6 +480,8 @@ impl ExampleId {
             Self::BorderOutline => "□",
             Self::CustomPaint => "✎",
             Self::ColorMelt => "◐",
+            Self::FireButton => "♨",
+            Self::Lottie => "❖",
         }
     }
 
@@ -527,6 +542,7 @@ impl ExampleId {
             Self::DragAndDrop => "drag-and-drop",
             Self::HttpRequest => "http-request",
             Self::Passkeys => "passkeys",
+            Self::FilePicker => "file-picker",
             Self::Loading => "loading",
             Self::Overflow => "overflow",
             Self::JustifyContent => "justify-content",
@@ -550,6 +566,8 @@ impl ExampleId {
             Self::BundledAssets => "bundled-assets",
             Self::CustomPaint => "custom-paint",
             Self::ColorMelt => "color-melt",
+            Self::FireButton => "fire-button",
+            Self::Lottie => "lottie",
         }
     }
 
@@ -676,6 +694,9 @@ impl ExampleId {
             Self::Passkeys => {
                 "Register and sign in with a system passkey against a local relying-party server."
             }
+            Self::FilePicker => {
+                "Open the system file and photo pickers and read what the user chooses."
+            }
             Self::Loading => "Rotate a bundled SVG while an operation is in progress.",
             Self::Overflow => "Compare hidden, wrapped, and visible overflow.",
             Self::JustifyContent => "Compare the six main-axis distribution modes.",
@@ -706,6 +727,12 @@ impl ExampleId {
             }
             Self::ColorMelt => {
                 "An app-defined shader effect: melting colors with live speed, scale, melt and palette controls."
+            }
+            Self::FireButton => {
+                "A ShaderEffectDecoration: a button on fire that burns out when pressed and relights on the next press."
+            }
+            Self::Lottie => {
+                "Play real After Effects exports, with a note on what each file uses that Aimer does not draw yet."
             }
         }
     }

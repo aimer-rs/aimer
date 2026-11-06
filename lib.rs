@@ -10,6 +10,7 @@ pub use aimer_assets::{
 pub use aimer_attribute::dimension::{Dimension, NumberExt};
 pub use aimer_attribute::position::Vec2d;
 pub use aimer_attribute::size::{ResolvedSize, Size};
+pub use aimer_attribute::units::UnitContext;
 pub use aimer_canvas as canvas;
 pub use aimer_collapsible as collapsible;
 pub use aimer_collapsible::{CollapsibleList, ListBody, ListHeader};
@@ -45,6 +46,8 @@ pub use aimer_focus::{
 };
 pub use aimer_form as form;
 pub use aimer_haptics as haptics;
+pub use aimer_file_picker as file_picker;
+pub use aimer_image_picker as image_picker;
 pub use aimer_audio as audio;
 pub use aimer_video as video;
 pub use aimer_i18n as i18n;
@@ -95,6 +98,8 @@ pub use aimer_quiver::{
 
 #[cfg(feature = "vault")]
 pub use aimer_vault as vault;
+#[cfg(feature = "lottie")]
+pub use aimer_lottie as lottie;
 #[cfg(feature = "passkey")]
 pub use aimer_passkey as passkey;
 #[cfg(feature = "icons")]

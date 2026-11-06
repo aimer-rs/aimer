@@ -1,0 +1,20 @@
+[package]
+name = "aimer_lottie"
+version = "0.1.0"
+edition = "2024"
+description = "Lottie vector animation playback for Aimer"
+
+# The JSON parser and the expression subset are written in-crate (see
+# DEPENDENCY_POLICY.md). Rendering goes through the SVG scene of `aimer_cupid`,
+# so a frame is drawn with the same pipeline and mesh cache as `aimer_svg`.
+[dependencies]
+aimer_attribute.workspace = true
+aimer_canvas.workspace = true
+aimer_cupid.workspace = true
+aimer_decoration.workspace = true
+aimer_space.workspace = true
+aimer_utils.workspace = true
+aimer_widget.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

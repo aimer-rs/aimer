@@ -1,0 +1,34 @@
+[package]
+name = "aimer_image_picker"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Aimer's image picker: the photo library on mobile, an image-filtered open dialog elsewhere"
+
+[dependencies]
+aimer_file_picker.workspace = true
+
+# iOS has a real photo library picker (PHPicker). Everywhere else the image
+# picker is the file picker with an image filter; Android's file picker already
+# opens the system photo picker for exactly that filter.
+[target.'cfg(target_os = "ios")'.dependencies]
+aimer_venus.workspace = true
+block2.workspace = true
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["std", "block2", "NSArray", "NSEnumerator", "NSError", "NSItemProvider", "NSObject", "NSProgress", "NSString", "NSURL"] }
+objc2-photos-ui = { workspace = true, features = [
+    "std",
+    "block2",
+    "PHPicker",
+] }
+objc2-ui-kit = { workspace = true, features = [
+    "std",
+    "block2",
+    "UIApplication",
+    "UIResponder",
+    "UIScene",
+    "UIView",
+    "UIViewController",
+    "UIWindow",
+    "UIWindowScene",
+] }

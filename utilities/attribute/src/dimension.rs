@@ -76,11 +76,30 @@ impl Dimension {
     }
 }
 
+/// CSS reference pixels per inch. Every absolute CSS length is defined from it.
+const PX_PER_INCH: f32 = 96.0;
+const PX_PER_CM: f32 = PX_PER_INCH / 2.54;
+const PX_PER_MM: f32 = PX_PER_INCH / 25.4;
+/// A quarter of a millimetre.
+const PX_PER_Q: f32 = PX_PER_INCH / 101.6;
+const PX_PER_PT: f32 = PX_PER_INCH / 72.0;
+const PX_PER_PICA: f32 = PX_PER_INCH / 6.0;
+
 /// Builds a [`Dimension`] straight from a number literal.
 ///
 /// Implemented for every primitive integer and float, so `16.px()` and
 /// `50.pc()` read as the unit they stand for, without naming `Dimension` or
 /// wrapping the value in a variant.
+///
+/// The CSS absolute units (`cm`, `mm`, `Q`, `in`, `pt`, picas) are sugar over
+/// [`Dimension::Px`]: they convert with the CSS ratio of 96 pixels to the inch
+/// and produce a plain pixel dimension, so [`Dimension`] gains no variant and
+/// layout pays nothing for them. The units that depend on the surroundings
+/// (`em`, `rem`, `vw`, `vh`, `vmin`, `vmax`) cannot be answered by a number
+/// alone; see [`UnitContext`](crate::units::UnitContext).
+///
+/// `pc` already means *percent* here, as it does for [`Dimension::Percent`], so
+/// the CSS pica is spelled [`pica`](NumberExt::pica).
 ///
 /// The number becomes the variant's `f32` with an `as` cast. Integers beyond
 /// `f32`'s 24-bit mantissa lose their low bits, and a value outside the `f32`
@@ -94,7 +113,10 @@ impl Dimension {
 ///
 /// assert_eq!(16.px(), Dimension::Px(16.0));
 /// assert_eq!(50.pc(), Dimension::Percent(50.0));
+/// assert_eq!(50.percent(), Dimension::Percent(50.0));
 /// assert_eq!(0.5f32.px(), Dimension::Px(0.5));
+/// assert_eq!(1.inch(), Dimension::Px(96.0));
+/// assert_eq!(72.pt(), Dimension::Px(96.0));
 /// ```
 pub trait NumberExt: Sized {
     /// Returns [`Dimension::Px`] holding this number, in logical pixels.
@@ -103,6 +125,30 @@ pub trait NumberExt: Sized {
     /// Returns [`Dimension::Percent`] holding this number, where `100` is the
     /// whole parent extent.
     fn pc(self) -> Dimension;
+
+    /// Same as [`pc`](NumberExt::pc), spelled out.
+    #[inline]
+    fn percent(self) -> Dimension {
+        self.pc()
+    }
+
+    /// CSS `cm`: centimetres, as [`Dimension::Px`] at 96 pixels to the inch.
+    fn cm(self) -> Dimension;
+
+    /// CSS `mm`: millimetres, as [`Dimension::Px`] at 96 pixels to the inch.
+    fn mm(self) -> Dimension;
+
+    /// CSS `Q`: quarter-millimetres, as [`Dimension::Px`].
+    fn q(self) -> Dimension;
+
+    /// CSS `in`: inches, as [`Dimension::Px`] (`in` is a keyword, hence the name).
+    fn inch(self) -> Dimension;
+
+    /// CSS `pt`: points (1/72 inch), as [`Dimension::Px`].
+    fn pt(self) -> Dimension;
+
+    /// CSS `pc`: picas (1/6 inch, 16 pixels), as [`Dimension::Px`].
+    fn pica(self) -> Dimension;
 }
 
 macro_rules! impl_number_ext {
@@ -116,6 +162,36 @@ macro_rules! impl_number_ext {
             #[inline]
             fn pc(self) -> Dimension {
                 Dimension::Percent(self as f32)
+            }
+
+            #[inline]
+            fn cm(self) -> Dimension {
+                Dimension::Px(self as f32 * PX_PER_CM)
+            }
+
+            #[inline]
+            fn mm(self) -> Dimension {
+                Dimension::Px(self as f32 * PX_PER_MM)
+            }
+
+            #[inline]
+            fn q(self) -> Dimension {
+                Dimension::Px(self as f32 * PX_PER_Q)
+            }
+
+            #[inline]
+            fn inch(self) -> Dimension {
+                Dimension::Px(self as f32 * PX_PER_INCH)
+            }
+
+            #[inline]
+            fn pt(self) -> Dimension {
+                Dimension::Px(self as f32 * PX_PER_PT)
+            }
+
+            #[inline]
+            fn pica(self) -> Dimension {
+                Dimension::Px(self as f32 * PX_PER_PICA)
             }
         }
     )*};
@@ -243,6 +319,46 @@ mod number_ext_tests {
             Dimension::Percent(value) => assert!(value.is_nan()),
             other => panic!("expected Percent, got {other:?}"),
         }
+    }
+
+    fn px_of(dimension: Dimension) -> f32 {
+        match dimension {
+            Dimension::Px(v) => v,
+            other => panic!("expected Px, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn percent_is_pc_spelled_out() {
+        assert_eq!(50.percent(), 50.pc());
+        assert_eq!(12.5f32.percent(), Dimension::Percent(12.5));
+    }
+
+    #[test]
+    fn absolute_units_follow_the_css_ratios() {
+        assert_eq!(1.inch(), Dimension::Px(96.0));
+        assert_eq!(72.pt(), Dimension::Px(96.0));
+        assert_eq!(6.pica(), Dimension::Px(96.0));
+        assert_eq!(1.pica(), Dimension::Px(16.0));
+        assert!((px_of(2.54f32.cm()) - 96.0).abs() < 1e-3);
+        assert!((px_of(25.4f32.mm()) - 96.0).abs() < 1e-3);
+        assert!((px_of(101.6f32.q()) - 96.0).abs() < 1e-3);
+        // 1cm = 10mm = 40Q.
+        assert!((px_of(1.cm()) - px_of(10.mm())).abs() < 1e-3);
+        assert!((px_of(1.cm()) - px_of(40.q())).abs() < 1e-3);
+    }
+
+    #[test]
+    fn absolute_units_are_plain_pixels_for_layout() {
+        assert_eq!(1.inch().resolve(0.0, 2.0), 192.0);
+    }
+
+    #[test]
+    fn absolute_units_handle_zero_negative_and_non_finite_values() {
+        assert_eq!(0.cm(), Dimension::Px(0.0));
+        assert_eq!((-1).inch(), Dimension::Px(-96.0));
+        assert_eq!(f64::MAX.pt(), Dimension::Px(f32::INFINITY));
+        assert!(px_of(f32::NAN.mm()).is_nan());
     }
 
     #[test]

@@ -76,3 +76,53 @@ fn animation_walks_by_page() {
         }
     }
 }
+
+/// Per-frame wall time of one page that animates on its own, in the showcase
+/// shell. `ONLY_PAGE` picks the page by label; the default is the loading page.
+///
+/// Run with `cargo nextest run -p jaime --lib --run-ignored only animation_frame_time
+/// --no-capture`.
+#[test]
+#[ignore = "diagnostic harness: prints frame times and asserts nothing"]
+fn animation_frame_time() {
+    let label = std::env::var("ONLY_PAGE").unwrap_or_else(|_| "Loading animation".into());
+    let id = EXAMPLES
+        .iter()
+        .copied()
+        .find(|id| id.label() == label)
+        .expect("ONLY_PAGE names a registered example");
+    let options = HeadlessOptions {
+        size: PhysicalSize::new(1280, 800),
+        scale_factor: 1.0,
+    };
+    // `BARE=1` mounts the page without the showcase shell, as a control.
+    let page = if std::env::var_os("BARE").is_some() {
+        theme::provide(crate::loading_animation::loading_animation_example()).boxed()
+    } else {
+        theme::provide(Page(id)).boxed()
+    };
+    let mut app = AimerApp::start_headless_with(page, options);
+    app.pump_frames(8);
+    let mut times = Vec::new();
+    let frames = std::env::var("FRAMES")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(240);
+    for _ in 0..frames {
+        // Without a pause the controller barely advances between frames.
+        std::thread::sleep(Duration::from_millis(2));
+        let start = std::time::Instant::now();
+        let drawn = app.pump_frames(1);
+        if drawn > 0 {
+            times.push(start.elapsed().as_secs_f64() * 1e6);
+        }
+    }
+    times.sort_by(f64::total_cmp);
+    let p = |q: usize| times[(times.len() * q / 100).min(times.len() - 1)];
+    println!(
+        "FRAME {label}: n={} p50={:.1}us p95={:.1}us",
+        times.len(),
+        p(50),
+        p(95)
+    );
+}

@@ -28,6 +28,8 @@ aimer_focus.workspace = true
 aimer_grid.workspace = true
 aimer_device.workspace = true
 aimer_haptics.workspace = true
+aimer_file_picker.workspace = true
+aimer_image_picker.workspace = true
 aimer_audio.workspace = true
 aimer_video.workspace = true
 aimer_quiver.workspace = true
@@ -49,6 +51,7 @@ aimer_custom_paint.workspace = true
 aimer_effect_pipeline.workspace = true
 aimer_lucide = { workspace = true, optional = true }
 aimer_vault = { workspace = true, optional = true }
+aimer_lottie = { workspace = true, optional = true }
 aimer_passkey = { workspace = true, optional = true }
 aimer_markdown.workspace = true
 aimer_modal.workspace = true
@@ -113,6 +116,8 @@ icons = ["dep:aimer_lucide", "svg"]
 # Secure storage for credentials and tokens: the platform secret store (Keychain
 # on Apple platforms) behind `aimer::vault`.
 vault = ["dep:aimer_vault"]
+# Lottie vector animation playback behind `aimer::lottie`.
+lottie = ["dep:aimer_lottie"]
 # Passkeys: WebAuthn ceremonies through the operating system's own provider
 # (AuthenticationServices, Credential Manager, Windows Hello) behind
 # `aimer::passkey`.
@@ -162,6 +167,7 @@ full = [
     "icons",
     "vault",
     "passkey",
+    "lottie",
     "apple-core-text",
     "bundled-fonts",
     "raster-thread",
@@ -200,6 +206,8 @@ members = [
     # system
     "native/clipboard",
     "native/haptics",
+    "native/file_picker",
+    "native/image_picker",
     "native/audio",
     "native/video",
     "native/device",
@@ -260,6 +268,7 @@ members = [
     "content/text",
     "content/markdown",
     "content/svg",
+    "content/lottie",
     "content/custom_paint",
     "content/lucide",
     # controls
@@ -348,6 +357,7 @@ aimer_std = { path = "cores/std" }
 aimer_macro = { path = "utilities/macro" }
 aimer_provider = { path = "framework/provider" }
 aimer_svg = { path = "content/svg" }
+aimer_lottie = { path = "content/lottie" }
 aimer_custom_paint = { path = "content/custom_paint" }
 aimer_lucide = { path = "content/lucide" }
 aimer_markdown = { path = "content/markdown" }
@@ -372,6 +382,8 @@ aimer_shape = { path = "cores/shape" }
 aimer_collapsible = { path = "interactions/collapsible" }
 aimer_clipboard = { path = "native/clipboard" }
 aimer_haptics = { path = "native/haptics" }
+aimer_file_picker = { path = "native/file_picker" }
+aimer_image_picker = { path = "native/image_picker" }
 aimer_audio = { path = "native/audio" }
 aimer_video = { path = "native/video" }
 aimer_device = { path = "native/device" }
@@ -518,6 +530,10 @@ objc2-authentication-services = { version = "0.3.2", default-features = false }
 # MTL* submodules they need, mirroring wgpu-hal's own selection.
 objc2-metal = { version = "0.3.2", default-features = false }
 objc2-quartz-core = { version = "0.3.2", default-features = false }
+# Photo library picker (`PHPickerViewController`) for `aimer_image_picker` on iOS.
+objc2-photos-ui = { version = "0.3.2", default-features = false }
+# `UTType` for the file pickers' content-type filters.
+objc2-uniform-type-identifiers = { version = "0.3.2", default-features = false }
 # Opt-in native Direct3D 12 bindings used by Cupid and Quiver on Windows.
 windows = { version = "0.62.2", default-features = false, features = [
     "Win32_Foundation",

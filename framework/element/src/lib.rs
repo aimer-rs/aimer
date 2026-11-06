@@ -24,6 +24,7 @@ pub mod pointer_occlusion;
 pub mod rebuild_stats;
 // #[doc(hidden)]
 pub mod reconciliation_plan;
+pub mod relative_units;
 pub mod safe_area;
 pub mod semantics;
 // #[doc(hidden)]
@@ -166,6 +167,7 @@ pub use crate::reconciliation_plan::{
     ReconciliationMatch, ReconciliationMatchKind, ReconciliationPlan, ReconciliationPlanError,
     plan_element_reconciliation,
 };
+pub use crate::relative_units::RelativeUnitExt;
 pub use crate::safe_area::{SafeAreaInsets, safe_area_insets, set_safe_area_insets};
 pub use crate::window_metrics::{WindowMetrics, notify_window_metrics_changed};
 pub use aimer_canvas::{TextHorizontalAlign, TextOverflowMode};

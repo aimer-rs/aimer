@@ -1,0 +1,82 @@
+[package]
+name = "aimer_file_picker"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Aimer's file picker: the operating system's own open dialog, as a future"
+
+[dependencies]
+aimer_venus.workspace = true
+
+# Apple pickers resolve from a delegate or completion block that runs on the main
+# thread; the UTType filters are shared between macOS and iOS.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSEnumerator", "NSString", "NSURL", "NSError", "NSObject", "NSThread"] }
+objc2-uniform-type-identifiers = { workspace = true, features = ["std", "UTType"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2.workspace = true
+objc2-app-kit = { workspace = true, features = [
+    "std",
+    "block2",
+    "objc2-uniform-type-identifiers",
+    "NSApplication",
+    "NSOpenPanel",
+    "NSPanel",
+    "NSResponder",
+    "NSSavePanel",
+    "NSWindow",
+] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-ui-kit = { workspace = true, features = [
+    "std",
+    "block2",
+    "objc2-uniform-type-identifiers",
+    "UIApplication",
+    "UIDocumentPickerViewController",
+    "UIResponder",
+    "UIScene",
+    "UIView",
+    "UIViewController",
+    "UIWindow",
+    "UIWindowScene",
+] }
+
+# The dialog is a blocking COM call, so it runs on the offload pool; the owner
+# window is found on the UI thread first.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_System_Com",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+] }
+
+# The desktop portal's FileChooser, over the session bus, on the offload pool.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+ndk-context.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = [
+    "Blob",
+    "CssStyleDeclaration",
+    "Document",
+    "Element",
+    "Event",
+    "EventTarget",
+    "File",
+    "FileList",
+    "HtmlElement",
+    "HtmlInputElement",
+    "Node",
+    "Window",
+] }
