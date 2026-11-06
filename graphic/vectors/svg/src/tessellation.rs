@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::eviction::{Candidate, Limits, oldest_to_drop};
 use super::{SvgFillRule, SvgGeometry, SvgLineCap, SvgLineJoin, SvgPathCommand, SvgStroke};
 
 #[derive(Debug, thiserror::Error)]
@@ -205,20 +206,49 @@ impl SvgGeometryCache {
         self.memory_bytes = 0;
     }
 
+    /// Drops the least recently used meshes while the cache is over a limit.
+    ///
+    /// Every lookup stamps its entry with a fresh `usage_clock`, so no two
+    /// entries share an age and the entries to drop are exactly those at or
+    /// below the age of the last one chosen. That is one pass to choose and one
+    /// to drop, where looking for the oldest entry once per entry dropped scanned
+    /// the whole cache each time.
     fn evict_to_limits(&mut self) {
-        while self.entries.len() > self.max_entries || self.memory_bytes > self.max_memory_bytes {
-            let Some(oldest_key) = self
-                .entries
-                .iter()
-                .min_by_key(|(_, entry)| entry.last_used)
-                .map(|(key, _)| key.clone())
-            else {
-                break;
-            };
-            if let Some(entry) = self.entries.remove(&oldest_key) {
-                self.memory_bytes = self.memory_bytes.saturating_sub(entry.mesh.memory_bytes());
-            }
+        let limits = Limits {
+            meshes: self.max_entries,
+            bytes: self.max_memory_bytes as u64,
+        };
+        if !limits.exceeded_by(self.entries.len(), self.memory_bytes as u64) {
+            return;
         }
+        let mut candidates: Vec<Candidate<()>> = self
+            .entries
+            .values()
+            .map(|entry| Candidate {
+                last_used: entry.last_used,
+                key: (),
+                bytes: entry.mesh.memory_bytes() as u64,
+            })
+            .collect();
+        let dropped = oldest_to_drop(
+            &mut candidates,
+            self.entries.len(),
+            self.memory_bytes as u64,
+            limits,
+        );
+        let Some(newest_dropped) = dropped.checked_sub(1).map(|last| candidates[last].last_used)
+        else {
+            return;
+        };
+        let mut freed = 0;
+        self.entries.retain(|_, entry| {
+            let keep = entry.last_used > newest_dropped;
+            if !keep {
+                freed += entry.mesh.memory_bytes();
+            }
+            keep
+        });
+        self.memory_bytes = self.memory_bytes.saturating_sub(freed);
     }
 }
 

@@ -695,9 +695,21 @@ aimer_tls::thread_local! {
     static PLAN_GEOMETRY_RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
+// Counts the nodes a plan derives geometry for, so tests can show that an edit
+// to one node does not derive the rest of the tree.
+#[cfg(test)]
+aimer_tls::thread_local! {
+    static PLAN_NODES_DERIVED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[cfg(test)]
 fn plan_geometry_runs() -> usize {
     PLAN_GEOMETRY_RUNS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+fn plan_nodes_derived() -> usize {
+    PLAN_NODES_DERIVED.with(std::cell::Cell::get)
 }
 
 #[cfg(test)]
@@ -716,6 +728,7 @@ fn reset_node_lookups() {
     FRAME_DERIVATIONS.with(|count| count.set(0));
     GENERAL_RECT_TRANSFORMS.with(|count| count.set(0));
     PLAN_GEOMETRY_RUNS.with(|count| count.set(0));
+    PLAN_NODES_DERIVED.with(|count| count.set(0));
 }
 
 #[cfg(test)]
@@ -759,6 +772,9 @@ pub struct DrawCommandList {
     /// the revision. See [`DrawCommandList::frame_at`].
     world_frames: RefCell<Vec<Option<(u64, world::WorldFrame)>>>,
     render_workspace: RefCell<render_order::RenderWorkspace>,
+    /// Which nodes were handed out for a geometry edit since the render
+    /// workspace last derived geometry. See [`render_order::GeometryEdits`].
+    geometry_edits: RefCell<render_order::GeometryEdits>,
     /// What each subtree covers, kept for as long as nothing inside it is
     /// edited. See [`subtree_extent`].
     extents: RefCell<subtree_extent::ExtentCache>,
@@ -775,6 +791,7 @@ impl DrawCommandList {
         }
         self.geometry_revision = self.geometry_revision.wrapping_add(1);
         self.topology_revision = self.topology_revision.wrapping_add(1);
+        self.geometry_edits.get_mut().overflow();
         let parent_index = match parent {
             Some(parent) => Some(
                 *self
@@ -835,6 +852,7 @@ impl DrawCommandList {
     fn node_mut(&mut self, id: RenderNodeId) -> Option<&mut RenderNode> {
         let index = *self.indices.get(&id)?;
         self.geometry_revision = self.geometry_revision.wrapping_add(1);
+        self.geometry_edits.get_mut().record(index);
         self.mark_extent_stale(index, true);
         self.nodes.get_mut(index)
     }
@@ -848,6 +866,7 @@ impl DrawCommandList {
     fn node_mut_placement(&mut self, id: RenderNodeId) -> Option<&mut RenderNode> {
         let index = *self.indices.get(&id)?;
         self.geometry_revision = self.geometry_revision.wrapping_add(1);
+        self.geometry_edits.get_mut().record(index);
         self.mark_extent_stale(index, false);
         self.nodes.get_mut(index)
     }
@@ -1259,6 +1278,7 @@ impl RenderTree {
 
         tree.geometry_revision = tree.geometry_revision.wrapping_add(1);
         tree.topology_revision = tree.topology_revision.wrapping_add(1);
+        tree.geometry_edits.get_mut().overflow();
         tree.nodes = synchronized;
         tree.clip_escape_count = clip_escape_count;
         tree.indices = tree

@@ -84,6 +84,55 @@ impl DrawCommandList {
     }
 }
 
+/// The nodes edited since the render workspace last derived geometry.
+///
+/// Every way a node's geometry can change advances `geometry_revision`, which
+/// says *that* something moved but not *what*. A compositor animation moves one
+/// node per frame, and deriving the whole tree to account for it costs a
+/// walk over every node the page holds. This names the nodes so the next plan
+/// can derive only what hangs below them.
+///
+/// The log is exact or it is unusable. Edits that cannot be named (a node
+/// added, the structure replaced) and a log that outgrew [`Self::MAX`] mark it
+/// overflowed, and the plan then derives everything, as it always did.
+#[derive(Default)]
+pub(super) struct GeometryEdits {
+    nodes: Vec<usize>,
+    overflowed: bool,
+}
+
+impl GeometryEdits {
+    /// The most edits worth replaying: past this, walking the subtrees below
+    /// them costs about what walking the tree does.
+    const MAX: usize = 32;
+
+    /// Notes that the node at `index` was handed out for a geometry edit.
+    #[inline]
+    pub(super) fn record(&mut self, index: usize) {
+        // The same node edited again and again between plans is one edit.
+        if self.nodes.last() == Some(&index) {
+            return;
+        }
+        if self.nodes.len() == Self::MAX {
+            self.overflow();
+        } else if !self.overflowed {
+            self.nodes.push(index);
+        }
+    }
+
+    /// Notes an edit that cannot be replayed from node positions.
+    #[inline]
+    pub(super) fn overflow(&mut self) {
+        self.overflowed = true;
+        self.nodes.clear();
+    }
+
+    fn clear(&mut self) {
+        self.overflowed = false;
+        self.nodes.clear();
+    }
+}
+
 #[derive(Default)]
 pub(super) struct RenderWorkspace {
     /// The structure and geometry revisions, and node count, that `states`
@@ -101,8 +150,8 @@ pub(super) struct RenderWorkspace {
     render_stack: Vec<RenderTraversal>,
 }
 
-#[derive(Clone, Copy)]
-struct NodeFrameState {
+#[derive(Clone, Copy, PartialEq)]
+pub(super) struct NodeFrameState {
     origin: (f32, f32),
     transform: Mat3,
     bounds: Option<Rect>,
@@ -161,6 +210,12 @@ enum RenderTraversal {
 }
 
 impl RenderWorkspace {
+    /// The frame state of every node as of the last plan.
+    #[cfg(test)]
+    pub(super) fn states(&self) -> &[NodeFrameState] {
+        &self.states
+    }
+
     /// Drops the geometry kept from the last plan, so the next one derives it.
     #[cfg(test)]
     fn forget_geometry(&mut self) {
@@ -179,6 +234,15 @@ impl RenderWorkspace {
         #[cfg(test)]
         PLAN_GEOMETRY_RUNS.with(|count| count.set(count.get() + 1));
         let topology = tree.topology();
+        if !self.prepare_edited(tree, &topology, revisions) {
+            self.prepare_all(tree, &topology);
+        }
+        tree.geometry_edits.borrow_mut().clear();
+        self.prepared_for = Some(revisions);
+    }
+
+    /// Derives every node of the tree.
+    fn prepare_all(&mut self, tree: &DrawCommandList, topology: &Topology) {
         self.states
             .resize_with(tree.nodes.len(), NodeFrameState::default);
         self.visit_stack.clear();
@@ -192,11 +256,87 @@ impl RenderWorkspace {
             next -= 1;
             self.visit_stack.push(roots[next]);
         }
+        self.derive_visited(tree, topology);
+        self.union_visible_bounds(topology, 0);
+    }
 
+    /// Derives only what the edits since the last plan can have changed, and
+    /// says whether it could.
+    ///
+    /// A node's frame is a function of its own fields and its parent's frame,
+    /// and its visible bounds are a function of its own frame and its
+    /// children's visible bounds. An edit to one node therefore changes that
+    /// node's subtree, and the visible bounds of its ancestors for as long as
+    /// they keep changing. Anything this cannot account for returns `false`
+    /// and leaves the states untouched for [`Self::prepare_all`].
+    fn prepare_edited(
+        &mut self,
+        tree: &DrawCommandList,
+        topology: &Topology,
+        revisions: (u64, u64, usize),
+    ) -> bool {
+        // The structure is the one the states were derived against, and the
+        // log names every node edited since.
+        let Some((_, topology_revision, count)) = self.prepared_for else {
+            return false;
+        };
+        if topology_revision != revisions.1 || count != revisions.2 || self.states.len() != count {
+            return false;
+        }
+        let edits = tree.geometry_edits.borrow();
+        if edits.overflowed || edits.nodes.is_empty() {
+            return false;
+        }
+
+        for (position, &edited) in edits.nodes.iter().enumerate() {
+            // Listed twice, or below another edited node, whose walk covers it.
+            if edits.nodes[..position].contains(&edited)
+                || Self::has_edited_ancestor(topology, &edits.nodes, edited)
+            {
+                continue;
+            }
+            // Under a node that is not drawn nothing is reached, so there is
+            // nothing to derive until that node is.
+            let parent = topology.parent[edited];
+            if self
+                .states
+                .get(parent)
+                .is_some_and(|parent| parent.bounds.is_none())
+            {
+                continue;
+            }
+            self.visit_stack.clear();
+            self.node_order.clear();
+            self.visit_stack.push(edited);
+            self.derive_visited(tree, topology);
+            // The edited node's own bounds join its parent below, not here.
+            self.union_visible_bounds(topology, 1);
+            self.refresh_ancestor_bounds(topology, edited);
+        }
+        true
+    }
+
+    fn has_edited_ancestor(topology: &Topology, edited: &[usize], mut index: usize) -> bool {
+        loop {
+            index = topology.parent[index];
+            if index == NO_PARENT || index == ORPHAN_PARENT {
+                return false;
+            }
+            if edited.contains(&index) {
+                return true;
+            }
+        }
+    }
+
+    /// Derives the frame of every node reachable from `visit_stack`, parents
+    /// before children, and lists the ones that are drawn in `node_order`.
+    fn derive_visited(&mut self, tree: &DrawCommandList, topology: &Topology) {
         while let Some(index) = self.visit_stack.pop() {
             let Some(node) = tree.nodes.get(index) else {
                 continue;
             };
+            #[cfg(test)]
+            PLAN_NODES_DERIVED.with(|count| count.set(count.get() + 1));
             // Read in place: copying a parent's frame out only to read three
             // fields of it costs more than the reads.
             let parent = self
@@ -226,6 +366,9 @@ impl RenderWorkspace {
                 transform,
                 Rect::new(origin.0, origin.1, node.bounds.width, node.bounds.height),
             ) else {
+                // Not drawn, and neither is anything below it. Forget the
+                // frame it had, so a stale one is never read as drawn.
+                self.states[index] = NodeFrameState::default();
                 continue;
             };
 
@@ -275,9 +418,13 @@ impl RenderWorkspace {
                 self.visit_stack.push(children[next]);
             }
         }
+    }
 
+    /// Folds each listed node's visible bounds into its parent's, children
+    /// before parents, skipping the first `skip` nodes of `node_order`.
+    fn union_visible_bounds(&mut self, topology: &Topology, skip: usize) {
         let mut next = self.node_order.len();
-        while next > 0 {
+        while next > skip {
             next -= 1;
             let index = self.node_order[next];
             let child_visible_bounds = self.states[index].visible_subtree_bounds;
@@ -289,7 +436,31 @@ impl RenderWorkspace {
                 child_visible_bounds,
             );
         }
-        self.prepared_for = Some(revisions);
+    }
+
+    /// Recomputes the visible bounds of the ancestors of `index`, from the
+    /// nearest outwards, until one comes out unchanged: everything above it
+    /// depends only on it, so is unchanged too.
+    fn refresh_ancestor_bounds(&mut self, topology: &Topology, mut index: usize) {
+        loop {
+            let parent = topology.parent[index];
+            let Some(state) = self.states.get(parent) else {
+                return;
+            };
+            // Not drawn: it covers nothing, whatever its children do.
+            let Some(bounds) = state.bounds else {
+                return;
+            };
+            let mut visible = state.clip.intersect_bounds(bounds);
+            for &child in topology.children_of(parent) {
+                union_bounds(&mut visible, self.states[child].visible_subtree_bounds);
+            }
+            if visible == state.visible_subtree_bounds {
+                return;
+            }
+            self.states[parent].visible_subtree_bounds = visible;
+            index = parent;
+        }
     }
 
     fn collect(&mut self, tree: &DrawCommandList, damage: Option<&[Rect]>) -> Vec<RenderOp> {

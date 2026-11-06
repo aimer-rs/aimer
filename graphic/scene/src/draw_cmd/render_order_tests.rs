@@ -512,8 +512,111 @@ fn a_reused_plan_always_equals_a_plan_derived_from_scratch() {
                 }
             };
             let reused = described(tree.render_all());
+            let reused_states = states_of(&tree);
             let fresh = described(tree.render_all_from_scratch());
             assert_eq!(reused, fresh, "seed {seed} step {step} after {edit}");
+            assert!(
+                reused_states == states_of(&tree),
+                "seed {seed} step {step} after {edit}: node states differ from a full derivation"
+            );
         }
     }
+}
+
+/// A root with `count` leaf children, planned once so the next plan starts from
+/// derived geometry.
+fn wide_tree(count: usize) -> (RenderTree, RenderNodeId, Vec<RenderNodeId>) {
+    let tree = RenderTree::new();
+    let root = tree.add_root(Rect::new(0.0, 0.0, 800.0, 800.0)).unwrap();
+    let leaves = (0..count)
+        .map(|i| {
+            tree.add_child(root, Rect::new((i % 20) as f32 * 30.0, (i / 20) as f32 * 30.0, 20.0, 20.0))
+                .unwrap()
+        })
+        .collect();
+    tree.render_all();
+    (tree, root, leaves)
+}
+
+#[test]
+fn animating_one_leaf_derives_only_that_leaf() {
+    let (tree, _, leaves) = wide_tree(300);
+
+    reset_node_lookups();
+    tree.set_compositor_animation(leaves[137], Mat3::rotate(0.5), 1.0, None)
+        .unwrap();
+    tree.render_all();
+
+    assert_eq!(plan_geometry_runs(), 1, "the edit is seen by the plan");
+    assert_eq!(
+        plan_nodes_derived(),
+        1,
+        "a plan after a one-leaf edit derives that leaf, not the other 300 nodes"
+    );
+}
+
+#[test]
+fn animating_a_subtree_root_derives_its_subtree_and_nothing_else() {
+    let (tree, [_, a, _, _, _]) = sample();
+    tree.render_all();
+
+    reset_node_lookups();
+    tree.set_compositor_animation(a, Mat3::translate(4.0, 4.0), 1.0, None)
+        .unwrap();
+    tree.render_all();
+
+    assert_eq!(plan_nodes_derived(), 3, "a and its two children, not root or b");
+}
+
+#[test]
+fn a_structure_change_still_derives_every_node() {
+    let (tree, root, leaves) = wide_tree(40);
+    tree.set_compositor_animation(leaves[3], Mat3::translate(1.0, 1.0), 1.0, None)
+        .unwrap();
+    tree.add_child(root, rect(1.0, 1.0)).unwrap();
+
+    reset_node_lookups();
+    tree.render_all();
+
+    assert_eq!(plan_nodes_derived(), 42, "root, 40 leaves and the new node");
+}
+
+#[test]
+fn many_edits_between_plans_fall_back_to_deriving_everything() {
+    let (tree, _, leaves) = wide_tree(300);
+    for leaf in &leaves {
+        tree.set_compositor_animation(*leaf, Mat3::translate(1.0, 1.0), 1.0, None)
+            .unwrap();
+    }
+
+    reset_node_lookups();
+    tree.render_all();
+
+    assert_eq!(plan_nodes_derived(), 301);
+}
+
+#[test]
+fn an_edit_that_moves_a_child_out_of_its_clip_shrinks_the_ancestors_visible_bounds() {
+    let tree = RenderTree::new();
+    let root = tree.add_root(Rect::new(0.0, 0.0, 100.0, 100.0)).unwrap();
+    let panel = tree.add_child(root, Rect::new(0.0, 0.0, 50.0, 50.0)).unwrap();
+    let child = tree.add_child(panel, Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    tree.set_clip(panel, Some(Rect::new(0.0, 0.0, 50.0, 50.0))).unwrap();
+    tree.render_all();
+
+    // Slide the child far to the right; the panel's clip hides all of it.
+    tree.set_compositor_animation(child, Mat3::translate(500.0, 0.0), 1.0, None)
+        .unwrap();
+    tree.render_all();
+    let incremental = states_of(&tree);
+    tree.render_all_from_scratch();
+    assert!(
+        states_of(&tree) == incremental,
+        "incremental states differ from a full derivation"
+    );
+}
+
+/// The frame state every node of the last plan was derived with.
+fn states_of(tree: &RenderTree) -> Vec<render_order::NodeFrameState> {
+    tree.draw_cmd.borrow().render_workspace.borrow().states().to_vec()
 }

@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use aimer_color::prelude::Color;
 
+#[doc(hidden)]
+pub mod eviction;
 mod fit;
 mod paint;
 mod parser;
@@ -390,6 +392,71 @@ mod tests {
         let high_scale = cache.mesh_for(&curved, style, 4.0).unwrap();
 
         assert!(high_scale.vertices.len() > low_scale.vertices.len());
+    }
+
+    /// A one-of-a-kind square: each `n` is a different path, so a different cache entry.
+    fn square(n: u32) -> SvgGeometry {
+        let x = n as f32;
+        geometry([
+            SvgPathCommand::MoveTo { x, y: 0.0 },
+            SvgPathCommand::LineTo { x: x + 8.0, y: 0.0 },
+            SvgPathCommand::LineTo { x: x + 8.0, y: 8.0 },
+            SvgPathCommand::LineTo { x, y: 8.0 },
+            SvgPathCommand::Close,
+        ])
+    }
+
+    #[test]
+    fn a_cache_over_its_entry_limit_drops_the_least_recently_used_with_headroom() {
+        let style = SvgMeshStyle::Fill(SvgFillRule::NonZero);
+        let mut cache = SvgGeometryCache::new(64 * 1024 * 1024, 80);
+        let meshes: Vec<_> = (0..81)
+            .map(|n| cache.mesh_for(&square(n), style, 1.0).unwrap())
+            .collect();
+
+        assert_eq!(cache.len(), 70, "81 entries against a limit of 80 settle an eighth below it");
+        let each = meshes[0].memory_bytes();
+        assert_eq!(cache.memory_bytes(), 70 * each, "the byte count follows the entries");
+
+        // The newest are still there, the oldest are not.
+        let newest = cache.mesh_for(&square(80), style, 1.0).unwrap();
+        assert!(Arc::ptr_eq(&newest, &meshes[80]));
+        let oldest = cache.mesh_for(&square(0), style, 1.0).unwrap();
+        assert!(!Arc::ptr_eq(&oldest, &meshes[0]), "the oldest was dropped and is meshed again");
+    }
+
+    #[test]
+    fn using_an_entry_again_keeps_it_through_eviction() {
+        let style = SvgMeshStyle::Fill(SvgFillRule::NonZero);
+        let mut cache = SvgGeometryCache::new(64 * 1024 * 1024, 80);
+        let first = cache.mesh_for(&square(0), style, 1.0).unwrap();
+        for n in 1..80 {
+            cache.mesh_for(&square(n), style, 1.0).unwrap();
+        }
+        // The oldest entry is used once more, so it is no longer the oldest.
+        cache.mesh_for(&square(0), style, 1.0).unwrap();
+        for n in 80..90 {
+            cache.mesh_for(&square(n), style, 1.0).unwrap();
+        }
+
+        let again = cache.mesh_for(&square(0), style, 1.0).unwrap();
+        assert!(Arc::ptr_eq(&first, &again));
+    }
+
+    #[test]
+    fn a_cache_over_its_byte_limit_drops_old_entries_too() {
+        let style = SvgMeshStyle::Fill(SvgFillRule::NonZero);
+        let each = SvgGeometryCache::new(1 << 20, 100)
+            .mesh_for(&square(0), style, 1.0)
+            .unwrap()
+            .memory_bytes();
+        let mut cache = SvgGeometryCache::new(each * 10, 1_000);
+        for n in 0..40 {
+            cache.mesh_for(&square(n), style, 1.0).unwrap();
+        }
+
+        assert!(cache.memory_bytes() <= each * 10, "never above the byte limit");
+        assert!(cache.len() >= 8, "but not emptied: {} entries", cache.len());
     }
 
     #[test]

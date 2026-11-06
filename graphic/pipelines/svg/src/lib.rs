@@ -6,7 +6,8 @@ pub(crate) use aimer_cupid_svg as svg;
 pub(crate) use aimer_pipeline_core::AntiAlias;
 pub(crate) use aimer_primitives as utilities;
 
-use std::collections::{HashMap, HashSet};
+
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ use crate::svg::{
     SvgColor, SvgColorMatrix, SvgFilterInput, SvgFilterPrimitive, SvgGeometryCache, SvgGradient,
     SvgMesh, SvgMeshStyle, SvgNode, SvgNodeStyleOverride, SvgPaint, SvgPaintOrder,
 };
+use crate::svg::eviction::{Candidate, Limits, oldest_to_drop};
 use crate::utilities::{Mat3, Rgba8};
 
 #[repr(C)]
@@ -149,6 +151,8 @@ pub struct SvgPipeline<B: crate::backend::GpuBackend> {
     usage_clock: u64,
     max_gpu_mesh_bytes: u64,
     max_gpu_meshes: usize,
+    /// Scratch for [`Self::evict_gpu_meshes_generic`], kept to reuse its capacity.
+    eviction_candidates: Vec<Candidate<usize>>,
     analytic_aa: bool,
 }
 
@@ -236,6 +240,7 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
             usage_clock: 0,
             max_gpu_mesh_bytes: Self::MAX_GPU_MESH_BYTES,
             max_gpu_meshes: Self::MAX_GPU_MESHES,
+            eviction_candidates: Vec::new(),
             analytic_aa: antialiasing == AntiAlias::Analytic,
         }
     }
@@ -254,11 +259,10 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         self.prepared_draws.clear();
         self.item_ranges.clear();
         self.instances.clear();
-        let mut frame_meshes = HashSet::new();
         for item in items {
             let range_start = self.prepared_draws.len();
             if item.opacity > 0.0 && item.destination.width > 0.0 && item.destination.height > 0.0 {
-                self.prepare_item_generic(backend, item, width, height, is_srgb, &mut frame_meshes);
+                self.prepare_item_generic(backend, item, width, height, is_srgb);
             }
             self.item_ranges
                 .push(range_start..self.prepared_draws.len());
@@ -279,7 +283,7 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         }
         self.upload
             .upload(backend, &self.instance_buffer, &self.instances);
-        self.evict_gpu_meshes_generic(&frame_meshes);
+        self.evict_gpu_meshes_generic();
     }
 
     fn prepare_item_generic(
@@ -289,7 +293,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         width: u32,
         height: u32,
         is_srgb: bool,
-        frame_meshes: &mut HashSet<usize>,
     ) {
         for node in item
             .scene
@@ -338,7 +341,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                             is_srgb,
                             &effects.color_matrices,
                             physical_scale,
-                            frame_meshes,
                         );
                     } else if let Some(id) = fill_pattern {
                         self.prepare_pattern_generic(
@@ -355,7 +357,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                             is_srgb,
                             &effects.color_matrices,
                             physical_scale,
-                            frame_meshes,
                         );
                     }
                     if let Some(paint) = stroke {
@@ -372,7 +373,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                             is_srgb,
                             &effects.color_matrices,
                             physical_scale,
-                            frame_meshes,
                         );
                     }
                 }
@@ -391,7 +391,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                             is_srgb,
                             &effects.color_matrices,
                             physical_scale,
-                            frame_meshes,
                         );
                     }
                     if let Some(paint) = fill {
@@ -408,7 +407,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                             is_srgb,
                             &effects.color_matrices,
                             physical_scale,
-                            frame_meshes,
                         );
                     } else if let Some(id) = fill_pattern {
                         self.prepare_pattern_generic(
@@ -425,7 +423,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                             is_srgb,
                             &effects.color_matrices,
                             physical_scale,
-                            frame_meshes,
                         );
                     }
                 }
@@ -449,7 +446,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         is_srgb: bool,
         color_matrices: &[SvgColorMatrix],
         physical_scale: f32,
-        frame_meshes: &mut HashSet<usize>,
     ) {
         let Some(pattern) = item.scene.resources.pattern(pattern_id) else {
             return;
@@ -575,7 +571,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                             is_srgb,
                             color_matrices,
                             physical_scale,
-                            frame_meshes,
                         );
                     }
                     if let Some(paint) = resolved_stroke(pattern_node, None) {
@@ -592,7 +587,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                             is_srgb,
                             color_matrices,
                             physical_scale,
-                            frame_meshes,
                         );
                     }
                 }
@@ -615,7 +609,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         is_srgb: bool,
         color_matrices: &[SvgColorMatrix],
         physical_scale: f32,
-        frame_meshes: &mut HashSet<usize>,
     ) {
         match paint {
             ResolvedPaint::Solid { color, style } => self.prepare_mesh_generic(
@@ -631,7 +624,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                 height,
                 is_srgb,
                 physical_scale,
-                frame_meshes,
             ),
             ResolvedPaint::Gradient { gradient, style } => self.prepare_gradient_generic(
                 backend,
@@ -647,7 +639,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                 is_srgb,
                 color_matrices,
                 physical_scale,
-                frame_meshes,
             ),
         }
     }
@@ -668,7 +659,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         is_srgb: bool,
         color_matrices: &[SvgColorMatrix],
         physical_scale: f32,
-        frame_meshes: &mut HashSet<usize>,
     ) {
         const MAX_GRADIENT_MESH_BYTES: usize = 16 * 1024 * 1024;
         let Ok(base) = self.geometry_cache.mesh_for_with_analytic_aa(
@@ -714,7 +704,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                 width,
                 height,
                 is_srgb,
-                frame_meshes,
             );
         }
     }
@@ -734,7 +723,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         height: u32,
         is_srgb: bool,
         physical_scale: f32,
-        frame_meshes: &mut HashSet<usize>,
     ) {
         let Ok(mesh) = self.geometry_cache.mesh_for_with_analytic_aa(
             geometry,
@@ -755,7 +743,6 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
             width,
             height,
             is_srgb,
-            frame_meshes,
         );
     }
 
@@ -772,13 +759,11 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         width: u32,
         height: u32,
         is_srgb: bool,
-        frame_meshes: &mut HashSet<usize>,
     ) {
         if mesh.indices.is_empty() {
             return;
         }
         let mesh_key = Arc::as_ptr(&mesh) as usize;
-        frame_meshes.insert(mesh_key);
         self.ensure_gpu_mesh_generic(backend, mesh_key, &mesh);
         let instance_index = self.instances.len() as u32;
         self.instances.push(SvgInstance {
@@ -852,23 +837,44 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         );
     }
 
-    fn evict_gpu_meshes_generic(&mut self, frame_meshes: &HashSet<usize>) {
-        while self.gpu_meshes.len() > self.max_gpu_meshes
-            || self.gpu_mesh_bytes > self.max_gpu_mesh_bytes
-        {
-            let Some(key) = self
-                .gpu_meshes
+    /// Drops the least recently drawn meshes while the cache is over a limit.
+    ///
+    /// A mesh drawn by this frame has `last_used` equal to the usage clock (both
+    /// [`Self::ensure_gpu_mesh_generic`] paths stamp it), and is never dropped:
+    /// its buffers are bound by the draws just prepared.
+    fn evict_gpu_meshes_generic(&mut self) {
+        let limits = Limits {
+            meshes: self.max_gpu_meshes,
+            bytes: self.max_gpu_mesh_bytes,
+        };
+        if !limits.exceeded_by(self.gpu_meshes.len(), self.gpu_mesh_bytes) {
+            return;
+        }
+        let clock = self.usage_clock;
+        let mut candidates = std::mem::take(&mut self.eviction_candidates);
+        candidates.clear();
+        candidates.extend(
+            self.gpu_meshes
                 .iter()
-                .filter(|(key, _)| !frame_meshes.contains(key))
-                .min_by_key(|(_, mesh)| mesh.last_used)
-                .map(|(key, _)| *key)
-            else {
-                break;
-            };
-            if let Some(mesh) = self.gpu_meshes.remove(&key) {
+                .filter(|(_, mesh)| mesh.last_used != clock)
+                .map(|(&key, mesh)| Candidate {
+                    last_used: mesh.last_used,
+                    key,
+                    bytes: mesh.bytes,
+                }),
+        );
+        let dropped = oldest_to_drop(
+            &mut candidates,
+            self.gpu_meshes.len(),
+            self.gpu_mesh_bytes,
+            limits,
+        );
+        for candidate in &candidates[..dropped] {
+            if let Some(mesh) = self.gpu_meshes.remove(&candidate.key) {
                 self.gpu_mesh_bytes = self.gpu_mesh_bytes.saturating_sub(mesh.bytes);
             }
         }
+        self.eviction_candidates = candidates;
     }
 
     pub fn draw_item<'a>(&'a self, pass: &mut B::RenderPass<'a>, item_index: usize)
