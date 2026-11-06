@@ -7,7 +7,8 @@
 //! [`BoxBorder`], [`BoxOutline`], [`BorderRadius`] and [`BoxShadow`]); each of
 //! those pieces, a [`Color`](aimer_color::prelude::Color), and the effects
 //! [`Gradient`], [`OpacityGradient`], [`BackdropFilter`], [`LightEdge`] and
-//! [`Magnification`] also work as decorations on their own. Slices and arrays of
+//! [`Magnification`] also work as decorations on their own, as does
+//! [`ShaderEffectDecoration`], which draws an application-defined shader effect. Slices and arrays of
 //! decorations paint as an ordered stack, and [`AnyDecor`] erases the type.
 //!
 //! # Widgets
@@ -38,7 +39,7 @@ pub use box_decoration::box_shadow::{BoxShadow, ShadowSide};
 
 pub use decoration_box::{
     BackdropFilter, DecorationBox, Gradient, LightEdge, Magnification, MagnificationStyle,
-    OpacityGradient,
+    OpacityGradient, ShaderEffectDecoration,
 };
 
 pub use decoration::{AnyDecor, Decoration};

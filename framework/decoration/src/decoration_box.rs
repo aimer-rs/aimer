@@ -13,11 +13,13 @@ mod gradient;
 mod light_edge;
 mod magnification;
 mod opacity_gradient;
+mod shader_effect;
 pub use backdrop_filter::BackdropFilter;
 pub use gradient::Gradient;
 pub use light_edge::LightEdge;
 pub use magnification::{Magnification, MagnificationStyle};
 pub use opacity_gradient::OpacityGradient;
+pub use shader_effect::ShaderEffectDecoration;
 
 use crate::{BoxDecoration, Decoration};
 use aimer_attribute::{ResolvedSize, Size, Vec2d};
@@ -436,3 +438,6 @@ mod opacity_gradient_tests;
 
 #[cfg(test)]
 mod multi_placement_tests;
+
+#[cfg(test)]
+mod shader_effect_tests;
