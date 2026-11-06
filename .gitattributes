@@ -1,0 +1,7 @@
+# Source is LF on every platform: tests and parsers read include_str! text,
+# and a Windows checkout with core.autocrlf would otherwise hand them CRLF.
+* text=auto eol=lf
+
+# Batch files are committed with CRLF; leave their bytes exactly as they are.
+*.bat -text
+*.cmd -text
