@@ -351,7 +351,15 @@ fn the_wheel_over_a_modal_does_not_scroll_the_page_beneath() {
         delta: MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -200.0)),
         phase: TouchPhase::Moved,
     });
-    for _ in 0..20 {
+    // The wheel glides for as many frames as the smoother needs, and a frame
+    // that is quicker than its floor step does not shorten that: run the glide
+    // out, or its tail lands after the log is cleared and looks like a leak.
+    let mut frames = 0;
+    while !events.lock().unwrap().iter().any(|(_, _, phase)| {
+        matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled)
+    }) {
+        frames += 1;
+        assert!(frames <= 500, "the wheel glide never ended");
         app.render_frame();
     }
     assert!(!events.lock().unwrap().is_empty(), "the page should be scrolled without a modal");

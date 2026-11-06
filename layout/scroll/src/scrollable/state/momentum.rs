@@ -14,6 +14,18 @@ use crate::scrollable::spring::advance_overscroll_spring;
 const FADE_START_FRICTION: f32 = 0.999;
 const FADE_FRICTION_DROP: f32 = 0.099;
 
+/// `base^exponent` rounded once from `f64`.
+///
+/// `f32::powf` is whatever the platform's libm does, and the libms disagree in
+/// the last bit (macOS against glibc and the Windows runtime), which the
+/// compounding per-frame velocity then carries into a different trajectory on
+/// each platform. The `f64` result is accurate far beyond `f32`'s precision on
+/// every libm, so rounding it once gives the same `f32` everywhere.
+#[inline]
+fn pow_f32(base: f32, exponent: f32) -> f32 {
+    f64::from(base).powf(f64::from(exponent)) as f32
+}
+
 #[inline]
 fn is_moving(velocity: Vec2d) -> bool {
     velocity.x.abs() > VELOCITY_EPSILON || velocity.y.abs() > VELOCITY_EPSILON
@@ -263,8 +275,8 @@ impl ScrollState {
             // progress in [0, 1]: 0 = fade starts, 1 = at the cap.
             let progress = 1.0 - (remaining / MOMENTUM_FADEOUT_S);
             let fade_friction = FADE_START_FRICTION - FADE_FRICTION_DROP * progress;
-            velocity.x *= fade_friction.powf(ratio);
-            velocity.y *= fade_friction.powf(ratio);
+            velocity.x *= pow_f32(fade_friction, ratio);
+            velocity.y *= pow_f32(fade_friction, ratio);
         }
 
         let friction = self
@@ -272,7 +284,7 @@ impl ScrollState {
             .friction
             .get()
             .unwrap_or(self.scroll_behavior.friction);
-        let decay = friction.powf(ratio);
+        let decay = pow_f32(friction, ratio);
         offset.x += velocity.x * ratio;
         offset.y += velocity.y * ratio;
         if bouncy {
@@ -292,7 +304,7 @@ impl ScrollState {
 
         let range = self.clamp_offset(offset);
         if bouncy {
-            let oob_decay = OVERSCROLL_FRICTION.powf(ratio);
+            let oob_decay = pow_f32(OVERSCROLL_FRICTION, ratio);
             if offset.x != range.x {
                 velocity.x *= oob_decay;
             }
@@ -511,8 +523,14 @@ mod tests {
     /// was restructured; the restructure must reproduce them bit for bit.
     ///
     /// Update an entry only for a deliberate behavior change, and say why.
+    ///
+    /// "coast in range", "curve-driven animation" and "coast to the duration
+    /// cap" were re-recorded when the friction `powf` moved to `pow_f32`: they
+    /// are the scenarios that reach the cap fade-out, where macOS's `f32` `powf`
+    /// differed in the last bit from glibc's and the Windows runtime's, so the
+    /// old values only held on macOS.
     const EXPECTED: &[(&str, u64)] = &[
-        ("coast in range", 0xe0c983a7d7e3adf5),
+        ("coast in range", 0xa2a617dc65c3a0e5),
         ("coast into the end edge", 0xb70ac3e035aa2905),
         ("coast into the start edge", 0xd0f9175a62d927e7),
         ("rigid coast into the end edge", 0x11be1d796dcaa184),
@@ -522,8 +540,8 @@ mod tests {
         ("rigid release fling", 0x462ac01703b0d8d1),
         ("bouncy fling into the end edge", 0xd2c7c9b5bbe8a9a6),
         ("fling with uneven frames", 0xc47cbf5220c48851),
-        ("curve-driven animation", 0xf69ec709d9dad21a),
-        ("coast to the duration cap", 0x35d1253ea90211eb),
+        ("curve-driven animation", 0x1973839daa80811b),
+        ("coast to the duration cap", 0x51d645c3dc592fe2),
         ("held overscroll then recovery", 0x65967080f6b0c56a),
         ("horizontal coast into the end edge", 0x33dd4ee77e3a8cd5),
         ("coast with uneven frames", 0xd3e276fdd36df440),

@@ -174,6 +174,27 @@ impl<W: Widget + 'static> Page<W> {
     fn offset(&self) -> f32 {
         self.controller.offset().y
     }
+
+    /// Pumps frames until the content has stopped moving.
+    ///
+    /// A wheel tick glides: the smoother keeps handing the page its share of
+    /// the distance for as many frames as it needs, however quickly they are
+    /// pumped. A test that measures from where the page "is" has to let it
+    /// arrive first, or the page is still moving under the measurement.
+    fn settle(&mut self) {
+        let mut last = self.offset();
+        let mut still = 0;
+        for _ in 0..500 {
+            self.app.pump_frames(2);
+            let now = self.offset();
+            still = if now == last { still + 1 } else { 0 };
+            if still >= 5 {
+                return;
+            }
+            last = now;
+        }
+        panic!("the page never stopped moving");
+    }
 }
 
 fn assert_close(actual: f32, expected: f32, what: &str) {
@@ -187,6 +208,7 @@ fn assert_close(actual: f32, expected: f32, what: &str) {
 fn dragging_the_thumb_keeps_it_under_the_cursor() {
     let mut page = page();
     page.wheel(-10.0);
+    page.settle();
     let start = page.offset();
     // The thumb is wherever the scroll left it; hold it in the middle.
     let thumb_middle = f64::from(start / CONTENT_PER_THUMB_PIXEL) + 60.0;
