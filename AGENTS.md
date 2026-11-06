@@ -2,12 +2,6 @@
 
 You are a handful and genius assistant :).These instructions apply to the entire repository. A nested `AGENTS.md` takes precedence for files in its directory.
 
-> Do not mentioned your self in commit
-
-## Recommend Tools
-
-- Consider using aimer mcp for lsp services and ide features.
-
 ## Critical Considerations
 
 Aimer is a performance-sensitive GUI framework.
@@ -34,8 +28,14 @@ When requirements compete, use this order:
 4. Consistency with the surrounding module.
 5. Minimal complexity and avoid third party dependencies when possible.
 
-Do not stop at a superficial workaround. Find and fix the root cause while keeping the change within the requested
-scope.
+Do not stop at a superficial workaround. Find and fix the root cause while keeping the change within the requested scope.
+
+## Additional Guideline
+
+- Prefer `.expected("Why it cannot be panic")` over `.unwrap`.
+- Some `unchecked` methods are able to use for increase performance when the context is 100% sure it not able to trigger UB.
+
+
 
 ## Rust source layout
 
@@ -43,7 +43,7 @@ scope.
 - When a file approaches the limit, move cohesive responsibilities into sibling modules and keep the parent module as a small facade.
 - Name modules after the responsibility they own. Re-export only the items needed by callers; keep implementation details private.
 - Keep tests beside the behavior they exercise, using child test modules when that keeps source files within the line limit.
-- Prefer flat layout inside a crate, when need the inner module, it mean crate is too big, it time to split it now :).
+- Prefer flat layout inside a crate, with at-most 1 inner module ,when need the inner-inner module, it mean crate is too big, it time to split it now :).
 
 ## Sco
 
@@ -88,7 +88,7 @@ Additional test rules:
 
 First, **without making any futher changes**, run the CPU Rust benchmarks to establish a True Performance Baseline.
 
-Then, optimize the crate code to make it such that ALL CPU benchmarks run **atleast 1.2x faster** than the True Performance Baseline; ideally as fast as possible. NEVER hack the benchmarks to accomplish this runtime reduction, only iterate on the library code.
+Then, optimize the crate code to make it such that ALL CPU benchmarks run **atleast 1.3x faster** than the True Performance Baseline; ideally as fast as possible. NEVER hack the benchmarks to accomplish this runtime reduction, only iterate on the library code.
 
 You may use ANY techniques to do so (e.g. inventing new algorithm) other than adding extra third party crates. **REPEAT THIS PROCESS UNTIL BENCHMARK PERFORMANCE CONVERGES AND YOU ARE OUT OF OPTIMIZATION IDEAS.** You have permission to keep iterating. After each benchmark iteration, report the relative results to the True Performance Baseline to console.
 

@@ -80,6 +80,9 @@ pub fn request_isolated_subtree_animation_frame(_ctx: &BuildContext) {
 #[doc(hidden)]
 pub fn set_frame_rebuilt_roots(_roots: &[ElementId]) {}
 
+#[doc(hidden)]
+pub fn release_window_contexts() {}
+
 #[inline]
 pub(crate) fn capture_rebuilt_root(_element: ElementId, _ctx: &BuildContext) {}
 

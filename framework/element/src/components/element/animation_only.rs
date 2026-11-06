@@ -227,6 +227,25 @@ fn reproducible_translation(ctx: &BuildContext) -> Option<(f32, f32)> {
         .then_some(translation)
 }
 
+/// Lets go of every context the registry keeps.
+///
+/// Each registration holds a copy of the context its element was given, and so
+/// a handle to the window it is in. The registry lives in this thread's
+/// thread-local table, which is torn down when the thread exits, after the
+/// platform's own thread-locals; the last handle to a native window dropped
+/// there reaches for one of them and panics. So the loop that owns the window
+/// calls this once it ends, while the thread is still whole.
+#[doc(hidden)]
+pub fn release_window_contexts() {
+    // Taken out first and dropped after the borrow is over: letting go of a
+    // window runs code of the platform's, which must not find the registry held.
+    let registrations = REGISTRY.with(|registry| std::mem::take(&mut *registry.borrow_mut()));
+    REBUILT_ROOTS.with(|rebuilt| rebuilt.borrow_mut().clear());
+    HAS_REBUILT_ROOTS.with(|flag| flag.set(false));
+    STALE_ROOTS.with(StaleRoots::clear);
+    drop(registrations);
+}
+
 /// Tells the widget layer which subtrees were rebuilt since the previous walk
 /// or pass.
 ///
@@ -649,6 +668,23 @@ mod tests {
 
         assert!(is_remembered(root));
         assert!(!is_stale(root));
+        assert!(!walk_is_waiting_for_roots());
+    }
+
+    /// Every registration holds a copy of its context, and with it a handle to
+    /// its window. They are let go by name when the window's loop ends: left to
+    /// the thread's teardown, the last handle to a native window would be
+    /// dropped when the platform's own thread-locals are already gone.
+    #[test]
+    fn releasing_the_window_contexts_forgets_every_registration() {
+        let ctx = context();
+        remember_rebuilt(ElementId::next(), &ctx);
+        remember_rebuilt(ElementId::next(), &ctx);
+        assert_eq!(remembered_count(), 2);
+
+        release_window_contexts();
+
+        assert_eq!(remembered_count(), 0);
         assert!(!walk_is_waiting_for_roots());
     }
 

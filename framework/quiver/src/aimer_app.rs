@@ -1646,6 +1646,12 @@ fn start_event_loop(
 
     run_app();
 
+    // The frame loop's registry keeps a copy of the context of every element it
+    // may revisit, and with it a handle to the window. The window is dropped
+    // here, with the platform's thread-locals still alive, and not by the
+    // teardown of this thread's table, which runs after them.
+    aimer_widget::release_window_contexts();
+
     // `Venus::install` keeps a thread-local strong reference. Drop it on the
     // event-loop thread while Windows is still running, so OffloadPool joins
     // its workers before thread-local teardown starts.

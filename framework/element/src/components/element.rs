@@ -59,8 +59,9 @@ mod window_paint_state_tests;
 
 pub use animation_only::{
     animation_only_targets, is_animation_only_frame, request_isolated_animation_frame,
-    request_isolated_subtree_animation_frame, run_animation_only_pass, set_animation_only_frame,
-    set_frame_rebuilt_roots, traversal_counts, with_v2_animation_only_context,
+    release_window_contexts, request_isolated_subtree_animation_frame, run_animation_only_pass,
+    set_animation_only_frame, set_frame_rebuilt_roots, traversal_counts,
+    with_v2_animation_only_context,
 };
 use animation_only::{
     begin_full_traversal, capture_rebuilt_root, enter_subtree_walk, finish_full_traversal,
