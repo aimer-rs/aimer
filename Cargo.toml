@@ -212,6 +212,7 @@ members = [
     "native/video",
     "native/device",
     "native/screen",
+    "native/window",
     # services
     "services/storage",
     "services/vault",
@@ -286,7 +287,6 @@ members = [
     "host/frame_stats",
     "host/platform",
     "host/profiling",
-    "host/window",
     # app
     "app/jaime",
     # experiments
@@ -327,7 +327,6 @@ aimer_frame_stats = { path = "host/frame_stats" }
 aimer_platform = { path = "host/platform" }
 aimer_profiling = { path = "host/profiling" }
 aimer_render = { path = "graphic/render", default-features = false }
-aimer_window = { path = "host/window" }
 aimer_canvas = { path = "graphic/canvas" }
 aimer_transpiler = { path = "graphic/transpiler" }
 aimer_animation = { path = "framework/animation" }
@@ -390,6 +389,7 @@ aimer_audio = { path = "native/audio" }
 aimer_video = { path = "native/video" }
 aimer_device = { path = "native/device" }
 aimer_screen = { path = "native/screen" }
+aimer_window = { path = "native/window" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
 
 # Generic Dependencies

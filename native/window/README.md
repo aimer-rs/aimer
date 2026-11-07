@@ -1,0 +1,118 @@
+# aimer_window
+
+Native windows for Aimer: open a window, steer it once it's open, and decide
+whether closing windows ends the application.
+
+An application starts with one window, described by a [`WindowAttr`] given to
+`AimerApp::window`. Everything after that goes through this crate.
+
+- **[`Window`]** — a widget that declares a window as part of a tree. The window
+  is on screen while the widget is mounted and `open` is `true`, follows the
+  widget's title and size, and closes when the widget goes away.
+- **[`NewWindow`]** — a builder that opens a window from a callback and returns
+  its [`WindowId`].
+- **[`WindowId`]** — a `Copy` handle that focuses, retitles, resizes, minimizes,
+  maximizes or closes a window.
+- **[`WindowAttr`]** — the properties of a window: title, size and limits,
+  decorations, transparency, visibility. It does not expose `winit`, so
+  applications are not tied to the windowing backend.
+- **[`ExitPolicy`]** — whether closing windows ends the application. [`quit`]
+  ends it whatever the policy says.
+
+## Opening a window
+
+Use [`Window`] when a window's existence is part of your state, and
+[`NewWindow`] when a window is the answer to an event, such as a menu item.
+Both produce the same window.
+
+```no_run
+use aimer_container::SizedBox;
+use aimer_window::NewWindow;
+
+let inspector = NewWindow::new()
+    .title("Inspector")
+    .size(360, 480)
+    .builder(|_ctx| SizedBox::new())
+    .open();
+
+inspector.set_title("Inspector - 3 items");
+```
+
+To tie a window to state, put a [`Window`] in a widget's `build` and feed its
+`open` from that state. The user can close a window on their own, so clear the
+state in [`on_close`](Window::on_close). A window the user closed stays closed
+while `open` stays `true`, and opens again after `open` has been `false`.
+
+```no_run
+use aimer_container::SizedBox;
+use aimer_widget::{State, StateUpdater, StatefulWidget, Widget, base::BuildContext};
+use aimer_window::Window;
+
+struct Page;
+
+struct PageState {
+    updater: Option<StateUpdater<PageState>>,
+    settings_open: bool,
+}
+
+impl StatefulWidget for Page {
+    type State = PageState;
+
+    fn create_state(self) -> PageState {
+        PageState { updater: None, settings_open: true }
+    }
+}
+
+impl State<Page> for PageState {
+    fn init_state(&mut self, updater: StateUpdater<Self>) {
+        self.updater = Some(updater);
+    }
+
+    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        let updater = self.updater.expect("set before the first build");
+        Window::new()
+            .title("Settings")
+            .size(480, 320)
+            .open(self.settings_open)
+            .on_close(move || updater.set_state(|page| page.settings_open = false))
+            .builder(|_ctx| SizedBox::new())
+    }
+}
+```
+
+## Behavior
+
+- **Requests, not actions.** Opening, resizing and closing are queued on the UI
+  thread and carried out by the event loop the next time it runs. A call returns
+  before the window has changed, so [`is_open`](WindowId::is_open) is `false`
+  right after [`open`](NewWindow::open). Make these calls on the UI thread;
+  only [`quit`] may be called from any thread.
+- **A tree of its own.** Each window builds its own widget tree on the
+  application's runtime and tasks. It sees the providers in scope where it was
+  opened: always for a [`Window`], and for a [`NewWindow`] when
+  [`inherit`](NewWindow::inherit) is given a `BuildContext`. Providers are
+  shared, not copied, so windows read and update the same state.
+  [`isolated`](Window::isolated) starts a [`Window`] with none.
+- **Stale ids are harmless.** An id never names a second window. Anything done
+  through an id whose window is gone is ignored.
+
+## Exit policy
+
+| [`ExitPolicy`]                   | The application ends when                        |
+|----------------------------------|--------------------------------------------------|
+| `LastWindowClosed` (the default) | its last window has closed                       |
+| `MainWindowClosed`               | the first window closes; the rest close with it  |
+| `Never`                          | [`quit`] is called or the process is told to stop |
+
+## Platforms
+
+| Platform              | Windows                                           |
+|-----------------------|---------------------------------------------------|
+| macOS, Windows, Linux | supported                                         |
+| iOS, Android, web     | one surface only; requests for more are never answered |
+
+## For the event loop
+
+The `host` module, hidden from the generated documentation, is what
+`aimer_quiver`'s desktop event loop uses to drain requests and to report
+windows opening and closing. Applications do not use it.
