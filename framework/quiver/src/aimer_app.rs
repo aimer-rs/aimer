@@ -853,6 +853,8 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
                 ui_memory: UiMemory::new(ui_memory_limit),
                 #[cfg(debug_assertions)]
                 debug_overlay: Default::default(),
+                #[cfg(debug_assertions)]
+                overlay_refresh_armed: Default::default(),
                 window_attr: WindowAttr::new(),
                 frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
                 render_tree: WindowRenderTree::default(),
@@ -1595,6 +1597,8 @@ fn start_event_loop(
                 ui_memory: UiMemory::new(ui_memory_limit),
                 #[cfg(debug_assertions)]
                 debug_overlay: Default::default(),
+                #[cfg(debug_assertions)]
+                overlay_refresh_armed: Default::default(),
                 window_attr,
                 frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
                 render_tree: WindowRenderTree::default(),

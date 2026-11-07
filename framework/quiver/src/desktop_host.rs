@@ -74,6 +74,8 @@ impl Shared {
             ui_memory: self.ui_memory.clone(),
             #[cfg(debug_assertions)]
             debug_overlay: Default::default(),
+            #[cfg(debug_assertions)]
+            overlay_refresh_armed: Default::default(),
             window_attr: attr,
             frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
             render_tree: WindowRenderTree::default(),

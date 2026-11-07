@@ -861,7 +861,11 @@ pub struct AimerApplicationHandler<W: Widget + 'static> {
     /// Per-application heap used by retained widget and element allocations.
     pub(crate) ui_memory: UiMemory,
     #[cfg(debug_assertions)]
-    pub(crate) debug_overlay: crate::debug_overlay::DebugOverlay,
+    pub(crate) debug_overlay: aimer_profiling::PerformanceOverlay,
+    /// Whether a one-shot timer is already waiting to refresh an idle overlay.
+    /// Shared with the timer's callback so hiding the overlay can cancel it.
+    #[cfg(debug_assertions)]
+    pub(crate) overlay_refresh_armed: std::rc::Rc<std::cell::Cell<bool>>,
     pub widget_root: Option<AnyElement>,
     pub event_dispatcher: EventDispatcher,
     pub(crate) scroll_smoother: DualScroller,
@@ -918,6 +922,43 @@ pub struct AimerApplicationHandler<W: Widget + 'static> {
 }
 
 impl<W: Widget + 'static> AimerApplicationHandler<W> {
+    /// Wakes an idle application once the visible overlay's numbers are due.
+    ///
+    /// The overlay only repaints when a frame runs, so without this an idle
+    /// application would keep showing its last busy numbers instead of falling
+    /// to zero. Each frame re-arms a single one-shot timer; the frame it wakes
+    /// is a scoped one that skips the rest of the tree, and is not counted as
+    /// the application drawing. Hidden overlays arm nothing, and a host with no
+    /// timer (a headless one) simply never refreshes while idle.
+    #[cfg(debug_assertions)]
+    pub(crate) fn arm_overlay_refresh(&self) {
+        let Some(wait) = self.debug_overlay.refresh_in() else {
+            // Hidden: let a timer that is still pending do nothing when it fires.
+            self.overlay_refresh_armed.set(false);
+            return;
+        };
+        if self.overlay_refresh_armed.get() {
+            return;
+        }
+        #[cfg(not(target_os = "ios"))]
+        let Some(window) = self.window.clone() else {
+            return;
+        };
+        let armed = self.overlay_refresh_armed.clone();
+        let scheduled = aimer_venus::spawn_delayed(wait, move || {
+            if !armed.replace(false) {
+                return;
+            }
+            crate::aimer_app::with_frame_request_kind(FrameRequestKind::Scoped, || {
+                #[cfg(target_os = "ios")]
+                aimer_events::window::request_animation_frame();
+                #[cfg(not(target_os = "ios"))]
+                window.request_redraw();
+            });
+        });
+        self.overlay_refresh_armed.set(scheduled.is_ok());
+    }
+
     #[cfg(debug_assertions)]
     pub(crate) fn handle_debug_key(
         &mut self,
@@ -1429,7 +1470,7 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
 /// or changes the cursor reaches the same handle the event handlers do.
 pub(crate) struct FrameDrawer<'a, W: Widget + 'static> {
     #[cfg(debug_assertions)]
-    debug_overlay: &'a mut crate::debug_overlay::DebugOverlay,
+    debug_overlay: &'a mut aimer_profiling::PerformanceOverlay,
     widget_root: &'a mut Option<AnyElement>,
     pending_widget: &'a mut Option<W>,
     event_dispatcher: &'a mut EventDispatcher,
@@ -1442,6 +1483,19 @@ pub(crate) struct FrameDrawer<'a, W: Widget + 'static> {
     cursor_pos: Vec2d,
     #[cfg(not(target_arch = "wasm32"))]
     async_handle: tokio::runtime::Handle,
+}
+
+/// The active renderer's short type name, resolved once for the diagnostics
+/// overlay's system panel.
+#[cfg(debug_assertions)]
+fn renderer_name() -> &'static str {
+    static NAME: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    NAME.get_or_init(|| {
+        std::any::type_name::<AimerRenderContext>()
+            .rsplit("::")
+            .next()
+            .unwrap_or("unknown")
+    })
 }
 
 impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
@@ -1768,6 +1822,15 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         }
 
         if self.scale.is_finite() && self.scale > 0.0 {
+            // A frame the application left damage in is the application's own.
+            // One that has none exists only to refresh the overlay, and counting
+            // it would pin an idle application at the refresh rate.
+            #[cfg(debug_assertions)]
+            if self.debug_overlay.is_visible()
+                && (!damage.is_empty() || self.window_render_tree.tree.has_pending_damage())
+            {
+                self.debug_overlay.note_app_frame();
+            }
             #[cfg(debug_assertions)]
             if let Err(error) = self.debug_overlay.prepare(
                 &self.window_render_tree.tree,
@@ -1776,6 +1839,7 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
                 self.scale,
                 &self.ui_allocator,
                 self.cursor_pos,
+                renderer_name(),
             ) {
                 aimer_utils::error!("debug overlay recording failed: {error:?}");
             }
@@ -2339,6 +2403,13 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             }
         }
         aimer_utils::frame_trace("packet_done", 0.0, 0.0);
+        #[cfg(debug_assertions)]
+        self.arm_overlay_refresh();
+        if outcome.is_presented() {
+            // An inline frame reached the screen during this call. Frames handed
+            // to the raster thread are counted when their completion arrives.
+            aimer_frame_stats::record_presented_frame();
+        }
         // Worker completions dispatch this same notification on the UI thread.
         crate::first_frame::notify_first_frame_presented(outcome.is_presented());
         if outcome.needs_retry() {

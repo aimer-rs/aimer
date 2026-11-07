@@ -28,16 +28,16 @@
 #![cfg(any(target_os = "macos", target_os = "ios"))]
 
 use std::ops::Range;
-#[cfg(feature = "frame-stats")]
 use std::ptr::NonNull;
-#[cfg(feature = "frame-stats")]
 use std::sync::Arc;
 use std::sync::Mutex;
-#[cfg(feature = "frame-stats")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-#[cfg(feature = "frame-stats")]
 use block2::RcBlock;
+mod gpu_timing;
+use gpu_timing::GpuFrameCapture;
+
 use objc2::ffi::NSUInteger;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -99,102 +99,13 @@ pub struct MetalBackend {
     /// diagnostics: how many a frame takes is what keeps a busy queue from
     /// blocking the encoder.
     submitted: std::sync::atomic::AtomicU64,
-    #[cfg(feature = "frame-stats")]
+    /// The GPU frame capture in progress, if any. Created by
+    /// [`Self::begin_gpu_frame_timing`] and closed by
+    /// [`Self::end_gpu_frame_timing`].
     active_gpu_frame: Mutex<Option<Arc<GpuFrameCapture>>>,
-}
-
-#[cfg(feature = "frame-stats")]
-#[derive(Debug)]
-struct GpuFrameCapture {
-    report: fn(Duration),
-    state: Mutex<GpuFrameCaptureState>,
-}
-
-#[cfg(feature = "frame-stats")]
-#[derive(Debug, Default)]
-struct GpuFrameCaptureState {
-    pending_submissions: usize,
-    encoding_finished: bool,
-    invalid_timestamp: bool,
-    has_interval: bool,
-    gpu_start_seconds: f64,
-    gpu_end_seconds: f64,
-    reported: bool,
-}
-
-#[cfg(feature = "frame-stats")]
-impl GpuFrameCapture {
-    fn new(report: fn(Duration)) -> Self {
-        Self {
-            report,
-            state: Mutex::new(GpuFrameCaptureState::default()),
-        }
-    }
-
-    fn register_submission(&self) {
-        let mut state = self
-            .state
-            .lock()
-            .expect("Metal GPU frame timing state is not poisoned");
-        state.pending_submissions = state.pending_submissions.saturating_add(1);
-    }
-
-    fn complete_submission(&self, gpu_start_seconds: f64, gpu_end_seconds: f64) {
-        let duration = {
-            let mut state = self
-                .state
-                .lock()
-                .expect("Metal GPU frame timing state is not poisoned");
-            if gpu_start_seconds.is_finite()
-                && gpu_end_seconds.is_finite()
-                && gpu_start_seconds > 0.0
-                && gpu_end_seconds > gpu_start_seconds
-            {
-                if state.has_interval {
-                    state.gpu_start_seconds = state.gpu_start_seconds.min(gpu_start_seconds);
-                    state.gpu_end_seconds = state.gpu_end_seconds.max(gpu_end_seconds);
-                } else {
-                    state.gpu_start_seconds = gpu_start_seconds;
-                    state.gpu_end_seconds = gpu_end_seconds;
-                    state.has_interval = true;
-                }
-            } else {
-                state.invalid_timestamp = true;
-            }
-            state.pending_submissions = state.pending_submissions.saturating_sub(1);
-            ready_gpu_duration(&mut state)
-        };
-        if let Some(duration) = duration {
-            (self.report)(duration);
-        }
-    }
-
-    fn finish_encoding(&self) {
-        let duration = {
-            let mut state = self
-                .state
-                .lock()
-                .expect("Metal GPU frame timing state is not poisoned");
-            state.encoding_finished = true;
-            ready_gpu_duration(&mut state)
-        };
-        if let Some(duration) = duration {
-            (self.report)(duration);
-        }
-    }
-}
-
-#[cfg(feature = "frame-stats")]
-fn ready_gpu_duration(state: &mut GpuFrameCaptureState) -> Option<Duration> {
-    if !state.encoding_finished || state.pending_submissions != 0 || state.reported {
-        return None;
-    }
-    state.reported = true;
-    if state.invalid_timestamp || !state.has_interval {
-        return None;
-    }
-    let seconds = state.gpu_end_seconds - state.gpu_start_seconds;
-    (seconds.is_finite() && seconds > 0.0).then(|| Duration::from_secs_f64(seconds))
+    /// Mirrors whether `active_gpu_frame` is set, so a submission with no
+    /// capture running skips the mutex.
+    gpu_timing_active: AtomicBool,
 }
 
 enum PendingUpload {
@@ -230,15 +141,17 @@ impl MetalBackend {
             queue,
             queue_state: Mutex::new(MetalQueueState::default()),
             submitted: std::sync::atomic::AtomicU64::new(0),
-            #[cfg(feature = "frame-stats")]
             active_gpu_frame: Mutex::new(None),
+            gpu_timing_active: AtomicBool::new(false),
         })
     }
 
     /// Starts collecting GPU intervals for command buffers submitted until
     /// [`Self::end_gpu_frame_timing`] is called. `report` runs once after every
     /// submission in the captured frame has completed with valid timestamps.
-    #[cfg(feature = "frame-stats")]
+    ///
+    /// Collecting adds a completion handler to every submitted command buffer,
+    /// so callers switch it on only while someone is looking at the result.
     #[doc(hidden)]
     pub fn begin_gpu_frame_timing(&self, report: fn(Duration)) {
         let capture = Arc::new(GpuFrameCapture::new(report));
@@ -247,6 +160,7 @@ impl MetalBackend {
             .lock()
             .expect("Metal active GPU frame state is not poisoned")
             .replace(capture);
+        self.gpu_timing_active.store(true, Ordering::Release);
         if let Some(previous) = previous {
             previous.finish_encoding();
         }
@@ -254,7 +168,6 @@ impl MetalBackend {
 
     /// Closes the current GPU frame capture; its timestamp is reported after
     /// all command buffers submitted by the renderer have completed.
-    #[cfg(feature = "frame-stats")]
     #[doc(hidden)]
     pub fn end_gpu_frame_timing(&self) {
         let capture = self
@@ -262,6 +175,7 @@ impl MetalBackend {
             .lock()
             .expect("Metal active GPU frame state is not poisoned")
             .take();
+        self.gpu_timing_active.store(false, Ordering::Release);
         if let Some(capture) = capture {
             capture.finish_encoding();
         }
@@ -1241,13 +1155,13 @@ impl GpuBackend for MetalBackend {
         self.commit_pending_uploads(&mut queue_state.uploads);
         let mut encoder = encoder;
         encoder.end_blit();
-        #[cfg(feature = "frame-stats")]
-        if let Some(capture) = self
-            .active_gpu_frame
-            .lock()
-            .expect("Metal active GPU frame state is not poisoned")
-            .as_ref()
-            .cloned()
+        if self.gpu_timing_active.load(Ordering::Acquire)
+            && let Some(capture) = self
+                .active_gpu_frame
+                .lock()
+                .expect("Metal active GPU frame state is not poisoned")
+                .as_ref()
+                .cloned()
         {
             capture.register_submission();
             let callback_capture = capture.clone();

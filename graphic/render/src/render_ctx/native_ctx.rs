@@ -546,6 +546,11 @@ impl NativeRenderContext {
                 if let Some(canvas) = &self.canvas {
                     canvas.recycle_draw_list(frame.draw_list);
                 }
+                if presented {
+                    // Counted per completion: `status.presented` is a flag and
+                    // would hide a second frame delivered in the same poll.
+                    aimer_frame_stats::record_presented_frame();
+                }
                 status.presented |= presented;
                 status.retry |= !presented && !self.suspended && !self.closing;
             }

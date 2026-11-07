@@ -62,6 +62,7 @@ fn main() {
 
 ## AI usage
 
+
 AI tools assist with Aimer's development, audits, testing, documentation, and
 project maintenance. Maintainers direct product design and architecture, review
 generated changes, and remain responsible for everything that ships.
@@ -75,6 +76,7 @@ claims need verification before they become part of a contribution.
 
 The final merge are perform by Aimer's team after it have been reviewed.
 
+> This is not AI slop project, anyway if you think it's, We `respect` your mind.
 
 ## License
 

@@ -4,10 +4,6 @@ version = "0.1.0"
 edition = "2024"
 description = "The native Metal backend for the Cupid rendering engine"
 
-[features]
-# Per-frame GPU timing through command buffer completion handlers.
-frame-stats = []
-
 [dependencies]
 aimer_cupid_gpu.workspace = true
 

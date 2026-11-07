@@ -23,7 +23,7 @@ web = ["aimer_render/web", "aimer_cupid/web"]
 raster-thread = []
 # Measure build / encode / present per frame. When this is off, all builds
 # compile the timing and content instrumentation out.
-frame-stats = ["aimer_render/frame-stats", "aimer_frame_stats/frame-stats", "aimer_widget/frame-stats", "aimer_cupid/frame-stats"]
+frame-stats = ["aimer_render/frame-stats", "aimer_frame_stats/frame-stats", "aimer_profiling/frame-stats", "aimer_widget/frame-stats", "aimer_cupid/frame-stats"]
 [dependencies]
 aimer_time.workspace = true
 aimer_tls.workspace = true
@@ -36,6 +36,7 @@ aimer_style.workspace = true
 aimer_attribute.workspace = true
 aimer_utils = {workspace = true, features = []}
 aimer_frame_stats.workspace = true
+aimer_profiling.workspace = true
 aimer_platform.workspace = true
 aimer_accessibility.workspace = true
 aimer_screen.workspace = true

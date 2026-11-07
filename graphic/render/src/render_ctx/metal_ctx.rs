@@ -369,8 +369,13 @@ pub mod render_ctx {
             }
 
             let encode = PhaseTimer::start();
-            #[cfg(feature = "frame-stats")]
-            backend.begin_gpu_frame_timing(aimer_frame_stats::record_gpu_frame_time);
+            // Decided once so begin and end always pair, even if the overlay is
+            // toggled mid-frame. Without a reader the capture costs nothing.
+            let gpu_timing =
+                cfg!(feature = "frame-stats") || aimer_frame_stats::gpu_probe_enabled();
+            if gpu_timing {
+                backend.begin_gpu_frame_timing(aimer_frame_stats::record_gpu_frame_time);
+            }
             if (width, height) == (frame.width, frame.height) {
                 renderer.render_packet(backend, drawable.view(), packet, true);
             } else {
@@ -387,8 +392,7 @@ pub mod render_ctx {
                 );
             }
             encode.finish(FramePhase::Encode);
-            #[cfg(feature = "frame-stats")]
-            {
+            if gpu_timing {
                 backend.end_gpu_frame_timing();
             }
             if let Some(cpu_frame) = cpu_frame {

@@ -26,7 +26,7 @@ native = [
 # Keep the WGPU adapter optional so a WGPU-only build can disable default
 # features and omit the native API dependency set.
 wgpu = ["dep:wgpu", "dep:winit", "dep:aimer_wgpu", "aimer_rect_pipeline/wgpu", "aimer_image_pipeline/wgpu", "aimer_svg_pipeline/wgpu", "aimer_text_pipeline/wgpu", "aimer_material_pipeline/wgpu"]
-frame-stats = ["aimer_metal?/frame-stats"]
+frame-stats = []
 # Keep optional checked-in fallback faces out of native downstream binaries
 # unless an application explicitly opts into deterministic bundled rendering.
 # wasm always carries the generic Latin/monospace faces because browsers do not

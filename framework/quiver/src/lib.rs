@@ -15,8 +15,6 @@ mod ios_input;
 pub use aimer_render::RenderMode;
 #[cfg(test)]
 mod render_mode_tests;
-#[cfg(debug_assertions)]
-mod debug_overlay;
 
 #[macro_use]
 pub mod aimer_app;

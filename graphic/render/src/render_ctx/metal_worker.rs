@@ -286,14 +286,20 @@ impl WorkerPresenter for MetalPresenter {
                 return BackendOutput::Presented(false);
             }
             let encode = PhaseTimer::start();
-            #[cfg(feature = "frame-stats")]
-            self.backend
-                .begin_gpu_frame_timing(aimer_frame_stats::record_gpu_frame_time);
+            // Decided once so begin and end always pair, even if the overlay is
+            // toggled mid-frame. Without a reader the capture costs nothing.
+            let gpu_timing =
+                cfg!(feature = "frame-stats") || aimer_frame_stats::gpu_probe_enabled();
+            if gpu_timing {
+                self.backend
+                    .begin_gpu_frame_timing(aimer_frame_stats::record_gpu_frame_time);
+            }
             self.renderer
                 .render_packet(&self.backend, drawable.view(), packet, true);
             encode.finish(FramePhase::Encode);
-            #[cfg(feature = "frame-stats")]
-            self.backend.end_gpu_frame_timing();
+            if gpu_timing {
+                self.backend.end_gpu_frame_timing();
+            }
             aimer_utils::frame_trace("raster_encoded", 0.0, 0.0);
             if direct {
                 if aimer_utils::frame_trace_enabled() {

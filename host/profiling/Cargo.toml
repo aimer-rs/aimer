@@ -1,0 +1,28 @@
+[package]
+name = "aimer_profiling"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# Show build / encode / present phase timings in the overlay. Without it the
+# panel says the phase timings are not collected.
+frame-stats = ["aimer_frame_stats/frame-stats"]
+
+[dependencies]
+aimer_attribute.workspace = true
+aimer_canvas.workspace = true
+aimer_cupid.workspace = true
+aimer_frame_stats.workspace = true
+aimer_rubick.workspace = true
+aimer_utils.workspace = true
+winit.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }

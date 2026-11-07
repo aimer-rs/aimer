@@ -44,7 +44,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 mod pipeline;
+mod probe;
 pub use pipeline::{PipelineTiming, pipeline_timing};
+pub use probe::{
+    GpuFrameProbe, GpuProbeGuard, acquire_gpu_probe, gpu_probe_enabled, presented_frames,
+    record_presented_frame, take_gpu_frame_probe,
+};
 
 /// One of the three phases a frame passes through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -812,10 +817,14 @@ pub fn frame_request_stats() -> FrameRequestStats {
 }
 
 /// Record one completed Metal GPU frame interval.
-#[cfg(feature = "frame-stats")]
+///
+/// Feeds the always-on [`GpuFrameProbe`]; with the `frame-stats` feature it also
+/// feeds the GPU frame phase.
 #[inline]
 #[doc(hidden)]
 pub fn record_gpu_frame_time(elapsed: Duration) {
+    probe::record_gpu_probe(elapsed);
+    #[cfg(feature = "frame-stats")]
     FRAME_STATS.gpu_frame.record(elapsed);
 }
 
