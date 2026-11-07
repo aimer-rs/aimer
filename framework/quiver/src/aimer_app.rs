@@ -1059,6 +1059,12 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
         self.app.bounds_audit()
     }
 
+    /// Every element's name and cached interaction rectangle, in tree order.
+    #[doc(hidden)]
+    pub fn interaction_rects(&self) -> Vec<(&'static str, Option<[f32; 4]>)> {
+        self.app.interaction_rects()
+    }
+
     /// Returns a handle to this application's UI memory pool.
     ///
     /// The handle exposes committed usage and the configured limit, and keeps
@@ -1764,6 +1770,7 @@ mod tests {
     mod scalable_text;
     mod scroll_frame_kind;
     mod scroll_one_step;
+    mod geometry_forward;
     mod settled_skip;
     mod skeleton_ticks;
     mod skeleton_to_rows;

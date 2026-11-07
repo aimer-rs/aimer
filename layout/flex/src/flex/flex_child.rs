@@ -152,7 +152,7 @@ impl<E: Element> Drawable for RawExpanded<E> {
 
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
-        self.child.sync_paint_geometry(ctx);
+        self.child.forward_paint_geometry(ctx);
     }
 }
 

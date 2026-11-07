@@ -626,7 +626,7 @@ impl<T: 'static> Drawable for ProviderElement<T> {
     }
 
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
-        self.scoped(ctx, |ctx| self.child.sync_paint_geometry(ctx));
+        self.scoped(ctx, |ctx| self.child.forward_paint_geometry(ctx));
     }
 }
 
@@ -900,7 +900,7 @@ impl<T: 'static, A: 'static> Drawable for StoreElement<T, A> {
     }
 
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
-        self.scoped(ctx, |ctx| self.child.sync_paint_geometry(ctx));
+        self.scoped(ctx, |ctx| self.child.forward_paint_geometry(ctx));
     }
 }
 impl<T: 'static, A: 'static> LayoutElement for StoreElement<T, A> {

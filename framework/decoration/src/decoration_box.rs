@@ -278,7 +278,7 @@ impl<D: Decoration> Drawable for RawDecorationBox<D> {
 
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
-        self.with_child_paint_context(ctx, |child_ctx| self.child.sync_paint_geometry(child_ctx));
+        self.with_child_paint_context(ctx, |child_ctx| self.child.forward_paint_geometry(child_ctx));
     }
 
     fn can_paint(&self, _ctx: &BuildContext) -> bool {

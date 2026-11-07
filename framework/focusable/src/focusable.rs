@@ -570,7 +570,7 @@ impl Drawable for RawFocusable {
 
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
-        self.child.sync_paint_geometry(ctx);
+        self.child.forward_paint_geometry(ctx);
     }
 
 }

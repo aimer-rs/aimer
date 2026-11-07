@@ -172,6 +172,11 @@ pub struct FrameContentStats {
     pub hit_test_visits: u64,
     /// Number of retained-element paint calls observed during the frame.
     pub paint_calls: u64,
+    /// Number of elements whose paint state was synchronized during the frame.
+    pub paint_state_syncs: u64,
+    /// Number of `sync_paint_geometry` visits, including ones forwarded by
+    /// wrapper elements. Divide by `paint_state_syncs` for the re-walk factor.
+    pub paint_geometry_visits: u64,
     /// Number of root draw calls that entered the retained tree.
     pub root_draw_calls: u64,
     /// Number of scroll input events accepted by the application root.
@@ -579,6 +584,8 @@ struct FrameContentAccumulator {
     layout_calls: AtomicU64,
     hit_test_visits: AtomicU64,
     paint_calls: AtomicU64,
+    paint_state_syncs: AtomicU64,
+    paint_geometry_visits: AtomicU64,
     root_draw_calls: AtomicU64,
     scroll_events: AtomicU64,
     scroll_steps: AtomicU64,
@@ -638,6 +645,10 @@ impl FrameContentAccumulator {
             .fetch_add(work.hit_test_visits, Ordering::Relaxed);
         self.paint_calls
             .fetch_add(work.paint_calls, Ordering::Relaxed);
+        self.paint_state_syncs
+            .fetch_add(work.paint_state_syncs, Ordering::Relaxed);
+        self.paint_geometry_visits
+            .fetch_add(work.paint_geometry_visits, Ordering::Relaxed);
         self.root_draw_calls
             .fetch_add(work.root_draw_calls, Ordering::Relaxed);
         self.scroll_events
@@ -682,6 +693,8 @@ impl FrameContentAccumulator {
             layout_calls: self.layout_calls.load(Ordering::Relaxed),
             hit_test_visits: self.hit_test_visits.load(Ordering::Relaxed),
             paint_calls: self.paint_calls.load(Ordering::Relaxed),
+            paint_state_syncs: self.paint_state_syncs.load(Ordering::Relaxed),
+            paint_geometry_visits: self.paint_geometry_visits.load(Ordering::Relaxed),
             root_draw_calls: self.root_draw_calls.load(Ordering::Relaxed),
             scroll_events: self.scroll_events.load(Ordering::Relaxed),
             scroll_steps: self.scroll_steps.load(Ordering::Relaxed),
@@ -715,6 +728,8 @@ impl FrameContentAccumulator {
         self.layout_calls.store(0, Ordering::Relaxed);
         self.hit_test_visits.store(0, Ordering::Relaxed);
         self.paint_calls.store(0, Ordering::Relaxed);
+        self.paint_state_syncs.store(0, Ordering::Relaxed);
+        self.paint_geometry_visits.store(0, Ordering::Relaxed);
         self.root_draw_calls.store(0, Ordering::Relaxed);
         self.scroll_events.store(0, Ordering::Relaxed);
         self.scroll_steps.store(0, Ordering::Relaxed);
@@ -758,6 +773,8 @@ static FRAME_CONTENT_STATS: FrameContentAccumulator = FrameContentAccumulator {
     layout_calls: AtomicU64::new(0),
     hit_test_visits: AtomicU64::new(0),
     paint_calls: AtomicU64::new(0),
+    paint_state_syncs: AtomicU64::new(0),
+    paint_geometry_visits: AtomicU64::new(0),
     root_draw_calls: AtomicU64::new(0),
     scroll_events: AtomicU64::new(0),
     scroll_steps: AtomicU64::new(0),
@@ -1124,6 +1141,8 @@ mod tests {
                 layout_calls: 3,
                 hit_test_visits: 4,
                 paint_calls: 5,
+                paint_state_syncs: 4,
+                paint_geometry_visits: 9,
                 root_draw_calls: 1,
                 scroll_events: 2,
                 scroll_steps: 3,
@@ -1157,6 +1176,8 @@ mod tests {
                 layout_calls: 1,
                 hit_test_visits: 2,
                 paint_calls: 3,
+                paint_state_syncs: 2,
+                paint_geometry_visits: 5,
                 root_draw_calls: 1,
                 scroll_events: 1,
                 scroll_steps: 2,
@@ -1186,6 +1207,8 @@ mod tests {
         assert_eq!(stats.layout_calls, 4);
         assert_eq!(stats.hit_test_visits, 6);
         assert_eq!(stats.paint_calls, 8);
+        assert_eq!(stats.paint_state_syncs, 6);
+        assert_eq!(stats.paint_geometry_visits, 14);
         assert_eq!(stats.root_draw_calls, 2);
         assert_eq!(stats.scroll_events, 3);
         assert_eq!(stats.scroll_steps, 5);

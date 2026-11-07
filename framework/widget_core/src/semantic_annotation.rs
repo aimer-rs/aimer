@@ -217,7 +217,7 @@ impl Drawable for RawSemantics {
     fn paint(&self, _ctx: &BuildContext) {}
 
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
-        self.child.sync_paint_geometry(ctx);
+        self.child.forward_paint_geometry(ctx);
     }
 }
 

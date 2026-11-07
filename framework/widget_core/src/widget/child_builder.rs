@@ -654,7 +654,7 @@ impl Drawable for RetainedChildElement {
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
         if let Some(child) = self.child() {
-            child.sync_paint_geometry(ctx);
+            child.forward_paint_geometry(ctx);
         }
     }
 

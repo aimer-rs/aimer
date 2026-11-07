@@ -363,7 +363,7 @@ impl Drawable for StatelessElement {
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
         let child = unsafe { &*self.child.0.get() };
-        child.sync_paint_geometry(ctx);
+        child.forward_paint_geometry(ctx);
     }
 
 }

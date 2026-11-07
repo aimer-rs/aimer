@@ -1,9 +1,0 @@
-# Keep the Docker build context small — `target/` alone can be many GB.
-target
-**/target
-**/dist
-**/node_modules
-**/.wrangler
-.git
-.idea
-website/builds/web/self_signed_certs

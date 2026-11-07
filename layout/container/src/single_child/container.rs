@@ -819,7 +819,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
             x: inset_x,
             y: inset_y,
         });
-        self.child.sync_paint_geometry(&child_ctx);
+        self.child.forward_paint_geometry(&child_ctx);
         ctx.canvas.restore();
     }
 }

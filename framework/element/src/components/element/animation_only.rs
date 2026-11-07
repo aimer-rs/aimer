@@ -524,6 +524,7 @@ pub fn with_v2_animation_only_context<R>(
         stack.borrow_mut().push(V2RenderContext(Rc::new(V2RenderScope {
             tree,
             element_nodes,
+            last_element_node: Cell::new(None),
             prepared_root: Cell::new(None),
         })));
     });

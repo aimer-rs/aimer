@@ -1667,7 +1667,12 @@ impl Drawable for StatefulElement {
 
         // The retained tree draws the generated child through its own render
         // nodes; this element only keeps the state owner's subtree current.
-        child.sync_paint_geometry(ctx);
+        // `child.update` follows, so the child may be spared the forward when
+        // it will sync its own geometry there.
+        {
+            let _promise = aimer_element::ChildUpdateFollows::enter(true);
+            child.forward_paint_geometry(ctx);
+        }
         child.update(ctx);
     }
 
@@ -1734,7 +1739,7 @@ impl Drawable for StatefulElement {
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
         let child = unsafe { &*self.child.0.get() };
-        child.sync_paint_geometry(ctx);
+        child.forward_paint_geometry(ctx);
     }
 
 }

@@ -76,7 +76,7 @@ claims need verification before they become part of a contribution.
 
 The final merge are perform by Aimer's team after it have been reviewed.
 
-> This is not AI slop project, anyway if you think it's, We `respect` your mind.
+> This is not AI slop project, anyway if you think it's, We `respect` your mind, because We alway respect people :)
 
 ## License
 

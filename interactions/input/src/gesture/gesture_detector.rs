@@ -651,7 +651,7 @@ impl<E: Element> Drawable for RawGestureDetector<E> {
         let child_size = self.child.computed_size(ctx);
         self.cached_bounds
             .save(ctx.scale, abs_x, abs_y, child_size.width, child_size.height);
-        self.child.sync_paint_geometry(ctx);
+        self.child.forward_paint_geometry(ctx);
     }
 }
 

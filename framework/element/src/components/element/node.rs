@@ -6,6 +6,39 @@ pub(super) struct ElementNode<E> {
 }
 
 impl<E: Element + 'static> ElementNode<E> {
+    /// Whether this element, forwarded geometry by its wrapper, will sync its
+    /// own geometry later in the same frame, making the forward redundant.
+    ///
+    /// Needs the promise that its update follows, and that its resolve will run
+    /// `sync_paint_state`: the node holds a local paint, so the gate in
+    /// `resolve_local_v2_paint` is open, and no live compositor animation sends
+    /// the update down the path that paints nothing.
+    #[inline]
+    fn will_sync_own_geometry(&self, ctx: &BuildContext) -> bool {
+        if !child_update_follows() || !geometry_forward_skip_enabled() {
+            return false;
+        }
+        let Some(scope) = current_v2_render_context() else {
+            return false;
+        };
+        let Some(node) = scope.node_for_element(self.id.get()) else {
+            return false;
+        };
+        if scope.tree.paint_source(node) != Ok(RenderPaintSource::LocalV2) {
+            return false;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if !matches!(
+            self.element.compositor_animation(ctx),
+            CompositorAnimationDecision::None
+        ) {
+            return false;
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = ctx;
+        true
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn clear_retained_compositor_animation(&self, render_context: Option<&V2RenderContext>) {
         // Almost no element ever has an animation to clear, so the question is
@@ -129,7 +162,15 @@ impl<E: Element + 'static> ElementNode<E> {
         let Ok(paint_context) = render_context.tree.context(render_node) else {
             return false;
         };
+        crate::frame_work_stats::record_paint_state_sync();
+        #[cfg(feature = "frame-stats")]
+        crate::geometry_walk_probe::record_geometry_own_sync(self.id.get().0.get());
+        // Outside an animation-only pass the walk that follows this resolve
+        // updates every descendant, so a child need not be forwarded geometry
+        // that its own update is about to sync (see `geometry_forward`).
+        let children_follow = !is_animation_only_pass();
         ctx.with_local_v2_paint_context(paint_context, |ctx| {
+            let _promise = ChildUpdateFollows::enter(children_follow);
             self.element.sync_paint_state(ctx)
         })
     }
@@ -743,6 +784,11 @@ impl<E: Element + 'static> Drawable for ElementNode<E> {
 
     #[inline]
     fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
+        crate::frame_work_stats::record_paint_state_sync();
+        #[cfg(feature = "frame-stats")]
+        crate::geometry_walk_probe::record_geometry_own_sync(self.id.get().0.get());
+        // Nothing here says a walk of this subtree follows.
+        let _promise = ChildUpdateFollows::enter(false);
         self.element.sync_paint_state(ctx)
     }
 
@@ -847,7 +893,26 @@ impl<E: Element + 'static> Drawable for ElementNode<E> {
 
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
+        crate::frame_work_stats::record_paint_geometry_visit();
+        #[cfg(feature = "frame-stats")]
+        crate::geometry_walk_probe::record_geometry_forward(
+            self.id.get().0.get(),
+            std::any::type_name::<E>(),
+        );
+        // This forward was not spared, so what the element forwards in turn is
+        // judged on its own, not on the promise made to the element above it.
+        let _withdrawn = child_update_follows().then(|| ChildUpdateFollows::enter(false));
         self.element.sync_paint_geometry(ctx);
+    }
+
+    #[inline]
+    fn forward_paint_geometry(&self, ctx: &BuildContext) {
+        if self.will_sync_own_geometry(ctx) {
+            #[cfg(feature = "frame-stats")]
+            crate::geometry_walk_probe::record_geometry_suppressed(self.id.get().0.get());
+            return;
+        }
+        self.sync_paint_geometry(ctx);
     }
 
     #[inline]
@@ -1147,6 +1212,11 @@ impl Drawable for AnyElement {
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
         self.as_ref().sync_paint_geometry(ctx)
+    }
+
+    #[inline]
+    fn forward_paint_geometry(&self, ctx: &BuildContext) {
+        self.as_ref().forward_paint_geometry(ctx)
     }
 
     #[inline]
@@ -1507,6 +1577,11 @@ impl Drawable for Box<dyn Element> {
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
         self.as_ref().sync_paint_geometry(ctx)
+    }
+
+    #[inline]
+    fn forward_paint_geometry(&self, ctx: &BuildContext) {
+        self.as_ref().forward_paint_geometry(ctx)
     }
 
     #[inline]

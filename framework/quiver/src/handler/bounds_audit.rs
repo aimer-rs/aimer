@@ -49,6 +49,24 @@ pub struct BoundsAudit {
     pub interaction_disagreements: Vec<aimer_widget::InteractionDisagreement>,
 }
 
+/// Every element under `root` in tree order, with its `debug_name` and cached
+/// interaction rectangle as `(left, top, right, bottom)`, or `None` for an
+/// element that publishes none. Exact, for comparing two runs of a scene.
+pub(crate) fn interaction_rects(root: &dyn Element) -> Vec<(&'static str, Option<[f32; 4]>)> {
+    fn walk(element: &dyn Element, out: &mut Vec<(&'static str, Option<[f32; 4]>)>) {
+        out.push((
+            element.debug_name(),
+            element
+                .pos_start_end()
+                .map(|(start, end)| [start.x, start.y, end.x, end.y]),
+        ));
+        element.visit_retained_v2_children(&mut |_, child| walk(child, out));
+    }
+    let mut out = Vec::new();
+    walk(root, &mut out);
+    out
+}
+
 impl WindowRenderTree {
     /// Compares every cached element rectangle under `root` with its node's
     /// world rectangle.

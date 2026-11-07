@@ -516,7 +516,7 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
             .save(ctx.scale, abs_x, abs_y, child_size.width, child_size.height);
 
         self.sync_hover_from_paint(ctx.cursor_pos);
-        self.child.sync_paint_geometry(ctx);
+        self.child.forward_paint_geometry(ctx);
     }
 }
 

@@ -51,6 +51,7 @@ mod node;
 mod paint_invalidation_tests;
 #[cfg(test)]
 mod render_context_tests;
+mod geometry_forward;
 mod retained_window;
 mod scoped_rebuild;
 mod state_carry;
@@ -87,6 +88,8 @@ pub use event::{
     ElementPath, EventDispatchContext, EventDispatcher, broadcast_event, dispatch_event,
     dispatch_focused_event, focus_is_settling_between_events,
 };
+pub use geometry_forward::{ChildUpdateFollows, set_geometry_forward_skip};
+use geometry_forward::{child_update_follows, geometry_forward_skip_enabled};
 pub use retained_window::{
     VisibleWindow, may_escape_ancestor_clips, may_skip_settled_offscreen, retained_element_settled,
     retained_visible_window, retained_visible_window_of_current, set_scroll_only_frame,
@@ -212,6 +215,20 @@ aimer_tls::thread_local! {
     static ROUTED_EVENT_VISIT_COUNT: Cell<u64> = const { Cell::new(0) };
     #[cfg(test)]
     static HOVER_MEMBERSHIP_CHECK_COUNT: Cell<u64> = const { Cell::new(0) };
+    #[cfg(test)]
+    static NODE_FOR_ELEMENT_HASHES: Cell<u64> = const { Cell::new(0) };
+}
+
+/// How many times an element id was hashed by `node_for_element`, as opposed to
+/// answered from the scope's memory of the last element it found.
+#[cfg(test)]
+fn node_for_element_hashes() -> u64 {
+    NODE_FOR_ELEMENT_HASHES.with(Cell::get)
+}
+
+#[cfg(test)]
+fn reset_node_for_element_hashes() {
+    NODE_FOR_ELEMENT_HASHES.with(|count| count.set(0));
 }
 
 /// Maps each element to its render node in the window's retained render tree.
@@ -233,6 +250,12 @@ pub(crate) struct V2RenderContext(Rc<V2RenderScope>);
 pub(crate) struct V2RenderScope {
     pub(crate) tree: RenderTree,
     element_nodes: Rc<ElementNodeMap>,
+    /// The element asked about last and its node. One element is asked about
+    /// several times in a row (its wrapper checks it, then its own update asks
+    /// twice), and the memory answers all but the first without hashing.
+    /// `element_nodes` never changes while the scope lives, so the answer
+    /// cannot go stale. An element without a node is not remembered.
+    last_element_node: Cell<Option<(ElementId, RenderNodeId)>>,
     prepared_root: Cell<Option<ElementId>>,
 }
 
@@ -248,7 +271,16 @@ impl std::ops::Deref for V2RenderContext {
 impl V2RenderScope {
     #[inline]
     pub(crate) fn node_for_element(&self, element: ElementId) -> Option<RenderNodeId> {
-        self.element_nodes.get(&element).copied()
+        if let Some((last, node)) = self.last_element_node.get()
+            && last == element
+        {
+            return Some(node);
+        }
+        #[cfg(test)]
+        NODE_FOR_ELEMENT_HASHES.with(|count| count.set(count.get() + 1));
+        let node = self.element_nodes.get(&element).copied()?;
+        self.last_element_node.set(Some((element, node)));
+        Some(node)
     }
 
     #[inline]
@@ -287,6 +319,7 @@ pub fn with_v2_render_tree_context<R>(
             .push(V2RenderContext(Rc::new(V2RenderScope {
                 tree,
                 element_nodes,
+                last_element_node: Cell::new(None),
                 prepared_root: Cell::new(prepared_root),
             })));
     });

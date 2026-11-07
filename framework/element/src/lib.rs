@@ -10,6 +10,8 @@ pub mod event_tree;
 // #[doc(hidden)]
 pub mod frame_work_stats;
 // #[doc(hidden)]
+pub mod geometry_walk_probe;
+// #[doc(hidden)]
 pub mod hover_reconciliation;
 pub mod key;
 pub mod layout_cache;
@@ -89,9 +91,9 @@ pub use crate::components::element::{
     rebuild_replaced_subtree, rebuild_state_mark_count, rebuild_visit_count,
     release_window_contexts, request_isolated_animation_frame,
     request_isolated_subtree_animation_frame, retained_element_settled, retained_visible_window, retained_visible_window_of_current,
-    run_animation_only_pass, scoped_rebuild_cursor, scoped_rebuilds_since,
+    ChildUpdateFollows, run_animation_only_pass, scoped_rebuild_cursor, scoped_rebuilds_since,
     set_animation_only_frame, set_frame_rebuilt_roots, set_scroll_only_frame,
-    set_settled_offscreen_skip, stable_generation_cursor, stable_generations_since,
+    set_geometry_forward_skip, set_settled_offscreen_skip, stable_generation_cursor, stable_generations_since,
     structural_search_count, traversal_counts, unscoped_element_tree_generation,
     with_v2_animation_only_context, without_placement_marks,
 };
@@ -118,7 +120,8 @@ pub use crate::element_invalidation::{
 pub use crate::frame_work_stats::FrameWorkStats;
 pub use crate::frame_work_stats::{
     record_element_index_lookup, record_hit_test_visit, record_invalidation_coalesced,
-    record_invalidation_queued, record_layout_call, record_paint_call, record_redraw_request,
+    record_invalidation_queued, record_layout_call, record_paint_call, record_paint_geometry_visit,
+    record_paint_state_sync, record_redraw_request,
     record_root_draw_call, record_scroll_event, record_scroll_offset_update, record_scroll_step,
     record_smoothing_step, record_stale_element_id, record_state_update, reset_frame_work_stats,
     take_frame_work_stats,

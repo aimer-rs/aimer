@@ -6,6 +6,7 @@ mod animation_walks;
 mod backdrop_filter;
 mod focus;
 mod foreground_decoration;
+mod geometry_forward_pages;
 mod gradient;
 mod gradient_resize;
 mod gradient_scroll;
@@ -596,6 +597,44 @@ fn profile_resize_frames() {
     }
 }
 
+/// Prints one window of the geometry-walk probe (counts need
+/// `--features aimer/frame-stats`; all zero otherwise).
+fn print_geometry_walk(
+    label: &str,
+    frames: usize,
+    report: &aimer_widget::geometry_walk_probe::GeometryWalkReport,
+) {
+    let per = |count: u64| count as f64 / frames.max(1) as f64;
+    eprintln!(
+        "=== {label} geometry walk detail ({frames} frames): own_syncs/frame={:.0} forwarded/frame={:.0} \
+         distinct_forwarded={:.0} forward_only_elements={:.0} redundant_visits/frame={:.0} max_forwards_on_one_element={}",
+        per(report.own_syncs),
+        per(report.forwarded_visits),
+        per(report.distinct_forwarded),
+        per(report.forward_only_elements),
+        per(report.redundant_visits),
+        report.max_forwards_on_one_element,
+    );
+    let hist = report
+        .forwards_per_self_synced
+        .iter()
+        .enumerate()
+        .map(|(n, count)| {
+            let n = if n + 1 == report.forwards_per_self_synced.len() {
+                format!("{n}+")
+            } else {
+                n.to_string()
+            };
+            format!("{n}x:{:.0}", per(*count))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    eprintln!("=== {label} self-synced elements by times also forwarded to (per frame): {hist}");
+    for (name, visits) in &report.top_types {
+        eprintln!("=== {label}   forwarded into {:>7.1}/frame  {name}", per(*visits));
+    }
+}
+
 #[test]
 #[ignore = "profiling harness: 30,000 frames (minutes in debug), prints timings and asserts nothing"]
 fn profile_sidebar_scroll_frames() {
@@ -616,6 +655,10 @@ fn profile_sidebar_scroll_frames() {
         },
     );
     let device = DeviceId::dummy();
+    // A/B knob: `NO_FORWARD_SKIP=1` turns the geometry-forward skip off.
+    if std::env::var_os("NO_FORWARD_SKIP").is_some() {
+        aimer_widget::set_geometry_forward_skip(false);
+    }
     app.pump_frames(8);
 
     // Park the cursor inside the sidebar so wheel events target it.
@@ -628,22 +671,34 @@ fn profile_sidebar_scroll_frames() {
     // Idle frames: no new input, just re-drawing an unchanged tree.
     reset_frame_breakdown();
     reset_frame_content_stats();
+    // The probe is drained after every frame: element ids persist, so a window
+    // spanning several frames would count forwards per element across frames.
+    let mut idle_walk = aimer_widget::geometry_walk_probe::GeometryWalkReport::default();
+    let _ = aimer_widget::geometry_walk_probe::take_geometry_walk_report();
     let idle_start = Instant::now();
-    for _ in 0..30 {
+    // 29, not 30: the periodic `[frame-stats]` report takes and resets the
+    // content accumulators every 30 build frames, so reading them right after a
+    // multiple of 30 frames sees zeros.
+    for _ in 0..29 {
         app.render_frame();
+        idle_walk.merge(&aimer_widget::geometry_walk_probe::take_geometry_walk_report());
     }
     let idle_us = idle_start
         .elapsed()
         .as_secs_f64()
         * 1e6
-        / 30.0;
+        / 29.0;
     let idle_content = frame_content_stats();
 
     // Trackpad-style scroll frames with the cursor hovering the sidebar.
     reset_frame_breakdown();
     reset_frame_content_stats();
+    let mut scroll_walk = aimer_widget::geometry_walk_probe::GeometryWalkReport::default();
+    let _ = aimer_widget::geometry_walk_probe::take_geometry_walk_report();
     let mut times = Vec::new();
-    for _ in 0..30000 {
+    // 29_999 iterations (+50 oscillation frames per 100) end off the 30-frame
+    // report window, so the content counters are still readable afterwards.
+    for _ in 0..29_999 {
         app.send_window_event(WindowEvent::MouseWheel {
             device_id: device,
             delta: MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -24.0)),
@@ -658,6 +713,8 @@ fn profile_sidebar_scroll_frames() {
                     phase: TouchPhase::Moved,
                 });
                 app.render_frame();
+                scroll_walk
+                    .merge(&aimer_widget::geometry_walk_probe::take_geometry_walk_report());
             }
         }
         let start = Instant::now();
@@ -668,13 +725,40 @@ fn profile_sidebar_scroll_frames() {
                 .as_secs_f64()
                 * 1e6,
         );
-        if times.len() >= 60 && std::env::var("PROFILE_ONCE").is_ok() {
+        scroll_walk.merge(&aimer_widget::geometry_walk_probe::take_geometry_walk_report());
+        if times.len() >= 59 && std::env::var("PROFILE_ONCE").is_ok() {
+            break;
+        }
+        // `PROFILE_FRAMES=<n>` measures n scroll frames instead of 30,000.
+        if std::env::var("PROFILE_FRAMES")
+            .ok()
+            .and_then(|frames| frames.parse::<usize>().ok())
+            .is_some_and(|frames| times.len() >= frames)
+        {
             break;
         }
     }
+    let scroll_frames = times.len() + 50 * (times.len() / 100);
     times.sort_by(f64::total_cmp);
     let scroll_content = frame_content_stats();
     let scroll_breakdown = frame_breakdown();
+
+    // Geometry re-walk factor: how many `sync_paint_geometry` visits happen per
+    // paint-state sync. Needs `--features aimer/frame-stats`; zero otherwise.
+    for (label, content) in [("idle", &idle_content), ("scroll", &scroll_content)] {
+        let frames = content.frames.max(1) as f64;
+        eprintln!(
+            "=== {label} geometry walk ({} frames) per frame: paint_calls={:.0} state_syncs={:.0} geometry_visits={:.0} visits/sync={:.2}",
+            content.frames,
+            content.paint_calls as f64 / frames,
+            content.paint_state_syncs as f64 / frames,
+            content.paint_geometry_visits as f64 / frames,
+            content.paint_geometry_visits as f64 / content.paint_state_syncs.max(1) as f64,
+        );
+    }
+
+    print_geometry_walk("idle", 29, &idle_walk);
+    print_geometry_walk("scroll", scroll_frames, &scroll_walk);
 
     // This control moves the cursor back to the right pane before the
     // frame drains each queued wheel event. It measures hover crossings

@@ -18,6 +18,15 @@ pub struct FrameWorkStats {
     pub hit_test_visits: u64,
     /// Calls through the retained element paint boundary.
     pub paint_calls: u64,
+    /// Elements whose paint state was synchronized (one per retained-paint
+    /// resolve). Compare with `paint_geometry_visits` to see how many times
+    /// geometry is re-derived per element: a ratio near 1 means each element is
+    /// visited once, a ratio that grows with nesting means wrapper chains are
+    /// re-walked from every element above them.
+    pub paint_state_syncs: u64,
+    /// Visits to an element's `sync_paint_geometry`, whether entered from its
+    /// own paint-state sync or forwarded by a wrapper above it.
+    pub paint_geometry_visits: u64,
     /// Calls to the application root's draw method.
     pub root_draw_calls: u64,
     /// Platform scroll input events accepted by the active application root.
@@ -48,6 +57,8 @@ aimer_tls::thread_local! {
         layout_calls: 0,
         hit_test_visits: 0,
         paint_calls: 0,
+        paint_state_syncs: 0,
+        paint_geometry_visits: 0,
         root_draw_calls: 0,
         scroll_events: 0,
         scroll_steps: 0,
@@ -86,6 +97,8 @@ macro_rules! record_counter {
 record_counter!(record_layout_call, layout_calls);
 record_counter!(record_hit_test_visit, hit_test_visits);
 record_counter!(record_paint_call, paint_calls);
+record_counter!(record_paint_state_sync, paint_state_syncs);
+record_counter!(record_paint_geometry_visit, paint_geometry_visits);
 record_counter!(record_root_draw_call, root_draw_calls);
 record_counter!(record_scroll_event, scroll_events);
 record_counter!(record_scroll_step, scroll_steps);
@@ -127,6 +140,9 @@ mod tests {
         record_layout_call();
         record_hit_test_visit();
         record_paint_call();
+        record_paint_state_sync();
+        record_paint_geometry_visit();
+        record_paint_geometry_visit();
         record_root_draw_call();
         record_scroll_event();
         record_scroll_step();
@@ -141,6 +157,8 @@ mod tests {
                 layout_calls: 1,
                 hit_test_visits: 1,
                 paint_calls: 1,
+                paint_state_syncs: 1,
+                paint_geometry_visits: 2,
                 root_draw_calls: 1,
                 scroll_events: 1,
                 scroll_steps: 1,

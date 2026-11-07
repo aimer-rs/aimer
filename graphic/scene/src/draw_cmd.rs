@@ -22,6 +22,8 @@ mod clip_radius_tests;
 #[cfg(test)]
 mod context_bounds_tests;
 #[cfg(test)]
+mod lookup_cache_tests;
+#[cfg(test)]
 mod render_order_tests;
 #[cfg(test)]
 mod sync_damage_tests;
@@ -671,6 +673,7 @@ impl RenderNodeSpec {
 #[cfg(test)]
 aimer_tls::thread_local! {
     static NODE_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static INDEX_HASH_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 // Counts how many node frames are derived from their parents, so tests can
@@ -725,10 +728,18 @@ fn frame_derivations() -> usize {
 #[cfg(test)]
 fn reset_node_lookups() {
     NODE_LOOKUPS.with(|count| count.set(0));
+    INDEX_HASH_LOOKUPS.with(|count| count.set(0));
     FRAME_DERIVATIONS.with(|count| count.set(0));
     GENERAL_RECT_TRANSFORMS.with(|count| count.set(0));
     PLAN_GEOMETRY_RUNS.with(|count| count.set(0));
     PLAN_NODES_DERIVED.with(|count| count.set(0));
+}
+
+/// How many times an id was hashed to find its position, as opposed to being
+/// answered from the list's memory of the last position it found.
+#[cfg(test)]
+fn index_hash_lookups() -> usize {
+    INDEX_HASH_LOOKUPS.with(std::cell::Cell::get)
 }
 
 #[cfg(test)]
@@ -741,6 +752,14 @@ fn node_lookups() -> usize {
 pub struct DrawCommandList {
     nodes: Vec<RenderNode>,
     indices: HashMap<RenderNodeId, usize, crate::utilities::IdBuildHasher>,
+    /// The ids and positions of the two nodes found last, newest first.
+    /// Resolving one element's paint asks about the same node many times in a
+    /// row, and a wrapper alternates between itself and the child it checks;
+    /// the memory answers all but the first question about each without
+    /// hashing. It is only a hint: a hit is accepted when the node at that
+    /// position carries the id, so a rearranged or shortened `nodes` can never
+    /// make it return the wrong node. Id `0` is never handed out.
+    last_lookups: std::cell::Cell<[(u64, usize); 2]>,
     roots: Vec<RenderNodeId>,
     next_id: u64,
     clip_escape_count: usize,
@@ -841,16 +860,33 @@ impl DrawCommandList {
         Ok(id)
     }
 
+    /// Where `id` sits in `nodes`. See [`Self::last_lookups`].
+    #[inline]
+    fn index_of(&self, id: RenderNodeId) -> Option<usize> {
+        let [newest, older] = self.last_lookups.get();
+        if newest.0 == id.0 && self.nodes.get(newest.1).is_some_and(|node| node.id == id) {
+            return Some(newest.1);
+        }
+        if older.0 == id.0 && self.nodes.get(older.1).is_some_and(|node| node.id == id) {
+            // Keep the pair in order of use so the node just asked about stays.
+            self.last_lookups.set([older, newest]);
+            return Some(older.1);
+        }
+        #[cfg(test)]
+        INDEX_HASH_LOOKUPS.with(|count| count.set(count.get() + 1));
+        let index = *self.indices.get(&id)?;
+        self.last_lookups.set([(id.0, index), newest]);
+        Some(index)
+    }
+
     fn node(&self, id: RenderNodeId) -> Option<&RenderNode> {
         #[cfg(test)]
         NODE_LOOKUPS.with(|count| count.set(count.get() + 1));
-        self.indices
-            .get(&id)
-            .and_then(|index| self.nodes.get(*index))
+        self.index_of(id).and_then(|index| self.nodes.get(index))
     }
 
     fn node_mut(&mut self, id: RenderNodeId) -> Option<&mut RenderNode> {
-        let index = *self.indices.get(&id)?;
+        let index = self.index_of(id)?;
         self.geometry_revision = self.geometry_revision.wrapping_add(1);
         self.geometry_edits.get_mut().record(index);
         self.mark_extent_stale(index, true);
@@ -864,7 +900,7 @@ impl DrawCommandList {
     /// the node, which places it, is measured again. An edit to anything else
     /// about the node must use `node_mut`.
     fn node_mut_placement(&mut self, id: RenderNodeId) -> Option<&mut RenderNode> {
-        let index = *self.indices.get(&id)?;
+        let index = self.index_of(id)?;
         self.geometry_revision = self.geometry_revision.wrapping_add(1);
         self.geometry_edits.get_mut().record(index);
         self.mark_extent_stale(index, false);
@@ -879,7 +915,7 @@ impl DrawCommandList {
     /// hovers and fades that make up most frames. An edit that touches bounds,
     /// clips, transforms or the structure must use `node_mut`.
     fn node_mut_paint(&mut self, id: RenderNodeId) -> Option<&mut RenderNode> {
-        let index = *self.indices.get(&id)?;
+        let index = self.index_of(id)?;
         self.nodes.get_mut(index)
     }
 

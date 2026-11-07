@@ -993,6 +993,15 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             .map(|root| self.render_tree.bounds_audit(root.as_ref()))
     }
 
+    /// Every element's name and cached interaction rectangle under the visible
+    /// root, in tree order. See [`bounds_audit::interaction_rects`].
+    #[doc(hidden)]
+    pub fn interaction_rects(&self) -> Vec<(&'static str, Option<[f32; 4]>)> {
+        self.active_root()
+            .map(|root| bounds_audit::interaction_rects(root.as_ref()))
+            .unwrap_or_default()
+    }
+
     /// Borrows the one root currently visible to input and rendering.
     #[inline]
     pub(crate) fn active_root(&self) -> Option<&AnyElement> {

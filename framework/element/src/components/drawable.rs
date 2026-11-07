@@ -350,6 +350,20 @@ pub trait Drawable {
     #[inline]
     fn sync_paint_geometry(&self, _ctx: &BuildContext) {}
 
+    /// Forwards [`Self::sync_paint_geometry`] to this element, a child of the
+    /// wrapper calling it, unless the child is about to do the same work itself.
+    ///
+    /// A wrapper whose `update` always updates its child should forward through
+    /// this instead of calling `sync_paint_geometry` on the child. The default
+    /// forwards unconditionally; the retained element node skips the forward
+    /// when the child's update is promised and the child will sync its own
+    /// geometry there.
+    #[doc(hidden)]
+    #[inline]
+    fn forward_paint_geometry(&self, ctx: &BuildContext) {
+        self.sync_paint_geometry(ctx);
+    }
+
     /// Gives layout-aware containers a chance to reconcile viewport-dependent
     /// geometry before the visible paint pass. The return value is `true` when
     /// the element has made its content extent authoritative for this context;
@@ -380,6 +394,11 @@ impl Drawable for Box<dyn Drawable> {
     #[inline]
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
         self.as_ref().sync_paint_geometry(ctx);
+    }
+
+    #[inline]
+    fn forward_paint_geometry(&self, ctx: &BuildContext) {
+        self.as_ref().forward_paint_geometry(ctx);
     }
 
     #[inline]

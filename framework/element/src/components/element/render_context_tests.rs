@@ -90,3 +90,35 @@ fn clones_of_a_context_share_the_same_tree() {
         assert_eq!(first.node_for_element(element), Some(node));
     });
 }
+
+#[test]
+fn asking_about_one_element_repeatedly_hashes_it_once() {
+    let tree = RenderTree::new();
+    let a_node = tree.add_root(Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    let b_node = tree.add_root(Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    let (a, b, unmapped) = (ElementId::next(), ElementId::next(), ElementId::next());
+    let mut mapped = ElementNodeMap::default();
+    mapped.insert(a, a_node);
+    mapped.insert(b, b_node);
+
+    with_v2_render_tree_context(tree, Rc::new(mapped), None, || {
+        let scope = current_v2_render_context().unwrap();
+        reset_node_for_element_hashes();
+
+        for _ in 0..3 {
+            assert_eq!(scope.node_for_element(a), Some(a_node));
+        }
+        assert_eq!(node_for_element_hashes(), 1, "three questions about one element");
+
+        assert_eq!(scope.node_for_element(b), Some(b_node));
+        assert_eq!(node_for_element_hashes(), 2, "another element is looked up again");
+
+        assert_eq!(scope.node_for_element(a), Some(a_node));
+        assert_eq!(node_for_element_hashes(), 3, "the memory holds only the last element");
+
+        // An element without a node stays without one, however often it is asked.
+        assert_eq!(scope.node_for_element(unmapped), None);
+        assert_eq!(scope.node_for_element(unmapped), None);
+        assert_eq!(scope.node_for_element(a), Some(a_node));
+    });
+}
