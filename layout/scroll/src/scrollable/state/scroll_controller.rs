@@ -83,11 +83,7 @@ impl ScrollController {
             state.adopt_scroll_state(&previous);
         }
         if let Some(pos) = self.inner.pending.take() {
-            let scale = state.last_scale.get().max(f32::EPSILON);
-            state.set_scroll_offset(Vec2d {
-                x: -pos.x * scale,
-                y: -pos.y * scale,
-            });
+            state.set_scroll_offset(state.internal_for_position(pos));
         }
         // Re-share the app's scroll-lifecycle callbacks into the freshly built
         // engine so they keep firing across rebuilds.
@@ -102,7 +98,8 @@ impl ScrollController {
     }
 
     /// The current scroll position in logical (unscaled) pixels, positive
-    /// toward the content end. Returns the pending/initial position while
+    /// toward the content end — or, for a [`Scrollable::reverse`](crate::Scrollable::reverse) viewport, the
+    /// distance from the content end, so `0` is the end. Returns the pending/initial position while
     /// detached. The component perpendicular to the configured scroll axis is
     /// always zero.
     pub fn offset(&self) -> Vec2d {
@@ -141,7 +138,7 @@ impl ScrollController {
     }
 
     /// Jump instantly to `position` (logical pixels, positive toward the
-    /// content end), clamped to the valid range, and request a repaint. If
+    /// content end; from the end for a [`Scrollable::reverse`](crate::Scrollable::reverse) viewport), clamped to the valid range, and request a repaint. If
     /// the controller is not yet attached, the position is remembered and
     /// applied on attachment.
     pub fn jump_to(&self, position: Vec2d) {
@@ -150,14 +147,7 @@ impl ScrollController {
             return;
         };
 
-        let scale = state.last_scale.get().max(f32::EPSILON);
-        let internal = ScrollState::axis_only(
-            state.axis,
-            Vec2d {
-                x: -position.x * scale,
-                y: -position.y * scale,
-            },
-        );
+        let internal = state.internal_for_position(position);
         state.cancel_fling();
         state.pointer_velocity.set(Vec2d { x: 0.0, y: 0.0 });
         state.fling.spring_velocity.set(Vec2d { x: 0.0, y: 0.0 });
@@ -167,13 +157,20 @@ impl ScrollController {
         // start/end edges around the position change so listeners still see
         // a matched pair even though no frames elapse.
         state.begin_scroll();
-        state.set_scroll_offset(state.clamp_offset(internal));
+        // Without a range there is nothing to clamp against, and clamping would
+        // discard the request; the first layout resolves it instead.
+        let target = if state.awaiting_first_range() {
+            internal
+        } else {
+            state.clamp_offset(internal)
+        };
+        state.set_scroll_offset(target);
         state.end_scroll();
         state.request_animation_frame();
     }
 
-    /// Animate to `position` (logical pixels, positive toward the content end)
-    /// over `duration`, easing with `curve`, and request repaints. If the
+    /// Animate to `position` (logical pixels, positive toward the content end;
+    /// from the end for a [`Scrollable::reverse`](crate::Scrollable::reverse) viewport) over `duration`, easing with `curve`, and request repaints. If the
     /// controller is not yet attached, the target is remembered as the initial
     /// position (no animation) and applied on attachment.
     pub fn animate_to(&self, position: Vec2d, duration: Duration, curve: impl Curve) {
@@ -182,14 +179,13 @@ impl ScrollController {
             return;
         };
 
-        let scale = state.last_scale.get().max(f32::EPSILON);
-        let target = ScrollState::axis_only(
-            state.axis,
-            Vec2d {
-                x: -position.x * scale,
-                y: -position.y * scale,
-            },
-        );
+        let target = state.internal_for_position(position);
+        if state.awaiting_first_range() {
+            // Nothing can animate over a range that does not exist yet.
+            state.set_scroll_offset(target);
+            state.request_animation_frame();
+            return;
+        }
         // Announce the session now; the draw loop fires `end` once the
         // animation settles. A zero-duration animation degenerates to an
         // instant jump, which the draw loop then reports as settled.

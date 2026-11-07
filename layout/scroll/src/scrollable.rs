@@ -111,6 +111,9 @@ pub struct Scrollable<W = RequiredChild> {
     /// Defaults to [`OverscrollSources::WEB_DEFAULT`] and is ignored
     /// everywhere else. See [`Scrollable::web_overscroll`].
     pub web_overscroll: OverscrollSources,
+    /// Whether the viewport is anchored to the content end. See
+    /// [`Scrollable::reverse`].
+    reverse: bool,
     /// Records which child type completed the builder without storing it.
     ///
     /// The content itself is erased into [`ChildBuilder`], but the parameter
@@ -148,6 +151,7 @@ impl Scrollable {
             key_scroll_strength: constants::KEYBOARD_SCROLL_STEP,
             controller: None,
             web_overscroll: OverscrollSources::WEB_DEFAULT,
+            reverse: false,
             marker: PhantomData,
         }
     }
@@ -174,6 +178,7 @@ impl Scrollable {
             controller: None,
             key_scroll_strength: constants::KEYBOARD_SCROLL_STEP,
             web_overscroll: OverscrollSources::WEB_DEFAULT,
+            reverse: false,
             marker: PhantomData,
         }
     }
@@ -185,6 +190,33 @@ impl Scrollable {
     #[inline]
     pub fn scroll_behavior(mut self, scroll_behavior: ScrollBehavior) -> Self {
         self.scroll_behavior = scroll_behavior;
+        self
+    }
+
+    /// Anchors the viewport to the content *end*, the way a chat transcript
+    /// sits at its newest message.
+    ///
+    /// Children keep their natural order; only the anchor changes:
+    ///
+    /// - The first layout shows the end of the content.
+    /// - The position is remembered as a distance **from the end**, so content
+    ///   that grows or is re-measured *before* the viewport (older history
+    ///   loading above it, a windowed row's estimate being corrected) does not
+    ///   move what is on screen. A viewport already at the end stays there as
+    ///   content is appended.
+    /// - Content shorter than the viewport hugs the end instead of the start.
+    /// - [`ScrollController`] positions count from the end: `0` is the end and
+    ///   larger values scroll back toward the start, so `jump_to(Vec2d::ZERO)`
+    ///   means "show the newest". A remembered offset ([`Scrollable::key`]) is
+    ///   stored the same way, and [`ScrollBehavior::scroll_offset`] is ignored.
+    ///
+    /// Appending below a viewport that is scrolled back moves it by the
+    /// appended extent, because the distance from the end is what is kept.
+    ///
+    /// The default is `false`.
+    #[inline]
+    pub fn reverse(mut self, reverse: bool) -> Self {
+        self.reverse = reverse;
         self
     }
 
@@ -311,6 +343,7 @@ impl Scrollable {
             vertical_scroll_bar: self.vertical_scroll_bar.clone(),
             horizontal_scroll_bar: self.horizontal_scroll_bar.clone(),
             web_overscroll: self.web_overscroll,
+            reverse: self.reverse,
             marker: PhantomData,
         }
     }
@@ -344,6 +377,7 @@ pub struct ScrollableState<W: Widget + 'static> {
     remember_scroll_offset: bool,
     controller: Option<ScrollController>,
     web_overscroll: OverscrollSources,
+    reverse: bool,
     scroll_state: RefCell<Option<Rc<ScrollState>>>,
     refresh_scroll_state: Cell<bool>,
     /// Keeps one state type per child type, exactly as the previous typed
@@ -368,6 +402,7 @@ impl<W: Widget + 'static> StatefulWidget for Scrollable<W> {
             remember_scroll_offset: self.remember_scroll_offset,
             controller: self.controller.clone(),
             web_overscroll: self.web_overscroll,
+            reverse: self.reverse,
             scroll_state: RefCell::new(None),
             refresh_scroll_state: Cell::new(false),
             marker: PhantomData,
@@ -397,6 +432,7 @@ impl<W: Widget + 'static> State<Scrollable<W>> for ScrollableState<W> {
                 || !same_scroll_axis(self.axis, new.axis)
                 || self.scroll_bar_placement != new.scroll_bar_placement
                 || self.web_overscroll != new.web_overscroll
+                || self.reverse != new.reverse
                 || self.key != new.key
                 || self.remember_scroll_offset != new.remember_scroll_offset
                 || controller_changed;
@@ -410,6 +446,7 @@ impl<W: Widget + 'static> State<Scrollable<W>> for ScrollableState<W> {
         self.key = new.key;
         self.remember_scroll_offset = new.remember_scroll_offset;
         self.web_overscroll = new.web_overscroll;
+        self.reverse = new.reverse;
 
         if let Some(new_ctrl) = new.controller {
             self.controller = Some(new_ctrl);
@@ -486,28 +523,39 @@ impl<W: Widget + 'static> ScrollableState<W> {
             .remember_scroll_offset
             .then(|| scroll_storage::read_offset(&self.key))
             .flatten();
+        // A reverse viewport anchors to the end, so both a stored value and a
+        // live controller position are distances from it and seed the offset as
+        // `+distance` (see `state::end_anchor`); the declared offset has no
+        // meaning there and starts at the end.
         let mut initial_offset = stored_offset
             .map(|logical| Vec2d {
                 x: logical.x * ctx.scale,
                 y: logical.y * ctx.scale,
             })
-            .unwrap_or(Vec2d {
-                x: self.scroll_behavior.scroll_offset.x * ctx.scale,
-                y: self.scroll_behavior.scroll_offset.y * ctx.scale,
+            .unwrap_or_else(|| {
+                if self.reverse {
+                    Vec2d::ZERO
+                } else {
+                    Vec2d {
+                        x: self.scroll_behavior.scroll_offset.x * ctx.scale,
+                        y: self.scroll_behavior.scroll_offset.y * ctx.scale,
+                    }
+                }
             });
 
         // If an app-supplied controller is already attached (i.e. this is a
         // rebuild), it is the source of truth for the live position — seed the
         // fresh state from it so the viewport stays put. Its `offset()` is
-        // logical (positive toward the content end); convert to the internal
-        // scaled/negated convention.
+        // logical (positive toward the content end, or the distance from it when
+        // reversed); convert to the internal scaled/negated convention.
         if let Some(ctrl) = &self.controller
             && ctrl.is_attached()
         {
             let logical = ctrl.offset();
+            let sign = if self.reverse { 1.0 } else { -1.0 };
             initial_offset = Vec2d {
-                x: -logical.x * ctx.scale,
-                y: -logical.y * ctx.scale,
+                x: sign * logical.x * ctx.scale,
+                y: sign * logical.y * ctx.scale,
             };
         }
         let initial_offset = ScrollState::axis_only(self.axis, initial_offset);
@@ -548,6 +596,7 @@ impl<W: Widget + 'static> ScrollableState<W> {
             scroll_behavior: self.scroll_behavior,
             overscroll_sources,
             axis: self.axis,
+            reverse: self.reverse,
             scroll_bar_placement: self.scroll_bar_placement,
             cursor_pos: Cell::new(None),
             cached_viewport: Cell::new((0.0, 0.0)),
@@ -711,7 +760,8 @@ mod tests {
 
     use super::{
         BuildContext, OverscrollSource, OverscrollSources, ScrollAxis, ScrollBarPlacement,
-        Scrollable, resolved_overscroll_sources, resolved_parent_extent, scroll_storage,
+        ScrollBehavior, ScrollController, Scrollable, resolved_overscroll_sources,
+        resolved_parent_extent, scroll_storage,
     };
     use crate::controller::ScrollState;
     use aimer_attribute::position::Vec2d;
@@ -1074,5 +1124,82 @@ mod tests {
             "an unkeyed viewport must open at the declared initial offset"
         );
     }
-}
 
+    fn reverse_scrollable() -> Scrollable<ErrorWidget> {
+        Scrollable::new().reverse(true).child(ErrorWidget::new("content"))
+    }
+
+    /// Opts into teardown persistence, which only `Scrollable::key` does, so the
+    /// key has to be set before the child completes the builder.
+    fn keyed_reverse_scrollable(key: &'static str) -> Scrollable<ErrorWidget> {
+        Scrollable::new()
+            .reverse(true)
+            .key(key)
+            .child(ErrorWidget::new("content"))
+    }
+
+    #[tokio::test]
+    async fn a_reverse_scrollable_opens_at_the_end_whatever_offset_is_declared() {
+        let ctx = context();
+        let state = Scrollable::new()
+            .reverse(true)
+            .scroll_behavior(ScrollBehavior {
+                scroll_offset: Vec2d { x: 0.0, y: -48.0 },
+                ..ScrollBehavior::default()
+            })
+            .child(ErrorWidget::new("content"))
+            .create_state();
+        state.build(&ctx).to_element(&ctx);
+
+        let engine = state.scroll_state.borrow();
+        let engine = engine.as_ref().unwrap();
+        assert!(engine.reverse);
+        assert_eq!(engine.scroll_offset.get(), Vec2d::ZERO);
+    }
+
+    #[tokio::test]
+    async fn a_reverse_scrollable_restores_a_stored_distance_from_the_end() {
+        let ctx = context();
+        scroll_storage::save_offset(&Key::Value("chat".into()), Vec2d { x: 0.0, y: 120.0 });
+
+        let state = keyed_reverse_scrollable("chat").create_state();
+        state.build(&ctx).to_element(&ctx);
+
+        let engine = state.scroll_state.borrow();
+        assert_eq!(
+            engine.as_ref().unwrap().scroll_offset.get().y,
+            120.0,
+            "a distance from the end seeds the offset as +distance until a range exists"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_position_requested_before_the_build_reaches_a_reverse_engine() {
+        let ctx = context();
+        let controller = ScrollController::new();
+        controller.jump_to(Vec2d { x: 0.0, y: 60.0 });
+        let state = Scrollable::new()
+            .reverse(true)
+            .controller(controller.clone())
+            .child(ErrorWidget::new("content"))
+            .create_state();
+
+        state.build(&ctx).to_element(&ctx);
+
+        assert_eq!(controller.offset().y, 60.0);
+    }
+
+    #[tokio::test]
+    async fn toggling_reverse_rebuilds_the_engine() {
+        let ctx = context();
+        let mut state = default_scrollable().create_state();
+        state.build(&ctx).to_element(&ctx);
+        assert!(!state.refresh_scroll_state.get());
+
+        state.adopt_config_from(reverse_scrollable().create_state());
+        state.build(&ctx).to_element(&ctx);
+
+        let engine = state.scroll_state.borrow();
+        assert!(engine.as_ref().unwrap().reverse);
+    }
+}

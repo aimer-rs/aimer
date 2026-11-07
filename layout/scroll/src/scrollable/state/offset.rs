@@ -100,6 +100,17 @@ impl ScrollState {
     }
 
     pub(crate) fn visual_offset(&self, offset: Vec2d) -> Vec2d {
+        let inset = self.end_inset();
+        let shown = self.rubber_banded_offset(offset);
+        Vec2d {
+            x: shown.x + inset.x,
+            y: shown.y + inset.y,
+        }
+    }
+
+    /// The offset the content is drawn at before any end inset: clamped, or
+    /// stretched past its edge for a bouncy engine.
+    fn rubber_banded_offset(&self, offset: Vec2d) -> Vec2d {
         let offset = Self::axis_only(self.axis, offset);
         let min = self.cached_min_scroll.get();
         let max = self.cached_max_scroll.get();

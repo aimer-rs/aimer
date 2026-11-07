@@ -93,6 +93,9 @@ pub struct ScrollState {
     /// and never mutated, so reading it costs a load and a mask.
     pub(crate) overscroll_sources: OverscrollSources,
     pub(crate) axis: ScrollAxis,
+    /// Whether the viewport is anchored to the content end; see
+    /// [`Scrollable::reverse`](crate::Scrollable::reverse).
+    pub(crate) reverse: bool,
     /// Whether the scrollbars overlap the viewport or reserve its edge.
     pub(crate) scroll_bar_placement: ScrollBarPlacement,
     pub(crate) scroll_offset: Cell<Vec2d>,
@@ -158,8 +161,7 @@ impl ScrollState {
     /// unchanged, allowing a newly measured prediction to be verified before
     /// it affects the preserved offset.
     pub(crate) fn adopt_scroll_state(&self, prev: &ScrollState) {
-        self.scroll_offset
-            .set(Self::axis_only(self.axis, prev.scroll_offset.get()));
+        self.scroll_offset.set(self.adopted_offset(prev));
         self.pointer_velocity
             .set(Self::axis_only(self.axis, prev.pointer_velocity.get()));
         self.last_pointer_pos.set(prev.last_pointer_pos.get());
@@ -185,21 +187,50 @@ impl ScrollState {
         }
     }
 
+    /// The offset this engine takes over from `prev`.
+    ///
+    /// A reverse engine adopts a reverse one by its distance from the end, which
+    /// is the one quantity both engines agree on: `prev`'s distance is its offset
+    /// plus its range, and this engine's offset is that distance minus *its own*
+    /// range. An engine that has not laid out yet has a range of zero, so it
+    /// holds the distance as the seed form described in
+    /// [`end_anchor`](super::end_anchor); one that has laid out gets the real
+    /// offset. Both directions happen on every rebuild — the fresh engine takes
+    /// over from the old one, which the surviving element then takes back — so
+    /// copying the offset across would turn a seed into an overscroll.
+    ///
+    /// Taking over a forward engine's position would mean something else
+    /// entirely, so it starts at the end instead.
+    fn adopted_offset(&self, prev: &ScrollState) -> Vec2d {
+        let prev_offset = Self::axis_only(self.axis, prev.scroll_offset.get());
+        if !self.reverse {
+            return prev_offset;
+        }
+        if !prev.reverse {
+            return Vec2d::ZERO;
+        }
+        let prev_max = prev.cached_max_scroll.get();
+        let max = self.cached_max_scroll.get();
+        Self::axis_only(
+            self.axis,
+            Vec2d {
+                x: prev_offset.x + prev_max.x - max.x,
+                y: prev_offset.y + prev_max.y - max.y,
+            },
+        )
+    }
+
     /// Whether the edges rubber-band for the device that is currently
     /// scrolling.
 
     /// Current scroll position in logical (unscaled) pixels, measured from the
-    /// content start (positive = scrolled toward the content end).
+    /// content start (positive = scrolled toward the content end), or from the
+    /// content end for a reverse engine.
     ///
     /// Internally the offset is stored scaled and negated (content moved up),
     /// so this converts back to the user-facing convention.
     pub(super) fn logical_offset(&self) -> Vec2d {
-        let scale = self.last_scale.get().max(f32::EPSILON);
-        let o = Self::axis_only(self.axis, self.scroll_offset.get());
-        Vec2d {
-            x: -o.x / scale,
-            y: -o.y / scale,
-        }
+        self.logical_position(self.scroll_offset.get())
     }
 }
 
@@ -215,6 +246,7 @@ impl ScrollState {
             scroll_behavior: ScrollBehavior::default(),
             overscroll_sources: OverscrollSources::ALL,
             axis: ScrollAxis::Vertical,
+            reverse: false,
             scroll_bar_placement: ScrollBarPlacement::Floating,
             overscroll: Default::default(),
             fling: Default::default(),

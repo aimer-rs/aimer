@@ -386,7 +386,12 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             final_max.y = final_max.y.max(user_max.y * ctx.scale);
         }
 
+        let range_before = self.ctrl.cached_max_scroll.get();
         self.ctrl.cached_max_scroll.set(final_max);
+        // A reverse engine keeps its distance from the end through any change
+        // of range: a prediction that is later corrected moves the offset by the
+        // same amount, so rows between the viewport and the end do not shift.
+        self.ctrl.follow_range_change(range_before, final_max);
 
         if prepared_extent && preserve_content_end {
             let mut offset = self.ctrl.scroll_offset.get();
@@ -469,10 +474,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
         if self.ctrl.remember_scroll_offset {
             crate::scrollable::scroll_storage::save_offset(
                 &self.ctrl.storage_key,
-                Vec2d {
-                    x: offset.x / ctx.scale,
-                    y: offset.y / ctx.scale,
-                },
+                self.ctrl.persisted_offset(offset),
             );
         }
 

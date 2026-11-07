@@ -379,7 +379,9 @@ impl<E: Element> RawScrollableContainer<E> {
         if user_max.y != f32::MAX {
             max_scroll.y = max_scroll.y.max(user_max.y * ctx.scale);
         }
+        let range_before = self.ctrl.cached_max_scroll.get();
         self.ctrl.cached_max_scroll.set(max_scroll);
+        let followed_range = self.ctrl.follow_range_change(range_before, max_scroll);
 
         if preserve_content_end {
             let mut offset = self.ctrl.scroll_offset.get();
@@ -406,7 +408,7 @@ impl<E: Element> RawScrollableContainer<E> {
             Self::along(axis, content_size),
             Self::along(axis, max_scroll),
         );
-        if preserve_content_end || painted_range != Some(corrected_range) {
+        if preserve_content_end || followed_range || painted_range != Some(corrected_range) {
             // The child may have changed the extent without owning a redraw source
             // (RawFlex requests one itself, but custom elements need this fallback).
             ctx.window.request_redraw();
@@ -480,6 +482,7 @@ mod tests {
     use super::*;
 
     mod redraw_after_refresh;
+    mod reverse;
 
     struct CapturingChild {
         events: Rc<Cell<usize>>,

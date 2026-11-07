@@ -1737,6 +1737,7 @@ mod tests {
     mod resize_grab_area;
     mod resize_live;
     mod resize_sidebar;
+    mod reverse_scroll;
     mod retained_button;
     mod retained_modal;
     mod modal_isolation;
