@@ -20,20 +20,12 @@
 //!
 //! [`compile`] runs the whole pipeline for one [`Target`]. To emit several targets from one source,
 //! call [`load_program`] once and then [`emit`] for each target.
-//!
-//! # Cargo features
-//!
-//! - `lsp` (off by default): the `lsp` module with editor support (diagnostics, hover, completion,
-//!   go to definition). Built for `wasm32-unknown-unknown` it exports a small C ABI that the
-//!   VS Code extension loads. Without the feature none of that code is compiled.
 
 pub mod ast;
 pub mod emit;
 pub mod error;
 pub mod layout;
 pub mod lexer;
-#[cfg(feature = "lsp")]
-pub mod lsp;
 pub mod parser;
 pub mod rename;
 pub mod resolve;

@@ -13,17 +13,6 @@ path = "src/lib.rs"
 name = "aimer_transpiler"
 path = "src/main.rs"
 
-[features]
-default = []
-# Language services for editors (diagnostics, hover, completion, navigation) and the
-# WebAssembly C ABI used by the VS Code extension, see scripts/build-wasm.sh.
-lsp = []
-
-[[test]]
-name = "lsp"
-path = "tests/lsp.rs"
-required-features = ["lsp"]
-
 [dependencies]
 
 [dev-dependencies]
