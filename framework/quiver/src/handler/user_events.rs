@@ -29,6 +29,22 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
             }
         }
         AimerNativePlatformEvent::Accessibility => app.sync_accessibility(),
+        // Someone attached or left: the badge changes, and nothing else does.
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        AimerNativePlatformEvent::AttachmentChanged => {
+            if app.attach_overlay.refresh_names() {
+                app.request_overlay_frame();
+            }
+        }
+        // An injected pointer is about to act: show where it is.
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        AimerNativePlatformEvent::SyntheticPointer(pointer) => {
+            app.attach_overlay.note_pointer(pointer, aimer_utils::AnimInstant::now());
+            app.request_overlay_frame();
+        }
+        // A release build has no overlay to tell.
+        #[cfg(not(all(debug_assertions, not(target_arch = "wasm32"))))]
+        AimerNativePlatformEvent::AttachmentChanged | AimerNativePlatformEvent::SyntheticPointer(_) => {}
         AimerNativePlatformEvent::OpenLinks => {
             crate::link_inbox::deliver_posted_links();
             // Opening a link changes navigator state, which asks for its own frame.

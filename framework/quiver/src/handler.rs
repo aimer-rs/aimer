@@ -866,6 +866,12 @@ pub struct AimerApplicationHandler<W: Widget + 'static> {
     /// Shared with the timer's callback so hiding the overlay can cancel it.
     #[cfg(debug_assertions)]
     pub(crate) overlay_refresh_armed: std::rc::Rc<std::cell::Cell<bool>>,
+    /// The badge and injected-pointer markers shown while a tool drives the app.
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    pub(crate) attach_overlay: crate::attach_overlay::AttachOverlay,
+    /// Like `overlay_refresh_armed`, for the markers' animations.
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    pub(crate) attach_refresh_armed: std::rc::Rc<std::cell::Cell<bool>>,
     pub widget_root: Option<AnyElement>,
     pub event_dispatcher: EventDispatcher,
     pub(crate) scroll_smoother: DualScroller,
@@ -957,6 +963,53 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             });
         });
         self.overlay_refresh_armed.set(scheduled.is_ok());
+    }
+
+    /// Asks for a frame that repaints the attach overlay and skips the rest of
+    /// the tree: a marker moved or someone attached, and the app did not change.
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    pub(crate) fn request_overlay_frame(&self) {
+        #[cfg(not(target_os = "ios"))]
+        let Some(window) = self.window.clone() else {
+            return;
+        };
+        crate::aimer_app::with_frame_request_kind(FrameRequestKind::Scoped, || {
+            #[cfg(target_os = "ios")]
+            aimer_events::window::request_animation_frame();
+            #[cfg(not(target_os = "ios"))]
+            window.request_redraw();
+        });
+    }
+
+    /// Keeps a ripple or a fading finger moving on an otherwise idle app: arms a
+    /// one-shot timer for the next frame while a marker animates, and none when
+    /// nothing does.
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    pub(crate) fn arm_attach_refresh(&self) {
+        let Some(wait) = self.attach_overlay.wake_in(aimer_utils::AnimInstant::now()) else {
+            self.attach_refresh_armed.set(false);
+            return;
+        };
+        if self.attach_refresh_armed.get() {
+            return;
+        }
+        #[cfg(not(target_os = "ios"))]
+        let Some(window) = self.window.clone() else {
+            return;
+        };
+        let armed = self.attach_refresh_armed.clone();
+        let scheduled = aimer_venus::spawn_delayed(wait, move || {
+            if !armed.replace(false) {
+                return;
+            }
+            crate::aimer_app::with_frame_request_kind(FrameRequestKind::Scoped, || {
+                #[cfg(target_os = "ios")]
+                aimer_events::window::request_animation_frame();
+                #[cfg(not(target_os = "ios"))]
+                window.request_redraw();
+            });
+        });
+        self.attach_refresh_armed.set(scheduled.is_ok());
     }
 
     #[cfg(debug_assertions)]
@@ -1480,6 +1533,8 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
 pub(crate) struct FrameDrawer<'a, W: Widget + 'static> {
     #[cfg(debug_assertions)]
     debug_overlay: &'a mut aimer_profiling::PerformanceOverlay,
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    attach_overlay: &'a mut crate::attach_overlay::AttachOverlay,
     widget_root: &'a mut Option<AnyElement>,
     pending_widget: &'a mut Option<W>,
     event_dispatcher: &'a mut EventDispatcher,
@@ -1851,6 +1906,21 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
                 renderer_name(),
             ) {
                 aimer_utils::error!("debug overlay recording failed: {error:?}");
+            }
+            #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+            {
+                // After the performance overlay, so the badge paints above it.
+                self.attach_overlay.refresh_names();
+                if let Err(error) = self.attach_overlay.prepare(
+                    &self.window_render_tree.tree,
+                    width,
+                    height,
+                    self.scale,
+                    aimer_widget::safe_area_insets(),
+                    aimer_utils::AnimInstant::now(),
+                ) {
+                    aimer_utils::error!("attach overlay recording failed: {error:?}");
+                }
             }
             let mut render_damage = self.window_render_tree.tree.take_damage();
             if damage.is_full() {
@@ -2314,6 +2384,8 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             render_tree,
             #[cfg(debug_assertions)]
             debug_overlay,
+            #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+            attach_overlay,
             #[cfg(not(target_arch = "wasm32"))]
             async_handle,
             ..
@@ -2326,6 +2398,8 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             FrameDrawer {
                 #[cfg(debug_assertions)]
                 debug_overlay,
+                #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+                attach_overlay,
                 widget_root,
                 pending_widget,
                 event_dispatcher,
@@ -2414,6 +2488,8 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         aimer_utils::frame_trace("packet_done", 0.0, 0.0);
         #[cfg(debug_assertions)]
         self.arm_overlay_refresh();
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        self.arm_attach_refresh();
         if outcome.is_presented() {
             // An inline frame reached the screen during this call. Frames handed
             // to the raster thread are counted when their completion arrives.

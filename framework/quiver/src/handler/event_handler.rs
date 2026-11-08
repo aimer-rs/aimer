@@ -271,25 +271,9 @@ impl WindowEventHandler {
                 app.request_full_redraw();
             }
 
-            WindowEvent::HoveredFile(path) => {
-                let pos = Self::refresh_file_drag_cursor(app);
-                app.file_drag.enter(&path, app.cursor_pos);
-                Self::handle_generic_event(app, &ElementEvent::HoveredFile { path, pos });
-            }
-
-            WindowEvent::HoveredFileCancelled => {
-                app.file_drag.finish();
-                Self::handle_generic_event(app, &ElementEvent::HoveredFileCancelled);
-            }
-
-            WindowEvent::DroppedFile(path) => {
-                let pos = Self::refresh_file_drag_cursor(app);
-                // The drag is over, but the platform reports a five-file drop as
-                // five events: the tracker is emptied by the first of them and
-                // the rest simply find nothing in flight.
-                app.file_drag.finish();
-                Self::handle_generic_event(app, &ElementEvent::DroppedFile { path, pos });
-            }
+            WindowEvent::HoveredFile(path) => Self::handle_file_hovered(path, app),
+            WindowEvent::HoveredFileCancelled => Self::handle_file_hover_cancelled(app),
+            WindowEvent::DroppedFile(path) => Self::handle_file_dropped(path, app),
 
             _ => (),
         }
@@ -396,16 +380,28 @@ impl WindowEventHandler {
             x: (item.location.x / scale) as f32,
             y: (item.location.y / scale) as f32,
         };
+        Self::handle_touch_contact(pos, item.id, item.phase, app);
+    }
+
+    /// Delivers one finger's contact, already in logical coordinates.
+    ///
+    /// The window event and an injected `NativeInput` touch both end here, so a
+    /// driver's finger is indistinguishable from a real one.
+    pub(super) fn handle_touch_contact<W: Widget + 'static>(
+        pos: Vec2d,
+        touch_id: u64,
+        phase: TouchPhase,
+        app: &mut AimerApplicationHandler<W>,
+    ) {
         // Wheel/trackpad streams can arrive while a finger is still down. Keep
         // the shared event position at the latest contact so those scroll
         // frames hit the viewport instead of the outside-window sentinel.
         app.cursor_pos = pos;
         app.touch_pointer = true;
         // info!("Location: {pos:?}" );
-        let touch_id = item.id;
         aimer_utils::frame_trace(
             "touch",
-            match item.phase {
+            match phase {
                 TouchPhase::Started => 0.0,
                 TouchPhase::Moved => 1.0,
                 TouchPhase::Ended => 2.0,
@@ -418,7 +414,7 @@ impl WindowEventHandler {
         // fingers to track — the scrollable keeps its own primary-finger
         // filter so a second touch doesn't jump the scroll position.
         let contact = PointerInfo::touch(pos, touch_id);
-        let event = match item.phase {
+        let event = match phase {
             TouchPhase::Started => ElementEvent::PointerDown(contact),
             TouchPhase::Moved => ElementEvent::PointerMove(contact),
             TouchPhase::Ended => ElementEvent::PointerUp(contact),
@@ -1102,6 +1098,37 @@ impl WindowEventHandler {
         }
     }
 
+    /// A file drag entered the window carrying `path`.
+    pub(super) fn handle_file_hovered<W: Widget + 'static>(
+        path: std::path::PathBuf,
+        app: &mut AimerApplicationHandler<W>,
+    ) {
+        let pos = Self::refresh_file_drag_cursor(app);
+        app.file_drag.enter(&path, app.cursor_pos);
+        Self::handle_generic_event(app, &ElementEvent::HoveredFile { path, pos });
+    }
+
+    /// The file drag left the window without dropping.
+    pub(super) fn handle_file_hover_cancelled<W: Widget + 'static>(
+        app: &mut AimerApplicationHandler<W>,
+    ) {
+        app.file_drag.finish();
+        Self::handle_generic_event(app, &ElementEvent::HoveredFileCancelled);
+    }
+
+    /// The user released the file drag over the window.
+    pub(super) fn handle_file_dropped<W: Widget + 'static>(
+        path: std::path::PathBuf,
+        app: &mut AimerApplicationHandler<W>,
+    ) {
+        let pos = Self::refresh_file_drag_cursor(app);
+        // The drag is over, but the platform reports a five-file drop as
+        // five events: the tracker is emptied by the first of them and
+        // the rest simply find nothing in flight.
+        app.file_drag.finish();
+        Self::handle_generic_event(app, &ElementEvent::DroppedFile { path, pos });
+    }
+
     /// Brings `app.cursor_pos` up to date for a file drag, and reports the
     /// position the event should carry.
     ///
@@ -1150,7 +1177,7 @@ impl WindowEventHandler {
     /// zones — is a leave, and the zone that lit up has to hear it, so a
     /// [`ElementEvent::DragLeave`] is broadcast on the move that leaves and on no
     /// other: it is the one case where the drag has no addressee to route to.
-    fn report_file_drag_move<W: Widget + 'static>(app: &mut AimerApplicationHandler<W>, at: Vec2d) {
+    pub(super) fn report_file_drag_move<W: Widget + 'static>(app: &mut AimerApplicationHandler<W>, at: Vec2d) {
         let Some(paths) = app.file_drag.moved_to(at) else {
             return;
         };

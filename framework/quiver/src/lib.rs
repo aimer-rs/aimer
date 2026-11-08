@@ -2,6 +2,10 @@ extern crate aimer_widget;
 
 #[cfg(target_os = "android")]
 mod android_storage;
+#[cfg(not(target_arch = "wasm32"))]
+mod debug_input;
+#[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+mod attach_overlay;
 #[cfg(target_os = "android")]
 pub use android_storage::register_android_app;
 #[cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))]

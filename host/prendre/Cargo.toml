@@ -3,18 +3,19 @@ name = "aimer_prendre"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-
-[lints]
-workspace = true
-
-
-
-
 [features]
-
-# For using inside the AimerCLI
+# Both are on for `cargo test -p aimer_prendre`. The workspace entry turns the
+# defaults off, so a dependent names exactly the side it is: an app that accepts
+# input says `host`, a tool that sends it says `client`.
+default = ["client", "host"]
+# `Client`: connects to a running app and sends it commands.
 client = []
+# `Server` and `Command::deliver`: lets this process accept commands. Only a
+# debug or test build of an app should enable it.
+host = ["dep:aimer_attribute", "dep:aimer_events", "dep:aimer_platform", "dep:aimer_utils"]
 
-# For using inside the Quiver for receive the events
-server = []
+[dependencies]
+aimer_attribute = { workspace = true, optional = true }
+aimer_events = { workspace = true, optional = true }
+aimer_platform = { workspace = true, optional = true }
+aimer_utils = { workspace = true, optional = true }

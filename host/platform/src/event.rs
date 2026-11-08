@@ -71,6 +71,15 @@ pub enum AimerNativePlatformEvent {
     /// Assistive technology asked for the semantic tree or requested an action
     /// (see [`crate::accessibility`]).
     Accessibility,
+    /// A tool attached to the app or detached from it.
+    ///
+    /// The new list waits in [`crate::attachment`]; handling this event is what
+    /// makes the debug overlay show it. Only a debug build is ever told.
+    AttachmentChanged,
+    /// An injected mouse or finger is about to do something, sent ahead of the
+    /// input itself so the debug overlay can draw where it is. See
+    /// [`crate::attachment::SyntheticPointer`].
+    SyntheticPointer(crate::attachment::SyntheticPointer),
 }
 
 pub static EVENT_PROXY: OnceLock<EventLoopProxy<AimerNativePlatformEvent>> = OnceLock::new();

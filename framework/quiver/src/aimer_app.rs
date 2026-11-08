@@ -855,6 +855,10 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
                 debug_overlay: Default::default(),
                 #[cfg(debug_assertions)]
                 overlay_refresh_armed: Default::default(),
+                #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+                attach_overlay: Default::default(),
+                #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+                attach_refresh_armed: Default::default(),
                 window_attr: WindowAttr::new(),
                 frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
                 render_tree: WindowRenderTree::default(),
@@ -1518,6 +1522,9 @@ fn start_event_loop(
     };
 
     EVENT_PROXY.set(event_loop.create_proxy()).ok();
+    // The proxy exists, so input a launcher injects now has a loop to reach.
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::debug_input::start();
 
     // Route animation redraws requests through the event loop instead of letting
     // animating widgets (e.g. scroll momentum) spawn a sleeping thread per frame.
@@ -1605,6 +1612,10 @@ fn start_event_loop(
                 debug_overlay: Default::default(),
                 #[cfg(debug_assertions)]
                 overlay_refresh_armed: Default::default(),
+                #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+                attach_overlay: Default::default(),
+                #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+                attach_refresh_armed: Default::default(),
                 window_attr,
                 frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
                 render_tree: WindowRenderTree::default(),
@@ -1728,6 +1739,8 @@ mod tests {
     mod expand_first_frames;
     #[cfg(debug_assertions)]
     mod debug_overlay;
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    mod attach_overlay;
     mod decoration_box;
     mod floating_menu_settles;
     mod foreground_decoration_box;
@@ -1739,6 +1752,7 @@ mod tests {
     mod hover_bar_click;
     mod hover_border_damage;
     mod implicit_animation_plays;
+    mod injected_input;
     mod ios_input;
     mod loading_damage;
     mod post_bar_toggle;

@@ -1,14 +1,30 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+#![doc = include_str!("../README.md")]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// What both sides share: the commands, their wire format, and where an app listens.
+pub mod actions;
+mod command;
+mod hello;
+#[cfg(all(not(target_arch = "wasm32"), feature = "host"))]
+mod motion;
+pub mod env;
+mod model;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "client", feature = "host")))]
+mod endpoint;
+mod wire;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+#[cfg(all(not(target_arch = "wasm32"), feature = "client"))]
+mod client;
+#[cfg(all(not(target_arch = "wasm32"), feature = "host"))]
+mod platform;
+#[cfg(all(not(target_arch = "wasm32"), feature = "host"))]
+mod server;
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "client"))]
+pub use client::Client;
+pub use command::{BackStep, Command, EditShortcut};
+pub use model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "client", feature = "host")))]
+pub use endpoint::{Endpoint, InvalidEndpoint};
+#[cfg(all(not(target_arch = "wasm32"), feature = "host"))]
+pub use server::{Config, Server};
+pub use wire::ParseError;

@@ -15,6 +15,7 @@ pub use event::EVENT_PROXY;
 /// Handing the application's semantic tree to the platform's assistive
 /// technology, and taking its action requests back.
 pub mod accessibility;
+pub mod attachment;
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub mod browser_poll_context;
