@@ -1,0 +1,20 @@
+[package]
+name = "aimer_prendre"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[lints]
+workspace = true
+
+
+
+
+[features]
+
+# For using inside the AimerCLI
+client = []
+
+# For using inside the Quiver for receive the events
+server = []
