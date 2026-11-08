@@ -324,7 +324,7 @@ aimer_venus = { path = "cores/venus" }
 aimer_quiver = { path = "framework/quiver", default-features = false }
 aimer_frame_stats = { path = "host/frame_stats" }
 aimer_platform = { path = "host/platform" }
-aimer_prendre = { path = "host/prendre" }
+aimer_prendre = { path = "host/prendre", default-features = false }
 aimer_profiling = { path = "host/profiling" }
 aimer_render = { path = "graphic/render", default-features = false }
 aimer_canvas = { path = "graphic/canvas" }

@@ -24,9 +24,6 @@ test_pattern_captions = "assets/test_pattern.vtt"
 test_pattern_chapters = "assets/test_pattern_chapters.vtt"
 
 
-[font]
-# no_font = "moewmoew"
-
 [fonts]
 
 jetbrains_mono = "assets/JetBrainsMono-Regular.ttf"

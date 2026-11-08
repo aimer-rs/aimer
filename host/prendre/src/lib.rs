@@ -1,19 +1,30 @@
 #![doc = include_str!("../README.md")]
 
-#[cfg(not(target_arch = "wasm32"))]
-mod client;
+// What both sides share: the commands, their wire format, and where an app listens.
+pub mod actions;
 mod command;
-#[cfg(not(target_arch = "wasm32"))]
+mod hello;
+#[cfg(all(not(target_arch = "wasm32"), feature = "host"))]
+mod motion;
+pub mod env;
+mod model;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "client", feature = "host")))]
 mod endpoint;
-#[cfg(not(target_arch = "wasm32"))]
-mod server;
 mod wire;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "client"))]
+mod client;
+#[cfg(all(not(target_arch = "wasm32"), feature = "host"))]
+mod platform;
+#[cfg(all(not(target_arch = "wasm32"), feature = "host"))]
+mod server;
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "client"))]
 pub use client::Client;
-pub use command::Command;
-#[cfg(not(target_arch = "wasm32"))]
+pub use command::{BackStep, Command, EditShortcut};
+pub use model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "client", feature = "host")))]
 pub use endpoint::{Endpoint, InvalidEndpoint};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "host"))]
 pub use server::{Config, Server};
 pub use wire::ParseError;

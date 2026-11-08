@@ -64,6 +64,8 @@ winit = {workspace = true}
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = {workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time"]}
 aimer_cupid.workspace = true
+# Only a debug build ever starts it; see `debug_input`.
+aimer_prendre = { workspace = true, features = ["host"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.aimer_cupid]
 workspace = true

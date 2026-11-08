@@ -76,6 +76,10 @@ impl Shared {
             debug_overlay: Default::default(),
             #[cfg(debug_assertions)]
             overlay_refresh_armed: Default::default(),
+            #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+            attach_overlay: Default::default(),
+            #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+            attach_refresh_armed: Default::default(),
             window_attr: attr,
             frame_pacer: crate::handler::frame_pacer::FramePacer::from_env(),
             render_tree: WindowRenderTree::default(),

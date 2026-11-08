@@ -37,12 +37,35 @@ impl Client {
     /// [`io::ErrorKind::PermissionDenied`] when the token is wrong, and
     /// [`io::ErrorKind::ConnectionRefused`] when the server is full.
     pub fn connect(endpoint: &Endpoint) -> io::Result<Self> {
+        Self::open(endpoint, None)
+    }
+
+    /// Connects like [`Client::connect`], and tells the app who is attached.
+    ///
+    /// The app shows `name` for as long as this client stays connected, so give
+    /// it the tool's name (`aimer-cli`, `mcp:claude`) and keep the client alive
+    /// for as long as the tool is attached. A name is one to 32 characters from
+    /// letters, digits and `. _ : / @ + -`.
+    ///
+    /// # Errors
+    ///
+    /// [`io::ErrorKind::InvalidInput`] for a name that is not one, and those of
+    /// [`Client::connect`].
+    pub fn connect_as(endpoint: &Endpoint, name: &str) -> io::Result<Self> {
+        if !crate::hello::is_valid_name(name) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a valid client name"));
+        }
+        Self::open(endpoint, Some(name))
+    }
+
+    fn open(endpoint: &Endpoint, name: Option<&str>) -> io::Result<Self> {
         let writer = TcpStream::connect_timeout(&endpoint.addr(), TIMEOUT)?;
         writer.set_nodelay(true)?;
         writer.set_read_timeout(Some(TIMEOUT))?;
         writer.set_write_timeout(Some(TIMEOUT))?;
         let mut client = Self { reader: BufReader::new(writer.try_clone()?), writer };
-        client.writer.write_all(format!("hello {}\n", endpoint.token()).as_bytes())?;
+        let hello = crate::hello::line(endpoint.token(), name);
+        client.writer.write_all(format!("{hello}\n").as_bytes())?;
         match client.reply()?.as_str() {
             "ok" => Ok(client),
             "err busy" => Err(io::Error::new(io::ErrorKind::ConnectionRefused, "server is busy")),

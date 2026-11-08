@@ -1,8 +1,11 @@
 use std::fmt;
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
+
+/// What a server's log line says before the endpoint, which is then quoted.
+const ANNOUNCEMENT: &str = "aimer_prendre: listening, endpoint is `";
 
 /// Where a running [`Server`](crate::Server) listens, and the secret that opens
 /// it.
@@ -42,10 +45,42 @@ impl Endpoint {
         Ok(Self { addr, token })
     }
 
-    /// The loopback address the server listens on.
+    /// The address the server listens on.
+    ///
+    /// For a server bound to an unspecified address (`0.0.0.0`, `::`) this is
+    /// where it listens, not where a client connects: use
+    /// [`Endpoint::with_ip`] to say how this machine reaches it.
     #[inline]
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// The same endpoint reached at `ip`, keeping the port and the token.
+    ///
+    /// The server only knows the address it bound; whoever starts the app knows
+    /// the one that leads to it, such as a phone's tunnel address.
+    #[inline]
+    pub fn with_ip(&self, ip: IpAddr) -> Self {
+        Self { addr: SocketAddr::new(ip, self.addr.port()), token: self.token.clone() }
+    }
+
+    /// The log line a server writes when it starts listening.
+    ///
+    /// A launcher that owns the app's console finds the endpoint in it with
+    /// [`Endpoint::from_announcement`].
+    pub fn announcement(&self) -> String {
+        format!("{ANNOUNCEMENT}{self}`")
+    }
+
+    /// Finds an announcement anywhere in `line` and reads the endpoint from it.
+    ///
+    /// The app's logger decorates its lines with a timestamp and a level, so the
+    /// announcement is searched for rather than required at the start. Returns
+    /// `None` for any line that is not one, or whose endpoint cannot be read.
+    pub fn from_announcement(line: &str) -> Option<Self> {
+        let start = line.find(ANNOUNCEMENT)? + ANNOUNCEMENT.len();
+        let inner = &line[start..];
+        inner[..inner.find('`')?].parse().ok()
     }
 
     /// The secret a client must present before the server accepts input.
@@ -115,6 +150,37 @@ mod tests {
         let loaded = Endpoint::load(&path);
         let _ = std::fs::remove_file(&path);
         assert_eq!(loaded.expect("load"), endpoint);
+    }
+
+    #[test]
+    fn the_address_can_be_replaced_and_the_token_stays() {
+        let endpoint = Endpoint::new("0.0.0.0:4001".parse().expect("addr"), "abc").expect("endpoint");
+        let reachable = endpoint.with_ip("fd00::1".parse().expect("ip"));
+        assert_eq!(reachable.addr(), "[fd00::1]:4001".parse().expect("addr"));
+        assert_eq!(reachable.token(), "abc");
+    }
+
+    #[test]
+    fn an_announcement_is_found_inside_a_decorated_log_line() {
+        let endpoint = Endpoint::new("127.0.0.1:4001".parse().expect("addr"), "abc").expect("endpoint");
+        let line = endpoint.announcement();
+        assert_eq!(Endpoint::from_announcement(&line), Some(endpoint.clone()));
+        // The app's logger adds a timestamp, a level and its own punctuation.
+        let decorated = format!("2026-11-09T10:00:01Z INFO [aimer] {line}\r");
+        assert_eq!(Endpoint::from_announcement(&decorated), Some(endpoint));
+    }
+
+    #[test]
+    fn lines_that_are_not_announcements_are_ignored() {
+        for line in [
+            "",
+            "aimer_prendre: could not start a client thread",
+            "aimer_prendre: listening, endpoint is `nonsense`",
+            "aimer_prendre: listening, endpoint is `127.0.0.1:9 a b`",
+            "aimer_prendre: listening, endpoint is `127.0.0.1:9 abc",
+        ] {
+            assert_eq!(Endpoint::from_announcement(line), None, "{line:?}");
+        }
     }
 
     #[test]
