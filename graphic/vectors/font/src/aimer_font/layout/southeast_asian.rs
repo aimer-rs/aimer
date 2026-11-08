@@ -806,7 +806,7 @@ fn apply_southeast_asian_single_positioning(
             if gdef.ignores(glyph.glyph_id, lookup.lookup_flags)? {
                 continue;
             }
-            for subtable_offset in &lookup.subtable_offsets {
+            for subtable_offset in lookup.subtable_offsets.iter() {
                 let Some(adjustment) = single_position_adjustment(
                     table,
                     *subtable_offset,

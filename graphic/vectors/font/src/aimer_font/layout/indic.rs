@@ -551,7 +551,7 @@ pub(super) fn apply_alternate_lookup(
         {
             continue;
         }
-        for subtable_offset in &lookup.subtable_offsets {
+        for subtable_offset in lookup.subtable_offsets.iter() {
             let subtable = slice_from(table, *subtable_offset, GSUB_TAG)?;
             if super::apply_gsub_lookup_at(
                 face,
@@ -626,7 +626,7 @@ pub(super) fn apply_multiple_lookup(
     let mut index = 0;
     while index < glyphs.len() {
         let mut applied = false;
-        for subtable_offset in &lookup.subtable_offsets {
+        for subtable_offset in lookup.subtable_offsets.iter() {
             let subtable = slice_from(table, *subtable_offset, GSUB_TAG)?;
             let Some(replacement_ids) = multiple_substitution_for_glyph(
                 glyphs[index].glyph_id,

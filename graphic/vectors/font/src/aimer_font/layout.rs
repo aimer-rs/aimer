@@ -10,6 +10,7 @@
 //! second shaping engine.
 
 use std::cell::RefCell;
+use std::sync::Arc;
 
 use super::{Reader, SfntError, SfntFace, Tag};
 use crate::font::TextLanguage;
@@ -22,6 +23,8 @@ mod compiled;
 mod context;
 mod indic;
 mod southeast_asian;
+#[cfg(test)]
+mod shared_lookups_tests;
 
 use compiled::CompiledSubtable;
 
@@ -234,8 +237,12 @@ struct LookupState {
     lookup_type: u16,
     execution_type: u16,
     lookup_flags: u16,
-    subtable_offsets: Vec<usize>,
-    compiled_subtables: Vec<Option<CompiledSubtable>>,
+    // Shared, not owned: every feature plan that references a lookup holds a
+    // clone of this state, and deep-copying the compiled kerning and ligature
+    // tables per plan multiplied the font's layout memory by the number of
+    // features that point at each lookup.
+    subtable_offsets: Arc<[usize]>,
+    compiled_subtables: Arc<[Option<CompiledSubtable>]>,
     compiled_ligature_only: bool,
     compiled_pair_only: bool,
 }
@@ -457,8 +464,8 @@ impl LayoutTableState {
                 lookup_type,
                 execution_type,
                 lookup_flags,
-                subtable_offsets,
-                compiled_subtables,
+                subtable_offsets: Arc::from(subtable_offsets),
+                compiled_subtables: Arc::from(compiled_subtables),
                 compiled_ligature_only,
                 compiled_pair_only,
             });

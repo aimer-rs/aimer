@@ -49,7 +49,7 @@ pub(super) fn apply_contextual_substitutions(
             gsub.feature_lookup_indices(script_tag, std::slice::from_ref(feature_tag));
         for lookup_index in lookup_indices {
             let lookup = gsub.lookup(*lookup_index)?;
-            for subtable_offset in &lookup.subtable_offsets {
+            for subtable_offset in lookup.subtable_offsets.iter() {
                 let subtable = slice_from(table, *subtable_offset, GSUB_TAG)?;
                 if context_subtable_may_match(subtable, lookup.lookup_type, candidates, 0)?
                     == Some(false)
@@ -1309,7 +1309,7 @@ fn apply_gsub_lookup_at(
     if gdef.ignores(glyphs[target_index].glyph_id, lookup.lookup_flags)? {
         return Ok(false);
     }
-    for subtable_offset in &lookup.subtable_offsets {
+    for subtable_offset in lookup.subtable_offsets.iter() {
         let subtable = slice_from(table, *subtable_offset, GSUB_TAG)?;
         if super::apply_gsub_lookup_at(
             face,

@@ -25,7 +25,16 @@ native = [
 ]
 # Keep the WGPU adapter optional so a WGPU-only build can disable default
 # features and omit the native API dependency set.
-wgpu = ["dep:wgpu", "dep:winit", "dep:aimer_wgpu", "aimer_rect_pipeline/wgpu", "aimer_image_pipeline/wgpu", "aimer_svg_pipeline/wgpu", "aimer_text_pipeline/wgpu", "aimer_material_pipeline/wgpu"]
+wgpu = [
+    "dep:wgpu",
+    "dep:winit",
+    "dep:aimer_wgpu",
+    "aimer_rect_pipeline/wgpu",
+    "aimer_image_pipeline/wgpu",
+    "aimer_svg_pipeline/wgpu",
+    "aimer_text_pipeline/wgpu",
+    "aimer_material_pipeline/wgpu",
+]
 frame-stats = []
 # Keep optional checked-in fallback faces out of native downstream binaries
 # unless an application explicitly opts into deterministic bundled rendering.
@@ -53,6 +62,7 @@ metal-demo = [
     "dep:raw-window-handle",
     "dep:objc2-app-kit",
 ]
+
 [[bin]]
 path = "src/bin.rs"
 name = "cupid"
@@ -119,8 +129,6 @@ aimer_opengl = { workspace = true, optional = true }
 aimer_directx = { workspace = true, optional = true }
 aimer_webgl = { workspace = true, optional = true }
 aimer_webgpu = { workspace = true, optional = true }
-
-
 
 #############
 wgpu = { workspace = true, optional = true }
@@ -237,7 +245,6 @@ web-sys = { workspace = true, features = [
     "WebGlUniformLocation",
     "WebGlVertexArrayObject",
 ] }
-
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, optional = true }
