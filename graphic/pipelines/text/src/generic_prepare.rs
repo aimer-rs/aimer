@@ -97,8 +97,6 @@ impl<B: GpuBackend> TextPipelineV2<B> {
         requests: &[&TextDrawRequest],
         mut profile: Option<&mut TextPreparationProfile>,
     ) -> bool {
-        let clear_shaping_cache = self.shaping_cache.len() > Self::SHAPING_CACHE_CAPACITY;
-
         let mut shaping_batch = PreparationBatch::new();
         let mut layout_batch = PreparationBatch::new();
         let key_started = profile.is_some().then(Instant::now);
@@ -150,10 +148,13 @@ impl<B: GpuBackend> TextPipelineV2<B> {
                     .get_with_fallback(&keys.primary, keys.fallback.as_ref())
                     .is_some()
                 {
+                    // The layout is reused, but the shaping behind it is what a
+                    // resize re-lays out from: keep it in the working set.
+                    self.shaping_cache.touch(&keys.shaping_key);
                     continue;
                 }
 
-                if clear_shaping_cache || !self.shaping_cache.contains_key(&keys.shaping_key) {
+                if !self.shaping_cache.touch(&keys.shaping_key) {
                     shaping_batch.push(
                         keys.shaping_key.clone(),
                         ShapingInput {
@@ -274,11 +275,7 @@ impl<B: GpuBackend> TextPipelineV2<B> {
         for job in layout_batch.jobs() {
             let shaped = prepared_shaping
                 .get(&job.input.shaping_key)
-                .or_else(|| {
-                    (!clear_shaping_cache)
-                        .then(|| self.shaping_cache.get(&job.input.shaping_key))
-                        .flatten()
-                })
+                .or_else(|| self.shaping_cache.get(&job.input.shaping_key))
                 .cloned();
             let Some(shaped) = shaped else {
                 return false;
@@ -421,9 +418,6 @@ impl<B: GpuBackend> TextPipelineV2<B> {
             return false;
         };
 
-        if clear_shaping_cache {
-            self.shaping_cache.clear();
-        }
         self.shaping_cache.extend(prepared_shaping);
         self.layout_cache.extend(prepared_layouts);
         for (_, glyphs) in prepared_glyphs {
@@ -657,6 +651,7 @@ impl<B: GpuBackend> TextPipelineV2<B> {
         // screen's lines — without touching the current screen's layouts.
         let request_analysis_started = profile.is_some().then(Instant::now);
         self.layout_cache.begin_frame();
+        self.shaping_cache.begin_frame();
 
         // A frame whose surface size changed is one step of a live resize:
         // every wrapped layout is keyed by a width that will be different

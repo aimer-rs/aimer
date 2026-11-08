@@ -8,9 +8,8 @@
 
 use std::sync::Arc;
 
-use hashbrown::HashMap;
-
 use crate::font::{FontFamily, FontStyle, TextLanguage};
+use crate::shaping_cache::ShapingCache;
 use crate::text_layout::{ShapedText, TextWritingMode};
 
 /// Key used to memoize the output of `layout_text` across frames.
@@ -185,7 +184,7 @@ pub(super) struct SpanLayoutKeys {
 /// identity because it determines the right-to-left column origin.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn span_layout_keys_with_writing_mode(
-    shaping_cache: &HashMap<ShapingCacheKey, Arc<ShapedText>>,
+    shaping_cache: &ShapingCache,
     text: &Arc<str>,
     font_size: f32,
     font_family: FontFamily,
@@ -294,7 +293,7 @@ pub(super) struct OwnedLayoutInput {
 mod tests {
     use std::sync::Arc;
 
-    use hashbrown::HashMap;
+    use crate::shaping_cache::ShapingCache;
 
     use super::{
         LayoutCacheKey, OwnedLayoutInput, ShapingCacheKey, span_layout_keys_with_writing_mode,
@@ -389,7 +388,7 @@ mod tests {
 
     #[test]
     fn span_layout_keys_accepts_shared_shaping_results() {
-        let shaping_cache: HashMap<ShapingCacheKey, Arc<ShapedText>> = HashMap::new();
+        let shaping_cache = ShapingCache::new(usize::MAX, usize::MAX);
         let text = Arc::<str>::from("shared");
 
         let keys = span_layout_keys_with_writing_mode(
@@ -431,7 +430,7 @@ mod tests {
             writing_mode: TextWritingMode::VerticalRl,
             clusters: Vec::new(),
         });
-        let mut shaping_cache = HashMap::new();
+        let mut shaping_cache = ShapingCache::new(usize::MAX, usize::MAX);
         shaping_cache.insert(shaping_key, shaped);
 
         let keys = span_layout_keys_with_writing_mode(

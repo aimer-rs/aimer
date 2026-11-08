@@ -96,6 +96,7 @@ use std::cell::UnsafeCell;
 // this is the entry point of the app
 #[aimer::main]
 fn main() {
+    // empty_screen()
     AimerApp::new()
         .render_mode(render_mode_from_args())
         .setup(|| {
@@ -114,6 +115,10 @@ fn main() {
                 .child(showcase::ExampleShowcase::new()),
         )
         .run();
+}
+
+pub fn empty_screen() {
+    AimerApp::start(ZeroSizedBox);
 }
 
 #[allow(unused)]

@@ -11,31 +11,17 @@
 //! Clearing the whole cache when it grows past its capacity punishes exactly
 //! the frame that can least afford it: the resize frame that flooded the
 //! cache is followed by one that re-lays-out everything on screen from
-//! scratch. [`LayoutCache`] evicts by recency instead. Every hit and insert
-//! stamps the entry with the current frame's generation, and when a frame
-//! begins over capacity, only the entries no recent frame read are dropped —
-//! the working set of the previous frame always survives, so a flood of
+//! scratch. [`LayoutCache`] evicts by recency instead, through
+//! [`RecencyCache`]: every hit and insert stamps the entry with the current
+//! frame's generation, and when a frame begins over its entry capacity or its
+//! byte budget, only the entries no recent frame read are dropped — the
+//! working set of the previous frame always survives, so a flood of
 //! transient-width entries is shed without ever taking the live screen's
 //! layouts with it.
 
-use hashbrown::HashMap;
-
 use super::cache_key::LayoutCacheKey;
+use super::recency_cache::RecencyCache;
 use super::text_layout::{PositionedGlyph, PositionedTextLayout};
-
-/// How many frames an entry may go unread before an over-capacity frame is
-/// allowed to evict it.
-///
-/// One: eviction runs at the start of a frame, before that frame stamps
-/// anything, so the entries the *previous* frame used — the screen's current
-/// working set — are exactly the ones a linger of one frame protects.
-const LINGER_FRAMES: u64 = 1;
-
-/// One cached layout: the glyphs, and the last frame that read them.
-struct CachedLayout {
-    layout: PositionedTextLayout,
-    last_used: u64,
-}
 
 /// A recency-evicting map from [`LayoutCacheKey`] to positioned glyphs.
 ///
@@ -45,54 +31,46 @@ struct CachedLayout {
 /// `prepare` collect layouts early and read them again when it builds
 /// instances.
 ///
-/// `capacity` is a soft bound — a single frame that genuinely uses more
-/// entries than the capacity keeps them all, since evicting the working set
-/// would only force the next frame to rebuild it.
+/// The entry capacity and the byte budget are soft bounds — a single frame
+/// that genuinely uses more than either keeps all of it, since evicting the
+/// working set would only force the next frame to rebuild it.
 ///
 /// [`begin_frame`]: LayoutCache::begin_frame
 /// [`get`]: LayoutCache::get
 /// [`touch`]: LayoutCache::touch
 pub(super) struct LayoutCache {
-    entries: HashMap<LayoutCacheKey, CachedLayout>,
-    /// The current frame number; advanced by [`begin_frame`](Self::begin_frame).
-    generation: u64,
-    capacity: usize,
+    cache: RecencyCache<LayoutCacheKey, PositionedTextLayout>,
 }
 
 impl LayoutCache {
-    /// Creates an empty cache that starts evicting stale entries once more
-    /// than `capacity` are resident at the start of a frame.
+    /// Creates an empty cache bounded only by entry count.
+    #[cfg(test)]
     pub(super) fn new(capacity: usize) -> Self {
+        Self::with_byte_budget(capacity, usize::MAX)
+    }
+
+    /// Creates an empty cache that starts evicting stale entries once more
+    /// than `capacity` entries or `byte_budget` bytes are resident at the
+    /// start of a frame.
+    pub(super) fn with_byte_budget(capacity: usize, byte_budget: usize) -> Self {
         Self {
-            entries: HashMap::new(),
-            generation: 0,
-            capacity,
+            cache: RecencyCache::new(capacity, byte_budget),
         }
     }
 
-    /// Opens a new frame: advances the generation and, when the cache has
-    /// grown past its capacity, drops every entry no frame within
-    /// [`LINGER_FRAMES`] has read.
+    /// Opens a frame: when the cache has grown past its capacity or budget,
+    /// drops every entry no recent frame has read.
     ///
     /// Called once per `prepare`, before any lookups, so eviction can never
     /// invalidate a layout the current frame already confirmed.
     pub(super) fn begin_frame(&mut self) {
-        self.generation += 1;
-        if self.entries.len() > self.capacity {
-            let oldest_kept = self.generation.saturating_sub(LINGER_FRAMES);
-            self.entries
-                .retain(|_, entry| entry.last_used >= oldest_kept);
-        }
+        self.cache.begin_frame();
     }
 
     /// Returns the cached glyphs for `key`, stamping the entry as used by the
     /// current frame.
     pub(super) fn get(&mut self, key: &LayoutCacheKey) -> Option<&[PositionedGlyph]> {
-        let generation = self.generation;
-        self.entries.get_mut(key).map(|entry| {
-            entry.last_used = generation;
-            entry.layout.glyphs.as_slice()
-        })
+        self.cache.get(key).map(|layout| layout.glyphs.as_slice())
     }
 
     /// Returns the cached glyphs for `key` without stamping it.
@@ -101,15 +79,13 @@ impl LayoutCache {
     /// [`get`](Self::get) or [`touch`](Self::touch) — the stamp is in place,
     /// so the second read can skip the write.
     pub(super) fn peek(&self, key: &LayoutCacheKey) -> Option<&[PositionedGlyph]> {
-        self.entries
-            .get(key)
-            .map(|entry| entry.layout.glyphs.as_slice())
+        self.cache.peek(key).map(|layout| layout.glyphs.as_slice())
     }
 
     /// Whether `key` is resident, stamping it as used by the current frame
     /// when it is.
     pub(super) fn touch(&mut self, key: &LayoutCacheKey) -> bool {
-        self.get(key).is_some()
+        self.cache.touch(key)
     }
 
     /// Returns the first resident entry among `primary` and `fallback`,
@@ -154,27 +130,27 @@ impl LayoutCache {
         primary: &LayoutCacheKey,
         fallback: Option<&LayoutCacheKey>,
     ) -> Option<&super::text_layout::TextInteractionLayout> {
-        self.entries
-            .get(primary)
-            .or_else(|| fallback.and_then(|key| self.entries.get(key)))
-            .and_then(|entry| entry.layout.interaction.as_ref())
+        self.cache
+            .peek(primary)
+            .or_else(|| fallback.and_then(|key| self.cache.peek(key)))
+            .and_then(|layout| layout.interaction.as_ref())
+    }
+
+    /// Estimated bytes of every resident layout.
+    pub(super) fn bytes(&self) -> usize {
+        self.cache.bytes()
     }
 
     /// How many layouts are currently resident.
     pub(super) fn len(&self) -> usize {
-        self.entries.len()
+        self.cache.len()
     }
 
     /// Inserts a layout, stamped as used by the current frame.
     pub(super) fn insert(&mut self, key: LayoutCacheKey, layout: impl Into<PositionedTextLayout>) {
-        let generation = self.generation;
-        self.entries.insert(
-            key,
-            CachedLayout {
-                layout: layout.into(),
-                last_used: generation,
-            },
-        );
+        let layout = layout.into();
+        let bytes = layout.heap_bytes();
+        self.cache.insert(key, layout, bytes);
     }
 
     /// Inserts every layout of `layouts`, each stamped as used by the current
@@ -183,17 +159,9 @@ impl LayoutCache {
     where
         L: Into<PositionedTextLayout>,
     {
-        let generation = self.generation;
-        self.entries
-            .extend(layouts.into_iter().map(|(key, layout)| {
-                (
-                    key,
-                    CachedLayout {
-                        layout: layout.into(),
-                        last_used: generation,
-                    },
-                )
-            }));
+        for (key, layout) in layouts {
+            self.insert(key, layout);
+        }
     }
 }
 

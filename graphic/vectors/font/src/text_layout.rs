@@ -665,6 +665,28 @@ pub struct ShapedText {
     pub clusters: Vec<ShapedCluster>,
 }
 
+impl ShapedText {
+    /// Approximate bytes this shaping result keeps resident.
+    ///
+    /// Counts the struct, the source string, every cluster, and each cluster's
+    /// string and glyph storage by capacity, so a cache that budgets by bytes
+    /// charges what the allocator actually holds. It is an estimate, not an
+    /// accounting: allocator rounding is not included.
+    pub fn heap_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.text.capacity()
+            + self.clusters.capacity() * std::mem::size_of::<ShapedCluster>()
+            + self
+                .clusters
+                .iter()
+                .map(|cluster| {
+                    cluster.text.capacity()
+                        + cluster.glyphs.capacity() * std::mem::size_of::<ShapedGlyph>()
+                })
+                .sum::<usize>()
+    }
+}
+
 /// Interaction geometry retained beside the production Aimer layout.
 ///
 /// The renderer consumes the positioned glyphs while selection and editing
@@ -1019,6 +1041,24 @@ impl TextInteractionLayout {
 pub struct PositionedTextLayout {
     pub glyphs: Vec<PositionedGlyph>,
     pub interaction: Option<TextInteractionLayout>,
+}
+
+impl PositionedTextLayout {
+    /// Approximate bytes this layout keeps resident.
+    ///
+    /// Counts the owned allocations by capacity, so a cache that budgets by
+    /// bytes charges what the allocator actually holds. It is an estimate, not
+    /// an accounting: allocator rounding and the entry's own map slot are not
+    /// included.
+    pub fn heap_bytes(&self) -> usize {
+        let interaction = self.interaction.as_ref().map_or(0, |interaction| {
+            std::mem::size_of::<TextInteractionLayout>()
+                + interaction.text.capacity()
+                + interaction.lines.capacity() * std::mem::size_of::<TextLine>()
+                + interaction.clusters.capacity() * std::mem::size_of::<TextCluster>()
+        });
+        self.glyphs.capacity() * std::mem::size_of::<PositionedGlyph>() + interaction
+    }
 }
 
 impl From<Vec<PositionedGlyph>> for PositionedTextLayout {
@@ -2265,7 +2305,9 @@ fn append_simple_ltr_line<I>(
             text_range: cluster_start..cluster_start + 1,
             level: unicode_bidi::Level::ltr(),
             base_codepoint: codepoint,
-            glyphs: Vec::new(),
+            // Almost every cluster is one glyph, and the result is cached:
+            // `Vec::new()` then `push` would reserve four slots.
+            glyphs: Vec::with_capacity(1),
             width: 0.0,
             can_break_before: simple_ltr_break_before(breaks, cluster_start),
         });
@@ -2617,7 +2659,8 @@ pub fn shape_text_styled_with_writing_mode(
                         .copied()
                         .unwrap_or_else(unicode_bidi::Level::ltr),
                     base_codepoint: cluster.chars().next().unwrap_or('\0'),
-                    glyphs: Vec::new(),
+                    // One glyph is the common case; see the ASCII path above.
+                    glyphs: Vec::with_capacity(1),
                     width: 0.0,
                     can_break_before: scratch.can_break_before[plan.start],
                 }
@@ -4394,5 +4437,67 @@ mod tests {
                 );
             }
         }
+    }
+    /// A shaped string is cached for as long as its cache entry lives, so a
+    /// cluster must not hold more glyph storage than it uses: `Vec::new()`
+    /// followed by one `push` reserves four slots, quadrupling the cost of the
+    /// overwhelmingly common one-glyph cluster.
+    #[test]
+    fn single_glyph_clusters_hold_exactly_one_glyph_slot() {
+        let mut rasterizer = GlyphRasterizer::primary_only();
+        // The first string takes the ASCII fast path, the second the general
+        // grapheme path.
+        for text in ["Hello, world 123", "h\u{e9}llo w\u{f6}rld"] {
+            let shaped = shape_text(&mut rasterizer, text, 16.0);
+            let single = shaped
+                .clusters
+                .iter()
+                .filter(|cluster| cluster.glyphs.len() == 1)
+                .collect::<Vec<_>>();
+            assert!(!single.is_empty(), "{text:?} shaped no single-glyph cluster");
+            for cluster in single {
+                assert_eq!(
+                    cluster.glyphs.capacity(),
+                    1,
+                    "{text:?}: cluster {:?} over-allocates its glyph storage",
+                    cluster.text
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shaped_text_heap_bytes_covers_clusters_glyphs_and_strings() {
+        let mut rasterizer = GlyphRasterizer::primary_only();
+        let short = shape_text(&mut rasterizer, "ab", 16.0);
+        let long = shape_text(&mut rasterizer, "abcdefghijklmnopqrstuvwxyz", 16.0);
+
+        let lower_bound = |shaped: &ShapedText| {
+            shaped.text.len()
+                + shaped.clusters.len() * std::mem::size_of::<ShapedCluster>()
+                + shaped
+                    .clusters
+                    .iter()
+                    .map(|cluster| cluster.glyphs.len() * std::mem::size_of::<ShapedGlyph>())
+                    .sum::<usize>()
+        };
+        assert!(short.heap_bytes() >= lower_bound(&short));
+        assert!(long.heap_bytes() >= lower_bound(&long));
+        assert!(
+            long.heap_bytes() > short.heap_bytes() * 5,
+            "the estimate must grow with the text"
+        );
+    }
+
+    #[test]
+    fn positioned_layout_heap_bytes_tracks_glyph_storage() {
+        let mut rasterizer = GlyphRasterizer::primary_only();
+        let shaped = shape_text(&mut rasterizer, "abcdefghij", 16.0);
+        let layout = layout_shaped_text_result(&shaped, 0.0, 16.0, 0.0);
+
+        assert!(
+            layout.heap_bytes() >= layout.glyphs.len() * std::mem::size_of::<PositionedGlyph>()
+        );
+        assert!(PositionedTextLayout::from(Vec::new()).heap_bytes() == 0);
     }
 }

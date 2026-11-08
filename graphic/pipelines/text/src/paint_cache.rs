@@ -277,7 +277,6 @@ pub(super) fn sanitize_shadow(shadow: Option<TextShadowRequest>) -> Option<TextS
 mod tests {
     use std::sync::Arc;
 
-    use hashbrown::HashMap;
 
     use crate::font::{FontFamily, FontStyle, FontWeight};
     use crate::cache_key::span_layout_keys_with_writing_mode;
@@ -315,7 +314,7 @@ mod tests {
     }
 
     fn key(request: &TextDrawRequest) -> TextPaintCacheKey {
-        let shaping_cache = HashMap::new();
+        let shaping_cache = crate::shaping_cache::ShapingCache::new(usize::MAX, usize::MAX);
         let layout_width = if request.writing_mode.is_vertical() {
             request.bounds_width
         } else {

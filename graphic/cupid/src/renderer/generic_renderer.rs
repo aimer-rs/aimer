@@ -65,6 +65,10 @@ const RETAINED_LAYER_IDLE_FRAMES: u64 = 120;
 #[path = "generic_renderer/damage_clear_tests.rs"]
 mod damage_clear_tests;
 
+#[cfg(all(test, target_os = "macos", feature = "native"))]
+#[path = "generic_renderer/text_cache_tests.rs"]
+mod text_cache_tests;
+
 /// GPU memory and cache measurements exposed by the generic renderer.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RendererMemoryStats {
@@ -80,6 +84,10 @@ pub struct RendererMemoryStats {
     pub svg_geometry_gpu_bytes: u64,
     pub svg_instance_buffer_bytes: u64,
     pub multisample_target_bytes: u64,
+    /// Estimated bytes held by cached text shaping results.
+    pub text_shaping_cache_bytes: usize,
+    /// Estimated bytes held by cached positioned text layouts.
+    pub text_layout_cache_bytes: usize,
 }
 
 #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]
@@ -466,6 +474,8 @@ impl<B: GpuBackend> Renderer<B> {
             glyph_atlas_bytes: text.map_or(0, TextPipelineV2::glyph_atlas_bytes),
             glyph_bitmap_cache_entries: text.map_or(0, TextPipelineV2::cached_glyph_count),
             glyph_bitmap_cache_bytes: text.map_or(0, TextPipelineV2::glyph_bitmap_cache_bytes),
+            text_shaping_cache_bytes: text.map_or(0, TextPipelineV2::shaping_cache_bytes),
+            text_layout_cache_bytes: text.map_or(0, TextPipelineV2::layout_cache_bytes),
             instance_buffer_bytes: self.rect_pipeline.instance_buffer_bytes()
                 + image.map_or(0, ImagePipeline::instance_buffer_bytes)
                 + text.map_or(0, TextPipelineV2::instance_buffer_bytes)

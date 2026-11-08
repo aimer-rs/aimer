@@ -289,7 +289,7 @@ members = [
     "app/jaime",
     # experiments
     "experiments/laboratory",
-    "experiments/polymorphism",
+    "experiments/polymorphism", "host/prendre",
 ]
 
 [workspace.dependencies]

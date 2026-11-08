@@ -19,6 +19,8 @@ pub mod glyph_atlas;
 mod layout_cache;
 mod paint_cache;
 mod preparation_batch;
+mod recency_cache;
+mod shaping_cache;
 pub use self::alpha_ramp::{AlphaRamp, MAX_RAMP_STOPS};
 pub use self::text_layout::{TextHorizontalAlign, TextWritingMode};
 #[cfg(test)]
@@ -55,7 +57,7 @@ use crate::paint_cache::{
 };
 use crate::preparation_batch::{BatchExecutor, IndexedJob, PreparationBatch};
 use crate::text_layout::{
-    ShapedText, layout_shaped_text_result_with_bounds, line_alignment_offsets,
+    layout_shaped_text_result_with_bounds, line_alignment_offsets,
     positioned_line_widths, prepare_shaped_text_with_writing_mode,
 };
 use crate::utilities::Rgba8;
@@ -871,7 +873,7 @@ pub struct TextPipelineV2<B: crate::backend::GpuBackend> {
     last_viewport: (u32, u32),
     last_prepared_surface: (u32, u32),
     layout_cache: LayoutCache,
-    shaping_cache: HashMap<ShapingCacheKey, Arc<ShapedText>>,
+    shaping_cache: shaping_cache::ShapingCache,
     paint_cache: TextPaintCache,
     request_ranges: Vec<TextRequestRange>,
     visible_span_ranges: Vec<Range<usize>>,
@@ -895,6 +897,16 @@ impl<B: crate::backend::GpuBackend> TextPipelineV2<B> {
     const INITIAL_CAPACITY: usize = 64;
     const LAYOUT_CACHE_CAPACITY: usize = 4096;
     const SHAPING_CACHE_CAPACITY: usize = 4096;
+    /// Soft byte budget for cached positioned layouts.
+    ///
+    /// The entry count alone is no bound: a long paragraph costs tens of
+    /// kilobytes, so 4096 of them are hundreds of megabytes. Once the cache is
+    /// over this many bytes, an opening frame drops every layout the previous
+    /// frame did not read.
+    pub const LAYOUT_CACHE_BYTE_BUDGET: usize = 8 * 1024 * 1024;
+    /// Soft byte budget for cached shaping results; see
+    /// [`Self::LAYOUT_CACHE_BYTE_BUDGET`].
+    pub const SHAPING_CACHE_BYTE_BUDGET: usize = 8 * 1024 * 1024;
     /// Creates the pipeline through the selected [`GpuBackend`].
     ///
     /// Creates GPU resources through the selected backend, including shader
@@ -1169,8 +1181,14 @@ impl<B: crate::backend::GpuBackend> TextPipelineV2<B> {
             color_atlas_generation: 0,
             last_viewport: (0, 0),
             last_prepared_surface: (0, 0),
-            layout_cache: LayoutCache::new(Self::LAYOUT_CACHE_CAPACITY),
-            shaping_cache: HashMap::new(),
+            layout_cache: LayoutCache::with_byte_budget(
+                Self::LAYOUT_CACHE_CAPACITY,
+                Self::LAYOUT_CACHE_BYTE_BUDGET,
+            ),
+            shaping_cache: shaping_cache::ShapingCache::new(
+                Self::SHAPING_CACHE_CAPACITY,
+                Self::SHAPING_CACHE_BYTE_BUDGET,
+            ),
             paint_cache: TextPaintCache::default(),
             request_ranges: Vec::new(),
             visible_span_ranges: Vec::new(),
@@ -1346,6 +1364,16 @@ impl<B: crate::backend::GpuBackend> TextPipelineV2<B> {
     /// Returns GPU atlas texture bytes.
     pub fn glyph_atlas_bytes(&self) -> u64 {
         self.atlas.memory_bytes() + self.color_atlas.memory_bytes()
+    }
+
+    /// Returns estimated bytes held by cached shaping results.
+    pub fn shaping_cache_bytes(&self) -> usize {
+        self.shaping_cache.bytes()
+    }
+
+    /// Returns estimated bytes held by cached positioned layouts.
+    pub fn layout_cache_bytes(&self) -> usize {
+        self.layout_cache.bytes()
     }
 
     /// Returns the number of cached glyphs.
