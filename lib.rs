@@ -100,6 +100,8 @@ pub use aimer_quiver::{
 pub use aimer_vault as vault;
 #[cfg(feature = "lottie")]
 pub use aimer_lottie as lottie;
+#[cfg(feature = "capture")]
+pub use aimer_capture as capture;
 #[cfg(feature = "passkey")]
 pub use aimer_passkey as passkey;
 #[cfg(feature = "icons")]

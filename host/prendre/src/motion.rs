@@ -210,6 +210,11 @@ impl Pointer {
         self.wake();
     }
 
+    /// Where the pointer is now, or `None` if nothing has placed it.
+    pub(crate) fn current(&self) -> Option<(f32, f32)> {
+        self.lock().position()
+    }
+
     /// Stops where it is.
     pub(crate) fn cancel(&self) {
         self.lock().cancel();

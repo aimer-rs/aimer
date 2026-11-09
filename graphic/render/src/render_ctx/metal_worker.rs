@@ -259,6 +259,29 @@ impl MetalSeed {
     }
 }
 
+impl MetalPresenter {
+    /// Answers whoever asked for a picture, now that the frame has been handed on:
+    /// the wait for the copy comes after the frame is on its way, so taking a
+    /// picture never delays showing one.
+    fn finish_capture(
+        &self,
+        capture: Option<aimer_platform::capture::Pending>,
+        readback: Option<super::metal_capture::Readback>,
+        size: (u32, u32),
+        packet: &FramePacket,
+    ) {
+        if let (Some(pending), Some(readback)) = (capture, readback) {
+            super::metal_capture::finish(
+                &self.backend,
+                pending,
+                &readback,
+                size,
+                packet.metadata().device_scale(),
+            );
+        }
+    }
+}
+
 impl WorkerPresenter for MetalPresenter {
     type Output = BackendOutput;
     fn resize(&mut self, _: PhysicalSize<u32>) {}
@@ -285,6 +308,12 @@ impl WorkerPresenter for MetalPresenter {
                 self.renderer.discard_frame(&self.backend, packet);
                 return BackendOutput::Presented(false);
             }
+            // Someone asked for a picture of the window. Taken only now that a
+            // drawable of the right size is in hand: a frame that could not be drawn
+            // leaves the request waiting for one that can.
+            let capture = aimer_platform::capture::is_pending()
+                .then(aimer_platform::capture::take_pending)
+                .flatten();
             let encode = PhaseTimer::start();
             // Decided once so begin and end always pair, even if the overlay is
             // toggled mid-frame. Without a reader the capture costs nothing.
@@ -294,8 +323,22 @@ impl WorkerPresenter for MetalPresenter {
                 self.backend
                     .begin_gpu_frame_timing(aimer_frame_stats::record_gpu_frame_time);
             }
-            self.renderer
-                .render_packet(&self.backend, drawable.view(), packet, true);
+            if capture.is_some() {
+                // A frame that changed nothing carries no damage, and the picture
+                // must be the whole window regardless: redraw the complete retained
+                // plan, as a resize does.
+                let (width, height) = drawable.size();
+                self.renderer.render_packet_at_size(&self.backend, drawable.view(), packet, width, height, true);
+            } else {
+                self.renderer
+                    .render_packet(&self.backend, drawable.view(), packet, true);
+            }
+            // Copied out after the frame is drawn and before it is presented, on the
+            // same queue, so it is in order behind the drawing and reads this frame.
+            let size = drawable.size();
+            let readback = capture
+                .as_ref()
+                .map(|_| super::metal_capture::begin(&self.backend, drawable.texture(), size.0, size.1));
             encode.finish(FramePhase::Encode);
             if gpu_timing {
                 self.backend.end_gpu_frame_timing();
@@ -311,10 +354,12 @@ impl WorkerPresenter for MetalPresenter {
                 // No wait for the GPU and no main-thread transaction.
                 drawable.present(&self.backend);
                 aimer_utils::frame_trace("raster_presented", 0.0, 0.0);
+                self.finish_capture(capture, readback, size, packet);
                 return BackendOutput::Presented(true);
             }
             let scheduled = drawable.schedule_transactional_presentation(&self.backend);
             aimer_utils::frame_trace("raster_scheduled", 0.0, 0.0);
+            self.finish_capture(capture, readback, size, packet);
             BackendOutput::Metal(scheduled)
         })
     }

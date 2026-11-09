@@ -633,6 +633,8 @@ impl crate::raster::WorkerPresenter for NativePresenter {
         self.0.resize(size);
     }
     fn render(&mut self, packet: &FramePacket) -> BackendOutput {
+        // This renderer cannot copy its frames out yet: say so, don't leave the asker waiting.
+        aimer_platform::capture::refuse(aimer_platform::capture::Error::Unsupported);
         BackendOutput::Presented(self.0.present_worker_packet(packet))
     }
     fn max_texture_dimension(&self) -> u32 {

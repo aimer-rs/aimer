@@ -368,6 +368,13 @@ pub mod render_ctx {
                 return false;
             }
 
+            // Someone asked for a picture of the window. Taken only now that a
+            // drawable is in hand: a frame that could not be drawn leaves the request
+            // waiting for one that can.
+            let capture = aimer_platform::capture::is_pending()
+                .then(aimer_platform::capture::take_pending)
+                .flatten();
+
             let encode = PhaseTimer::start();
             // Decided once so begin and end always pair, even if the overlay is
             // toggled mid-frame. Without a reader the capture costs nothing.
@@ -376,12 +383,14 @@ pub mod render_ctx {
             if gpu_timing {
                 backend.begin_gpu_frame_timing(aimer_frame_stats::record_gpu_frame_time);
             }
-            if (width, height) == (frame.width, frame.height) {
+            if capture.is_none() && (width, height) == (frame.width, frame.height) {
                 renderer.render_packet(backend, drawable.view(), packet, true);
             } else {
                 // A resize can race frame recording. Damage belongs to the
                 // packet's target dimensions, so redraw its complete retained
-                // plan against the drawable's current size.
+                // plan against the drawable's current size. A capture frame is
+                // drawn the same way: a frame that changed nothing carries no
+                // damage, and the picture must be the whole window regardless.
                 renderer.render_packet_at_size(
                     backend,
                     drawable.view(),
@@ -391,6 +400,11 @@ pub mod render_ctx {
                     true,
                 );
             }
+            // Copied out after the frame is drawn and before it is presented, on the
+            // same queue, so it is in order behind the drawing and reads this frame.
+            let readback = capture
+                .as_ref()
+                .map(|_| crate::render_ctx::metal_capture::begin(backend, drawable.texture(), width, height));
             encode.finish(FramePhase::Encode);
             if gpu_timing {
                 backend.end_gpu_frame_timing();
@@ -406,9 +420,15 @@ pub mod render_ctx {
             #[cfg(target_os = "ios")]
             drop(_surface_update);
             present.finish(FramePhase::Present);
+            // The frame is on its way to the screen; only now wait for the copy, so
+            // taking a picture does not delay showing it.
+            if let (Some(pending), Some(readback)) = (capture, readback) {
+                crate::render_ctx::metal_capture::finish(backend, pending, &readback, (width, height), packet.metadata().device_scale());
+            }
             true
         }
     }
+
 
     impl Drop for MetalApi {
         fn drop(&mut self) {

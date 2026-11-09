@@ -3,7 +3,8 @@
 //! ```text
 //! move X Y [OPTS]                   down X Y [BUTTON] [OPTS]   up X Y [BUTTON] [OPTS]
 //! glide X Y [MS] [OPTS]             settle                     leave
-//! scroll DX DY [OPTS]
+//! scroll DX DY [OPTS]               trackpad DX DY [MS] [OPTS]
+//! screenshot [width=PIXELS] [jpeg=QUALITY]
 //! touch start|move|end ID X Y       touch cancel
 //! pinch X Y DELTA PHASE             rotate X Y DELTA PHASE     pan X Y DX DY PHASE
 //! smartzoom X Y
@@ -20,7 +21,8 @@
 //! `PHASE` is `start`, `move`, `end` or `cancel`. `RANGE` is `-` or the byte
 //! range `START,END` of the active segment inside the preedit text.
 //!
-//! `MS` is how long a `glide` takes, from 1 to 3000 milliseconds.
+//! `MS` is how long a `glide` or a `trackpad` swipe takes, from 1 to 3000
+//! milliseconds.
 //!
 //! `OPTS` are `name=value` words after the positional arguments, in any order,
 //! each at most once: `mods=MODS` on `move`, `glide`, `down`, `up` and `scroll`, and on
@@ -43,7 +45,7 @@ use std::path::PathBuf;
 use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
 
 use crate::Command;
-use crate::command::{BackStep, EditShortcut, MAX_GLIDE_MILLIS};
+use crate::command::{BackStep, EditShortcut, MAX_GLIDE_MILLIS, MAX_SCREENSHOT_WIDTH};
 
 /// Why a line could not be read as a [`Command`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -316,12 +318,46 @@ impl fmt::Display for Command {
                 button_name(*button, f)?;
                 write_mods_option(modifiers, f)
             }
+            Self::PointerDownHere { button, modifiers } => {
+                f.write_str("down ")?;
+                button_name(*button, f)?;
+                write_mods_option(modifiers, f)
+            }
+            Self::PointerUpHere { button, modifiers } => {
+                f.write_str("up ")?;
+                button_name(*button, f)?;
+                write_mods_option(modifiers, f)
+            }
             Self::PointerGlide { x, y, millis, modifiers } => {
                 write!(f, "glide {x} {y}")?;
                 if let Some(millis) = millis {
                     write!(f, " {millis}")?;
                 }
                 write_mods_option(modifiers, f)
+            }
+            Self::TrackpadScroll { dx, dy, millis, modifiers } => {
+                write!(f, "trackpad {dx} {dy}")?;
+                if let Some(millis) = millis {
+                    write!(f, " {millis}")?;
+                }
+                write_mods_option(modifiers, f)
+            }
+            Self::Typing { text, millis } => {
+                match millis {
+                    Some(millis) => write!(f, "typing {millis} ")?,
+                    None => f.write_str("typing - ")?,
+                }
+                escape(text, f)
+            }
+            Self::Screenshot { width, jpeg } => {
+                f.write_str("screenshot")?;
+                if let Some(width) = width {
+                    write!(f, " width={width}")?;
+                }
+                if let Some(quality) = jpeg {
+                    write!(f, " jpeg={quality}")?;
+                }
+                Ok(())
             }
             Self::Settle => f.write_str("settle"),
             Self::PointerLeave => f.write_str("leave"),
@@ -425,22 +461,32 @@ impl FromStr for Command {
                 Ok(Self::PointerMove { x, y, modifiers: options.modifiers() })
             }
             "down" | "up" => {
-                let (x, y) = (number(words.next(), "x")?, number(words.next(), "y")?);
                 let mut words = words.peekable();
+                // A point is two numbers; without one the press is where the mouse is.
+                let at = if words.peek().is_some_and(|w| w.parse::<f32>().is_ok()) {
+                    Some((number(words.next(), "x")?, number(words.next(), "y")?))
+                } else {
+                    None
+                };
                 let button = match words.next_if(|w| !w.contains('=')) {
                     Some(word) => parse_button(word)?,
                     None => PointerButton::Primary,
                 };
                 let mut options = Options::parse(words, Accepts::Modifiers)?;
                 let modifiers = options.modifiers();
-                Ok(if verb == "down" {
-                    Self::PointerDown { x, y, button, modifiers }
-                } else {
-                    Self::PointerUp { x, y, button, modifiers }
+                Ok(match (verb, at) {
+                    ("down", Some((x, y))) => Self::PointerDown { x, y, button, modifiers },
+                    ("down", None) => Self::PointerDownHere { button, modifiers },
+                    (_, Some((x, y))) => Self::PointerUp { x, y, button, modifiers },
+                    (_, None) => Self::PointerUpHere { button, modifiers },
                 })
             }
-            "glide" => {
-                let (x, y) = (number(words.next(), "x")?, number(words.next(), "y")?);
+            "glide" | "trackpad" => {
+                let (a, b) = if verb == "glide" {
+                    (number(words.next(), "x")?, number(words.next(), "y")?)
+                } else {
+                    (number(words.next(), "dx")?, number(words.next(), "dy")?)
+                };
                 let mut words = words.peekable();
                 let millis = words
                     .next_if(|w| !w.contains('='))
@@ -452,7 +498,36 @@ impl FromStr for Command {
                     })
                     .transpose()?;
                 let mut options = Options::parse(words, Accepts::Modifiers)?;
-                Ok(Self::PointerGlide { x, y, millis, modifiers: options.modifiers() })
+                let modifiers = options.modifiers();
+                Ok(if verb == "glide" {
+                    Self::PointerGlide { x: a, y: b, millis, modifiers }
+                } else {
+                    Self::TrackpadScroll { dx: a, dy: b, millis, modifiers }
+                })
+            }
+            "screenshot" => {
+                let (mut width, mut jpeg) = (None, None);
+                for word in words {
+                    let (name, value) = word.split_once('=').ok_or(ParseError::Invalid("option"))?;
+                    match name {
+                        "width" if width.is_none() => {
+                            width = Some(
+                                value
+                                    .parse::<u32>()
+                                    .ok()
+                                    .filter(|w| *w <= MAX_SCREENSHOT_WIDTH)
+                                    .ok_or(ParseError::Invalid("width"))?,
+                            );
+                        }
+                        "jpeg" if jpeg.is_none() => {
+                            jpeg = Some(
+                                value.parse::<u8>().ok().filter(|q| (1..=100).contains(q)).ok_or(ParseError::Invalid("jpeg"))?,
+                            );
+                        }
+                        _ => return Err(ParseError::Invalid("option")),
+                    }
+                }
+                Ok(Self::Screenshot { width, jpeg })
             }
             "settle" => no_more(words).map(|()| Self::Settle),
             "leave" => no_more(words).map(|()| Self::PointerLeave),
@@ -519,6 +594,24 @@ impl FromStr for Command {
                 let modifiers = parse_modifiers(parts.next().ok_or(ParseError::Missing("modifiers"))?)?;
                 let key = parse_key(parts.next().ok_or(ParseError::Missing("key"))?)?;
                 Ok(Self::Key { key, action, modifiers })
+            }
+            "typing" => {
+                // A time or `-`, then the text exactly as `text` takes it.
+                let (when, text) = match rest.ok_or(ParseError::Missing("duration"))?.split_once(' ') {
+                    Some((when, text)) => (when, Some(text)),
+                    None => (rest.unwrap_or(""), None),
+                };
+                let millis = match when {
+                    "-" => None,
+                    when => Some(
+                        when.parse::<u32>()
+                            .ok()
+                            .filter(|ms| (1..=MAX_GLIDE_MILLIS).contains(ms))
+                            .ok_or(ParseError::Invalid("duration"))?,
+                    ),
+                };
+                let text = unescape(text.ok_or(ParseError::Missing("text"))?, "escape")?;
+                Ok(Self::Typing { text, millis })
             }
             "text" => Ok(Self::Text(unescape(rest.ok_or(ParseError::Missing("text"))?, "escape")?)),
             "preedit" => {

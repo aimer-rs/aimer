@@ -1752,6 +1752,8 @@ mod tests {
     mod hover_bar_click;
     mod hover_border_damage;
     mod implicit_animation_plays;
+    mod capture_request;
+    mod capture_widget;
     mod injected_input;
     mod ios_input;
     mod loading_damage;

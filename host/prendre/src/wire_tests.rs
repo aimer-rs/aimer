@@ -23,8 +23,18 @@ fn every_command_survives_a_round_trip() {
     roundtrip(Command::PointerDown { x: 10.0, y: 20.0, button: PointerButton::Secondary, modifiers: none.clone() });
     roundtrip(Command::PointerUp { x: 0.1, y: 0.2, button: PointerButton::Other(7), modifiers: ctrl() });
     roundtrip(Command::PointerUp { x: 0.0, y: 0.0, button: PointerButton::Middle, modifiers: none.clone() });
+    roundtrip(Command::PointerDownHere { button: PointerButton::Primary, modifiers: none.clone() });
+    roundtrip(Command::PointerUpHere { button: PointerButton::Other(7), modifiers: ctrl() });
     roundtrip(Command::PointerLeave);
     roundtrip(Command::Settle);
+    roundtrip(Command::Typing { text: "hello, world".into(), millis: None });
+    roundtrip(Command::Typing { text: "héllo 世界\nsecond \\ ".into(), millis: Some(900) });
+    roundtrip(Command::Typing { text: String::new(), millis: None });
+    roundtrip(Command::Screenshot { width: None, jpeg: None });
+    roundtrip(Command::Screenshot { width: Some(1280), jpeg: None });
+    roundtrip(Command::Screenshot { width: Some(0), jpeg: Some(75) });
+    roundtrip(Command::TrackpadScroll { dx: 0.0, dy: -120.5, millis: None, modifiers: none });
+    roundtrip(Command::TrackpadScroll { dx: 40.0, dy: 8.0, millis: Some(600), modifiers: ctrl() });
     roundtrip(Command::PointerGlide { x: 10.0, y: -4.5, millis: None, modifiers: none });
     roundtrip(Command::PointerGlide { x: 1.0, y: 2.0, millis: Some(350), modifiers: ctrl() });
     roundtrip(Command::Scroll {
@@ -118,6 +128,43 @@ fn a_glide_takes_an_optional_duration_in_milliseconds() {
         Ok(Command::PointerGlide { x: 5.0, y: 6.0, millis: Some(250), modifiers: ctrl() })
     );
     assert_eq!("glide 5 6 mods=ctrl".parse(), Ok(Command::PointerGlide { x: 5.0, y: 6.0, millis: None, modifiers: ctrl() }));
+}
+
+#[test]
+fn a_screenshot_takes_an_optional_width_and_jpeg_quality_in_any_order() {
+    assert_eq!("screenshot".parse(), Ok(Command::Screenshot { width: None, jpeg: None }));
+    assert_eq!("screenshot width=800".parse(), Ok(Command::Screenshot { width: Some(800), jpeg: None }));
+    assert_eq!(
+        "screenshot jpeg=70 width=640".parse(),
+        Ok(Command::Screenshot { width: Some(640), jpeg: Some(70) })
+    );
+    let bad = |line: &str| line.parse::<Command>().unwrap_err();
+    assert_eq!(bad("screenshot width=wide"), ParseError::Invalid("width"));
+    assert_eq!(bad("screenshot width=100000"), ParseError::Invalid("width"));
+    assert_eq!(bad("screenshot jpeg=0"), ParseError::Invalid("jpeg"));
+    assert_eq!(bad("screenshot jpeg=101"), ParseError::Invalid("jpeg"));
+    assert_eq!(bad("screenshot colour=red"), ParseError::Invalid("option"));
+    assert_eq!(bad("screenshot width=1 width=2"), ParseError::Invalid("option"));
+    assert_eq!(bad("screenshot 800"), ParseError::Invalid("option"));
+}
+
+#[test]
+fn a_trackpad_scroll_takes_an_optional_duration_like_a_glide() {
+    let none = Modifiers::default();
+    assert_eq!(
+        "trackpad 0 -300".parse(),
+        Ok(Command::TrackpadScroll { dx: 0.0, dy: -300.0, millis: None, modifiers: none })
+    );
+    assert_eq!(
+        "trackpad 0 -300 800 mods=ctrl".parse(),
+        Ok(Command::TrackpadScroll { dx: 0.0, dy: -300.0, millis: Some(800), modifiers: ctrl() })
+    );
+    let bad = |line: &str| line.parse::<Command>().unwrap_err();
+    assert_eq!(bad("trackpad 1"), ParseError::Missing("dy"));
+    assert_eq!(bad("trackpad 1 2 0"), ParseError::Invalid("duration"));
+    assert_eq!(bad("trackpad 1 2 3001"), ParseError::Invalid("duration"));
+    assert!("trackpad NaN 2".parse::<Command>().is_err());
+    assert!("trackpad 1 inf".parse::<Command>().is_err());
 }
 
 #[test]
@@ -237,4 +284,35 @@ fn non_finite_numbers_never_reach_the_application() {
     ] {
         assert!(line.parse::<Command>().is_err(), "{line} must be rejected");
     }
+}
+
+#[test]
+fn typing_takes_a_time_or_a_dash_and_then_the_text_as_it_is() {
+    assert_eq!("typing - hello world".parse(), Ok(Command::Typing { text: "hello world".into(), millis: None }));
+    assert_eq!("typing 900 12 apples".parse(), Ok(Command::Typing { text: "12 apples".into(), millis: Some(900) }));
+    let bad = |line: &str| line.parse::<Command>().unwrap_err();
+    assert_eq!(bad("typing"), ParseError::Missing("duration"));
+    assert_eq!(bad("typing 12apples"), ParseError::Invalid("duration"));
+    assert_eq!(bad("typing 0 x"), ParseError::Invalid("duration"));
+    assert_eq!(bad("typing 3001 x"), ParseError::Invalid("duration"));
+    assert_eq!(bad("typing 500"), ParseError::Missing("text"));
+}
+
+#[test]
+fn a_press_or_release_without_a_point_is_where_the_mouse_is() {
+    let none = Modifiers::default();
+    assert_eq!("down".parse(), Ok(Command::PointerDownHere { button: PointerButton::Primary, modifiers: none.clone() }));
+    assert_eq!("up secondary".parse(), Ok(Command::PointerUpHere { button: PointerButton::Secondary, modifiers: none }));
+    assert_eq!(
+        "down middle mods=ctrl".parse(),
+        Ok(Command::PointerDownHere { button: PointerButton::Middle, modifiers: ctrl() })
+    );
+    assert_eq!(
+        "down mods=ctrl".parse(),
+        Ok(Command::PointerDownHere { button: PointerButton::Primary, modifiers: ctrl() })
+    );
+    // A point is both numbers or neither.
+    let bad = |line: &str| line.parse::<Command>().unwrap_err();
+    assert_eq!(bad("down 5"), ParseError::Missing("y"));
+    assert_eq!(bad("up 5 nope"), ParseError::Invalid("y"));
 }

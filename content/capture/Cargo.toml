@@ -1,0 +1,14 @@
+[package]
+name = "aimer_capture"
+version = "0.1.0"
+edition = "2024"
+description = "Turns what an Aimer app draws into an image: the window, or the content of a widget"
+
+[features]
+[dependencies]
+aimer_attribute.workspace = true
+aimer_canvas.workspace = true
+aimer_platform.workspace = true
+aimer_widget.workspace = true
+# PNG and JPEG are encoded here, with the image crate the workspace already uses.
+image = { workspace = true, features = ["png", "jpeg"] }

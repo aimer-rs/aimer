@@ -29,6 +29,9 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
             }
         }
         AimerNativePlatformEvent::Accessibility => app.sync_accessibility(),
+        // Someone wants a picture of the window. An app that is not changing draws
+        // nothing, so a frame is drawn in full for the renderer to copy.
+        AimerNativePlatformEvent::CaptureRequested => app.request_full_redraw(),
         // Someone attached or left: the badge changes, and nothing else does.
         #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
         AimerNativePlatformEvent::AttachmentChanged => {

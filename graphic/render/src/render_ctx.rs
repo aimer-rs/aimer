@@ -391,6 +391,12 @@ mod metal_worker;
     feature = "native",
     any(target_os = "macos", target_os = "ios")
 ))]
+mod metal_capture;
+#[cfg(all(
+    not(feature = "wgpu"),
+    feature = "native",
+    any(target_os = "macos", target_os = "ios")
+))]
 mod present_gate;
 
 #[doc(hidden)]

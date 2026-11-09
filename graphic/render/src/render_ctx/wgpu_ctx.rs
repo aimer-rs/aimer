@@ -219,6 +219,8 @@ pub mod render_ctx {
             self.gpu.max_texture_dimension()
         }
         fn render(&mut self, packet: &FramePacket) -> BackendOutput {
+            // This renderer cannot copy its frames out yet: say so, don't leave the asker waiting.
+            aimer_platform::capture::refuse(aimer_platform::capture::Error::Unsupported);
             let presented = FramePresenter::present_packet(self, packet);
             if !presented {
                 self.renderer.discard_frame(&self.backend, packet);

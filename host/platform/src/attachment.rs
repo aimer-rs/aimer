@@ -18,29 +18,55 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use aimer_attribute::position::Vec2d;
 
-static ATTACHED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// Who is connected, and which of them are agents.
+#[derive(Default)]
+struct Connections {
+    /// Everyone, in the order they connected.
+    everyone: Vec<String>,
+    /// The ones controlling the app, as opposed to supervising it.
+    agents: Vec<String>,
+}
+
+static CONNECTIONS: Mutex<Connections> = Mutex::new(Connections { everyone: Vec::new(), agents: Vec::new() });
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
-/// Replaces the names of everyone attached, one per connection, and reports
-/// whether that changed anything.
+/// Replaces the names of everyone connected and, of those, the agents; and
+/// reports whether that changed anything.
+///
+/// Being connected is not controlling: the tool that launched the app holds a
+/// connection for the whole run, and only an agent connection means someone is
+/// remote-controlling the app. `agents` is the part of `everyone` that is.
 ///
 /// Callable from any thread. The caller wakes the event loop when this returns
-/// `true`; an unchanged list asks for nothing, so a flapping connection does not
+/// `true`; unchanged lists ask for nothing, so a flapping connection does not
 /// wake an idle app for no reason.
-pub fn set_attached(names: Vec<String>) -> bool {
-    let mut attached = ATTACHED.lock().expect("attachment mutex poisoned");
-    if *attached == names {
+pub fn set_connections(everyone: Vec<String>, agents: Vec<String>) -> bool {
+    let mut connections = CONNECTIONS.lock().expect("attachment mutex poisoned");
+    if connections.everyone == everyone && connections.agents == agents {
         return false;
     }
-    *attached = names;
+    *connections = Connections { everyone, agents };
     GENERATION.fetch_add(1, Ordering::Release);
     true
 }
 
-/// The names of everyone attached now, in the order they attached. Empty when
-/// nobody is.
+/// Replaces the names of everyone attached, taking every one of them to be an
+/// agent, and reports whether that changed anything. See [`set_connections`].
+pub fn set_attached(names: Vec<String>) -> bool {
+    set_connections(names.clone(), names)
+}
+
+/// The names of everyone connected now, in the order they connected, launcher
+/// and agents alike. Empty when nobody is.
 pub fn attached() -> Vec<String> {
-    ATTACHED.lock().expect("attachment mutex poisoned").clone()
+    CONNECTIONS.lock().expect("attachment mutex poisoned").everyone.clone()
+}
+
+/// The names of the connections that are remote-controlling the app, in the order
+/// they connected. Empty when nobody is, even if the tool that launched the app
+/// is connected: that is what the debug badge follows.
+pub fn agents() -> Vec<String> {
+    CONNECTIONS.lock().expect("attachment mutex poisoned").agents.clone()
 }
 
 /// A number that changes whenever [`attached`] does, so a reader can tell
@@ -99,6 +125,40 @@ mod tests {
         assert_eq!(attached(), ["aimer-cli", "mcp:claude"]);
         assert!(set_attached(Vec::new()));
         assert!(attached().is_empty());
+    }
+
+    #[test]
+    fn a_launcher_is_connected_but_not_an_agent() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        set_attached(Vec::new());
+        assert!(set_connections(names(&["aimer-cli"]), Vec::new()));
+        assert_eq!(attached(), ["aimer-cli"]);
+        assert!(agents().is_empty(), "supervising is not controlling");
+
+        assert!(set_connections(names(&["aimer-cli", "mcp:codex"]), names(&["mcp:codex"])));
+        assert_eq!(agents(), ["mcp:codex"]);
+        assert_eq!(attached(), ["aimer-cli", "mcp:codex"]);
+
+        assert!(set_connections(names(&["aimer-cli"]), Vec::new()), "the agent leaving is a change");
+        assert!(agents().is_empty());
+    }
+
+    #[test]
+    fn a_change_in_only_the_agents_is_a_new_generation() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        set_connections(names(&["a", "b"]), Vec::new());
+        let before = generation();
+        assert!(!set_connections(names(&["a", "b"]), Vec::new()));
+        assert_eq!(generation(), before);
+        assert!(set_connections(names(&["a", "b"]), names(&["b"])), "same people, different roles");
+        assert_ne!(generation(), before);
+    }
+
+    #[test]
+    fn set_attached_means_everyone_is_an_agent() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        set_attached(names(&["x", "y"]));
+        assert_eq!(agents(), ["x", "y"]);
     }
 
     #[test]

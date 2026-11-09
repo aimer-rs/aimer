@@ -29,7 +29,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use crate::Command;
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, TouchPhase};
 
 /// How many moves a drag or swipe is cut into. Few enough to be quick, enough
 /// that a widget watching the pointer sees a path and not a jump.
@@ -111,20 +111,34 @@ pub fn mouse_move(x: f32, y: f32) -> Result<Vec<Command>, ActionError> {
     Ok(vec![Command::PointerGlide { x, y, millis: None, modifiers: Modifiers::default() }])
 }
 
-/// Glides to `(x, y)` and clicks `button` there `count` times (one to three).
+/// Clicks `button` `count` times (one to three), at `at` or, without one, where
+/// the injected mouse already is.
 ///
-/// The press waits for the glide to arrive, so it lands on the point and does not
-/// cut the glide short.
-pub fn click(x: f32, y: f32, button: PointerButton, count: u8) -> Result<Vec<Command>, ActionError> {
-    finite(&[x, y], "a position")?;
+/// With a point the mouse glides there first, and the press waits for the glide
+/// to arrive, so it lands on the point and does not cut the glide short. Without
+/// one there is no glide: the server presses at the mouse's current position,
+/// and answers with an error if nothing has placed the mouse yet.
+pub fn click(at: Option<(f32, f32)>, button: PointerButton, count: u8) -> Result<Vec<Command>, ActionError> {
+    if let Some((x, y)) = at {
+        finite(&[x, y], "a position")?;
+    }
     if !(1..=3).contains(&count) {
         return Err(ActionError::new("a click is one to three presses"));
     }
     let modifiers = Modifiers::default();
-    let mut commands = vec![Command::PointerGlide { x, y, millis: None, modifiers }];
+    let mut commands = Vec::with_capacity(1 + 2 * usize::from(count));
+    if let Some((x, y)) = at {
+        commands.push(Command::PointerGlide { x, y, millis: None, modifiers });
+    }
     for _ in 0..count {
-        commands.push(Command::PointerDown { x, y, button, modifiers });
-        commands.push(Command::PointerUp { x, y, button, modifiers });
+        commands.push(match at {
+            Some((x, y)) => Command::PointerDown { x, y, button, modifiers },
+            None => Command::PointerDownHere { button, modifiers },
+        });
+        commands.push(match at {
+            Some((x, y)) => Command::PointerUp { x, y, button, modifiers },
+            None => Command::PointerUpHere { button, modifiers },
+        });
     }
     Ok(commands)
 }
@@ -142,8 +156,16 @@ pub fn drag(from: (f32, f32), to: (f32, f32)) -> Result<Vec<Command>, ActionErro
     ])
 }
 
-/// Scrolls `amount` wheel steps so that `direction` is revealed: scrolling down
-/// moves the content up.
+/// How far one wheel step scrolls, in pixels: about a notch of a mouse wheel on
+/// the desktop toolkits that settle on 40.
+const PIXELS_PER_STEP: f32 = 40.0;
+
+/// Scrolls `amount` wheel steps (40 pixels each) so that `direction` is
+/// revealed: scrolling down moves the content up.
+///
+/// It scrolls as a trackpad does — a smooth, eased swipe over a fraction of a
+/// second, with a gesture's start and end — not as the single jump of a mouse
+/// wheel pulse.
 ///
 /// With `at`, the mouse glides there first and the scroll waits for it to arrive.
 /// Without, it scrolls wherever the mouse already is: the position the app last
@@ -157,14 +179,15 @@ pub fn scroll(at: Option<(f32, f32)>, direction: Direction, amount: f32) -> Resu
         return Err(ActionError::new(format!("an amount is above 0 and at most {MAX_SCROLL_AMOUNT}")));
     }
     // The content moves the other way: the offset of a list scrolled down is negative.
+    let pixels = amount * PIXELS_PER_STEP;
     let (dx, dy) = match direction {
-        Direction::Up => (0.0, amount),
-        Direction::Down => (0.0, -amount),
-        Direction::Left => (amount, 0.0),
-        Direction::Right => (-amount, 0.0),
+        Direction::Up => (0.0, pixels),
+        Direction::Down => (0.0, -pixels),
+        Direction::Left => (pixels, 0.0),
+        Direction::Right => (-pixels, 0.0),
     };
     let modifiers = Modifiers::default();
-    let scroll = Command::Scroll { dx, dy, kind: ScrollDeltaKind::Line, phase: TouchPhase::Moved, modifiers };
+    let scroll = Command::TrackpadScroll { dx, dy, millis: None, modifiers };
     Ok(match at {
         Some((x, y)) => vec![Command::PointerGlide { x, y, millis: None, modifiers }, Command::Settle, scroll],
         None => vec![scroll],
@@ -207,7 +230,17 @@ pub fn pinch(x: f32, y: f32, scale: f32) -> Result<Vec<Command>, ActionError> {
     Ok(commands)
 }
 
-/// Types `text` as one edit, as an input method would commit it.
+/// Types `text` the way a person does: one keystroke at a time, at an uneven
+/// human pace, and the command replies when the last one is in.
+///
+/// A text too long to type at that pace in [`MAX_GLIDE_MILLIS`](crate::command::MAX_GLIDE_MILLIS)
+/// is typed faster. See [`type_text`] for the instant way.
+pub fn typing(text: &str) -> Command {
+    Command::Typing { text: text.to_owned(), millis: None }
+}
+
+/// Types `text` as one edit, as an input method would commit it: all of it at
+/// once, with no pacing. See [`typing`] for text that looks typed.
 pub fn type_text(text: &str) -> Command {
     Command::Text(text.to_owned())
 }

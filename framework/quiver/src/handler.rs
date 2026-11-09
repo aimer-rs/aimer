@@ -1923,6 +1923,13 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
                 }
             }
             let mut render_damage = self.window_render_tree.tree.take_damage();
+            // A picture of the window needs every node, not the slice that changed:
+            // an idle frame is culled to nothing, and the renderer's full-size redraw
+            // for the capture would then have nothing to draw. Checked, not taken:
+            // the renderer takes the request when it has a drawable to copy from.
+            if aimer_platform::capture::is_pending() {
+                damage.mark_full();
+            }
             if damage.is_full() {
                 render_damage.clear();
                 render_damage.push(RenderRect::new(

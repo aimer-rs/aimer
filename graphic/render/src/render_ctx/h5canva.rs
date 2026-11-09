@@ -324,6 +324,8 @@ pub mod render_ctx {
 
         /// Encodes a packet produced by [`Self::build_frame_packet`].
         pub fn present_packet(&mut self, packet: FramePacket) -> PresentOutcome {
+            // This renderer cannot copy its frames out yet: say so, don't leave the asker waiting.
+            aimer_platform::capture::refuse(aimer_platform::capture::Error::Unsupported);
             let mut state_ref = self.state.borrow_mut();
             let state = match state_ref.as_mut() {
                 Some(state) => state,

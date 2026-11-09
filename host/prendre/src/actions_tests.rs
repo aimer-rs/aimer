@@ -1,6 +1,6 @@
 use super::*;
 use crate::Command;
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, TouchPhase};
 
 fn lines(commands: &[Command]) -> Vec<String> {
     commands.iter().map(ToString::to_string).collect()
@@ -9,11 +9,11 @@ fn lines(commands: &[Command]) -> Vec<String> {
 #[test]
 fn a_click_glides_to_the_point_then_presses_and_releases_there() {
     assert_eq!(
-        lines(&click(10.0, 20.0, PointerButton::Primary, 1).unwrap()),
+        lines(&click(Some((10.0, 20.0)), PointerButton::Primary, 1).unwrap()),
         ["glide 10 20", "down 10 20 primary", "up 10 20 primary"]
     );
     assert_eq!(
-        lines(&click(1.0, 2.0, PointerButton::Secondary, 1).unwrap())[1],
+        lines(&click(Some((1.0, 2.0)), PointerButton::Secondary, 1).unwrap())[1],
         "down 1 2 secondary"
     );
 }
@@ -21,14 +21,14 @@ fn a_click_glides_to_the_point_then_presses_and_releases_there() {
 #[test]
 fn a_double_and_a_triple_click_are_that_many_presses_after_one_glide() {
     for count in [2u8, 3] {
-        let commands = click(5.0, 5.0, PointerButton::Primary, count).unwrap();
+        let commands = click(Some((5.0, 5.0)), PointerButton::Primary, count).unwrap();
         assert_eq!(commands.len(), 1 + 2 * usize::from(count));
         assert!(matches!(commands[0], Command::PointerGlide { .. }));
         let downs = commands.iter().filter(|c| matches!(c, Command::PointerDown { .. })).count();
         assert_eq!(downs, usize::from(count));
     }
-    assert!(click(0.0, 0.0, PointerButton::Primary, 0).is_err(), "no clicks is not a click");
-    assert!(click(0.0, 0.0, PointerButton::Primary, 4).is_err(), "more than a triple is a mistake");
+    assert!(click(Some((0.0, 0.0)), PointerButton::Primary, 0).is_err(), "no clicks is not a click");
+    assert!(click(Some((0.0, 0.0)), PointerButton::Primary, 4).is_err(), "more than a triple is a mistake");
 }
 
 #[test]
@@ -43,26 +43,26 @@ fn a_drag_glides_to_the_start_presses_glides_to_the_end_and_releases() {
 fn scrolling_down_makes_the_content_move_up() {
     // The offset of a scrolled-down list is negative, so the delta is too.
     let sign = |direction| match scroll(None, direction, 3.0).unwrap().as_slice() {
-        [Command::Scroll { dx, dy, kind: ScrollDeltaKind::Line, .. }] => (*dx, *dy),
+        [Command::TrackpadScroll { dx, dy, .. }] => (*dx, *dy),
         other => panic!("{other:?}"),
     };
-    assert_eq!(sign(Direction::Down), (0.0, -3.0));
-    assert_eq!(sign(Direction::Up), (0.0, 3.0));
-    assert_eq!(sign(Direction::Right), (-3.0, 0.0));
-    assert_eq!(sign(Direction::Left), (3.0, 0.0));
+    assert_eq!(sign(Direction::Down), (0.0, -120.0), "three steps of 40 pixels");
+    assert_eq!(sign(Direction::Up), (0.0, 120.0));
+    assert_eq!(sign(Direction::Right), (-120.0, 0.0));
+    assert_eq!(sign(Direction::Left), (120.0, 0.0));
 }
 
 #[test]
 fn a_scroll_with_a_position_glides_there_and_waits_for_the_mouse_before_scrolling() {
     assert_eq!(
         lines(&scroll(Some((40.0, 50.0)), Direction::Down, 1.0).unwrap()),
-        ["glide 40 50", "settle", "scroll 0 -1 kind=line"]
+        ["glide 40 50", "settle", "trackpad 0 -40"]
     );
 }
 
 #[test]
 fn a_scroll_without_a_position_scrolls_where_the_mouse_already_is() {
-    assert_eq!(lines(&scroll(None, Direction::Up, 2.0).unwrap()), ["scroll 0 2 kind=line"]);
+    assert_eq!(lines(&scroll(None, Direction::Up, 2.0).unwrap()), ["trackpad 0 80"]);
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn a_key_spec_that_says_nothing_is_rejected() {
 
 #[test]
 fn non_finite_and_absurd_coordinates_are_rejected() {
-    assert!(click(f32::NAN, 0.0, PointerButton::Primary, 1).is_err());
+    assert!(click(Some((f32::NAN, 0.0)), PointerButton::Primary, 1).is_err());
     assert!(drag((0.0, f32::INFINITY), (1.0, 1.0)).is_err());
     assert!(tap(0.0, f32::NEG_INFINITY).is_err());
     assert!(swipe((f32::NAN, 0.0), (1.0, 1.0)).is_err());
@@ -227,4 +227,19 @@ fn a_zero_length_drag_or_swipe_is_still_a_valid_gesture() {
 fn moving_the_mouse_glides_there_and_a_raw_move_is_left_to_the_wire() {
     assert_eq!(lines(&mouse_move(120.0, 48.0).unwrap()), ["glide 120 48"]);
     assert!(mouse_move(f32::NAN, 0.0).is_err());
+}
+
+#[test]
+fn typing_is_the_paced_way_to_enter_text_and_type_text_the_instant_one() {
+    assert_eq!(typing("hi"), Command::Typing { text: "hi".into(), millis: None });
+    assert_eq!(type_text("hi"), Command::Text("hi".into()));
+}
+
+#[test]
+fn a_click_without_a_point_presses_and_releases_where_the_mouse_already_is() {
+    let commands = click(None, PointerButton::Primary, 1).unwrap();
+    assert_eq!(lines(&commands), ["down primary", "up primary"], "no glide: it is already there");
+    assert_eq!(lines(&click(None, PointerButton::Secondary, 2).unwrap()), ["down secondary", "up secondary", "down secondary", "up secondary"]);
+    assert!(click(None, PointerButton::Primary, 0).is_err());
+    assert!(click(None, PointerButton::Primary, 4).is_err());
 }

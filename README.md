@@ -54,9 +54,25 @@ fn main() {
 | **Windows**    | Direct3D 12                 | ✅ Supported |
 | **Linux**      | Vulkan with OpenGL fallback | ✅ Supported |
 
+## Renderer Backends
+
+### Tier 1
+
+Metal, Vulkan, Direct3D 12, OpenGL, and the web canvas renderer.
+
+These are the renderers the table above relies on. New renderer features land
+here first, and a regression here is fixed before anything else.
+
+### Tier 2
+
+wgpu (the opt-in `wgpu` feature).
+
+Kept working on a best-effort basis. A feature may arrive later than on tier 1,
+and a tier 2 problem does not block a release.
+
 ## Built with Aimer
 
-[**RustForum**](https://github.com/Cottons29/rust-forum) is a [**Rust Programming Language Forum**](https://users.rust-lang.org/)'s Client written with Aimer, a real-world example to read, run and learn from.
+[**Rust Forum**](https://github.com/Cottons29/rust-forum) is a [**Rust Programming Language Forum**](https://users.rust-lang.org/)'s Client written with Aimer, a real-world example to read, run and learn from.
 
 ![Aimer Logo](.assets/rust-forum-screenshot.png)
 

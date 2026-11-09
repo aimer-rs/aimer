@@ -61,37 +61,33 @@ fn texts(commands: &[DrawCommand]) -> Vec<String> {
         .collect()
 }
 
-// ---- the badge's words and place
+// ---- the badge's shape and place
 
 #[test]
-fn nobody_attached_shows_no_badge() {
-    assert_eq!(badge_text(&[]), None);
+fn the_badge_is_a_wide_pill_in_the_top_right_corner_inside_the_window_and_its_safe_area() {
+    let rect = badge_rect(1000.0, SafeAreaInsets::ZERO);
+    assert!(rect.width > rect.height, "a pill is wider than it is tall: {rect:?}");
+    assert!((rect.x + rect.width - (1000.0 - BADGE_MARGIN)).abs() < 1e-3, "{rect:?}");
+    assert!((rect.y - BADGE_MARGIN).abs() < 1e-3, "top, not the middle: {rect:?}");
+
+    // Clear of a notch or status bar on top and of a cutout on the right.
+    let inset = badge_rect(1000.0, SafeAreaInsets::new(0.0, 47.0, 20.0, 34.0));
+    assert!((inset.y - (rect.y + 47.0)).abs() < 1e-3, "clear of the top inset");
+    assert!((inset.x + inset.width - (rect.x + rect.width - 20.0)).abs() < 1e-3, "clear of the right inset");
 }
 
 #[test]
-fn the_badge_names_who_is_attached_and_counts_when_it_would_not_fit() {
-    assert_eq!(badge_text(&names(&["aimer-cli"])).as_deref(), Some("driven by aimer-cli"));
-    assert_eq!(badge_text(&names(&["aimer-cli", "mcp:claude"])).as_deref(), Some("driven by aimer-cli, mcp:claude"));
-    assert_eq!(badge_text(&names(&["a", "b", "c"])).as_deref(), Some("driven by a, b, c"));
-    assert_eq!(badge_text(&names(&["a", "b", "c", "d"])).as_deref(), Some("driven by 4 tools"));
-}
-
-#[test]
-fn the_badge_sits_in_the_bottom_right_corner_inside_the_window_and_its_safe_area() {
-    let rect = badge_rect(1000.0, 600.0, SafeAreaInsets::ZERO, "driven by aimer-cli");
-    assert!(rect.x + rect.width <= 1000.0 - BADGE_MARGIN + 0.01);
-    assert!(rect.y + rect.height <= 600.0 - BADGE_MARGIN + 0.01);
-    assert!(rect.x > 500.0 && rect.y > 500.0, "bottom right, not the middle: {rect:?}");
-
-    let inset = badge_rect(1000.0, 600.0, SafeAreaInsets::new(0.0, 0.0, 20.0, 34.0), "driven by aimer-cli");
-    assert!((inset.y + inset.height - (rect.y + rect.height - 34.0)).abs() < 1e-3, "clear of the home indicator");
-    assert!((inset.x + inset.width - (rect.x + rect.width - 20.0)).abs() < 1e-3);
-}
-
-#[test]
-fn a_window_too_small_for_the_badge_never_pushes_it_off_the_left_or_top() {
-    let rect = badge_rect(40.0, 20.0, SafeAreaInsets::ZERO, "driven by aimer-cli");
+fn a_window_too_narrow_for_the_badge_never_pushes_it_off_the_left() {
+    let rect = badge_rect(40.0, SafeAreaInsets::ZERO);
     assert!(rect.x >= 0.0 && rect.y >= 0.0, "{rect:?}");
+}
+
+#[test]
+fn the_badge_icon_is_white_not_the_theme_colour_lucide_ships_it_in() {
+    assert!(BADGE_SVG.contains("currentColor"), "premise: the file is in the theme colour");
+    let markup = badge_markup();
+    assert!(!markup.contains("currentColor"), "a retained scene has no text colour to inherit");
+    assert!(markup.contains("#ffffff") && markup.contains("<path"));
 }
 
 // ---- markers
@@ -152,7 +148,12 @@ fn nobody_attached_means_no_markers_even_if_a_late_event_arrives() {
     let mut overlay = AttachOverlay::default();
     overlay.note_pointer(pointer(false, 0, MarkerPhase::Moved, 1.0, 1.0), t);
     overlay.set_names(Vec::new());
-    assert!(overlay.markers().is_empty(), "detaching clears what the driver left behind");
+    overlay.note_pointer(pointer(false, 0, MarkerPhase::Moved, 2.0, 2.0), t);
+    assert_eq!(overlay.markers().len(), 1, "a late event after detaching is ignored");
+    let tree = RenderTree::new();
+    prepare(&mut overlay, &tree, t);
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE + Duration::from_millis(1));
+    assert!(overlay.markers().is_empty(), "and what the driver left behind is forgotten once it has faded");
 }
 
 // ---- when the overlay needs frames
@@ -163,8 +164,9 @@ fn it_asks_for_frames_only_while_something_animates_and_a_resting_pointer_starts
     let mut overlay = AttachOverlay::default();
     assert_eq!(overlay.wake_in(t), None, "an overlay with no pointer wakes nothing");
     overlay.note_pointer(pointer(false, 0, MarkerPhase::Moved, 1.0, 1.0), t);
-    assert_eq!(overlay.wake_in(t), Some(IDLE_AFTER), "once, for when the idle animation is due to begin");
-    assert_eq!(overlay.wake_in(t + IDLE_AFTER / 2), Some(IDLE_AFTER / 2));
+    assert_eq!(overlay.wake_in(t), Some(FRAME), "a pointer that has just appeared is fading in");
+    // Past the fade, what is left is waiting for the idle animation to begin.
+    assert_eq!(overlay.wake_in(t + PRESENCE_FADE + Duration::from_millis(1)), Some(IDLE_AFTER - PRESENCE_FADE - Duration::from_millis(1)), "once, for when the idle animation is due to begin");
     assert_eq!(overlay.wake_in(t + IDLE_AFTER), Some(IDLE_FRAME), "then at the idle animation's own pace");
     overlay.note_pointer(pointer(false, 0, MarkerPhase::Pressed, 1.0, 1.0), t + Duration::from_secs(5));
     let pressed = t + Duration::from_secs(5);
@@ -183,24 +185,40 @@ fn with_nobody_attached_and_no_markers_nothing_is_added_to_the_tree() {
 }
 
 #[test]
-fn the_badge_is_a_pill_with_a_dot_and_the_names() {
+fn the_badge_is_an_indigo_pill_holding_a_white_square_mouse_pointer_icon() {
     let tree = RenderTree::new();
     let mut overlay = AttachOverlay::default();
     overlay.set_names(names(&["aimer-cli"]));
-    prepare(&mut overlay, &tree, AnimInstant::now());
+    let t = AnimInstant::now();
+    prepare(&mut overlay, &tree, t);
+    // Once it has faded in.
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE + Duration::from_millis(1));
     let node = overlay.badge_node().expect("a badge node");
     let recorded = commands(&tree, node);
-    assert_eq!(texts(&recorded), ["driven by aimer-cli"]);
-    let fills = recorded.iter().filter(|c| matches!(c, DrawCommand::FillRect { .. })).count();
-    assert_eq!(fills, 2, "the pill and its dot");
+    assert!(texts(&recorded).is_empty(), "an icon, not words");
+
+    let (pill, radius, fill) = recorded
+        .iter()
+        .find_map(|c| if let DrawCommand::FillRect { rect, border_radius, color, .. } = c { Some((*rect, border_radius[0], *color)) } else { None })
+        .expect("the pill");
+    assert_eq!(radius, pill.height / 2.0, "fully rounded ends");
+    assert_eq!(fill, Color::rgba8(BADGE_COLOR.0, BADGE_COLOR.1, BADGE_COLOR.2, 255), "solid, not see-through");
+    assert!(pill.x > 500.0 && pill.y < 100.0, "the pill is in the top-right in window coordinates: {pill:?}");
+
+    let (icon, _) = svg_in(&recorded).expect("the icon");
+    let scene = recorded.iter().find_map(|c| if let DrawCommand::Svg { scene, .. } = c { Some(scene) } else { None }).unwrap();
+    assert!(Arc::ptr_eq(scene, badge_scene()));
+    assert_eq!((icon.width, icon.height), (BADGE_ICON, BADGE_ICON));
+    // Centred in the pill.
+    assert!(((icon.x + icon.width / 2.0) - (pill.x + pill.width / 2.0)).abs() < 0.01);
+    assert!(((icon.y + icon.height / 2.0) - (pill.y + pill.height / 2.0)).abs() < 0.01);
+
     let bounds = tree.element_bounds(node).expect("bounds");
     assert!(bounds.x + bounds.width <= 1000.0 && bounds.y + bounds.height <= 600.0);
     // The commands are in window coordinates, which only draw in the right place
     // if the node's own origin is the window's: a node hugging the badge would
     // shift them by its position, off the window.
     assert_eq!((bounds.x, bounds.y), (0.0, 0.0));
-    let pill = recorded.iter().find_map(|c| if let DrawCommand::FillRect { rect, .. } = c { Some(*rect) } else { None }).unwrap();
-    assert!(pill.x > 500.0 && pill.y > 500.0, "the pill is in the bottom-right in window coordinates: {pill:?}");
 }
 
 #[test]
@@ -224,18 +242,22 @@ fn the_mouse_marker_is_the_lucide_pointer_with_its_tip_on_the_injected_position(
 }
 
 #[test]
-fn the_pointer_is_a_fifth_bigger_than_its_icon_and_ninety_percent_opaque() {
-    assert!((ICON_SIZE - 24.0 * 1.2).abs() < 1e-4, "the icon's viewBox is 24, and it is drawn 1.2 times that");
-    assert!((ICON_TIP - 3.3 * 1.2).abs() < 1e-4, "and the tip moves out with it");
+fn the_pointer_is_drawn_at_its_configured_size_and_opacity_with_its_tip_scaled_to_match() {
+    // Numbers that are tuned live in the constants, and the test follows them: what
+    // is pinned is how they relate, so retuning the cursor does not break it.
+    assert!((ICON_SIZE - ICON_VIEWBOX * ICON_SCALE).abs() < 1e-4, "the icon's box scaled");
+    assert!((ICON_TIP - ICON_TIP_UNITS * ICON_SCALE).abs() < 1e-4, "and the tip moves with it");
     let tree = RenderTree::new();
     let mut overlay = AttachOverlay::default();
     let t = AnimInstant::now();
     overlay.note_pointer(pointer(false, 0, MarkerPhase::Moved, 100.0, 100.0), t);
-    prepare(&mut overlay, &tree, t);
-    let (_, overrides) = svg_in(&commands(&tree, overlay.pointer_node().unwrap())).expect("the icon");
+    // Once it has faded in.
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE + Duration::from_millis(1));
+    let (icon, overrides) = svg_in(&commands(&tree, overlay.pointer_node().unwrap())).expect("the icon");
+    assert_eq!((icon.width, icon.height), (ICON_SIZE, ICON_SIZE));
     assert!(!overrides.is_empty());
     for node in overrides.iter() {
-        assert_eq!(node.opacity, Some(0.9), "every drawn part of the pointer is at 90%");
+        assert_eq!(node.opacity, Some(POINTER_OPACITY), "every drawn part of the pointer has the configured opacity");
     }
 }
 
@@ -293,8 +315,11 @@ fn an_unchanged_overlay_does_not_damage_the_window_again() {
     let t = AnimInstant::now();
     overlay.note_pointer(pointer(false, 0, MarkerPhase::Moved, 10.0, 10.0), t);
     prepare(&mut overlay, &tree, t);
+    // Once it has faded in, which repaints it as it goes.
+    let shown = t + PRESENCE_FADE + Duration::from_millis(1);
+    prepare(&mut overlay, &tree, shown);
     tree.take_damage();
-    prepare(&mut overlay, &tree, t + Duration::from_millis(5));
+    prepare(&mut overlay, &tree, shown + Duration::from_millis(5));
     assert!(tree.take_damage().is_empty(), "nothing changed, nothing repainted");
 }
 
@@ -305,11 +330,14 @@ fn detaching_empties_both_nodes_and_damages_what_they_covered() {
     overlay.set_names(names(&["aimer-cli"]));
     let t = AnimInstant::now();
     overlay.note_pointer(pointer(false, 0, MarkerPhase::Moved, 10.0, 10.0), t);
+    let shown = t + PRESENCE_FADE * 2;
     prepare(&mut overlay, &tree, t);
+    prepare(&mut overlay, &tree, shown);
     let (badge, pointers) = (overlay.badge_node().unwrap(), overlay.pointer_node().unwrap());
     tree.take_damage();
     overlay.set_names(Vec::new());
-    prepare(&mut overlay, &tree, t);
+    prepare(&mut overlay, &tree, shown);
+    prepare(&mut overlay, &tree, shown + PRESENCE_FADE + Duration::from_millis(1));
     assert!(commands(&tree, badge).is_empty() && commands(&tree, pointers).is_empty());
     assert!(!tree.take_damage().is_empty(), "the pixels under them are restored");
 }
@@ -502,3 +530,170 @@ fn a_pointer_at_the_window_edge_keeps_its_node_inside_the_window() {
     }
 }
 
+
+// ---- fading in and out when a driver attaches and leaves
+
+/// How opaque the badge's pill is painted, from 0 to 1.
+fn pill_alpha(commands: &[DrawCommand]) -> f32 {
+    commands
+        .iter()
+        .find_map(|c| if let DrawCommand::FillRect { color, .. } = c { Some(color.a as f32 / 255.0) } else { None })
+        .expect("the pill")
+}
+
+/// How opaque the badge's icon is painted: no override means fully.
+fn icon_alpha(commands: &[DrawCommand]) -> f32 {
+    let (_, overrides) = svg_in(commands).expect("the icon");
+    overrides.iter().find_map(|o| o.opacity).unwrap_or(1.0)
+}
+
+fn badge_commands(overlay: &AttachOverlay, tree: &RenderTree) -> Vec<DrawCommand> {
+    commands(tree, overlay.badge_node().expect("a badge node"))
+}
+
+#[test]
+fn the_badge_fades_in_when_a_driver_attaches() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    let t = AnimInstant::now();
+    overlay.set_names(names(&["aimer-cli"]));
+    prepare(&mut overlay, &tree, t);
+    assert!(pill_alpha(&badge_commands(&overlay, &tree)) < 0.05, "it starts invisible");
+
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE / 2);
+    let half = badge_commands(&overlay, &tree);
+    let (pill, icon) = (pill_alpha(&half), icon_alpha(&half));
+    assert!(pill > 0.2 && pill < 0.8, "half way: {pill}");
+    assert!((pill - icon).abs() < 0.02, "the icon fades with the pill: {pill} vs {icon}");
+
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE + Duration::from_millis(1));
+    let done = badge_commands(&overlay, &tree);
+    assert_eq!(pill_alpha(&done), 1.0);
+    assert_eq!(icon_alpha(&done), 1.0);
+}
+
+#[test]
+fn the_badge_fades_out_when_the_last_driver_leaves_and_is_then_removed() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    let t = AnimInstant::now();
+    overlay.set_names(names(&["aimer-cli"]));
+    prepare(&mut overlay, &tree, t);
+    let shown = t + PRESENCE_FADE * 2;
+    prepare(&mut overlay, &tree, shown);
+    let node = overlay.badge_node().unwrap();
+    assert_eq!(pill_alpha(&commands(&tree, node)), 1.0, "premise: fully shown");
+
+    overlay.set_names(Vec::new());
+    prepare(&mut overlay, &tree, shown);
+    prepare(&mut overlay, &tree, shown + PRESENCE_FADE / 2);
+    let half = commands(&tree, node);
+    assert!(!half.is_empty(), "still on screen while it fades");
+    let pill = pill_alpha(&half);
+    assert!(pill > 0.2 && pill < 0.8, "half way down: {pill}");
+
+    tree.take_damage();
+    prepare(&mut overlay, &tree, shown + PRESENCE_FADE + Duration::from_millis(1));
+    assert!(commands(&tree, node).is_empty(), "gone once it has faded");
+    assert!(!tree.take_damage().is_empty(), "and the pixels under it are restored");
+}
+
+#[test]
+fn a_driver_that_returns_mid_fade_fades_back_in_from_where_it_was() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    let t = AnimInstant::now();
+    overlay.set_names(names(&["aimer-cli"]));
+    prepare(&mut overlay, &tree, t);
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE * 2);
+    let leaving = t + PRESENCE_FADE * 2;
+    overlay.set_names(Vec::new());
+    prepare(&mut overlay, &tree, leaving);
+    prepare(&mut overlay, &tree, leaving + PRESENCE_FADE / 2);
+    let low = pill_alpha(&badge_commands(&overlay, &tree));
+
+    let back = leaving + PRESENCE_FADE / 2;
+    overlay.set_names(names(&["aimer-cli"]));
+    prepare(&mut overlay, &tree, back);
+    let at_return = pill_alpha(&badge_commands(&overlay, &tree));
+    assert!((at_return - low).abs() < 0.02, "no jump back to 0 or 1: {low} then {at_return}");
+    prepare(&mut overlay, &tree, back + PRESENCE_FADE + Duration::from_millis(1));
+    assert_eq!(pill_alpha(&badge_commands(&overlay, &tree)), 1.0);
+}
+
+#[test]
+fn the_pointer_fades_in_when_it_first_appears() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    overlay.set_names(names(&["aimer-cli"]));
+    let t = AnimInstant::now();
+    mouse_at(&mut overlay, 300.0, 200.0, t);
+    prepare(&mut overlay, &tree, t);
+    let start = icon_alpha(&pointer_commands(&overlay, &tree));
+    assert!(start < 0.05, "it starts invisible: {start}");
+
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE / 2);
+    let half = icon_alpha(&pointer_commands(&overlay, &tree));
+    assert!(half > 0.1 * POINTER_OPACITY && half < 0.9 * POINTER_OPACITY, "half way: {half}");
+
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE + Duration::from_millis(1));
+    assert!((icon_alpha(&pointer_commands(&overlay, &tree)) - POINTER_OPACITY).abs() < 1e-4, "then as opaque as it is configured to be");
+}
+
+#[test]
+fn the_pointers_fade_out_with_the_driver_and_are_forgotten_after() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    overlay.set_names(names(&["aimer-cli"]));
+    let t = AnimInstant::now();
+    mouse_at(&mut overlay, 300.0, 200.0, t);
+    overlay.note_pointer(pointer(true, 4, MarkerPhase::Pressed, 50.0, 60.0), t);
+    let shown = t + PRESENCE_FADE * 2;
+    prepare(&mut overlay, &tree, shown);
+    let node = overlay.pointer_node().unwrap();
+
+    overlay.set_names(Vec::new());
+    prepare(&mut overlay, &tree, shown);
+    prepare(&mut overlay, &tree, shown + PRESENCE_FADE / 2);
+    let half = commands(&tree, node);
+    assert!(svg_in(&half).is_some(), "the mouse is still drawn while it fades");
+    let opacity = icon_alpha(&half);
+    assert!(opacity > 0.1 * POINTER_OPACITY && opacity < 0.9 * POINTER_OPACITY, "{opacity}");
+    assert_eq!(overlay.markers().len(), 2, "the driver's pointers are kept until they are gone");
+
+    prepare(&mut overlay, &tree, shown + PRESENCE_FADE + Duration::from_millis(1));
+    assert!(commands(&tree, node).is_empty(), "gone");
+    assert!(overlay.markers().is_empty(), "and forgotten");
+}
+
+#[test]
+fn the_overlay_asks_for_frames_while_it_fades_and_then_stops() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    let t = AnimInstant::now();
+    overlay.set_names(names(&["aimer-cli"]));
+    prepare(&mut overlay, &tree, t);
+    assert_eq!(overlay.wake_in(t + PRESENCE_FADE / 2), Some(FRAME), "fading in");
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE * 2);
+    assert_eq!(overlay.wake_in(t + PRESENCE_FADE * 2), None, "a shown badge with no pointer needs nothing");
+
+    let gone = t + PRESENCE_FADE * 2;
+    overlay.set_names(Vec::new());
+    prepare(&mut overlay, &tree, gone);
+    assert_eq!(overlay.wake_in(gone + PRESENCE_FADE / 2), Some(FRAME), "fading out");
+    prepare(&mut overlay, &tree, gone + PRESENCE_FADE + Duration::from_millis(1));
+    assert_eq!(overlay.wake_in(gone + PRESENCE_FADE * 2), None, "and done");
+}
+
+#[test]
+fn a_settled_overlay_does_not_repaint() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    let t = AnimInstant::now();
+    overlay.set_names(names(&["aimer-cli"]));
+    prepare(&mut overlay, &tree, t);
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE + Duration::from_millis(1));
+    tree.take_damage();
+    prepare(&mut overlay, &tree, t + PRESENCE_FADE * 2);
+    assert!(tree.take_damage().is_empty(), "fully shown and unchanged: nothing to repaint");
+}

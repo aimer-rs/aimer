@@ -1,5 +1,5 @@
-//! What a debug build shows while a tool drives it: a badge saying who is
-//! attached, and a marker where each injected mouse or finger is.
+//! What a debug build shows while a tool drives it: a badge saying the app is
+//! being driven, and a marker where each injected mouse or finger is.
 //!
 //! An injected event moves no real cursor and touches no real screen, so without
 //! this a screenshot of a driven app shows nothing happening. The overlay is
@@ -20,26 +20,22 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use aimer_attribute::position::Vec2d;
-use aimer_canvas::{FontFamily, FontStyle};
 use aimer_cupid::draw_cmd::{Color, DrawCommand, Rect, RenderNodeId, RenderPaintSource, RenderTree, RenderTreeError};
 use aimer_cupid::svg::{SvgNodeStyleOverride, SvgTransform};
-use aimer_cupid::text_pipeline::{TextOverflowMode, text_layout::TextHorizontalAlign};
 use aimer_platform::attachment::{self, MarkerPhase, SyntheticPointer};
 use aimer_utils::AnimInstant;
 use aimer_widget::SafeAreaInsets;
 
 /// Gap between the badge and the window's (safe) edge.
-const BADGE_MARGIN: f32 = 10.0;
-const BADGE_HEIGHT: f32 = 26.0;
-const BADGE_FONT: f32 = 12.0;
-/// A monospace glyph is about this many ems wide; the badge is sized from it.
-const GLYPH_WIDTH: f32 = BADGE_FONT * 0.6;
-const BADGE_PAD_LEFT: f32 = 10.0;
-const BADGE_PAD_RIGHT: f32 = 12.0;
-const BADGE_DOT: f32 = 8.0;
-const BADGE_GAP: f32 = 8.0;
-/// More names than this are counted instead of listed.
-const MAX_LISTED: usize = 3;
+const BADGE_MARGIN: f32 = 8.0;
+/// The badge is a pill: wider than tall, with fully rounded ends, and holds only
+/// an icon.
+const BADGE_WIDTH: f32 = 48.0;
+const BADGE_HEIGHT: f32 = 24.0;
+/// The icon's size in the pill, in logical pixels.
+const BADGE_ICON: f32 = 16.0;
+/// The pill's fill: a solid indigo, so it reads over a dark page and a light one.
+const BADGE_COLOR: (u8, u8, u8) = (73, 75, 196);
 
 /// How much bigger than the icon's own 24 units the pointer is drawn.
 const ICON_SCALE: f32 = 0.95;
@@ -52,7 +48,7 @@ const ICON_TIP_UNITS: f32 = 3.3;
 /// The pointer icon's size, and how far its tip is from the icon's top-left
 /// corner, in logical pixels.
 const ICON_SIZE: f32 = ICON_VIEWBOX * ICON_SCALE;
-const ICON_TIP: f32 = ICON_TIP_UNITS * ICON_SCALE;
+pub(crate) const ICON_TIP: f32 = ICON_TIP_UNITS * ICON_SCALE;
 /// How opaque the pointer is.
 const POINTER_OPACITY: f32 = 1.0;
 
@@ -79,25 +75,17 @@ const RIPPLE: Duration = Duration::from_millis(450);
 const FADE: Duration = Duration::from_millis(250);
 /// How often to repaint while something animates.
 const FRAME: Duration = Duration::from_millis(8);
+/// How long the badge and the pointers take to fade in when a driver attaches
+/// and to fade out when it leaves.
+pub(crate) const PRESENCE_FADE: Duration = Duration::from_millis(300);
 
 const ACCENT: (u8, u8, u8) = (59, 130, 246);
 
-/// What the badge says, or `None` when nobody is attached.
-fn badge_text(names: &[String]) -> Option<String> {
-    match names.len() {
-        0 => None,
-        n if n <= MAX_LISTED => Some(format!("driven by {}", names.join(", "))),
-        n => Some(format!("driven by {n} tools")),
-    }
-}
-
-/// Where the badge goes: the bottom-right corner, inside the safe area.
-fn badge_rect(width: f32, height: f32, insets: SafeAreaInsets, text: &str) -> Rect {
-    let w = BADGE_PAD_LEFT + BADGE_DOT + BADGE_GAP + text.chars().count() as f32 * GLYPH_WIDTH + BADGE_PAD_RIGHT;
-    // A window too small for it keeps the badge's left and top edges visible.
-    let x = (width - insets.right - BADGE_MARGIN - w).max(0.0);
-    let y = (height - insets.bottom - BADGE_MARGIN - BADGE_HEIGHT).max(0.0);
-    Rect::new(x, y, w, BADGE_HEIGHT)
+/// Where the badge goes: the top-right corner, inside the safe area.
+fn badge_rect(width: f32, insets: SafeAreaInsets) -> Rect {
+    // A window too narrow for it keeps the badge's left edge visible.
+    let x = (width - insets.right - BADGE_MARGIN - BADGE_WIDTH).max(0.0);
+    Rect::new(x, insets.top + BADGE_MARGIN, BADGE_WIDTH, BADGE_HEIGHT)
 }
 
 /// One injected mouse or finger.
@@ -155,6 +143,44 @@ impl Marker {
     }
 }
 
+/// How visible a layer of the overlay is: it fades toward shown or hidden over
+/// [`PRESENCE_FADE`], starting from however visible it was when the target
+/// changed, so a driver that leaves and returns mid-fade does not make it jump.
+#[derive(Clone, Copy, Debug, Default)]
+struct Presence {
+    shown: bool,
+    /// How visible it was when `shown` last changed.
+    from: f32,
+    changed_at: Option<AnimInstant>,
+}
+
+impl Presence {
+    /// Aims at shown or hidden. Aiming where it already aims changes nothing.
+    fn set(&mut self, shown: bool, now: AnimInstant) {
+        if shown != self.shown {
+            self.from = self.alpha(now);
+            self.shown = shown;
+            self.changed_at = Some(now);
+        }
+    }
+
+    /// How opaque it is, from 0 to 1, eased at both ends.
+    fn alpha(&self, now: AnimInstant) -> f32 {
+        let target = if self.shown { 1.0 } else { 0.0 };
+        let Some(since) = self.changed_at else {
+            return target;
+        };
+        let t = (now.duration_since(since).as_secs_f32() / PRESENCE_FADE.as_secs_f32()).min(1.0);
+        let eased = t * t * (3.0 - 2.0 * t);
+        self.from + (target - self.from) * eased
+    }
+
+    /// Whether it is still on its way to where it aims.
+    fn settling(&self, now: AnimInstant) -> bool {
+        self.changed_at.is_some_and(|since| now.duration_since(since) < PRESENCE_FADE)
+    }
+}
+
 /// A retained render node and whether it currently shows anything.
 #[derive(Default)]
 struct Retained {
@@ -206,6 +232,16 @@ pub(crate) struct AttachOverlay {
     pointers: Retained,
     badge_dirty: bool,
     pointers_dirty: bool,
+    badge_presence: Presence,
+    pointer_presence: Presence,
+    /// How opaque each layer was when it was last recorded, as bits: a layer is
+    /// repainted when this is no longer how opaque it should be.
+    badge_alpha: Option<u32>,
+    pointers_alpha: Option<u32>,
+    /// Nobody is attached any more, and the pointers they left are fading out.
+    /// Events that arrive late are ignored, and the pointers are forgotten once
+    /// they are gone.
+    detaching: bool,
     /// Width, height, scale and safe area the recorded commands were laid out for.
     geometry: Option<(u32, u32, u32, [u32; 4])>,
 }
@@ -220,7 +256,7 @@ impl AttachOverlay {
         self.generation = Some(generation);
         let before = self.names.len();
         let changed = {
-            let names = attachment::attached();
+            let names = attachment::agents();
             let changed = names != self.names;
             self.set_names(names);
             changed
@@ -230,9 +266,14 @@ impl AttachOverlay {
 
     fn set_names(&mut self, names: Vec<String>) {
         if names.is_empty() {
-            // Whoever drove the pointers is gone, and took them with them.
-            self.markers.clear();
+            // Whoever drove the pointers is gone, and the pointers go with them: they
+            // fade out, and are forgotten once they have.
+            if !self.names.is_empty() || !self.markers.is_empty() {
+                self.detaching = true;
+            }
             self.pointers_dirty = true;
+        } else {
+            self.detaching = false;
         }
         if names != self.names {
             self.names = names;
@@ -242,10 +283,14 @@ impl AttachOverlay {
 
     /// Records where an injected pointer is and what it just did.
     pub(crate) fn note_pointer(&mut self, pointer: SyntheticPointer, now: AnimInstant) {
+        if self.detaching {
+            return;
+        }
         self.pointers_dirty = true;
         if pointer.phase == MarkerPhase::Left {
             // A mouse leaves on its own; a cancelled touch takes every finger.
             self.markers.retain(|m| m.touch != pointer.touch);
+            self.pointer_presence.set(!self.markers.is_empty(), now);
             return;
         }
         let index = match self.markers.iter().position(|m| m.touch == pointer.touch && m.id == pointer.id) {
@@ -263,6 +308,8 @@ impl AttachOverlay {
                 self.markers.len() - 1
             }
         };
+        // The first pointer fades in; one that is already there is not disturbed.
+        self.pointer_presence.set(true, now);
         let marker = &mut self.markers[index];
         marker.pos = pointer.pos;
         marker.active_at = now;
@@ -286,7 +333,12 @@ impl AttachOverlay {
     /// asks at a gentle 30 Hz; a held button or a finger on the glass asks for
     /// nothing.
     pub(crate) fn wake_in(&self, now: AnimInstant) -> Option<Duration> {
-        self.markers.iter().filter_map(|m| m.wake_in(now)).min()
+        let markers = self.markers.iter().filter_map(|m| m.wake_in(now)).min();
+        if self.badge_presence.settling(now) || self.pointer_presence.settling(now) {
+            // Fading in or out: a frame at the animation's pace.
+            return Some(markers.map_or(FRAME, |wake| wake.min(FRAME)));
+        }
+        markers
     }
 
     /// Records what is to be shown into `tree`, after the application and its
@@ -329,47 +381,51 @@ impl AttachOverlay {
             self.pointers_dirty = true;
         }
         let window = Rect::new(0.0, 0.0, logical_width, logical_height);
-        self.prepare_badge(tree, window, insets)?;
+        self.badge_presence.set(!self.names.is_empty(), now);
+        self.pointer_presence.set(!self.markers.is_empty() && !self.detaching, now);
+        // Pointers whose driver has gone are forgotten once they have faded out.
+        if self.detaching && !self.markers.is_empty() && self.pointer_presence.alpha(now) <= 0.0 {
+            self.markers.clear();
+        }
+        self.prepare_badge(tree, window, insets, now)?;
         self.prepare_pointers(tree, window, now)
     }
 
-    fn prepare_badge(&mut self, tree: &RenderTree, window: Rect, insets: SafeAreaInsets) -> Result<(), RenderTreeError> {
-        let Some(text) = badge_text(&self.names) else {
+    fn prepare_badge(&mut self, tree: &RenderTree, window: Rect, insets: SafeAreaInsets, now: AnimInstant) -> Result<(), RenderTreeError> {
+        let alpha = self.badge_presence.alpha(now);
+        // Nobody attached and nothing left of the fade: take the badge away.
+        if self.names.is_empty() && alpha <= 0.0 {
+            self.badge_alpha = None;
             return self.badge.release(tree);
-        };
+        }
         let missing = !self.badge.node.is_some_and(|node| tree.element_bounds(node).is_ok());
-        if !self.badge_dirty && !missing {
+        if !self.badge_dirty && !missing && self.badge_alpha == Some(alpha.to_bits()) {
             return Ok(());
         }
-        let rect = badge_rect(window.width, window.height, insets, &text);
+        let rect = badge_rect(window.width, insets);
         // Commands are local to their node's origin, and these are in window
         // coordinates, so the node starts at the window's origin like the
         // performance overlay's. A node hugging the badge would draw it offset
         // by its own position, off the window.
         let node = self.badge.node(tree, window, window)?;
-        let dot = Rect::new(rect.x + BADGE_PAD_LEFT, rect.y + (rect.height - BADGE_DOT) / 2.0, BADGE_DOT, BADGE_DOT);
+        let (r, g, b) = BADGE_COLOR;
         let commands = vec![
-            circle_or_pill(rect, rect.height / 2.0, Color::rgba8(25, 28, 35, 225), None),
-            circle_or_pill(dot, BADGE_DOT / 2.0, Color::rgba8(52, 199, 89, 255), None),
-            DrawCommand::DrawText {
-                position: aimer_cupid::draw_cmd::Vec2d::new(rect.x + BADGE_PAD_LEFT + BADGE_DOT + BADGE_GAP, rect.y + 17.0),
-                text: Arc::from(text.as_str()),
-                font_size: BADGE_FONT,
-                color: Color::rgba8(240, 242, 245, 255),
-                bounds_width: Some(rect.width),
-                bounds_height: Some(BADGE_HEIGHT),
-                overflow: TextOverflowMode::Clip,
-                horizontal_align: TextHorizontalAlign::Left,
-                font_family: FontFamily::MONOSPACE,
-                font_style: FontStyle::Normal,
-                font_weight: 500,
-                shadow: None,
-                draw_glyphs: true,
+            circle_or_pill(rect, rect.height / 2.0, Color::rgba8(r, g, b, (alpha.clamp(0.0, 1.0) * 255.0).round() as u8), None),
+            DrawCommand::Svg {
+                scene: badge_scene().clone(),
+                destination: Rect::new(
+                    rect.x + (rect.width - BADGE_ICON) / 2.0,
+                    rect.y + (rect.height - BADGE_ICON) / 2.0,
+                    BADGE_ICON,
+                    BADGE_ICON,
+                ),
+                overrides: badge_overrides(alpha),
             },
         ];
         tree.context(node)?.begin_recording()?.commit(commands)?;
         self.badge.painted = true;
         self.badge_dirty = false;
+        self.badge_alpha = Some(alpha.to_bits());
         Ok(())
     }
 
@@ -384,9 +440,12 @@ impl AttachOverlay {
             .reduce(Rect::union);
         let Some(bounds) = bounds else {
             self.pointers_dirty = false;
+            self.pointers_alpha = None;
             return self.pointers.release(tree);
         };
-        let animating = self.markers.iter().any(|m| m.animating(now) || m.idle_phase(now).is_some());
+        let alpha = self.pointer_presence.alpha(now);
+        let animating = self.markers.iter().any(|m| m.animating(now) || m.idle_phase(now).is_some())
+            || self.pointers_alpha != Some(alpha.to_bits());
         let missing = !self.pointers.node.is_some_and(|node| tree.element_bounds(node).is_ok());
         if !self.pointers_dirty && !animating && !missing {
             return Ok(());
@@ -398,11 +457,12 @@ impl AttachOverlay {
         let origin = Vec2d { x: bounds.x, y: bounds.y };
         let mut commands = Vec::with_capacity(self.markers.len() * 4);
         for marker in &self.markers {
-            marker.record(&mut commands, now, origin);
+            marker.record(&mut commands, now, origin, alpha);
         }
         tree.context(node)?.begin_recording()?.commit(commands)?;
         self.pointers.painted = true;
         self.pointers_dirty = false;
+        self.pointers_alpha = Some(alpha.to_bits());
         Ok(())
     }
 
@@ -426,9 +486,12 @@ impl Marker {
     /// Appends what draws this marker, relative to `origin` (the corner of the
     /// node that holds it): its halo or body, any ripple, and for the mouse the
     /// cursor icon on top.
-    fn record(&self, commands: &mut Vec<DrawCommand>, now: AnimInstant, origin: Vec2d) {
+    ///
+    /// `fade` is how visible the whole layer is, from 0 to 1, as a driver attaches
+    /// or leaves: everything drawn is that much more transparent.
+    fn record(&self, commands: &mut Vec<DrawCommand>, now: AnimInstant, origin: Vec2d, fade: f32) {
         let (r, g, b) = ACCENT;
-        let accent = |alpha: f32| Color::rgba8(r, g, b, (alpha.clamp(0.0, 1.0) * 255.0) as u8);
+        let accent = |alpha: f32| Color::rgba8(r, g, b, (alpha.clamp(0.0, 1.0) * fade.clamp(0.0, 1.0) * 255.0) as u8);
         let at = Vec2d { x: self.pos.x - origin.x, y: self.pos.y - origin.y };
         if let Some(t) = self.ripple(now) {
             let radius = RIPPLE_FROM + (RIPPLE_TO - RIPPLE_FROM) * t;
@@ -445,9 +508,11 @@ impl Marker {
         // Idling: the arrow leans to one side and then the other, pivoting on its
         // tip so the tip stays on the position. It starts and ends upright, so the
         // loop has no seam.
-        let overrides = match self.idle_phase(now) {
-            Some(phase) => swayed_overrides(SWAY_DEGREES.to_radians() * (2.0 * std::f32::consts::PI * phase).sin()),
-            None => pointer_overrides().clone(),
+        let overrides = match (self.idle_phase(now), fade < 1.0) {
+            (Some(phase), _) => swayed_overrides(SWAY_DEGREES.to_radians() * (2.0 * std::f32::consts::PI * phase).sin(), fade),
+            // Fully visible and upright, the common case: the overrides are built once.
+            (None, false) => pointer_overrides().clone(),
+            (None, true) => overrides_with(None, POINTER_OPACITY * fade),
         };
         commands.push(DrawCommand::Svg {
             scene: pointer_scene().clone(),
@@ -501,6 +566,28 @@ const POINTER_SVG: &str = {
     full.split_at(at).1
 };
 
+/// The badge's icon: Lucide's `square-mouse-pointer`.
+///
+/// Lucide draws in `currentColor`, which a retained scene has no text colour to
+/// take, so the badge's white is put in its place.
+const BADGE_SVG: &str = include_str!("../../../content/lucide/icons/square-mouse-pointer.svg");
+
+/// The icon's markup with its strokes in white.
+fn badge_markup() -> String {
+    BADGE_SVG.replace("currentColor", "#ffffff")
+}
+
+/// The retained scene of the badge's icon, parsed on first use.
+///
+/// Parsed from the icon's file and not through `aimer_lucide`, which would pull
+/// an HTTP client into every build of this crate.
+pub(crate) fn badge_scene() -> &'static Arc<aimer_cupid::svg::SvgScene> {
+    static SCENE: OnceLock<Arc<aimer_cupid::svg::SvgScene>> = OnceLock::new();
+    SCENE.get_or_init(|| {
+        Arc::new(aimer_cupid::svg::parse_svg(&badge_markup()).expect("the bundled badge icon parses"))
+    })
+}
+
 /// The retained scene of [`POINTER_SVG`], parsed on first use.
 fn pointer_scene() -> &'static Arc<aimer_cupid::svg::SvgScene> {
     static SCENE: OnceLock<Arc<aimer_cupid::svg::SvgScene>> = OnceLock::new();
@@ -514,27 +601,30 @@ fn pointer_scene() -> &'static Arc<aimer_cupid::svg::SvgScene> {
 /// reads over a dark page and a light one alike.
 fn pointer_overrides() -> &'static Arc<[SvgNodeStyleOverride]> {
     static OVERRIDES: OnceLock<Arc<[SvgNodeStyleOverride]>> = OnceLock::new();
-    OVERRIDES.get_or_init(|| overrides_with(None))
+    OVERRIDES.get_or_init(|| overrides_with(None, POINTER_OPACITY))
 }
 
 /// The same, with the arrow turned by `angle` radians about its tip.
-fn swayed_overrides(angle: f32) -> Arc<[SvgNodeStyleOverride]> {
+fn swayed_overrides(angle: f32, fade: f32) -> Arc<[SvgNodeStyleOverride]> {
     // The tip, in the units of the scene's viewport: the icon's own 24-unit box is
     // scaled to the width the file declares.
     let pivot = ICON_TIP_UNITS * pointer_scene().viewport.width / ICON_VIEWBOX;
     let (sin, cos) = angle.sin_cos();
-    overrides_with(Some(SvgTransform {
-        sx: cos,
-        ky: sin,
-        kx: -sin,
-        sy: cos,
-        // `turn(p) + t = p` for `p` at the pivot, so the pivot does not move.
-        tx: pivot - cos * pivot + sin * pivot,
-        ty: pivot - sin * pivot - cos * pivot,
-    }))
+    overrides_with(
+        Some(SvgTransform {
+            sx: cos,
+            ky: sin,
+            kx: -sin,
+            sy: cos,
+            // `turn(p) + t = p` for `p` at the pivot, so the pivot does not move.
+            tx: pivot - cos * pivot + sin * pivot,
+            ty: pivot - sin * pivot - cos * pivot,
+        }),
+        POINTER_OPACITY * fade,
+    )
 }
 
-fn overrides_with(turn: Option<SvgTransform>) -> Arc<[SvgNodeStyleOverride]> {
+fn overrides_with(turn: Option<SvgTransform>, opacity: f32) -> Arc<[SvgNodeStyleOverride]> {
     pointer_scene()
         .nodes
         .iter()
@@ -543,10 +633,30 @@ fn overrides_with(turn: Option<SvgTransform>) -> Arc<[SvgNodeStyleOverride]> {
             node_id: node.node_id,
             fill: None,
             stroke: None,
-            opacity: Some(POINTER_OPACITY),
+            opacity: Some(opacity),
             // A node's own transform carries the viewBox scaling, so the turn is
             // applied after it, in the viewport's units.
             transform: turn.map(|turn| turn.mul(node.transform)),
+        })
+        .collect()
+}
+
+/// The badge icon's overrides at `alpha`: none at all when it is fully visible,
+/// so the settled badge costs nothing extra.
+fn badge_overrides(alpha: f32) -> Arc<[SvgNodeStyleOverride]> {
+    if alpha >= 1.0 {
+        return Arc::from(Vec::new());
+    }
+    badge_scene()
+        .nodes
+        .iter()
+        .filter(|node| node.geometry.is_some() && !node.is_definition)
+        .map(|node| SvgNodeStyleOverride {
+            node_id: node.node_id,
+            fill: None,
+            stroke: None,
+            opacity: Some(alpha.clamp(0.0, 1.0)),
+            transform: None,
         })
         .collect()
 }

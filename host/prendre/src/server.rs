@@ -9,7 +9,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::motion::Pointer;
-use crate::{Command, Endpoint, env, hello};
+use crate::trackpad;
+use crate::typing;
+use crate::{Command, Endpoint, Role, env, hello};
 
 /// The longest line accepted, in bytes. Room for a large paste, small enough that
 /// a misbehaving peer cannot make the app buffer without bound.
@@ -22,8 +24,19 @@ const HANDSHAKE: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(100);
 
 type Sink = dyn Fn(Command) -> bool + Send + Sync;
+/// Takes a picture of the window.
+type CaptureFn = dyn Fn() -> Result<aimer_capture::Image, aimer_capture::CaptureError> + Send + Sync;
 /// Told, with every name, whenever someone attaches or detaches.
-type Presence = dyn Fn(&[String]) + Send + Sync;
+type Presence = dyn Fn(&[Attached]) + Send + Sync;
+
+/// One connected client, as the app is told about it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Attached {
+    /// What the client called itself, or `driver` when it did not.
+    pub name: String,
+    /// What the connection is for.
+    pub role: Role,
+}
 
 /// How long a command that waits for the mouse waits for it. Shorter than the
 /// time a client waits for any reply.
@@ -187,9 +200,11 @@ impl Server {
     /// A command that arrives before the loop exists is answered with an error
     /// and dropped, so a driver can retry.
     pub fn start(config: Config) -> io::Result<Self> {
-        Self::start_with_presence(config, Command::deliver, |names| {
+        Self::start_with_presence(config, Command::deliver, |attached| {
             // The debug overlay shows who is attached; it reads this on the loop.
-            if aimer_platform::attachment::set_attached(names.to_vec())
+            let everyone = attached.iter().map(|a| a.name.clone()).collect();
+            let agents = attached.iter().filter(|a| a.role == Role::Agent).map(|a| a.name.clone()).collect();
+            if aimer_platform::attachment::set_connections(everyone, agents)
                 && let Some(proxy) = aimer_platform::EVENT_PROXY.get()
             {
                 let _ = proxy.send_event(aimer_platform::AimerNativePlatformEvent::AttachmentChanged);
@@ -209,8 +224,8 @@ impl Server {
         Self::start_with_presence(config, sink, |_| {})
     }
 
-    /// [`Server::start_with`], and `presence` is told the name of everyone
-    /// attached, in the order they attached, whenever that list changes.
+    /// [`Server::start_with`], and `presence` is told who is attached, with their
+    /// roles, in the order they attached, whenever that list changes.
     ///
     /// A client is attached from the moment its hello is accepted until its
     /// connection ends, and one that gave no name is called `driver`. `presence`
@@ -219,7 +234,24 @@ impl Server {
     pub fn start_with_presence(
         config: Config,
         sink: impl Fn(Command) -> bool + Send + Sync + 'static,
-        presence: impl Fn(&[String]) + Send + Sync + 'static,
+        presence: impl Fn(&[Attached]) + Send + Sync + 'static,
+    ) -> io::Result<Self> {
+        Self::start_with_capture(config, sink, presence, || {
+            aimer_capture::screenshot(aimer_capture::DEFAULT_TIMEOUT)
+        })
+    }
+
+    /// [`Server::start_with_presence`], and `capture` takes the picture a
+    /// `screenshot` command asks for instead of the running window's renderer.
+    ///
+    /// It runs on the connection's own thread, and is what lets a test stand in a
+    /// fixed picture for a renderer.
+    #[doc(hidden)]
+    pub fn start_with_capture(
+        config: Config,
+        sink: impl Fn(Command) -> bool + Send + Sync + 'static,
+        presence: impl Fn(&[Attached]) + Send + Sync + 'static,
+        capture: impl Fn() -> Result<aimer_capture::Image, aimer_capture::CaptureError> + Send + Sync + 'static,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind((config.bind, config.port))?;
         let token = config.token.unwrap_or_else(random_token);
@@ -230,6 +262,7 @@ impl Server {
             token: endpoint.token().to_owned(),
             sink: Box::new(sink),
             presence: Box::new(presence),
+            capture: Box::new(capture),
             pointer: Pointer::new(),
             attached: Mutex::new(Vec::new()),
             next_id: AtomicU64::new(0),
@@ -294,10 +327,12 @@ struct Shared {
     token: String,
     sink: Box<Sink>,
     presence: Box<Presence>,
+    /// Takes a picture of the window for a `screenshot`.
+    capture: Box<CaptureFn>,
     /// The injected mouse, which glides on a thread of its own.
     pointer: Pointer,
     /// Who is attached, with an id so a client leaves its own entry and no other.
-    attached: Mutex<Vec<(u64, String)>>,
+    attached: Mutex<Vec<(u64, Attached)>>,
     next_id: AtomicU64,
     stop: Arc<AtomicBool>,
     clients: AtomicUsize,
@@ -323,12 +358,27 @@ impl Shared {
             Command::Settle => {
                 if self.pointer.wait_settled(&self.stop, SETTLE_TIMEOUT) { Ok(()) } else { Err("timed out") }
             }
+            Command::TrackpadScroll { dx, dy, millis, modifiers } => self.swipe((dx, dy), millis, modifiers),
+            Command::Typing { text, millis } => self.type_out(&text, millis),
             Command::PointerMove { x, y, .. } | Command::PointerDown { x, y, .. } | Command::PointerUp { x, y, .. } => {
                 if !self.pointer.wait_settled(&self.stop, SETTLE_TIMEOUT) {
                     self.pointer.cancel();
                 }
                 self.pointer.place(Some((x, y)));
                 self.take(command)
+            }
+            Command::PointerDownHere { button, modifiers } | Command::PointerUpHere { button, modifiers } => {
+                // Where the mouse is once any glide has arrived: that is where a person
+                // who did not name a point means.
+                if !self.pointer.wait_settled(&self.stop, SETTLE_TIMEOUT) {
+                    self.pointer.cancel();
+                }
+                let (x, y) = self.pointer.current().ok_or("the mouse has not been placed: give a position")?;
+                self.take(if matches!(command, Command::PointerDownHere { .. }) {
+                    Command::PointerDown { x, y, button, modifiers }
+                } else {
+                    Command::PointerUp { x, y, button, modifiers }
+                })
             }
             Command::PointerLeave => {
                 self.pointer.place(None);
@@ -338,22 +388,98 @@ impl Shared {
         }
     }
 
+    /// Scrolls the way a trackpad does: a paced stream of small pixel deltas, with
+    /// the finger landing before the first and lifting after the last. Holds this
+    /// connection until the swipe is over, and stops at once if the app stops
+    /// taking input or the server is shut down.
+    fn swipe(&self, by: (f32, f32), millis: Option<u32>, modifiers: crate::model::Modifiers) -> Result<(), &'static str> {
+        use crate::model::{ScrollDeltaKind, TouchPhase};
+        let plan = trackpad::plan(by.0, by.1, millis);
+        if plan.steps.is_empty() {
+            return Ok(());
+        }
+        let scroll = |dx, dy, phase| Command::Scroll { dx, dy, kind: ScrollDeltaKind::Pixel, phase, modifiers };
+        let last = plan.steps.len() - 1;
+        let started = Instant::now();
+        for (index, (dx, dy)) in plan.steps.into_iter().enumerate() {
+            if self.stop.load(Ordering::Acquire) {
+                return Err("app unavailable");
+            }
+            self.take(scroll(dx, dy, if index == 0 { TouchPhase::Started } else { TouchPhase::Moved }))?;
+            if index < last {
+                // Due times are counted from the start, so a late wake-up is made up
+                // by the next step and the cadence the app reads as a trackpad holds.
+                let due = started + plan.interval * (index as u32 + 1);
+                if let Some(wait) = due.checked_duration_since(Instant::now()) {
+                    std::thread::sleep(wait);
+                }
+            }
+        }
+        // The finger lifts: the end of the gesture carries no distance.
+        self.take(scroll(0.0, 0.0, TouchPhase::Ended))
+    }
+
+    /// Types the way a person does: a keystroke at a time on an uneven rhythm.
+    /// Holds this connection until the last one is in, and stops at once if the
+    /// app stops taking input or the server is shut down.
+    fn type_out(&self, text: &str, millis: Option<u32>) -> Result<(), &'static str> {
+        let started = Instant::now();
+        let mut elapsed = Duration::ZERO;
+        for (keystroke, wait) in typing::plan(text, millis).steps {
+            if self.stop.load(Ordering::Acquire) {
+                return Err("app unavailable");
+            }
+            self.take(Command::Text(keystroke))?;
+            elapsed += wait;
+            // Counted from the start, so a late wake-up is made up by the next key.
+            if !wait.is_zero()
+                && let Some(left) = (started + elapsed).checked_duration_since(Instant::now())
+            {
+                std::thread::sleep(left);
+            }
+        }
+        Ok(())
+    }
+
+    /// The picture a `screenshot` asks for, encoded: captured, shrunk and encoded
+    /// here, on the connection's own thread, never the one drawing the window.
+    fn screenshot(&self, width: Option<u32>, jpeg: Option<u8>) -> Result<Shot, String> {
+        use aimer_capture::Format;
+        let image = (self.capture)().map_err(|e| e.to_string())?;
+        let target = match width {
+            // The window's logical width: a point in the picture is a point to click.
+            None => (image.width() as f32 / image.scale()).round().max(1.0) as u32,
+            Some(width) => width,
+        };
+        let image = image.scaled_to_width(target);
+        let format = jpeg.map_or(Format::Png, |quality| Format::Jpeg { quality });
+        let bytes = image.encode(format).map_err(|e| e.to_string())?;
+        if bytes.len() > crate::command::MAX_IMAGE_BYTES {
+            return Err(format!(
+                "the picture is {} bytes, over the {} byte limit: ask for a smaller one with width= or jpeg=",
+                bytes.len(),
+                crate::command::MAX_IMAGE_BYTES
+            ));
+        }
+        Ok(Shot { mime: format.mime(), bytes, width: image.width(), height: image.height(), scale: image.scale() })
+    }
+
     fn take(&self, command: Command) -> Result<(), &'static str> {
         if (self.sink)(command) { Ok(()) } else { Err("app unavailable") }
     }
 
     /// Lists `name` as attached until the returned guard is dropped.
-    fn attach(&self, name: &str) -> Attachment<'_> {
+    fn attach(&self, name: &str, role: Role) -> Attachment<'_> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let mut attached = self.attached.lock().expect("attached mutex poisoned");
-        attached.push((id, name.to_owned()));
+        attached.push((id, Attached { name: name.to_owned(), role }));
         self.report(&attached);
         Attachment { shared: self, id }
     }
 
-    fn report(&self, attached: &[(u64, String)]) {
-        let names: Vec<String> = attached.iter().map(|(_, name)| name.clone()).collect();
-        (self.presence)(&names);
+    fn report(&self, attached: &[(u64, Attached)]) {
+        let list: Vec<Attached> = attached.iter().map(|(_, who)| who.clone()).collect();
+        (self.presence)(&list);
     }
 }
 
@@ -369,6 +495,15 @@ impl Drop for Attachment<'_> {
         attached.retain(|(id, _)| *id != self.id);
         self.shared.report(&attached);
     }
+}
+
+/// A picture ready to send.
+struct Shot {
+    mime: &'static str,
+    bytes: Vec<u8>,
+    width: u32,
+    height: u32,
+    scale: f32,
 }
 
 /// Counts a connection for as long as it lives.
@@ -426,13 +561,24 @@ fn serve(stream: TcpStream, slot: &Slot) {
         return;
     }
     // Listed before the reply, so a client that has its `ok` is already attached.
-    let _attached = shared.attach(hello.name.unwrap_or(UNNAMED));
+    let _attached = shared.attach(hello.name.unwrap_or(UNNAMED), hello.role);
     if writer.write_all(b"ok\n").is_err() {
         return;
     }
 
     while let Ok(Some(text)) = read_line(&mut reader, &mut line, &shared.stop, None) {
         let reply = match text.parse::<Command>() {
+            // The one reply that is not a line: a header, and then the picture.
+            Ok(Command::Screenshot { width, jpeg }) => match shared.screenshot(width, jpeg) {
+                Ok(shot) => {
+                    let header = format!("ok image {} {} {} {} {}\n", shot.mime, shot.bytes.len(), shot.width, shot.height, shot.scale);
+                    if writer.write_all(header.as_bytes()).is_err() || writer.write_all(&shot.bytes).is_err() {
+                        return;
+                    }
+                    continue;
+                }
+                Err(reason) => format!("err {reason}\n"),
+            },
             Ok(command) => match shared.run(command) {
                 Ok(()) => "ok\n".to_owned(),
                 Err(reason) => format!("err {reason}\n"),
@@ -548,12 +694,23 @@ mod tests {
         text.trim_end().to_owned()
     }
 
-    /// A server that reports who is attached to the returned channel.
+    /// A server that reports who is attached, with their roles, to the returned channel.
+    fn presence_with_roles(config: Config) -> (Server, mpsc::Receiver<Vec<Attached>>) {
+        let (tx, rx) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let server = Server::start_with_presence(config, |_| true, move |attached| {
+            let _ = tx.lock().expect("tx").send(attached.to_vec());
+        })
+        .expect("start");
+        (server, rx)
+    }
+
+    /// The same, with the names only.
     fn presence(config: Config) -> (Server, mpsc::Receiver<Vec<String>>) {
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
-        let server = Server::start_with_presence(config, |_| true, move |names| {
-            let _ = tx.lock().expect("tx").send(names.to_vec());
+        let server = Server::start_with_presence(config, |_| true, move |attached| {
+            let _ = tx.lock().expect("tx").send(attached.iter().map(|a| a.name.clone()).collect());
         })
         .expect("start");
         (server, rx)
@@ -561,6 +718,24 @@ mod tests {
 
     fn next(rx: &mpsc::Receiver<Vec<String>>) -> Vec<String> {
         rx.recv_timeout(Duration::from_secs(3)).expect("a presence report")
+    }
+
+    #[test]
+    fn what_each_client_is_for_is_reported_with_its_name() {
+        let (server, rx) = presence_with_roles(Config::new());
+        let launcher = Client::connect_with(server.endpoint(), "aimer-cli", Role::Launcher).expect("connect");
+        let agent = Client::connect_with(server.endpoint(), "mcp:codex", Role::Agent).expect("connect");
+        let plain = Client::connect_as(server.endpoint(), "script").expect("connect");
+        let roles = |attached: Vec<Attached>| attached.into_iter().map(|a| (a.name, a.role)).collect::<Vec<_>>();
+        let reports: Vec<_> = (0..3).map(|_| roles(rx.recv_timeout(Duration::from_secs(3)).expect("a report"))).collect();
+        assert_eq!(reports[0], [("aimer-cli".to_owned(), Role::Launcher)]);
+        assert_eq!(reports[1], [("aimer-cli".to_owned(), Role::Launcher), ("mcp:codex".to_owned(), Role::Agent)]);
+        assert_eq!(reports[2].last(), Some(&("script".to_owned(), Role::Agent)), "a client that names itself with no role is an agent");
+
+        drop(agent);
+        let after = roles(rx.recv_timeout(Duration::from_secs(3)).expect("a report"));
+        assert_eq!(after, [("aimer-cli".to_owned(), Role::Launcher), ("script".to_owned(), Role::Agent)], "the launcher stays when the agent goes");
+        drop((launcher, plain));
     }
 
     #[test]
@@ -606,6 +781,204 @@ mod tests {
         client.send(&line.parse().expect("a command")).unwrap_or_else(|e| panic!("`{line}`: {e}"));
     }
 
+    /// A server that stamps the time each command reaches the app.
+    fn timed(config: Config) -> (Server, mpsc::Receiver<(Instant, Command)>) {
+        let (tx, rx) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let server = Server::start_with(config, move |command| {
+            tx.lock().expect("tx").send((Instant::now(), command)).is_ok()
+        })
+        .expect("start");
+        (server, rx)
+    }
+
+    fn scrolls(got: &[(Instant, Command)]) -> Vec<(Instant, f32, f32, crate::model::TouchPhase)> {
+        got.iter()
+            .filter_map(|(at, c)| match c {
+                Command::Scroll { dx, dy, kind: crate::model::ScrollDeltaKind::Pixel, phase, .. } => Some((*at, *dx, *dy, *phase)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A server whose screenshots are a fixed picture, standing in for a renderer.
+    fn with_picture(width: u32, height: u32, scale: f32) -> Server {
+        Server::start_with_capture(
+            Config::new(),
+            |_| true,
+            |_| {},
+            move || {
+                let rgba: Vec<u8> = (0..width * height).flat_map(|i| [(i % 251) as u8, 40, 200, 255]).collect();
+                Ok(aimer_capture::Image::new(width, height, scale, rgba).expect("a picture"))
+            },
+        )
+        .expect("start")
+    }
+
+    #[test]
+    fn a_screenshot_comes_back_as_a_header_and_exactly_that_many_png_bytes_at_logical_size() {
+        let server = with_picture(400, 300, 2.0);
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let shot = client.screenshot(None, None).expect("a picture");
+        assert_eq!(shot.mime, "image/png");
+        // 400 physical pixels at 2x is 200 logical: the picture a person can point at.
+        assert_eq!((shot.width, shot.height), (200, 150));
+        assert!((shot.scale - 1.0).abs() < 0.01, "pixels in it are logical pixels: {}", shot.scale);
+        let decoded = ::image::load_from_memory(&shot.bytes).expect("a PNG");
+        assert_eq!((decoded.width(), decoded.height()), (200, 150));
+    }
+
+    #[test]
+    fn a_width_caps_the_picture_and_zero_means_the_real_pixels() {
+        let server = with_picture(400, 300, 2.0);
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let small = client.screenshot(Some(100), None).expect("a picture");
+        assert_eq!((small.width, small.height), (100, 75));
+        assert!((small.scale - 0.5).abs() < 0.01, "400 to 100 at 2x: {}", small.scale);
+        let full = client.screenshot(Some(0), None).expect("a picture");
+        assert_eq!((full.width, full.height, full.scale), (400, 300, 2.0), "nothing thrown away");
+    }
+
+    #[test]
+    fn jpeg_is_a_smaller_picture_with_its_own_mime_type() {
+        let server = with_picture(400, 300, 1.0);
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let png = client.screenshot(Some(0), None).expect("png");
+        let jpeg = client.screenshot(Some(0), Some(60)).expect("jpeg");
+        assert_eq!(jpeg.mime, "image/jpeg");
+        assert_eq!(&jpeg.bytes[..2], &[0xFF, 0xD8]);
+        assert!(jpeg.bytes.len() < png.bytes.len(), "{} vs {}", jpeg.bytes.len(), png.bytes.len());
+    }
+
+    #[test]
+    fn the_connection_is_still_good_after_a_picture() {
+        let server = with_picture(64, 48, 1.0);
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        client.screenshot(None, None).expect("a picture");
+        send(&mut client, "settle");
+        client.screenshot(None, None).expect("and another");
+    }
+
+    #[test]
+    fn a_renderer_that_cannot_capture_is_reported_as_an_error_not_a_hang() {
+        let server = Server::start_with_capture(Config::new(), |_| true, |_| {}, || Err(aimer_capture::CaptureError::Unsupported))
+            .expect("start");
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let err = client.screenshot(None, None).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("cannot capture"), "{err}");
+        send(&mut client, "settle");
+    }
+
+    #[test]
+    fn a_picture_too_big_to_send_says_how_to_make_it_smaller() {
+        // Wide noise that PNG cannot squeeze.
+        let server = Server::start_with_capture(Config::new(), |_| true, |_| {}, || {
+            let rgba: Vec<u8> = (0..4000u32 * 3000).flat_map(|i| {
+                let h = i.wrapping_mul(2_654_435_761);
+                [(h >> 24) as u8, (h >> 16) as u8, (h >> 8) as u8, 255]
+            }).collect();
+            Ok(aimer_capture::Image::new(4000, 3000, 1.0, rgba).expect("a picture"))
+        })
+        .expect("start");
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let err = client.screenshot(Some(0), None).unwrap_err();
+        assert!(err.to_string().contains("width="), "{err}");
+    }
+
+    #[test]
+    fn a_trackpad_scroll_is_a_paced_stream_of_pixel_deltas_that_starts_and_ends_like_a_gesture() {
+        use crate::model::TouchPhase;
+        let (server, rx) = timed(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let started = Instant::now();
+        send(&mut client, "trackpad 0 -400 500");
+        let took = started.elapsed();
+        assert!(took >= Duration::from_millis(430) && took <= Duration::from_millis(650), "about as long as asked: {took:?}");
+
+        let got: Vec<_> = rx.try_iter().collect();
+        let steps = scrolls(&got);
+        assert!(got.iter().all(|(_, c)| matches!(c, Command::Scroll { .. })), "only scrolling reaches the app");
+        assert!(steps.len() > 25, "a stream, not a pulse: {} events", steps.len());
+        let (first, last) = (steps.first().unwrap(), steps.last().unwrap());
+        assert_eq!(first.3, TouchPhase::Started, "the finger lands");
+        assert_eq!((last.3, last.1, last.2), (TouchPhase::Ended, 0.0, 0.0), "and lifts, carrying no distance");
+        assert!(steps[1..steps.len() - 1].iter().all(|s| s.3 == TouchPhase::Moved));
+        let travelled: f32 = steps.iter().map(|s| s.2).sum();
+        assert!((travelled + 400.0).abs() < 0.01, "exactly the distance: {travelled}");
+
+        // Faster than the app's 20 ms line between a trackpad and a wheel, and never a long pause.
+        let gaps: Vec<f32> = steps.windows(2).map(|w| w[1].0.duration_since(w[0].0).as_secs_f32() * 1000.0).collect();
+        let mean = gaps.iter().sum::<f32>() / gaps.len() as f32;
+        assert!(mean < 16.0, "mean gap {mean} ms");
+        assert!(gaps.iter().cloned().fold(0.0, f32::max) < 60.0, "no stall: {gaps:?}");
+    }
+
+    #[test]
+    fn typing_is_one_keystroke_at_a_time_at_a_human_pace_and_holds_the_connection_until_done() {
+        let (server, rx) = timed(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let started = Instant::now();
+        send(&mut client, "typing 600 Hello, Aimer!");
+        let took = started.elapsed();
+        assert!(took >= Duration::from_millis(540) && took <= Duration::from_millis(800), "about as long as asked: {took:?}");
+
+        let got: Vec<_> = rx.try_iter().collect();
+        let typed: Vec<&str> = got.iter().map(|(_, c)| match c {
+            Command::Text(text) => text.as_str(),
+            other => panic!("only text reaches the app: {other:?}"),
+        }).collect();
+        assert_eq!(typed.concat(), "Hello, Aimer!");
+        assert_eq!(typed.len(), 13, "a keystroke per character: {typed:?}");
+        let gaps: Vec<f32> = got.windows(2).map(|w| w[1].0.duration_since(w[0].0).as_secs_f32() * 1000.0).collect();
+        assert!(gaps.iter().all(|g| *g > 5.0), "paced, not a burst: {gaps:?}");
+        assert!(gaps.iter().any(|g| (g - gaps[0]).abs() > 3.0), "and uneven: {gaps:?}");
+    }
+
+    #[test]
+    fn typing_stops_when_the_app_stops_taking_input() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let server = Server::start_with(Config::new(), move |_| seen.fetch_add(1, Ordering::SeqCst) < 2).expect("server starts");
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let err = client.send(&"typing 300 hello".parse().expect("parses")).expect_err("the app went away");
+        assert_eq!(err.to_string(), "app unavailable");
+        assert_eq!(calls.load(Ordering::SeqCst), 3, "no keystrokes after the first refusal");
+    }
+
+    #[test]
+    fn a_trackpad_scroll_does_not_move_the_mouse_and_ignores_a_glide_in_progress() {
+        let (server, rx) = timed(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        send(&mut client, "move 50 50");
+        rx.try_iter().for_each(drop);
+        send(&mut client, "trackpad 0 -120 200");
+        let got: Vec<_> = rx.try_iter().collect();
+        assert!(got.iter().all(|(_, c)| !matches!(c, Command::PointerMove { .. })), "it scrolls where the mouse is");
+    }
+
+    #[test]
+    fn a_scroll_too_small_to_see_is_replied_to_and_sends_nothing() {
+        let (server, rx) = timed(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        send(&mut client, "trackpad 0 0.1");
+        assert_eq!(rx.try_iter().count(), 0);
+    }
+
+    #[test]
+    fn dropping_the_server_mid_scroll_ends_it_promptly() {
+        let (server, _rx) = timed(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let handle = std::thread::spawn(move || {
+            let _ = client.send(&"trackpad 0 -3000 3000".parse().expect("command"));
+        });
+        std::thread::sleep(Duration::from_millis(150));
+        let started = Instant::now();
+        drop(server);
+        assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
+        let _ = handle.join();
+    }
+
     #[test]
     fn a_glide_replies_at_once_and_the_mouse_arrives_afterwards() {
         let (server, rx) = collecting(Config::new());
@@ -638,6 +1011,36 @@ mod tests {
         assert_eq!(before.last(), Some(&(300.0, 0.0)), "the glide had arrived before the press: {before:?}");
         assert!(before.len() > 5, "and it got there by gliding");
         assert!(got[press + 1..].iter().all(|c| matches!(c, Command::PointerUp { .. })), "nothing glided after");
+    }
+
+    #[test]
+    fn a_press_without_a_point_lands_where_the_mouse_was_left_and_waits_for_a_glide() {
+        let (server, rx) = collecting(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        send(&mut client, "move 0 0");
+        send(&mut client, "glide 120 40 300");
+        send(&mut client, "down");
+        send(&mut client, "up secondary");
+        let got: Vec<Command> = rx.try_iter().collect();
+        let press = got.iter().position(|c| matches!(c, Command::PointerDown { .. })).expect("pressed");
+        assert_eq!(
+            got[press],
+            Command::PointerDown { x: 120.0, y: 40.0, button: PointerButton::Primary, modifiers: Default::default() },
+            "at the glide's end, not where it was when the press was sent"
+        );
+        assert_eq!(
+            got[press + 1],
+            Command::PointerUp { x: 120.0, y: 40.0, button: PointerButton::Secondary, modifiers: Default::default() }
+        );
+    }
+
+    #[test]
+    fn a_press_without_a_point_before_the_mouse_was_ever_placed_says_so() {
+        let (server, rx) = collecting(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let err = client.send(&"down".parse().expect("parses")).expect_err("nowhere to press");
+        assert!(err.to_string().contains("give a position"), "{err}");
+        assert!(rx.try_recv().is_err(), "nothing reached the app");
     }
 
     #[test]

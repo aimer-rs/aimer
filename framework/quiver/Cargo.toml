@@ -84,6 +84,8 @@ aimer_assets.workspace = true
 aimer_collapsible.workspace = true
 aimer_decoration.workspace = true
 aimer_svg.workspace = true
+# Locates widget content for the capture widget's tests.
+aimer_capture.workspace = true
 aimer_text.workspace = true
 aimer_space.workspace = true
 aimer_macro.workspace = true

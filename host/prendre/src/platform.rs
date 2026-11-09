@@ -113,8 +113,10 @@ impl Command {
     /// understands, so injected input travels the same path as real input.
     ///
     /// Returns `None` for [`Command::Link`], which is queued in the platform's link
-    /// inbox and has no event of its own, and for [`Command::Settle`], which is a
-    /// wait and not an event. [`Command::deliver`] handles every command.
+    /// inbox and has no event of its own, for [`Command::Settle`] and
+    /// [`Command::Screenshot`], which are a wait and a question, not events, and
+    /// for [`Command::PointerDownHere`] and [`Command::PointerUpHere`], whose
+    /// position only the server knows. [`Command::deliver`] handles every command.
     pub fn into_platform_event(self) -> Option<AimerNativePlatformEvent> {
         let pointer = |x, y, button: PointerButton| {
             ptr::PointerInfo::new(Vec2d { x, y }, ptr::PointerSource::Mouse, 0, button.into())
@@ -142,6 +144,16 @@ impl Command {
                     delta: at(dx, dy),
                     phase: phase.into(),
                     kind: kind.into(),
+                    is_direct_manipulation: false,
+                },
+                modifiers,
+            ),
+            // Delivered whole there is no time to swipe in: it is the distance at once.
+            Self::TrackpadScroll { dx, dy, modifiers, .. } => native(
+                ev::ElementEvent::Scroll {
+                    delta: at(dx, dy),
+                    phase: ev::TouchPhase::Moved,
+                    kind: ev::ScrollDeltaKind::Pixel,
                     is_direct_manipulation: false,
                 },
                 modifiers,
@@ -175,10 +187,14 @@ impl Command {
                 modifiers: modifiers.into(),
             },
             Self::Text(text) => AimerNativePlatformEvent::InsertText(text),
+            // Delivered whole there is no time to type in: it is the text at once.
+            Self::Typing { text, .. } => AimerNativePlatformEvent::InsertText(text),
             Self::Preedit { text, cursor } => AimerNativePlatformEvent::SetPreedit { text, cursor },
             Self::SoftBackspace => AimerNativePlatformEvent::ForceBackspace,
             Self::Back(step) => AimerNativePlatformEvent::Back(step.signal()),
-            Self::Link(_) | Self::Settle => return None,
+            Self::Link(_) | Self::Settle | Self::Screenshot { .. } => return None,
+            // Where the mouse is is the server's to say; without it there is no event.
+            Self::PointerDownHere { .. } | Self::PointerUpHere { .. } => return None,
             Self::Menu(shortcut) => AimerNativePlatformEvent::MenuShortcut(shortcut.shortcut()),
             Self::FileHover(path) => plain(ev::ElementEvent::HoveredFile { path, pos: None }),
             Self::FileHoverCancel => plain(ev::ElementEvent::HoveredFileCancelled),
@@ -229,13 +245,17 @@ impl Command {
         match self {
             // Nothing is gliding when a command is delivered on its own.
             Self::Settle => true,
+            // A picture is the reply to a connection; delivered alone it has none to go to.
+            Self::Screenshot { .. } => false,
+            // There is no mouse to ask where it is.
+            Self::PointerDownHere { .. } | Self::PointerUpHere { .. } => false,
             // Queued, then the loop is woken to deliver it on its own thread.
             Self::Link(url) => {
                 aimer_platform::link_inbox::post_link(url);
                 true
             }
             other => {
-                let event = other.into_platform_event().expect("only a link and a settle have no event");
+                let event = other.into_platform_event().expect("only a link, a settle and a screenshot have no event");
                 proxy.send_event(event).is_ok()
             }
         }
@@ -452,6 +472,39 @@ mod tests {
         ] {
             assert_eq!(marker(command.clone()), None, "{command:?}");
         }
+    }
+
+    #[test]
+    fn a_trackpad_scroll_delivered_whole_is_one_pixel_scroll_and_places_no_pointer() {
+        let swipe = Command::TrackpadScroll { dx: 0.0, dy: -90.0, millis: Some(500), modifiers: Modifiers::default() };
+        assert_eq!(swipe.synthetic_pointer(), None);
+        let (event, _) = native(swipe);
+        let ev::ElementEvent::Scroll { delta, kind, .. } = event else { panic!("{event:?}") };
+        assert_eq!((delta.x, delta.y), (0.0, -90.0));
+        assert_eq!(kind, ev::ScrollDeltaKind::Pixel);
+    }
+
+    #[test]
+    fn typing_delivered_whole_is_one_commit_of_all_the_text_and_places_no_pointer() {
+        let typing = Command::Typing { text: "hello".into(), millis: Some(500) };
+        assert_eq!(typing.synthetic_pointer(), None);
+        assert!(matches!(typing.into_platform_event(), Some(AimerNativePlatformEvent::InsertText(text)) if text == "hello"));
+    }
+
+    #[test]
+    fn a_press_without_a_point_is_resolved_by_the_server_not_delivered_to_the_app() {
+        let down = Command::PointerDownHere { button: PointerButton::Primary, modifiers: Modifiers::default() };
+        assert!(down.clone().into_platform_event().is_none(), "nothing here knows where the mouse is");
+        assert_eq!(down.synthetic_pointer(), None);
+        assert!(!down.deliver(), "there is no event to send");
+    }
+
+    #[test]
+    fn a_screenshot_is_answered_by_the_server_not_delivered_to_the_app() {
+        let shot = Command::Screenshot { width: None, jpeg: None };
+        assert!(shot.clone().into_platform_event().is_none());
+        assert_eq!(shot.synthetic_pointer(), None);
+        assert!(!Command::Screenshot { width: None, jpeg: None }.deliver(), "there is no one to send the picture to");
     }
 
     #[test]

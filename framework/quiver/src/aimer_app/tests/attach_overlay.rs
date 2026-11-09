@@ -33,11 +33,12 @@ fn painted<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Vec<V2DrawCommand>
         .collect()
 }
 
-fn badge_text<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Option<String> {
-    painted(app).into_iter().find_map(|c| match c {
-        V2DrawCommand::DrawText { text, .. } if text.starts_with("driven by") => Some(text.to_string()),
-        _ => None,
-    })
+/// Whether the badge's icon is painted: the pill holds the one drawing that is
+/// not a pointer.
+fn badge_shown<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> bool {
+    painted(app)
+        .into_iter()
+        .any(|c| matches!(c, V2DrawCommand::Svg { scene, .. } if Arc::ptr_eq(&scene, crate::attach_overlay::badge_scene())))
 }
 
 /// Where each pointer icon's tip is in the window: its commands are local to the
@@ -52,10 +53,24 @@ fn pointer_icons<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Vec<(f32, f3
             item.snapshot()
                 .commands
                 .iter()
-                .filter_map(|c| if let V2DrawCommand::Svg { destination, .. } = c { Some((origin.0 + destination.x, origin.1 + destination.y)) } else { None })
+                .filter_map(|c| match c {
+                    // The badge's icon is a drawing too, but it is not a pointer.
+                    V2DrawCommand::Svg { scene, .. } if Arc::ptr_eq(scene, crate::attach_overlay::badge_scene()) => None,
+                    V2DrawCommand::Svg { destination, .. } => Some((origin.0 + destination.x, origin.1 + destination.y)),
+                    _ => None,
+                })
                 .collect::<Vec<_>>()
         })
         .collect()
+}
+
+/// Lets the fade that follows a detach run its course: the overlay is timed by the
+/// clock, and one frame at the start and one after the end are all it needs.
+///
+/// Returns the frame after the fade, which is the one that takes the overlay away.
+fn fade_out<W: Widget + 'static>(app: &mut HeadlessAimerApp<W>) -> FramePacket {
+    std::thread::sleep(crate::attach_overlay::PRESENCE_FADE + std::time::Duration::from_millis(60));
+    direct_headless_frame_packet(app).1
 }
 
 fn moved(x: f32, y: f32) -> AimerNativePlatformEvent {
@@ -72,7 +87,7 @@ fn an_app_nobody_drives_shows_nothing_extra() {
     let _detach = Detach;
     let mut app = AimerApp::start_headless_with(recording(), options());
     app.render_frame();
-    assert_eq!(badge_text(&app), None);
+    assert!(!badge_shown(&app));
     assert!(pointer_icons(&app).is_empty());
 }
 
@@ -85,13 +100,45 @@ fn attaching_shows_the_badge_and_detaching_removes_it() {
     attachment::set_attached(vec!["aimer-cli".to_owned()]);
     app.send_user_event(AimerNativePlatformEvent::AttachmentChanged);
     direct_headless_frame_packet(&mut app);
-    assert_eq!(badge_text(&app).as_deref(), Some("driven by aimer-cli"));
+    assert!(badge_shown(&app), "attaching shows the badge");
 
     attachment::set_attached(Vec::new());
     app.send_user_event(AimerNativePlatformEvent::AttachmentChanged);
-    let (_, packet) = direct_headless_frame_packet(&mut app);
-    assert_eq!(badge_text(&app), None);
+    direct_headless_frame_packet(&mut app);
+    assert!(badge_shown(&app), "it fades out rather than vanishing");
+    let packet = fade_out(&mut app);
+    assert!(!badge_shown(&app), "and is removed once it has");
     assert!(!packet.metadata().damage().is_empty(), "the covered pixels are restored");
+}
+
+#[test]
+fn the_tool_that_launched_the_app_is_not_someone_controlling_it() {
+    let _detach = Detach;
+    let mut app = AimerApp::start_headless_with(recording(), options());
+    app.render_frame();
+
+    // `aimer run` is connected for the whole run: no badge for that.
+    attachment::set_connections(vec!["aimer-cli".to_owned()], Vec::new());
+    app.send_user_event(AimerNativePlatformEvent::AttachmentChanged);
+    direct_headless_frame_packet(&mut app);
+    assert!(!badge_shown(&app), "supervising is not controlling");
+
+    // An agent connects, and stays connected without doing anything: the badge
+    // stays up for as long as it is there, however idle it is.
+    attachment::set_connections(vec!["aimer-cli".to_owned(), "mcp:codex".to_owned()], vec!["mcp:codex".to_owned()]);
+    app.send_user_event(AimerNativePlatformEvent::AttachmentChanged);
+    direct_headless_frame_packet(&mut app);
+    assert!(badge_shown(&app), "an agent is remote-controlling the app");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    direct_headless_frame_packet(&mut app);
+    assert!(badge_shown(&app), "and idle does not end that");
+
+    // The agent leaves; the launcher stays. The badge goes.
+    attachment::set_connections(vec!["aimer-cli".to_owned()], Vec::new());
+    app.send_user_event(AimerNativePlatformEvent::AttachmentChanged);
+    direct_headless_frame_packet(&mut app);
+    fade_out(&mut app);
+    assert!(!badge_shown(&app), "the agent is gone, whoever else is still connected");
 }
 
 #[test]
@@ -105,7 +152,8 @@ fn the_injected_mouse_is_drawn_with_its_tip_where_the_driver_put_it_and_leaves_w
     app.send_user_event(moved(300.0, 200.0));
     direct_headless_frame_packet(&mut app);
     let [(x, y)] = pointer_icons(&app)[..] else { panic!("one pointer: {:?}", pointer_icons(&app)) };
-    assert!((x - (300.0 - 3.96)).abs() < 0.01 && (y - (200.0 - 3.96)).abs() < 0.01, "({x}, {y})");
+    let tip = crate::attach_overlay::ICON_TIP;
+    assert!((x - (300.0 - tip)).abs() < 0.01 && (y - (200.0 - tip)).abs() < 0.01, "({x}, {y})");
 
     app.send_user_event(moved(500.0, 100.0));
     direct_headless_frame_packet(&mut app);
@@ -134,6 +182,9 @@ fn a_tool_that_leaves_takes_its_pointer_with_it() {
 
     attachment::set_attached(Vec::new());
     app.send_user_event(AimerNativePlatformEvent::AttachmentChanged);
+    direct_headless_frame_packet(&mut app);
+    assert_eq!(pointer_icons(&app).len(), 1, "it fades out rather than vanishing");
+    fade_out(&mut app);
     direct_headless_frame_packet(&mut app);
     assert!(pointer_icons(&app).is_empty());
 }

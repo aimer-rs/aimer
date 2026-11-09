@@ -16,6 +16,7 @@ pub use event::EVENT_PROXY;
 /// technology, and taking its action requests back.
 pub mod accessibility;
 pub mod attachment;
+pub mod capture;
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
 pub mod browser_poll_context;

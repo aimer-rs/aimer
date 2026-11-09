@@ -55,6 +55,13 @@ pub enum BackStep {
 /// the reply to a command after five seconds.
 pub const MAX_GLIDE_MILLIS: u32 = 3000;
 
+/// The widest a screenshot may be asked to be, in pixels. Wider is a typo.
+pub const MAX_SCREENSHOT_WIDTH: u32 = 16_384;
+
+/// The most bytes a screenshot reply may carry. A picture that encodes to more is
+/// refused, with advice on making it smaller, instead of being sent.
+pub const MAX_IMAGE_BYTES: usize = 16 * 1024 * 1024;
+
 /// One synthetic input event that can be sent to a running application.
 ///
 /// Positions and deltas are in **logical pixels** in window coordinates, the
@@ -86,6 +93,15 @@ pub enum Command {
     PointerDown { x: f32, y: f32, button: PointerButton, modifiers: Modifiers },
     /// `button` came up at `(x, y)` while `modifiers` were held.
     PointerUp { x: f32, y: f32, button: PointerButton, modifiers: Modifiers },
+    /// `button` went down where the injected mouse is now, while `modifiers` were
+    /// held. The server fills in the position — the end of a glide in progress,
+    /// waited for, or wherever the last injected mouse event left it — and
+    /// replies with an error if the mouse has not been placed yet. Handed to
+    /// [`Command::deliver`] directly, which has no mouse to ask, it does nothing.
+    PointerDownHere { button: PointerButton, modifiers: Modifiers },
+    /// `button` came up where the injected mouse is now; see
+    /// [`Command::PointerDownHere`].
+    PointerUpHere { button: PointerButton, modifiers: Modifiers },
     /// The mouse left the window.
     PointerLeave,
     /// The mouse glides to `(x, y)` instead of appearing there, and the command
@@ -102,6 +118,42 @@ pub enum Command {
     /// [`Command::deliver`] directly, which has no time to spend, it is that
     /// single move too.
     PointerGlide { x: f32, y: f32, millis: Option<u32>, modifiers: Modifiers },
+    /// Scrolls by `(dx, dy)` pixels the way a trackpad does, smoothly, at the
+    /// mouse's current position, and replies when the swipe is over.
+    ///
+    /// Where [`Command::Scroll`] is one event — a wheel pulse the app turns into a
+    /// quick burst — this is a swipe: the server sends a steady stream of small
+    /// pixel deltas, eased so it starts and ends gently, bracketed by a start and
+    /// an end that stand for the finger landing and lifting. `millis` is about how
+    /// long it takes, from 1 to [`MAX_GLIDE_MILLIS`]; without it the time follows
+    /// the distance. A negative `dy` scrolls down: the content moves up. Handed to
+    /// [`Command::deliver`] directly, which has no time to spend, it is one pixel
+    /// scroll of the whole distance.
+    TrackpadScroll { dx: f32, dy: f32, millis: Option<u32>, modifiers: Modifiers },
+    /// Types `text` one keystroke at a time at a human pace, and replies when the
+    /// last one is in.
+    ///
+    /// Where [`Command::Text`] is one edit — the whole string lands at once, as an
+    /// input method's commit does — this is a hand at the keys: each character is
+    /// its own commit, the rhythm is uneven, there is a breath after a word and a
+    /// longer one after a sentence. `millis` is about how long all of it takes,
+    /// from 1 to [`MAX_GLIDE_MILLIS`]; without it the time follows the length, and
+    /// a text too long to type at that pace in [`MAX_GLIDE_MILLIS`] is typed
+    /// faster, every character still sent. Handed to [`Command::deliver`]
+    /// directly, which has no time to spend, it is one commit of the whole text.
+    Typing { text: String, millis: Option<u32> },
+    /// Asks for a picture of the window, which is the reply and not an input.
+    ///
+    /// The reply is `ok image MIME LENGTH WIDTH HEIGHT SCALE` on one line, then
+    /// exactly `LENGTH` bytes of the picture. `SCALE` is how many of the picture's
+    /// pixels make a logical pixel of the window, so a point in the picture can be
+    /// found in the window's own coordinates.
+    ///
+    /// `width` is the widest the picture may be. Without it the picture is made
+    /// the window's *logical* width, so a point in it is a point that can be
+    /// clicked; `0` keeps the real pixels. `jpeg` is a quality from 1 to 100 for a
+    /// much smaller JPEG; without it the picture is a lossless PNG.
+    Screenshot { width: Option<u32>, jpeg: Option<u8> },
     /// Waits until the mouse has finished gliding, then replies.
     ///
     /// A `glide` replies at once and the mouse is still on its way, so a command

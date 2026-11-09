@@ -294,6 +294,8 @@ pub mod render_ctx {
 
         /// Presents a frame packet and recycles its draw-list storage.
         pub fn present_packet(&mut self, packet: FramePacket) -> PresentOutcome {
+            // This renderer cannot copy its frames out yet: say so, don't leave the asker waiting.
+            aimer_platform::capture::refuse(aimer_platform::capture::Error::Unsupported);
             let presented = self.present_worker_packet(&packet);
             if let Some(canvas) = &self.canvas {
                 canvas.recycle_draw_list(packet.into_frame().into_draw_list());

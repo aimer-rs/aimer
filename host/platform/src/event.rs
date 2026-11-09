@@ -76,6 +76,11 @@ pub enum AimerNativePlatformEvent {
     /// The new list waits in [`crate::attachment`]; handling this event is what
     /// makes the debug overlay show it. Only a debug build is ever told.
     AttachmentChanged,
+    /// Someone asked for a picture of the window (see [`crate::capture`]).
+    ///
+    /// Handling it draws a full frame, which the renderer answers the request
+    /// with: an app that is not changing would otherwise draw nothing to copy.
+    CaptureRequested,
     /// An injected mouse or finger is about to do something, sent ahead of the
     /// input itself so the debug overlay can draw where it is. See
     /// [`crate::attachment::SyntheticPointer`].
