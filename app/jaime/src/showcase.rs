@@ -27,6 +27,7 @@ use crate::feedback_example::feedback_example;
 use crate::file_drop_zone::FileDropShowcase;
 use crate::floating::FloatingShowcase;
 use crate::focus_node_example::FocusNodeExample;
+use crate::shortcuts_example::ShortcutsExample;
 use crate::foreground_decoration_example::foreground_decoration_example;
 use crate::form_example::form_example;
 use crate::gif_example::gif_example;
@@ -462,6 +463,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::FileDrop => FileDropShowcase::new().boxed(),
         ExampleId::Floating => FloatingShowcase::new().boxed(),
         ExampleId::FocusNode => FocusNodeExample::new().boxed(),
+        ExampleId::Shortcuts => ShortcutsExample::new().boxed(),
         ExampleId::TextArea => TextAreaExample::new().boxed(),
         ExampleId::TextField => TextFieldExample::new().boxed(),
         ExampleId::CustomTextFieldCaret => CustomTextFieldCaretExample::new().boxed(),

@@ -656,9 +656,15 @@ impl WindowEventHandler {
 
         let modifiers = app.current_modifiers.clone();
 
-        if modifiers.ctrl || modifiers.meta {
+        // Shortcut chords are only formed while a `Shortcuts` scope exists, so an
+        // application without any keeps exactly the editing-key handling below.
+        let chords = aimer_shortcut::scopes_alive();
+        // `Ctrl`+`Alt` is `AltGr` on many layouts and types characters; it is
+        // not a chord outside macOS, where `Ctrl`+`Alt` is just two modifiers.
+        let alt_gr = !cfg!(target_os = "macos") && modifiers.ctrl && modifiers.alt;
+        if modifiers.ctrl || modifiers.meta || (chords && modifiers.alt) {
             use winit::keyboard::{KeyCode, PhysicalKey};
-            let named = match event.physical_key {
+            let editing = match event.physical_key {
                 PhysicalKey::Code(KeyCode::KeyA) => Some(NamedKey::Other("a".into())),
                 PhysicalKey::Code(KeyCode::KeyC) => Some(NamedKey::Other("c".into())),
                 PhysicalKey::Code(KeyCode::KeyV) => Some(NamedKey::Other("v".into())),
@@ -667,20 +673,34 @@ impl WindowEventHandler {
                 PhysicalKey::Code(KeyCode::KeyY) => Some(NamedKey::Other("y".into())),
                 _ => None,
             };
+            let is_editing = editing.is_some();
+            let named = editing.or_else(|| {
+                if !chords || alt_gr {
+                    return None;
+                }
+                super::shortcut_keys::chord_key_name(event.physical_key)
+                    .map(|name| NamedKey::Other(name.into()))
+            });
             if let Some(key) = named {
                 let ev = ElementEvent::KeyInput {
                     key,
-                    action,
-                    modifiers,
+                    action: action.clone(),
+                    modifiers: modifiers.clone(),
                 };
+                let mut handled = false;
                 if app.active_root().is_some() {
                     let result = app.dispatch_element_event(app.cursor_pos, &ev);
-                    let handled = result.is_consumed();
+                    handled = result.is_consumed();
                     if Self::should_redraw(result, handled) {
                         app.request_full_redraw();
                     }
                 }
-                return;
+                // The editing keys are always spent here. Any other chord that no
+                // shortcut claimed carries on as the text it may also have typed,
+                // which is what keeps `Alt`+`K` typing its character on macOS.
+                if is_editing || handled {
+                    return;
+                }
             }
         }
 

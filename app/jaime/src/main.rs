@@ -66,6 +66,7 @@ mod routing_context_example;
 mod selectable_text;
 mod selection_controls_example;
 mod showcase;
+mod shortcuts_example;
 mod stack_positioned_example;
 mod starter;
 pub mod stateful;
@@ -97,6 +98,8 @@ use std::cell::UnsafeCell;
 #[aimer::main]
 fn main() {
     // empty_screen()
+    // Before the app runs, so macOS builds its menu bar from the menu.
+    shortcuts_example::install_app_shortcuts();
     AimerApp::new()
         .render_mode(render_mode_from_args())
         .setup(|| {

@@ -686,6 +686,10 @@ impl<E: Element + 'static> EventElement for ElementNode<E> {
         self.element.traps_focus()
     }
 
+    fn shortcut_scope(&self) -> Option<&aimer_shortcut::ShortcutScope> {
+        self.element.shortcut_scope()
+    }
+
     fn semantics(&self, id: aimer_accessibility::NodeId) -> Option<aimer_accessibility::SemanticNode> {
         self.element.semantics(id)
     }
@@ -1120,6 +1124,10 @@ impl EventElement for AnyElement {
         self.as_ref().traps_focus()
     }
 
+    fn shortcut_scope(&self) -> Option<&aimer_shortcut::ShortcutScope> {
+        self.as_ref().shortcut_scope()
+    }
+
     fn semantics(&self, id: aimer_accessibility::NodeId) -> Option<aimer_accessibility::SemanticNode> {
         self.as_ref().semantics(id)
     }
@@ -1483,6 +1491,10 @@ impl EventElement for Box<dyn Element> {
 
     fn traps_focus(&self) -> bool {
         self.as_ref().traps_focus()
+    }
+
+    fn shortcut_scope(&self) -> Option<&aimer_shortcut::ShortcutScope> {
+        self.as_ref().shortcut_scope()
     }
 
     fn semantics(&self, id: aimer_accessibility::NodeId) -> Option<aimer_accessibility::SemanticNode> {

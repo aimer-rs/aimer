@@ -49,6 +49,13 @@ pub enum AimerNativePlatformEvent {
     /// An editing shortcut the macOS menu bar claimed before the window could
     /// see it, handed back to the widget tree. See [`crate::menu`].
     MenuShortcut(crate::menu::MenuShortcut),
+    /// An item of the application's own menu was chosen, by click or by its
+    /// accelerator. See [`aimer_shortcut::menu`].
+    MenuItem(aimer_shortcut::menu::MenuItemId),
+    /// A global (system-wide) shortcut fired. Backends hear the key on threads
+    /// of their own; the event loop runs the action. See
+    /// [`aimer_shortcut::global`].
+    GlobalShortcut(aimer_shortcut::global::GlobalShortcutId),
     /// A step of the system's back, reported by a platform bridge that is not a
     /// key: Android's predictive back arrives from Kotlin as a start, progress
     /// and an end. See [`crate::system_back`].
@@ -88,3 +95,16 @@ pub enum AimerNativePlatformEvent {
 }
 
 pub static EVENT_PROXY: OnceLock<EventLoopProxy<AimerNativePlatformEvent>> = OnceLock::new();
+
+/// Makes global shortcuts reach the event loop.
+///
+/// A backend reports a press from whichever thread heard it; this posts it to
+/// the loop, which owns the widget tree and runs the action. Call it once the
+/// loop's proxy exists.
+pub fn install_global_shortcut_notifier() {
+    aimer_shortcut::global::set_notifier(|id| {
+        if let Some(proxy) = EVENT_PROXY.get() {
+            let _ = proxy.send_event(AimerNativePlatformEvent::GlobalShortcut(id));
+        }
+    });
+}

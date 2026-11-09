@@ -1,0 +1,14 @@
+[package]
+name = "aimer_shortcut"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+aimer_events.workspace = true
+aimer_tls.workspace = true
+
+[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
+libc.workspace = true

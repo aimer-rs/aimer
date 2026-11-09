@@ -113,6 +113,19 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
                 }
             }
         }
+        AimerNativePlatformEvent::MenuItem(item) => {
+            // Chosen from the native menu bar, which is not the widget tree, so
+            // the action runs here on the event-loop thread that owns the tree.
+            if aimer_shortcut::menu::activate_item(item) {
+                app.request_full_redraw();
+            }
+        }
+        AimerNativePlatformEvent::GlobalShortcut(id) => {
+            // Heard on a backend thread, run here on the loop that owns the tree.
+            if aimer_shortcut::global::dispatch(id) {
+                app.request_full_redraw();
+            }
+        }
         AimerNativePlatformEvent::FrameReady => {
             aimer_utils::frame_trace("frame_ready", 0.0, 0.0);
             let kind = crate::aimer_app::frame_ready_delivered();

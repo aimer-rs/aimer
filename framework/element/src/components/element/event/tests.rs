@@ -17,6 +17,7 @@ mod event_tree;
 mod focus;
 mod live_children;
 mod path_patch;
+mod shortcuts;
 
 use core::{IdentityBranch, ReplacementLeaf};
 use dispatch::routed_leaf;

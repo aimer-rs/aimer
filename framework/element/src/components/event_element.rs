@@ -364,6 +364,18 @@ pub trait EventElement: VisitorElement {
         false
     }
 
+    /// Returns the keyboard shortcuts this element declares for its subtree.
+    ///
+    /// Only an element that exists to bind shortcuts overrides this. The
+    /// dispatcher offers a key chord that nothing focused consumed to the scopes
+    /// of the focused element's ancestors, innermost first, and then to every
+    /// [window](aimer_shortcut::ShortcutScope::window) scope in the tree. It
+    /// does so only while a scope exists at all, so it costs nothing otherwise.
+    #[inline]
+    fn shortcut_scope(&self) -> Option<&aimer_shortcut::ShortcutScope> {
+        None
+    }
+
     /// Describes this element to assistive technology, or `None` when it has
     /// nothing of its own to say.
     ///

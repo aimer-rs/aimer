@@ -1182,6 +1182,14 @@ impl EventDispatcher {
                 return focus_result.merge(focused_result);
             }
 
+            // A chord nothing focused wanted may be a shortcut, which belongs to
+            // the focused element's surroundings and not to whatever the pointer
+            // happens to rest on.
+            let shortcut_result = shortcuts::dispatch_shortcut(root, event);
+            if shortcut_result.is_consumed() {
+                return focus_result.merge(focused_result).merge(shortcut_result);
+            }
+
             let outcome = dispatch_routed_event(self, root, pos, event);
             return focus_result
                 .merge(focused_result)
@@ -2021,6 +2029,7 @@ impl Drop for SettlingBetweenEvents {
 }
 
 mod routing;
+mod shortcuts;
 
 use routing::{
     build_indexed_event_tree, collect_focus_candidates, contains, dispatch_cached_hit_chain_inner,

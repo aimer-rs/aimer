@@ -129,6 +129,7 @@ pub use aimer_text::{
     TextAccessibilityCaret, TextAccessibilityCluster, TextAccessibilityLine,
     TextAccessibilitySelectionRect, TextAccessibilitySnapshot,
 };
+pub use aimer_shortcut as shortcut;
 pub use aimer_venus as venus;
 pub use aimer_venus::{TaskScope, Venus, yield_if_over_budget, yield_now};
 pub use aimer_widget::base::BuildContext;
@@ -154,6 +155,14 @@ mod public_api_tests {
         assert_reachable::<crate::dnd::ReorderableList<u64>>();
         assert_reachable::<crate::collapsible::ListHeader>();
         assert_reachable::<crate::CollapsibleList>();
+    }
+
+    #[test]
+    fn shortcuts_are_reachable_from_the_umbrella_crate() {
+        assert_reachable::<crate::Shortcuts>();
+        assert_reachable::<crate::shortcut::KeyChord>();
+        assert_reachable::<crate::shortcut::menu::AppMenu>();
+        assert_reachable::<crate::shortcut::global::GlobalShortcut>();
     }
 
     #[cfg(feature = "svg")]

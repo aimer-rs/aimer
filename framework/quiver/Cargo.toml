@@ -43,6 +43,7 @@ aimer_screen.workspace = true
 aimer_render.workspace = true
 aimer_window.workspace = true
 aimer_events.workspace = true
+aimer_shortcut.workspace = true
 aimer_canvas.workspace = true
 aimer_modal.workspace = true
 aimer_venus.workspace = true

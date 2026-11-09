@@ -10,7 +10,7 @@ mod event;
 pub use event::AimerNativePlatformEvent;
 #[cfg(target_os = "android")]
 pub use event::ANDROID_APP;
-pub use event::EVENT_PROXY;
+pub use event::{EVENT_PROXY, install_global_shortcut_notifier};
 
 /// Handing the application's semantic tree to the platform's assistive
 /// technology, and taking its action requests back.
@@ -26,6 +26,8 @@ pub mod ffi_utils;
 pub mod link_inbox;
 /// The native application menu, and the shortcuts macOS routes through it.
 pub mod menu;
+#[cfg(target_os = "macos")]
+mod menu_accelerator;
 /// Entering the application's async runtime while Venus polls a task. Native
 /// only: the browser has one task queue and no runtime to be inside of.
 #[cfg(not(target_arch = "wasm32"))]

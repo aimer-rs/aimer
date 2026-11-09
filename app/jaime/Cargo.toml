@@ -25,6 +25,7 @@ required-features = ["passkey-server"]
 
 [dependencies]
 aimer_time.workspace = true
+aimer_tls.workspace = true
 aimer = { path = "../..", features = ["markdown", "icons", "provider", "passkey", "lottie"] }
 aimer_widget = { path = "../../framework/widget" }
 uuid = { version = "1.22.0", features = ["js", "v4"] }

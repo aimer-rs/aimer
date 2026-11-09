@@ -1522,6 +1522,7 @@ fn start_event_loop(
     };
 
     EVENT_PROXY.set(event_loop.create_proxy()).ok();
+    aimer_platform::install_global_shortcut_notifier();
     // The proxy exists, so input a launcher injects now has a loop to reach.
     #[cfg(not(target_arch = "wasm32"))]
     crate::debug_input::start();
@@ -1756,6 +1757,7 @@ mod tests {
     mod capture_widget;
     mod injected_input;
     mod ios_input;
+    mod shortcuts;
     mod loading_damage;
     mod post_bar_toggle;
     #[cfg(not(target_arch = "wasm32"))]

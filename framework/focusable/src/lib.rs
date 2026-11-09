@@ -4,6 +4,8 @@ extern crate aimer_widget_core as aimer_widget;
 
 pub mod focus_scope;
 pub mod focusable;
+mod shortcuts;
 
 pub use focus_scope::FocusScope;
+pub use shortcuts::Shortcuts;
 pub use focusable::{Focusable, FocusableState, RawFocusable};

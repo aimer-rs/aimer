@@ -21,6 +21,7 @@ aimer_rubick.workspace = true
 aimer_utils.workspace = true
 aimer_venus.workspace = true
 aimer_events.workspace = true
+aimer_shortcut.workspace = true
 aimer_focus.workspace = true
 aimer_canvas.workspace = true
 aimer_cupid.workspace = true

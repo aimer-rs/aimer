@@ -16,6 +16,7 @@ pub(crate) mod frame_pacer;
 #[cfg(not(target_arch = "wasm32"))]
 mod render_worker;
 mod scoped_sync;
+mod shortcut_keys;
 pub(crate) use aimer_platform::system_back;
 pub mod scroll_classifier;
 pub mod scroll_utils;

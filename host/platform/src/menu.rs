@@ -88,6 +88,23 @@ pub fn shortcut_for_menu_id(id: &str) -> Option<MenuShortcut> {
     Some(MenuShortcut { letter, shift })
 }
 
+/// The id prefix every item of the application's own [`AppMenu`] is registered under.
+///
+/// [`AppMenu`]: aimer_shortcut::menu::AppMenu
+const USER_PREFIX: &str = "aimer.user.";
+
+/// The native id an application menu item is registered under.
+pub fn native_id_for_user_item(id: aimer_shortcut::menu::MenuItemId) -> String {
+    format!("{USER_PREFIX}{}", id.as_raw())
+}
+
+/// The application menu item a native id stands for, or `None` for an id that
+/// is not one of them.
+pub fn user_item_for_menu_id(id: &str) -> Option<aimer_shortcut::menu::MenuItemId> {
+    let raw = id.strip_prefix(USER_PREFIX)?.parse().ok()?;
+    Some(aimer_shortcut::menu::MenuItemId::from_raw(raw))
+}
+
 /// Builds the application menu and starts forwarding its editing shortcuts.
 ///
 /// The returned [`muda::Menu`] owns the native objects and must be kept alive
@@ -172,15 +189,26 @@ pub fn install_macos_menu() -> muda::Menu {
         .append_items(&[&MenuItem::new("Aimer Help", true, None)])
         .unwrap();
 
-    menu.append_items(&[
-        &app_menu,
-        &file_menu,
-        &edit_menu,
-        &view_menu,
-        &window_menu,
-        &help_menu,
-    ])
-    .unwrap();
+    // The application's own menus. One titled `File` takes the place of the
+    // built-in one, since two would be a duplicate; the rest follow `Edit`.
+    let user_menus = aimer_shortcut::menu::with_app_menu(|app_menu| {
+        app_menu.map_or_else(Vec::new, |app_menu| {
+            app_menu.menus().iter().map(|menu| (menu.title() == "File", user_submenu(menu))).collect()
+        })
+    });
+    let replaces_file = user_menus.iter().any(|(is_file, _)| *is_file);
+
+    menu.append(&app_menu).unwrap();
+    match user_menus.iter().find(|(is_file, _)| *is_file) {
+        Some((_, submenu)) => menu.append(submenu).unwrap(),
+        None if !replaces_file => menu.append(&file_menu).unwrap(),
+        None => {}
+    }
+    menu.append(&edit_menu).unwrap();
+    for (_, submenu) in user_menus.iter().filter(|(is_file, _)| !*is_file) {
+        menu.append(submenu).unwrap();
+    }
+    menu.append_items(&[&view_menu, &window_menu, &help_menu]).unwrap();
 
     menu.init_for_nsapp();
 
@@ -188,16 +216,46 @@ pub fn install_macos_menu() -> muda::Menu {
     // menu command, so the work is handed to the event loop instead of being
     // done here: it is the loop that owns the widget tree.
     MenuEvent::set_event_handler(Some(|event: MenuEvent| {
-        let Some(shortcut) = shortcut_for_menu_id(event.id.as_ref()) else {
-            return;
-        };
         let Some(proxy) = EVENT_PROXY.get() else {
             return;
         };
-        let _ = proxy.send_event(AimerNativePlatformEvent::MenuShortcut(shortcut));
+        if let Some(shortcut) = shortcut_for_menu_id(event.id.as_ref()) {
+            let _ = proxy.send_event(AimerNativePlatformEvent::MenuShortcut(shortcut));
+        } else if let Some(item) = user_item_for_menu_id(event.id.as_ref()) {
+            let _ = proxy.send_event(AimerNativePlatformEvent::MenuItem(item));
+        }
     }));
 
     menu
+}
+
+/// The native submenu for one of the application's menus.
+///
+/// An item whose chord has no native accelerator is still listed and still
+/// activates by click; only its shortcut label is missing.
+#[cfg(target_os = "macos")]
+fn user_submenu(menu: &aimer_shortcut::menu::Menu) -> muda::Submenu {
+    use aimer_shortcut::menu::MenuEntry;
+
+    let submenu = muda::Submenu::new(menu.title(), true);
+    for entry in menu.entries() {
+        match entry {
+            MenuEntry::Separator => {
+                submenu.append(&muda::PredefinedMenuItem::separator()).unwrap();
+            }
+            MenuEntry::Item(item) => {
+                let accelerator = item.chord().as_ref().and_then(crate::menu_accelerator::accelerator_for);
+                let native = muda::MenuItem::with_id(
+                    native_id_for_user_item(item.id()),
+                    item.title(),
+                    true,
+                    accelerator,
+                );
+                submenu.append(&native).unwrap();
+            }
+        }
+    }
+    submenu
 }
 
 /// One `Edit` item, owned by Aimer and reachable by both click and shortcut.
@@ -232,6 +290,16 @@ mod tests {
             let shortcut = shortcut_for_menu_id(id).expect(id);
             assert_eq!(shortcut, MenuShortcut { letter, shift }, "{id}");
         }
+    }
+
+    #[test]
+    fn user_item_ids_round_trip_and_never_collide_with_edit_items() {
+        let id = aimer_shortcut::menu::MenuItemId::from_raw(42);
+        assert_eq!(user_item_for_menu_id(&native_id_for_user_item(id)), Some(id));
+        assert_eq!(user_item_for_menu_id("aimer.edit.copy"), None);
+        assert_eq!(user_item_for_menu_id("aimer.user."), None);
+        assert_eq!(user_item_for_menu_id("aimer.user.x"), None);
+        assert!(shortcut_for_menu_id(&native_id_for_user_item(id)).is_none());
     }
 
     #[test]

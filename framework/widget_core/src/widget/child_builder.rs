@@ -450,6 +450,10 @@ impl EventElement for RetainedChildElement {
             .unwrap_or_default()
     }
 
+    fn shortcut_scope(&self) -> Option<&aimer_shortcut::ShortcutScope> {
+        self.child().and_then(EventElement::shortcut_scope)
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         self.child()
             .map(|child| child.on_event(event))
