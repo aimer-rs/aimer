@@ -91,7 +91,7 @@ means and gets what a real mouse, keyboard or finger would have produced:
 use aimer_prendre::actions::{self, Direction};
 use aimer_prendre::PointerButton;
 
-let double_click = actions::click(120.0, 48.0, PointerButton::Primary, 2)?;
+let double_click = actions::click(Some((120.0, 48.0)), PointerButton::Primary, 2)?;
 let scroll_down = actions::scroll(Some((200.0, 300.0)), Direction::Down, 3.0)?;
 let select_all = actions::key("ctrl+a")?; // or "Return", "cmd+shift+z", "F5"
 let swipe = actions::swipe((100.0, 400.0), (100.0, 100.0))?;

@@ -17,7 +17,7 @@
 //! use aimer_prendre::actions;
 //! use aimer_prendre::PointerButton;
 //!
-//! let lines: Vec<String> = actions::click(120.0, 48.0, PointerButton::Primary, 1)?
+//! let lines: Vec<String> = actions::click(Some((120.0, 48.0)), PointerButton::Primary, 1)?
 //!     .iter()
 //!     .map(ToString::to_string)
 //!     .collect();
