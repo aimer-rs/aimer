@@ -1,0 +1,61 @@
+[package]
+name = "aimer_notification"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+block2.workspace = true
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = [
+    "std",
+    "NSArray",
+    "NSBundle",
+    "NSDate",
+    "NSData",
+    "NSDictionary",
+    "NSError",
+    "NSObject",
+    "NSSet",
+    "NSString",
+    "NSValue",
+] }
+objc2-user-notifications = { workspace = true, features = [
+    "std",
+    "block2",
+    "UNNotification",
+    "UNNotificationAction",
+    "UNNotificationCategory",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationResponse",
+    "UNNotificationSettings",
+    "UNNotificationSound",
+    "UNNotificationTrigger",
+    "UNUserNotificationCenter",
+    "UNError",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { workspace = true, features = ["std", "NSApplication", "NSResponder"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-ui-kit = { workspace = true, features = ["std", "UIApplication", "UIResponder"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+ndk-context.workspace = true

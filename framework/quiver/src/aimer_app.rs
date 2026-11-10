@@ -1498,6 +1498,12 @@ fn start_event_loop(
         // apps whose hand-written one stored `ANDROID_APP` directly.
         crate::android_storage::publish_data_dir(&app);
         android_app::set_android_app(app.clone());
+        // `ndk-context` holds the Application; the permission dialog needs the Activity.
+        // SAFETY: `activity_as_ptr` is the global reference android-activity owns for
+        // the life of the process.
+        unsafe {
+            aimer_platform::notification::set_android_activity(app.activity_as_ptr().cast());
+        }
 
         // Keep the JNI entry points used by `com.aimer.AimerActivity` reachable.
         // They are only ever called by the JVM at runtime (never from Rust), so

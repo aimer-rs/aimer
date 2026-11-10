@@ -63,6 +63,13 @@ pub enum AimerNativePlatformEvent {
         id: crate::tray::TrayId,
         event: crate::tray::TrayEvent,
     },
+    /// The user answered a system notification, or push registration reported.
+    /// The platform reports from threads of its own; the event loop runs the
+    /// handler. See [`crate::notification`].
+    Notification {
+        id: crate::notification::NotifierId,
+        event: crate::notification::NotificationEvent,
+    },
     /// A step of the system's back, reported by a platform bridge that is not a
     /// key: Android's predictive back arrives from Kotlin as a start, progress
     /// and an end. See [`crate::system_back`].

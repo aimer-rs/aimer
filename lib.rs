@@ -111,6 +111,10 @@ pub use aimer_lucide::Icons;
 pub use aimer_screen as screen;
 /// A system tray icon with a menu; see [`tray::Tray`].
 pub use aimer_platform::tray;
+/// System notifications with a title, buttons, delay, permission and push
+/// registration; see [`notification::Notifier`]. In-window messages are the
+/// toasts in `feedback`.
+pub use aimer_platform::notification;
 
 /// Draws a Lucide icon into a [`tray::TrayIcon`].
 ///

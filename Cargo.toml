@@ -219,6 +219,7 @@ members = [
     "native/screen",
     "native/window",
     "native/tray",
+    "native/notification",
     # services
     "services/storage",
     "services/vault",
@@ -408,6 +409,7 @@ aimer_device = { path = "native/device" }
 aimer_screen = { path = "native/screen" }
 aimer_window = { path = "native/window" }
 aimer_tray = { path = "native/tray" }
+aimer_notification = { path = "native/notification" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
 
 # Generic Dependencies
@@ -550,6 +552,9 @@ objc2-metal = { version = "0.3.2", default-features = false }
 objc2-quartz-core = { version = "0.3.2", default-features = false }
 # Photo library picker (`PHPickerViewController`) for `aimer_image_picker` on iOS.
 objc2-photos-ui = { version = "0.3.2", default-features = false }
+# `UNUserNotificationCenter` for `aimer_notification` on macOS and iOS. Default
+# features are off so only the classes in use are bound.
+objc2-user-notifications = { version = "0.3.2", default-features = false }
 # `UTType` for the file pickers' content-type filters.
 objc2-uniform-type-identifiers = { version = "0.3.2", default-features = false }
 # Opt-in native Direct3D 12 bindings used by Cupid and Quiver on Windows.
