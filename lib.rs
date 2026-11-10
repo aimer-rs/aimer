@@ -99,7 +99,8 @@ pub use aimer_quiver as quiver;
 pub use aimer_quiver::frame_stats;
 pub use aimer_quiver::{
     self, AimerApp, ExitPolicy, FIRST_FRAME_RENDERED_EVENT, HeadlessAimerApp, HeadlessOptions,
-    NewWindow, RenderMode, Window, WindowAttr, WindowId, set_first_frame_rendered_callback,
+    NewWindow, RenderMode, Window, WindowAttr, WindowBackdrop, WindowId, WindowMaterial,
+    set_first_frame_rendered_callback,
 };
 
 #[cfg(feature = "vault")]

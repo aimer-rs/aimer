@@ -15,6 +15,8 @@ pub mod ios_accessibility;
 #[cfg(target_os = "macos")]
 pub mod macos_accessibility;
 #[cfg(target_os = "macos")]
+pub mod macos_backdrop;
+#[cfg(target_os = "macos")]
 pub mod macos_drag;
 #[cfg(all(target_os = "macos", any(feature = "wgpu", feature = "native")))]
 pub mod macos_surface;
@@ -22,3 +24,5 @@ pub mod macos_surface;
 pub mod macos_window;
 #[cfg(target_arch = "wasm32")]
 pub mod web_safe_area;
+#[cfg(target_os = "windows")]
+pub mod windows_backdrop;

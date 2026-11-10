@@ -35,6 +35,18 @@ libc.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda.workspace = true
+objc2.workspace = true
+# `NSView` and `NSWindow` are only defined when `NSResponder` is enabled.
+objc2-app-kit = { workspace = true, features = [
+    "std",
+    "NSColor",
+    "NSGlassEffectView",
+    "NSGraphics",
+    "NSResponder",
+    "NSView",
+    "NSVisualEffectView",
+    "NSWindow",
+] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true

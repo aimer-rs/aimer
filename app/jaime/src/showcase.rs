@@ -86,6 +86,47 @@ use aimer::*;
 
 const SIDEBAR_WIDTH: f32 = 292.0;
 
+/// Whether the window blurs what is behind it, which the sidebar then shows.
+///
+/// macOS only: Windows draws its backdrop through a swap chain that ignores
+/// alpha, so there the sidebar would be a see-through hole instead of glass.
+const NATIVE_BACKDROP: bool = cfg!(target_os = "macos");
+
+/// Opacity of the sidebar's theme tint over the blurred backdrop.
+const SIDEBAR_TINT: f32 = 0.66;
+
+/// The sidebar's fill: the theme's surface color as a tint over the window's
+/// blur, or the plain surface where the window has no blur.
+fn sidebar_color(app_theme: &ThemeData) -> Color {
+    if NATIVE_BACKDROP {
+        app_theme.surface_color.with_alpha(SIDEBAR_TINT)
+    } else {
+        app_theme.surface_color
+    }
+}
+
+/// The line between the sidebar and the content pane.
+///
+/// Opaque on purpose: the shell behind it is transparent over the window's blur,
+/// so a translucent line would let the glass through and read as a gap. It is the
+/// themed divider tint pre-mixed over the background instead.
+fn separator_color(app_theme: &ThemeData) -> Color {
+    app_theme
+        .background_color
+        .lerp(app_theme.primary_color, 0.32)
+}
+
+/// The fill behind the whole shell. Transparent while the window has a blur, so
+/// that the sidebar's translucent tint is the only thing between it and the
+/// glass; every other pane paints its own opaque background.
+fn shell_color(app_theme: &ThemeData) -> Color {
+    if NATIVE_BACKDROP {
+        Color::Transparent
+    } else {
+        app_theme.background_color
+    }
+}
+
 /// Logical width below which the list and the detail become two routed screens.
 const COMPACT_WIDTH: f32 = 600.0;
 
@@ -178,7 +219,7 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
                 < COMPACT_WIDTH
         });
 
-        Provider::new()
+        let shell = Provider::new()
             .handle(
                 self.selection
                     .clone(),
@@ -187,7 +228,7 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
                 Container::new()
                     .box_decoration(
                         BoxDecoration::new()
-                            .background_color(app_theme.background_color)
+                            .background_color(shell_color(&app_theme))
                             .border_radius(24),
                     )
                     .child(Column::new().children(vec![
@@ -201,7 +242,7 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
                                         sidebar(app_theme, Dimension::Px(SIDEBAR_WIDTH)),
                                         SizedBox::new()
                                             .width(Dimension::Px(1.0))
-                                            .color(theme::divider(&app_theme)),
+                                            .color(separator_color(&app_theme)),
                                         Expanded::new()
                                             .child(ContentPane::new(app_theme))
                                     ])
@@ -209,7 +250,13 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
                             })
                             .boxed(),
                     ])),
-            )
+            );
+        // The window's blur is what the sidebar tints; it applies to the whole
+        // window, and the content pane covers it with its own opaque fill.
+        WindowBackdrop::new()
+            .material(WindowMaterial::Sidebar)
+            .enabled(NATIVE_BACKDROP)
+            .child(shell)
     }
 }
 
@@ -285,7 +332,7 @@ impl StatelessWidget for CompactScreens {
         Container::new()
             .width(Dimension::Percent(100.0))
             .height(Dimension::Percent(100.0))
-            .color(app_theme.background_color)
+            .color(shell_color(&app_theme))
             .child(
                 Navigator::new(CompactRoute::Items, |route| route.boxed())
                     .transition(SlideTransition::new()),
@@ -383,7 +430,7 @@ fn sidebar(app_theme: ThemeData, width: Dimension) -> AnyWidget {
                 .left(18)
                 .right(14),
         )
-        .color(app_theme.surface_color)
+        .color(sidebar_color(&app_theme))
         .child(
             Scrollable::new()
                 .vertical_scroll_bar(None)

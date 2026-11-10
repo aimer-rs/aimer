@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+mod backdrop;
 mod content;
 mod exit_policy;
 mod id;
@@ -9,6 +10,8 @@ mod window_widget;
 
 pub mod window_attr;
 
+pub use aimer_platform::window_backdrop::WindowMaterial;
+pub use backdrop::{WindowBackdrop, WindowBackdropState};
 pub use exit_policy::ExitPolicy;
 pub use id::WindowId;
 pub use new_window::{ContentBuilder, NewWindow, RequiredBuilder};

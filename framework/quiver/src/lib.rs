@@ -48,7 +48,9 @@ pub use aimer_render::raster;
 pub use aimer_render::render_ctx;
 pub(crate) use aimer_platform::{system_appearance, system_safe_area};
 pub use aimer_window::window_attr;
-pub use aimer_window::{ExitPolicy, NewWindow, Window, WindowAttr, WindowId};
+pub use aimer_window::{
+    ExitPolicy, NewWindow, Window, WindowAttr, WindowBackdrop, WindowId, WindowMaterial,
+};
 /// Opening, controlling and closing windows.
 pub use aimer_window as windows;
 #[cfg(not(any(target_os = "ios", target_os = "android", target_arch = "wasm32")))]

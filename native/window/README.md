@@ -96,6 +96,42 @@ impl State<Page> for PageState {
 - **Stale ids are harmless.** An id never names a second window. Anything done
   through an id whose window is gone is ignored.
 
+## Frosted windows
+
+[`WindowBackdrop`] turns the window it is in into frosted glass: the system blurs
+the desktop and the windows behind it and shows that through everything the
+content draws with some transparency. Opaque content stays opaque, so put it
+under a translucent background, or none. The blur is drawn by the system, not by
+Aimer, and the effect is removed again when the widget leaves the tree.
+
+```no_run
+use aimer_container::SizedBox;
+use aimer_window::{WindowBackdrop, WindowMaterial};
+
+let frosted = WindowBackdrop::new()
+    .material(WindowMaterial::Sidebar)
+    .child(SizedBox::new());
+```
+
+A [`WindowMaterial`] names the look in macOS's vocabulary. Windows has fewer, so
+the sidebar, titlebar and content materials are Mica, menu, popover and HUD are
+Acrylic, and `Under` is Mica Alt.
+
+`Glass` and `ClearGlass` are the refractive glass of macOS 26 and later (Liquid
+Glass), drawn by an `NSGlassEffectView`. That view lenses and lights what is
+behind it like a floating surface, so it fits a small panel rather than a
+window-wide backdrop; for a sidebar like the Finder's use `Sidebar`. A system
+without it falls back to the sidebar blur, and Windows draws Acrylic.
+
+```no_run
+use aimer_container::SizedBox;
+use aimer_window::{WindowBackdrop, WindowMaterial};
+
+let glass = WindowBackdrop::new()
+    .material(WindowMaterial::Glass)
+    .child(SizedBox::new());
+```
+
 ## Exit policy
 
 | [`ExitPolicy`]                   | The application ends when                        |
@@ -110,6 +146,12 @@ impl State<Page> for PageState {
 |-----------------------|---------------------------------------------------|
 | macOS, Windows, Linux | supported                                         |
 | iOS, Android, web     | one surface only; requests for more are never answered |
+
+| Platform | [`WindowBackdrop`]                                              |
+|----------|-----------------------------------------------------------------|
+| macOS    | `NSVisualEffectView`, or `NSGlassEffectView` for glass (26+), behind the content; run and checked |
+| Windows  | DWM system backdrop (Windows 11 22H2+); compile-checked only     |
+| others   | inert; the content is shown as it is                             |
 
 ## For the event loop
 
