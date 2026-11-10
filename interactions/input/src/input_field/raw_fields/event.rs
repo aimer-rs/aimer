@@ -47,6 +47,18 @@ impl EventElement for RawTextField {
                     if !self.is_focused() {
                         return false;
                     }
+                    // The menu is a modal, and presenting a modal confines focus
+                    // to its own layer, so the field loses focus *because* its
+                    // menu is up. Treating that as a blur would close the menu
+                    // within a frame and hide the soft keyboard, which the
+                    // restored focus would then raise again. While the menu
+                    // shows, the field keeps its selection, its focus and the
+                    // keyboard; the press that dismisses the menu never
+                    // reaches the application underneath, so a real blur
+                    // cannot be hiding behind this one.
+                    if self.menu_is_open() {
+                        return false;
+                    }
                     self.dismiss_menu();
                     self.set_focused(false);
                     self.native_session.set(0);

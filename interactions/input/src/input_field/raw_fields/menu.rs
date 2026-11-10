@@ -477,6 +477,36 @@ mod tests {
     }
 
     #[test]
+    fn the_focus_the_menu_takes_leaves_it_and_the_keyboard_alone() {
+        let field = field("hello world");
+        field.request_menu(MenuOrigin::Hold);
+        field.raise_pending_menu();
+        assert!(field.menu_is_open());
+        assert!(field.ime_enabled.get());
+
+        // Presenting the menu confines focus to its own layer, so the field
+        // underneath is told it lost the keyboard — by the menu, not the user.
+        let _ = field.on_event(&ElementEvent::FocusLost);
+
+        assert!(field.menu_is_open(), "the menu may not close itself");
+        assert!(field.is_focused(), "the selection it acts on has to survive");
+        assert!(
+            field.ime_enabled.get(),
+            "the software keyboard must not be hidden and re-raised under the menu"
+        );
+    }
+
+    #[test]
+    fn losing_focus_with_no_menu_showing_blurs_the_field() {
+        let field = field("hello world");
+
+        let _ = field.on_event(&ElementEvent::FocusLost);
+
+        assert!(!field.is_focused());
+        assert!(!field.ime_enabled.get());
+    }
+
+    #[test]
     fn the_placeholder_hides_while_an_input_method_composes() {
         let field = field("");
 
