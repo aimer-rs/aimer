@@ -4,6 +4,9 @@
 //! parse an icon on first use. Both cache the retained scene independently of
 //! widget styling. Adding an SVG to `icons/` automatically adds its constant.
 //!
+//! Where only pixels are accepted, a system tray icon for one, [`rasterize`]
+//! draws an icon into an RGBA buffer on the CPU.
+//!
 //! The quickest way to put one on screen is the [`Icon`] widget, which sizes and
 //! colors an icon without any SVG selectors:
 //!
@@ -26,8 +29,10 @@
 //! ```
 
 mod icon;
+mod raster;
 
 pub use icon::{Icon, IconDataRequired};
+pub use raster::{MAX_SIZE, RasterIcon, SUPERSAMPLE, rasterize};
 
 /// The bundled Lucide collection, with uppercase snake-case icon constants.
 ///

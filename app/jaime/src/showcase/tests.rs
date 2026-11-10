@@ -4,6 +4,7 @@ use super::*;
 
 mod animation_walks;
 mod backdrop_filter;
+mod compact;
 mod focus;
 mod foreground_decoration;
 mod geometry_forward_pages;

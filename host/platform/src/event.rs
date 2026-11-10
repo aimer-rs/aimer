@@ -56,6 +56,13 @@ pub enum AimerNativePlatformEvent {
     /// of their own; the event loop runs the action. See
     /// [`aimer_shortcut::global`].
     GlobalShortcut(aimer_shortcut::global::GlobalShortcutId),
+    /// The user clicked a system tray icon or chose one of its menu items.
+    /// Trays report from threads of their own on Windows and Linux; the event
+    /// loop runs the handler. See [`crate::tray`].
+    Tray {
+        id: crate::tray::TrayId,
+        event: crate::tray::TrayEvent,
+    },
     /// A step of the system's back, reported by a platform bridge that is not a
     /// key: Android's predictive back arrives from Kotlin as a start, progress
     /// and an end. See [`crate::system_back`].

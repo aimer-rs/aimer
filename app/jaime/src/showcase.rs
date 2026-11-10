@@ -7,16 +7,15 @@ use crate::animated_text_field_example::AnimatedTextFieldExample;
 use crate::animated_theme::AnimatedThemeExample;
 use crate::assets_media_example::assets_media_example;
 use crate::async_builder::async_builder_example;
+use crate::audio_example::audio_example;
 use crate::backdrop_filter_example::backdrop_filter_example;
 use crate::bundled_assets_example::bundled_assets_example;
 use crate::collapsible_list_example::collapsible_list_example;
+use crate::color_melt_example::color_melt_example;
 use crate::color_sync::ColorSync;
 use crate::container_transform_example::container_transform_example;
 use crate::custom_animated_theme::custom_animated_theme_example;
 use crate::custom_font::custom_font_example;
-use crate::color_melt_example::color_melt_example;
-use crate::fire_button_example::fire_button_example;
-use crate::lottie_example::lottie_example;
 use crate::custom_paint_example::custom_paint_example;
 use crate::custom_shape_example::custom_shape_example;
 use crate::custom_text_field_caret_example::CustomTextFieldCaretExample;
@@ -25,14 +24,13 @@ use crate::dnd_completion_example::dnd_completion_example;
 use crate::drag_and_drop::DragBoard;
 use crate::feedback_example::feedback_example;
 use crate::file_drop_zone::FileDropShowcase;
+use crate::file_picker_example::file_picker_example;
+use crate::fire_button_example::fire_button_example;
 use crate::floating::FloatingShowcase;
 use crate::focus_node_example::FocusNodeExample;
-use crate::shortcuts_example::ShortcutsExample;
 use crate::foreground_decoration_example::foreground_decoration_example;
 use crate::form_example::form_example;
 use crate::gif_example::gif_example;
-use crate::audio_example::audio_example;
-use crate::video_example::video_example;
 use crate::glass_liquid_example::glass_liquid_example;
 use crate::gradient_example::gradient_example;
 use crate::http_request_button::http_request_button_example;
@@ -41,6 +39,7 @@ use crate::justify_content_example::justify_content_example;
 use crate::light_edge_example::light_edge_example;
 use crate::liquid_tab_bar_example::liquid_tab_bar_example;
 use crate::loading_animation::loading_animation_example;
+use crate::lottie_example::lottie_example;
 use crate::lucide_icons_example::lucide_icons_example;
 use crate::magnification_example::magnification_example;
 use crate::markdown_example::{custom_markdown_viewer, jaime_markdown_viewer};
@@ -51,7 +50,6 @@ use crate::navigation_example::navigation_example;
 use crate::navigation_transitions_example::navigation_transitions_example;
 use crate::overflow_behavior_example::overflow_behavior_example;
 use crate::panic_recovery::panic_recovery_example;
-use crate::file_picker_example::file_picker_example;
 use crate::passkey_example::passkey_example;
 use crate::picker_example::picker_example;
 use crate::range_controls_example::RangeControlsExample;
@@ -60,8 +58,10 @@ use crate::routing::state_router_widget;
 use crate::routing_context_example::routing_context_example;
 use crate::selectable_text::selectable_text_example;
 use crate::selection_controls_example::selection_controls_example;
+use crate::shortcuts_example::ShortcutsExample;
 use crate::stack_positioned_example::stack_positioned_example;
 use crate::stateful::CounterWidget;
+use crate::tray_example::TrayExample;
 use crate::stateful_2::MyList;
 use crate::storage_example::storage_example;
 use crate::style_tokens_example::style_tokens_example;
@@ -74,18 +74,31 @@ use crate::text_field_example::TextFieldExample;
 use crate::text_properties_example::text_properties_example;
 use crate::theme;
 use crate::tween_keyframe_example::tween_keyframe_example;
+use crate::video_example::video_example;
 use crate::window_example::WindowShowcase;
 use aimer::input::button::Button;
-use aimer::macros::{StatefulWidget, StatelessWidget};
+use aimer::macros::{Router, StatefulWidget, StatelessWidget};
+use aimer::router::{Navigator, NavigatorController, Router, SlideTransition};
 use aimer::style::*;
 use aimer::*;
 
 const SIDEBAR_WIDTH: f32 = 292.0;
 
+/// Logical width below which the list and the detail become two routed screens.
+const COMPACT_WIDTH: f32 = 600.0;
+
+/// Label of the control that returns from the detail screen to the list.
+const BACK_LABEL: &str = "Back";
+
 mod catalog;
 use catalog::{EXAMPLE_CATEGORIES, EXAMPLES, ExampleCategory, ExampleId};
 
-/// The two-pane interactive example browser used by Jaime.
+/// The interactive example browser used by Jaime.
+///
+/// On a wide window it is two panes side by side; below [`COMPACT_WIDTH`] it is
+/// two screens in a [`Navigator`], the items list and then the detail of the
+/// item that was tapped, which slides in over the list; a back bar, a swipe or
+/// the system back pops it.
 ///
 /// The left pane owns only selection and navigation. The selected example is
 /// rebuilt in the right viewport, so an example module can focus on its own
@@ -154,6 +167,14 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
         #[cfg(test)]
         SHELL_BUILDS.with(|builds| builds.set(builds.get() + 1));
         let app_theme = ThemeData::copied(ctx);
+        // Rebuilds the shell when the window crosses the threshold, and at no
+        // other width.
+        let compact = ctx.select_window_metrics(|window| {
+            window
+                .logical_size()
+                .width
+                < COMPACT_WIDTH
+        });
 
         Provider::new()
             .handle(
@@ -170,33 +191,195 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
                     .child(Column::new().children(vec![
                         // title_bar(),
                         Expanded::new()
-                            .child(
-                                Row::new().children(vec![
-                                    sidebar(app_theme),
-                                    SizedBox::new()
-                                        .width(Dimension::Px(1.0))
-                                        .color(theme::divider(&app_theme))
-                                        .boxed(),
-                                    Expanded::new()
-                                        .child(ContentPane::new(app_theme))
-                                        .boxed(),
-                                ]),
-                            )
+                            .child(if compact {
+                                CompactScreens::new(app_theme).boxed()
+                            } else {
+                                Row::new()
+                                    .children(list![
+                                        sidebar(app_theme, Dimension::Px(SIDEBAR_WIDTH)),
+                                        SizedBox::new()
+                                            .width(Dimension::Px(1.0))
+                                            .color(theme::divider(&app_theme)),
+                                        Expanded::new()
+                                            .child(ContentPane::new(app_theme))
+                                    ])
+                                    .boxed()
+                            })
                             .boxed(),
                     ])),
             )
     }
 }
 
-fn sidebar(app_theme: ThemeData) -> AnyWidget {
+/// The two screens of the compact layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Router)]
+enum CompactRoute {
+    #[route("/")]
+    Items,
+    #[route("/detail")]
+    #[view_level(1)]
+    Detail,
+}
+
+impl Router for CompactRoute {
+    fn build(&self, _ctx: &BuildContext) -> AnyWidget {
+        match self {
+            Self::Items => ItemsScreen.boxed(),
+            Self::Detail => DetailScreen.boxed(),
+        }
+    }
+}
+
+/// The items list, the navigator's first page.
+#[derive(StatelessWidget)]
+struct ItemsScreen;
+
+impl StatelessWidget for ItemsScreen {
+    fn build(&self, ctx: &BuildContext) -> impl Widget {
+        sidebar(ThemeData::copied(ctx), Dimension::Percent(100.0))
+    }
+}
+
+/// The chosen item's detail, pushed over the list. It reads the selection
+/// through [`ContentPane`], so it needs no state of its own.
+#[derive(StatelessWidget)]
+struct DetailScreen;
+
+impl StatelessWidget for DetailScreen {
+    fn build(&self, ctx: &BuildContext) -> impl Widget {
+        let app_theme = ThemeData::copied(ctx);
+        // Opaque, so the page beneath never shows through while sliding.
+        Container::new()
+            .width(Dimension::Percent(100.0))
+            .height(Dimension::Percent(100.0))
+            .color(app_theme.background_color)
+            .child(Column::new().children(vec![
+                BackBar::new(app_theme).boxed(),
+                Expanded::new()
+                    .child(ContentPane::new(app_theme))
+                    .boxed(),
+            ]))
+    }
+}
+
+/// The compact layout: a navigator sliding between the items list and the
+/// detail of the chosen item.
+///
+/// It pads itself clear of the system bars, which the wide layout never needs.
+/// It reads nothing of the selection, so a choice never rebuilds it.
+#[derive(StatelessWidget)]
+struct CompactScreens;
+
+impl CompactScreens {
+    fn new(app_theme: ThemeData) -> Self {
+        Self
+    }
+}
+
+impl StatelessWidget for CompactScreens {
+    fn build(&self, ctx: &BuildContext) -> impl Widget {
+        let app_theme = ThemeData::of(ctx);
+        let insets = ctx.watch_safe_area_insets();
+        Container::new()
+            .width(Dimension::Percent(100.0))
+            .height(Dimension::Percent(100.0))
+            .color(app_theme.background_color)
+            .child(
+                Navigator::new(CompactRoute::Items, |route| route.boxed())
+                    .transition(SlideTransition::new()),
+            )
+    }
+}
+
+/// The bar above the detail screen that pops back to the items list.
+#[derive(StatelessWidget)]
+struct BackBar {
+    app_theme: ThemeData,
+}
+
+impl BackBar {
+    fn new(app_theme: ThemeData) -> Self {
+        Self { app_theme }
+    }
+}
+
+impl StatelessWidget for BackBar {
+    fn build(&self, ctx: &BuildContext) -> impl Widget {
+        let app_theme = self.app_theme;
+        let navigator = NavigatorController::<CompactRoute>::of(ctx);
+        let foreground = app_theme.primary_color;
+        Container::new()
+            .width(Dimension::Percent(100.0))
+            .padding(
+                LayoutSpacing::new()
+                    .left(8)
+                    .right(8)
+                    .top(6),
+            )
+            .child(
+                Button::new()
+                    .on_press(move || navigator.pop())
+                    .decoration(BoxDecoration::new().border_radius(10))
+                    .hover_decoration(
+                        BoxDecoration::new()
+                            .background_color(theme::raised_surface(&app_theme))
+                            .border_radius(10),
+                    )
+                    .press_decoration(
+                        BoxDecoration::new()
+                            .background_color(theme::raised_surface(&app_theme))
+                            .border_radius(10),
+                    )
+                    .box_child(
+                        Container::new()
+                            .height(40)
+                            .padding(
+                                LayoutSpacing::new()
+                                    .left(10)
+                                    .right(14),
+                            )
+                            .child(
+                                Row::new()
+                                    .vertical_alignment(BoxAlignment::Center)
+                                    .gaps(LayoutSpacing::all(Spacing::Px(6)))
+                                    .children(vec![
+                                        Text::new("\u{2039}")
+                                            .text_style(
+                                                TextStyle::new()
+                                                    .font_size(26)
+                                                    .color(foreground),
+                                            )
+                                            .boxed(),
+                                        Text::new(BACK_LABEL)
+                                            .text_style(
+                                                TextStyle::new()
+                                                    .font_size(16)
+                                                    .font_weight(FontWeight::Bold)
+                                                    .color(foreground),
+                                            )
+                                            .boxed(),
+                                    ]),
+                            ),
+                    ),
+            )
+    }
+}
+
+fn sidebar(app_theme: ThemeData, width: Dimension) -> AnyWidget {
+    
+    let compact = BuildContext::current().get().select_window_metrics(|window| {
+        window
+            .logical_size()
+            .width
+            < COMPACT_WIDTH
+    });
     Container::new()
-        .width(Dimension::Px(SIDEBAR_WIDTH))
+        .width(width)
         .height(Dimension::Percent(100.0))
         .padding(
             LayoutSpacing::new()
                 .left(18)
-                .right(14)
-                .bottom(16),
+                .right(14),
         )
         .color(app_theme.surface_color)
         .child(
@@ -212,9 +395,12 @@ fn sidebar(app_theme: ThemeData) -> AnyWidget {
                                 .enumerate()
                                 .map(|(index, category)| {
                                     let category = example_category(category, app_theme);
-                                    if cfg!(target_os = "macos") && index == 0 {
+                                    if index == 0 {
                                         Container::new()
-                                            .margin(LayoutSpacing::new().top(38))
+                                            .margin(LayoutSpacing::new().top(case!(
+                                                cfg!(target_os = "macos") || compact,
+                                                38
+                                            )))
                                             .child(category)
                                             .boxed()
                                     } else {
@@ -279,6 +465,10 @@ impl StatelessWidget for ExampleButton {
         let selected =
             ctx.select::<Selection, bool>(move |selection| selection.selected == example);
         let selection = ProviderHandle::<Selection>::of(ctx);
+        // Only the compact layout has a navigator; the wide one shows both panes.
+        let navigator = ctx
+            .get_state::<NavigatorController<CompactRoute>>()
+            .map(|navigator| (*navigator).clone());
         let background = if selected {
             app_theme.primary_color
         } else {
@@ -293,6 +483,9 @@ impl StatelessWidget for ExampleButton {
         Button::new()
             .on_press(move || {
                 selection.update(|selection| selection.selected = example);
+                if let Some(navigator) = &navigator {
+                    navigator.push(CompactRoute::Detail);
+                }
             })
             .decoration(
                 BoxDecoration::new()
@@ -464,6 +657,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::Floating => FloatingShowcase::new().boxed(),
         ExampleId::FocusNode => FocusNodeExample::new().boxed(),
         ExampleId::Shortcuts => ShortcutsExample::new().boxed(),
+        ExampleId::Tray => TrayExample::new().boxed(),
         ExampleId::TextArea => TextAreaExample::new().boxed(),
         ExampleId::TextField => TextFieldExample::new().boxed(),
         ExampleId::CustomTextFieldCaret => CustomTextFieldCaretExample::new().boxed(),

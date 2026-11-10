@@ -16,6 +16,7 @@ Aimer is a performance-sensitive GUI framework.
 - When changing GPU buffers, FFI, or platform code, validate sizes, alignments, lifetimes, and thread-affinity
   assumptions.
 - Assume mobile phone performance is slower than PC in range of 3 ~ 10x for performance benchmark
+- Visual Verification is using the Aimer MCP if existe, see @.assets/aimer-app for Skill.
 
 ## Priorities
 
@@ -34,8 +35,6 @@ Do not stop at a superficial workaround. Find and fix the root cause while keepi
 
 - Prefer `.expected("Why it cannot be panic")` over `.unwrap`.
 - Some `unchecked` methods are able to use for increase performance when the context is 100% sure it not able to trigger UB.
-
-
 
 ## Rust source layout
 

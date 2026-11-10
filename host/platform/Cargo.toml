@@ -15,6 +15,7 @@ aimer_accessibility.workspace = true
 aimer_attribute.workspace = true
 aimer_events.workspace = true
 aimer_shortcut.workspace = true
+aimer_tray.workspace = true
 aimer_utils.workspace = true
 aimer_venus.workspace = true
 aimer_widget.workspace = true

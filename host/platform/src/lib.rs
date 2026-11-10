@@ -36,6 +36,8 @@ pub mod poll_context;
 #[doc(hidden)]
 pub mod shutdown_signals;
 pub mod system_back;
+/// The system tray icon, with its events delivered on the event loop.
+pub mod tray;
 /// Where the platform's light / dark appearance comes from.
 #[doc(hidden)]
 pub mod system_appearance;

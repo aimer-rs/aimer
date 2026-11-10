@@ -81,6 +81,7 @@ pub mod text_area_example;
 pub mod text_field_example;
 mod text_properties_example;
 mod theme;
+mod tray_example;
 mod tween_keyframe_example;
 mod window_example;
 

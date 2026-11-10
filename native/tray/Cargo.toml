@@ -1,0 +1,53 @@
+[package]
+name = "aimer_tray"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = [
+    "std",
+    "NSApplication",
+    "NSBitmapImageRep",
+    "NSButton",
+    "NSCell",
+    "NSGraphics",
+    "objc2-core-foundation",
+    "NSControl",
+    "NSImage",
+    "NSImageRep",
+    "NSMenu",
+    "NSMenuItem",
+    "NSResponder",
+    "NSStatusBar",
+    "NSStatusBarButton",
+    "NSStatusItem",
+    "NSView",
+    "NSEvent",
+] }
+objc2-foundation = { workspace = true, features = [
+    "std",
+    "NSData",
+    "NSGeometry",
+    "NSObject",
+    "NSString",
+    "NSThread",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus.workspace = true
+
+# Only the demo hides its Dock icon; the library never touches the app's policy.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2-app-kit = { workspace = true, features = ["NSRunningApplication"] }

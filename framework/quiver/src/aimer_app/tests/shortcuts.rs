@@ -91,3 +91,23 @@ fn a_global_shortcut_that_nobody_holds_is_ignored() {
 
     app.send_user_event(AimerNativePlatformEvent::GlobalShortcut(GlobalShortcutId::from_raw(7)));
 }
+
+#[test]
+fn a_tray_event_runs_its_handler_in_the_app_until_it_is_unsubscribed() {
+    use aimer_platform::tray::{self, TrayButton, TrayEvent, TrayItemId};
+
+    let seen = Rc::new(Cell::new(None));
+    let sink = Rc::clone(&seen);
+    let subscription = tray::subscribe(move |event| sink.set(Some(event)));
+    let id = subscription.id();
+    let mut app = AimerApp::start_headless(Blank);
+    app.render_frame();
+
+    app.send_user_event(AimerNativePlatformEvent::Tray { id, event: TrayEvent::MenuItem(TrayItemId(3)) });
+    assert_eq!(seen.get(), Some(TrayEvent::MenuItem(TrayItemId(3))));
+
+    drop(subscription);
+    seen.set(None);
+    app.send_user_event(AimerNativePlatformEvent::Tray { id, event: TrayEvent::Click(TrayButton::Left) });
+    assert_eq!(seen.get(), None, "a tray nobody holds is ignored");
+}

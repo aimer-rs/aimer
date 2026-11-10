@@ -126,6 +126,13 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
                 app.request_full_redraw();
             }
         }
+        AimerNativePlatformEvent::Tray { id, event } => {
+            // Heard on whichever thread the tray reports from, run here on the
+            // loop that owns the tree.
+            if aimer_platform::tray::dispatch(id, event) {
+                app.request_full_redraw();
+            }
+        }
         AimerNativePlatformEvent::FrameReady => {
             aimer_utils::frame_trace("frame_ready", 0.0, 0.0);
             let kind = crate::aimer_app::frame_ready_delivered();

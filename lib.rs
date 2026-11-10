@@ -109,6 +109,37 @@ pub use aimer_lucide as icons;
 #[cfg(feature = "icons")]
 pub use aimer_lucide::Icons;
 pub use aimer_screen as screen;
+/// A system tray icon with a menu; see [`tray::Tray`].
+pub use aimer_platform::tray;
+
+/// Draws a Lucide icon into a [`tray::TrayIcon`].
+///
+/// A tray takes pixels, not widgets, so the icon is rasterized on the CPU in
+/// one flat `color`; see [`icons::rasterize`]. `size` is in pixels: 32 is sharp
+/// on a high-density menu bar and on a Windows or Linux tray alike.
+///
+/// # Panics
+///
+/// Panics if `size` is zero or above [`icons::MAX_SIZE`].
+///
+/// # Examples
+///
+/// ```
+/// use aimer::{Icons, lucide_tray_icon, svg::SvgColor};
+///
+/// let icon = lucide_tray_icon(Icons::BELL, 32, SvgColor::rgba8(40, 120, 255, 255))?;
+/// assert_eq!((icon.width(), icon.height()), (32, 32));
+/// # Ok::<(), aimer::tray::IconError>(())
+/// ```
+#[cfg(feature = "icons")]
+pub fn lucide_tray_icon(
+    icon: impl Into<aimer_svg::SvgDocument>,
+    size: u32,
+    color: aimer_svg::SvgColor,
+) -> Result<tray::TrayIcon, tray::IconError> {
+    let raster = aimer_lucide::rasterize(icon, size, color);
+    tray::TrayIcon::from_rgba(raster.width(), raster.height(), raster.into_rgba())
+}
 pub use aimer_custom_paint::{CanvasPainter, CustomPaint};
 /// Application-defined shader effects; see [`effects::ShaderEffect`].
 pub use aimer_effect_pipeline as effects;
@@ -1877,6 +1908,227 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             assert!(
                 controller.offset().y > 0.0,
                 "a finger drag over nothing selectable is a scroll"
+            );
+        }
+
+        /// The shape `aimer_markdown` gives a code block: a selectable rich text
+        /// inside a horizontal scroll view, inside the page's vertical one. The
+        /// source has blank lines between its lines of code.
+        fn code_block_page(controller: &ScrollController) -> impl Widget + 'static {
+            use aimer::{RichText, TextSpan};
+
+            let code = "# Headings\n\n# H1\n\n## H2\n\n### H3\n\n#### H4";
+            Container::new().box_child(
+                Scrollable::new()
+                    .controller(controller.clone())
+                    .axis(ScrollAxis::Vertical)
+                    .child(
+                        Column::new()
+                            .horizontal_alignment(BoxAlignment::Start)
+                            .children([
+                                SizedBox::new().height(100).width(400).boxed(),
+                                Container::new().box_child(
+                                    Column::new()
+                                        .horizontal_alignment(BoxAlignment::Start)
+                                        .children([Container::new().box_child(
+                                            Scrollable::new()
+                                                .axis(ScrollAxis::Horizontal)
+                                                .vertical_scroll_bar(None)
+                                                .horizontal_scroll_bar(None)
+                                                .child(SizedBox::new().child(
+                                                    SelectionArea::new()
+                                                        .child(RichText::new(TextSpan::new(code))),
+                                                )),
+                                        )]),
+                                ),
+                                SizedBox::new().height(2000).width(400).boxed(),
+                            ]),
+                    ),
+            )
+        }
+
+        /// Selectable text directly inside a scroll view takes a press wherever it
+        /// is after a wheel scroll, with no nested scroll view involved.
+        ///
+        /// The event index caches a rectangle per target, and a scroll moves text
+        /// without invalidating layout. Once the text had been pressed — which is
+        /// what builds the index — a scroll left the strip it had moved into dead.
+        #[test]
+        fn selectable_text_stays_selectable_after_the_page_scrolls() {
+            use aimer::{RichText, TextSpan};
+            let controller = ScrollController::new();
+            let code = "# Headings\n\n# H1\n\n## H2\n\n### H3\n\n#### H4";
+            let page = Container::new().box_child(
+                Scrollable::new().controller(controller.clone()).axis(ScrollAxis::Vertical).child(
+                    Column::new().horizontal_alignment(BoxAlignment::Start).children([
+                        SizedBox::new().height(100).width(400).boxed(),
+                        SelectionArea::new().child(RichText::new(TextSpan::new(code))).boxed(),
+                        SizedBox::new().height(2000).width(400).boxed(),
+                    ]),
+                ),
+            );
+            let mut app = AimerApp::start_headless(page);
+            app.render_frame();
+            app.render_frame();
+            assert!(dead_rows(&mut app, 102..234).is_empty());
+            move_to(&mut app, 300.0, 300.0);
+            platform_scroll(&mut app, -20.0);
+            for _ in 0..40 {
+                sleep(Duration::from_millis(16));
+                app.render_frame();
+            }
+            let scrolled = controller.offset().y.round() as usize;
+            assert!(scrolled > 0, "the wheel should have moved the page");
+
+            let dead = dead_rows(&mut app, 102 - scrolled..234 - scrolled);
+
+            assert!(
+                dead.is_empty(),
+                "after scrolling {scrolled} px, presses at these heights selected nothing: {dead:?}"
+            );
+        }
+
+        /// The heights, four pixels apart, at which a mouse press inside the code
+        /// block's column of text starts no selection.
+        fn dead_rows<W: Widget + 'static>(
+            app: &mut HeadlessApp<W>,
+            rows: std::ops::Range<usize>,
+        ) -> Vec<usize> {
+            let mouse = PointerKey::new(PointerSource::Mouse, 0);
+            let mut dead = Vec::new();
+            for y in rows.step_by(4) {
+                press(app, 20.0, y as f64);
+                if !is_pointer_claimed(mouse) {
+                    dead.push(y);
+                }
+                release(app);
+            }
+            dead
+        }
+
+        /// A press anywhere inside a code block starts a selection — on a line of
+        /// code, and equally on the blank line between two of them.
+        #[test]
+        fn a_press_on_a_blank_line_of_a_code_block_starts_a_selection() {
+            let controller = ScrollController::new();
+            let mut app = AimerApp::start_headless(code_block_page(&controller));
+            app.render_frame();
+            app.render_frame();
+
+            // Nine lines of default text below a hundred-pixel spacer; every row
+            // of pixels inside them belongs to the paragraph.
+            let dead = dead_rows(&mut app, 102..234);
+
+            assert!(
+                dead.is_empty(),
+                "presses at these heights inside the code block selected nothing: {dead:?}"
+            );
+        }
+
+        /// Scrolling the page moves the code block without repainting it, and the
+        /// whole block must stay selectable where it is *now*.
+        ///
+        /// The block is a horizontal scroll view inside the page's vertical one.
+        /// It used to go on judging presses against the place it was last painted
+        /// at, so after a scroll only the strip where the old and the new position
+        /// overlap still selected: text at the top of the block ignored every
+        /// press until something repainted it.
+        #[test]
+        fn a_code_block_stays_selectable_after_the_page_scrolls() {
+            let controller = ScrollController::new();
+            let mut app = AimerApp::start_headless(code_block_page(&controller));
+            app.render_frame();
+            app.render_frame();
+
+            // The block has been pressed before, so the horizontal scroll view has
+            // already indexed where its text is.
+            assert!(dead_rows(&mut app, 102..234).is_empty());
+
+            // A wheel scroll, which moves the page without repainting its text.
+            move_to(&mut app, 300.0, 300.0);
+            platform_scroll(&mut app, -20.0);
+            for _ in 0..40 {
+                sleep(Duration::from_millis(16));
+                app.render_frame();
+            }
+            let scrolled = controller.offset().y.round() as usize;
+            assert!(
+                (20..=90).contains(&scrolled),
+                "the wheel should have moved the page part of the way: {scrolled}"
+            );
+
+            // The same nine lines, that much further up.
+            let dead = dead_rows(&mut app, 102 - scrolled..234 - scrolled);
+
+            assert!(
+                dead.is_empty(),
+                "after scrolling, presses at these heights inside the code block selected nothing: {dead:?}"
+            );
+        }
+
+        /// The heights, four pixels apart, at which a mouse press at `x` starts a
+        /// selection.
+        #[cfg(feature = "markdown")]
+        fn live_rows<W: Widget + 'static>(app: &mut HeadlessApp<W>, x: f64) -> Vec<usize> {
+            let mouse = PointerKey::new(PointerSource::Mouse, 0);
+            let mut live = Vec::new();
+            for y in (0..800).step_by(4) {
+                press(app, x, y as f64);
+                if is_pointer_claimed(mouse) {
+                    live.push(y);
+                }
+                release(app);
+            }
+            live
+        }
+
+        /// A Markdown code block is as selectable after the page scrolled as before.
+        ///
+        /// The block is a horizontal scroll view inside the viewer's vertical one,
+        /// and a scroll view routes presses to its content through an index of its
+        /// own. A wheel scroll of the page moves the block without repainting it;
+        /// the index went on holding the text where it had been, so only the strip
+        /// where the old and the new position overlap still took a press, and the
+        /// rest of the block ignored every drag until something repainted it.
+        #[cfg(feature = "markdown")]
+        #[test]
+        fn a_markdown_code_block_stays_selectable_after_the_page_scrolls() {
+            use aimer::MarkdownViewer;
+
+            let source = format!(
+                "{}```text\none\n\ntwo\n\nthree\n\nfour\n\nfive\n\nsix\n```\n\n{}",
+                "para\n\n".repeat(12),
+                "para\n\n".repeat(60),
+            );
+            let mut app = AimerApp::start_headless(
+                Container::new().box_child(MarkdownViewer::new().markdown(source)),
+            );
+            app.render_frame();
+            app.render_frame();
+
+            let before = live_rows(&mut app, 20.0);
+            assert!(
+                before.len() > 20,
+                "the block should be on screen and selectable to begin with: {before:?}"
+            );
+
+            move_to(&mut app, 300.0, 300.0);
+            platform_scroll(&mut app, -20.0);
+            for _ in 0..40 {
+                sleep(Duration::from_millis(16));
+                app.render_frame();
+            }
+
+            let after = live_rows(&mut app, 20.0);
+            // The block moved up by what the wheel scrolled, and all of it with it.
+            assert!(
+                after.first() < before.first(),
+                "the block's first selectable row should have moved up with the page\n before: {before:?}\n after:  {after:?}"
+            );
+            assert_eq!(
+                after.len(),
+                before.len(),
+                "every row of the block still takes a press after the scroll\n before: {before:?}\n after:  {after:?}"
             );
         }
 
