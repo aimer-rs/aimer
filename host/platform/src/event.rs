@@ -70,6 +70,10 @@ pub enum AimerNativePlatformEvent {
         id: crate::notification::NotifierId,
         event: crate::notification::NotificationEvent,
     },
+    /// The user asked the running application to show itself again: a click
+    /// on its Dock icon on macOS. `has_visible_windows` is what the platform
+    /// sees on screen. See [`crate::reopen`].
+    Reopen { has_visible_windows: bool },
     /// A step of the system's back, reported by a platform bridge that is not a
     /// key: Android's predictive back arrives from Kotlin as a start, progress
     /// and an end. See [`crate::system_back`].

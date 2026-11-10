@@ -63,6 +63,7 @@ use crate::stack_positioned_example::stack_positioned_example;
 use crate::stateful::CounterWidget;
 use crate::notification_example::NotificationExample;
 use crate::tray_example::TrayExample;
+use crate::daemon_example::DaemonExample;
 use crate::stateful_2::MyList;
 use crate::storage_example::storage_example;
 use crate::style_tokens_example::style_tokens_example;
@@ -659,6 +660,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::FocusNode => FocusNodeExample::new().boxed(),
         ExampleId::Shortcuts => ShortcutsExample::new().boxed(),
         ExampleId::Tray => TrayExample::new().boxed(),
+        ExampleId::Daemon => DaemonExample::new().boxed(),
         ExampleId::Notifications => NotificationExample::new().boxed(),
         ExampleId::TextArea => TextAreaExample::new().boxed(),
         ExampleId::TextField => TextFieldExample::new().boxed(),

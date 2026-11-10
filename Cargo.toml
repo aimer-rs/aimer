@@ -54,6 +54,7 @@ aimer_vault = { workspace = true, optional = true }
 aimer_lottie = { workspace = true, optional = true }
 aimer_capture = { workspace = true, optional = true }
 aimer_passkey = { workspace = true, optional = true }
+aimer_daemon = { workspace = true, optional = true }
 aimer_markdown.workspace = true
 aimer_modal.workspace = true
 aimer_dnd.workspace = true
@@ -126,6 +127,10 @@ capture = ["dep:aimer_capture"]
 # (AuthenticationServices, Credential Manager, Windows Hello) behind
 # `aimer::passkey`.
 passkey = ["dep:aimer_passkey"]
+# The lightweight background process (tray, timers, graceful quit, autostart)
+# behind `aimer::daemon`. Deliberately not part of `full`: a daemon is the
+# alternative to the windowed application, and it draws nothing.
+daemon = ["dep:aimer_daemon"]
 apple-core-text = [
     "aimer_cupid/apple-core-text",
     "aimer_canvas/apple-core-text",
@@ -295,6 +300,7 @@ members = [
     "routing/router",
     "routing/navigation",
     # host
+    "host/daemon",
     "host/frame_stats",
     "host/platform",
     "host/prendre",
@@ -336,6 +342,7 @@ aimer_webgpu = { path = "graphic/backends/webgpu" }
 aimer_rubick = { path = "cores/rubick" }
 aimer_venus = { path = "cores/venus" }
 aimer_quiver = { path = "framework/quiver", default-features = false }
+aimer_daemon = { path = "host/daemon" }
 aimer_frame_stats = { path = "host/frame_stats" }
 aimer_platform = { path = "host/platform" }
 aimer_prendre = { path = "host/prendre", default-features = false }

@@ -140,6 +140,11 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
                 app.request_full_redraw();
             }
         }
+        AimerNativePlatformEvent::Reopen { has_visible_windows } => {
+            if aimer_platform::reopen::dispatch(has_visible_windows) {
+                app.request_full_redraw();
+            }
+        }
         AimerNativePlatformEvent::FrameReady => {
             aimer_utils::frame_trace("frame_ready", 0.0, 0.0);
             let kind = crate::aimer_app::frame_ready_delivered();

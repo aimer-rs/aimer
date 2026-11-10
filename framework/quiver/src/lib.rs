@@ -53,6 +53,8 @@ pub use aimer_window::{ExitPolicy, NewWindow, Window, WindowAttr, WindowId};
 pub use aimer_window as windows;
 #[cfg(not(any(target_os = "ios", target_os = "android", target_arch = "wasm32")))]
 mod desktop_host;
+#[cfg(not(any(target_os = "ios", target_os = "android", target_arch = "wasm32")))]
+mod window_memory;
 
 pub use winit;
 

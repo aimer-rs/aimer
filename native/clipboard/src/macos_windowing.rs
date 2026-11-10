@@ -300,15 +300,54 @@ impl MacosWindowing {
         self
     }
 
-    /// Installs this configuration for Aimer's next macOS window.
+    /// The creation-time settings of this configuration, for another window.
+    ///
+    /// Everything that describes how a window looks and is dragged carries over.
+    /// What belongs to one window does not: the [`on_created`](Self::on_created)
+    /// callback runs once and stays with the first window, and the measured
+    /// drag band and an active drag start empty.
+    #[cfg(any(target_os = "macos", test))]
+    fn settings_copy(&self) -> Self {
+        Self {
+            movable_by_window_background: self.movable_by_window_background,
+            titlebar_transparent: self.titlebar_transparent,
+            title_hidden: self.title_hidden,
+            titlebar_hidden: self.titlebar_hidden,
+            titlebar_buttons_hidden: self.titlebar_buttons_hidden,
+            fullsize_content_view: self.fullsize_content_view,
+            has_shadow: self.has_shadow,
+            accepts_first_mouse: self.accepts_first_mouse,
+            traffic_light_position: self.traffic_light_position,
+            native_titlebar_drag: self.native_titlebar_drag,
+            titlebar_drag_height: self.titlebar_drag_height,
+            drag_band: None,
+            window_drag: None,
+            traffic_light_layout_state: TrafficLightLayoutState::default(),
+            on_created: None,
+        }
+    }
+
+    /// Installs this configuration for Aimer's windows.
     ///
     /// Call this from `AimerApp::setup`, which runs on the native event-loop
     /// thread before the window is created. If several setup callbacks install
     /// configurations, the last installed value is used.
+    ///
+    /// The configuration applies to every window the application opens, not
+    /// only the first: a window opened later, from a tray menu or a menu-bar
+    /// application's Dock icon, is styled like the first. Only the
+    /// [`on_created`](Self::on_created) callback is one-shot and runs for the
+    /// first window.
     #[cfg(target_os = "macos")]
     #[inline]
     pub fn install(self) {
         PENDING.with(|pending| pending.replace(Some(self)));
+    }
+
+    /// Whether `window_created` has anything to do for this configuration.
+    #[cfg(test)]
+    fn has_creation_callback(&self) -> bool {
+        self.on_created.is_some()
     }
 
     /// Does nothing on platforms that do not create AppKit windows.
@@ -641,6 +680,38 @@ aimer_tls::thread_local! {
     static PENDING: std::cell::RefCell<Option<MacosWindowing>> = const {
         std::cell::RefCell::new(None)
     };
+    /// The settings of the last installed configuration, kept for the windows
+    /// that open after the one that consumed `PENDING`.
+    static INSTALLED: std::cell::RefCell<Option<MacosWindowing>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+/// The configuration for a window that is about to be created.
+///
+/// The first window takes what the application installed, including its
+/// one-shot creation callback, and the settings are remembered. Every later
+/// window gets a copy of those settings, so a window opened from a tray menu or
+/// a Dock click is decorated like the first one.
+#[doc(hidden)]
+#[cfg(target_os = "macos")]
+pub fn for_new_window() -> MacosWindowing {
+    if let Some(pending) = PENDING.with(|pending| pending.take()) {
+        INSTALLED.with(|installed| installed.replace(Some(pending.settings_copy())));
+        return pending;
+    }
+    INSTALLED.with(|installed| {
+        installed
+            .borrow()
+            .as_ref()
+            .map_or_else(MacosWindowing::new, MacosWindowing::settings_copy)
+    })
+}
+
+#[doc(hidden)]
+#[cfg(not(target_os = "macos"))]
+pub fn for_new_window() -> MacosWindowing {
+    MacosWindowing::new()
 }
 
 #[doc(hidden)]
@@ -658,6 +729,54 @@ pub fn take_pending() -> MacosWindowing {
 #[cfg(test)]
 mod tests {
     use super::MacosWindowing;
+
+    #[test]
+    fn a_settings_copy_keeps_the_look_and_drops_what_belongs_to_one_window() {
+        let mut original = MacosWindowing::new()
+            .titlebar_transparent(true)
+            .title_hidden(true)
+            .fullsize_content_view(true)
+            .has_shadow(true)
+            .accepts_first_mouse(true)
+            .traffic_light_position(16.0, 14.0)
+            .titlebar_drag_height(40.0)
+            .on_created(|_| {});
+        original.begin_window_drag((1.0, 2.0));
+
+        let copy = original.settings_copy();
+
+        assert_eq!(copy.titlebar_transparent, Some(true));
+        assert_eq!(copy.title_hidden, Some(true));
+        assert_eq!(copy.fullsize_content_view, Some(true));
+        assert_eq!(copy.has_shadow, Some(true));
+        assert_eq!(copy.accepts_first_mouse, Some(true));
+        assert_eq!(copy.traffic_light_position, original.traffic_light_position);
+        assert_eq!(copy.titlebar_drag_height, Some(40.0));
+        assert!(!copy.has_creation_callback(), "the callback is one-shot");
+        assert!(!copy.window_drag_active(), "a drag belongs to one window");
+        assert!(original.has_creation_callback());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn every_window_after_the_first_gets_the_installed_settings() {
+        MacosWindowing::new()
+            .titlebar_transparent(true)
+            .fullsize_content_view(true)
+            .on_created(|_| {})
+            .install();
+
+        let first = super::for_new_window();
+        let second = super::for_new_window();
+        let third = super::for_new_window();
+
+        assert!(first.has_creation_callback());
+        for later in [second, third] {
+            assert_eq!(later.titlebar_transparent, Some(true));
+            assert_eq!(later.fullsize_content_view, Some(true));
+            assert!(!later.has_creation_callback());
+        }
+    }
 
     #[test]
     fn macos_windowing_defaults_do_not_override_winit() {

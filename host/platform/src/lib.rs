@@ -38,6 +38,8 @@ pub mod shutdown_signals;
 pub mod system_back;
 /// System notifications, with their events delivered on the event loop.
 pub mod notification;
+/// The user asking a running application to show itself again.
+pub mod reopen;
 /// The system tray icon, with its events delivered on the event loop.
 pub mod tray;
 /// Where the platform's light / dark appearance comes from.

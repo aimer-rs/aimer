@@ -108,6 +108,21 @@ impl Shared {
     }
 }
 
+/// Delivers the events that mean something to an application with no window
+/// open: a tray click or a chosen item, and a notification's answer. Returns
+/// whether a handler took the event.
+///
+/// Window events have nothing to be delivered to, and are dropped.
+fn deliver_without_window(event: AimerNativePlatformEvent) -> bool {
+    match event {
+        AimerNativePlatformEvent::Tray { id, event } => aimer_platform::tray::dispatch(id, event),
+        AimerNativePlatformEvent::Notification { id, event } => {
+            aimer_platform::notification::dispatch(id, event)
+        }
+        _ => false,
+    }
+}
+
 /// One window of the host.
 struct HostedWindow {
     id: WindowId,
@@ -128,6 +143,16 @@ struct HostedWindow {
 }
 
 impl HostedWindow {
+    /// Saves where this window is, if it asked to be remembered.
+    fn remember_geometry(&self) {
+        let Some(name) = self.app.window_attr.remembered_as() else {
+            return;
+        };
+        if let Some(native) = self.app.native_window() {
+            crate::window_memory::remember(name, native);
+        }
+    }
+
     /// Takes the window off the screen, drops what it held, and lets go of it.
     ///
     /// The platform window is owned by reference counting, and is destroyed by
@@ -350,6 +375,8 @@ impl DesktopHost {
                 let id = window.id;
                 let app_id = window.app_id;
                 let on_closed = window.on_closed.take();
+                // While it still has a position and a size to report.
+                window.remember_geometry();
                 window.retire();
                 aimer_window::host::mark_closed(app_id);
                 // After the window is gone, so the callback sees it that way.
@@ -431,6 +458,9 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
             return;
         }
         self.started = true;
+        // The native application exists by now. It is taught to report a click
+        // on its Dock icon, which winit does not.
+        aimer_platform::reopen::install();
         run_startup_hooks(&mut self.startup_hooks, &mut self.startup_resources);
         if let Some(main) = self.main.take() {
             self.open(event_loop, main, AppWindowId::MAIN, None, true);
@@ -465,6 +495,12 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
                 event_loop.exit();
             }
             AimerNativePlatformEvent::WindowRequests => self.process_requests(event_loop),
+            AimerNativePlatformEvent::Reopen { has_visible_windows } => {
+                // The user asked for the application back, with or without a
+                // window. A handler answers by asking for one.
+                aimer_platform::reopen::dispatch(has_visible_windows);
+                self.process_requests(event_loop);
+            }
             AimerNativePlatformEvent::WindowFrameReady(id) => {
                 if let Some(window) = self.index_of(id).map(|index| &mut self.windows[index]) {
                     let kind = complete_frame_ready_request(&window.frame_slot);
@@ -516,7 +552,14 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
                 let _ = crate::handler::system_back::handle_signal(signal);
             }
             other => {
-                if let Some(window) = self.input_target() {
+                if self.windows.is_empty() {
+                    // A menu-bar application between its windows: the tray is
+                    // all it has, and it must still be heard.
+                    if deliver_without_window(other) {
+                        // The handler may have asked for a window or a quit.
+                        self.process_requests(event_loop);
+                    }
+                } else if let Some(window) = self.input_target() {
                     let _active = enter_window_scope(window.key);
                     handle_user_event(&mut window.app, other, request_window_redraw);
                 }
@@ -538,6 +581,8 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
         // and the platform's own terminate notification.
         aimer_venus::notify_lifecycle(aimer_venus::Lifecycle::Exit);
         for window in &mut self.windows {
+            // Windows still open when the app quits never go through `reap`.
+            window.remember_geometry();
             window.app.render_ctx.suspend();
         }
     }
@@ -570,5 +615,43 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
             #[cfg(not(target_os = "macos"))]
             let _ = window;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use aimer_platform::tray::{self, TrayButton, TrayEvent, TrayItemId};
+
+    use super::*;
+
+    #[test]
+    fn a_tray_event_reaches_its_handler_with_no_window_open() {
+        let seen = Rc::new(Cell::new(None));
+        let sink = Rc::clone(&seen);
+        let subscription = tray::subscribe(move |event| sink.set(Some(event)));
+
+        let event = TrayEvent::MenuItem(TrayItemId(7));
+        let delivered = deliver_without_window(AimerNativePlatformEvent::Tray { id: subscription.id(), event });
+
+        assert!(delivered);
+        assert_eq!(seen.get(), Some(event));
+    }
+
+    #[test]
+    fn a_tray_nobody_holds_is_not_delivered() {
+        let subscription = tray::subscribe(|_| {});
+        let id = subscription.id();
+        drop(subscription);
+
+        let event = TrayEvent::Click(TrayButton::Left);
+        assert!(!deliver_without_window(AimerNativePlatformEvent::Tray { id, event }));
+    }
+
+    #[test]
+    fn events_that_need_a_window_are_dropped() {
+        assert!(!deliver_without_window(AimerNativePlatformEvent::FrameReady));
     }
 }

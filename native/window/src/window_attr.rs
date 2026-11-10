@@ -20,6 +20,7 @@ pub struct WindowAttr {
     pub(crate) transparent: bool,
     pub(crate) visible: bool,
     pub(crate) maximized: bool,
+    pub(crate) remember: Option<String>,
 }
 
 impl WindowAttr {
@@ -36,6 +37,7 @@ impl WindowAttr {
             transparent: false,
             visible: true,
             maximized: false,
+            remember: None,
         }
     }
 
@@ -102,6 +104,36 @@ impl WindowAttr {
         self
     }
 
+    /// Makes the window remember where it was, how big, and whether it was
+    /// maximized or full screen, under `name`.
+    ///
+    /// The state is saved when the window closes and when the application
+    /// ends, and restored the next time a window with the same name opens,
+    /// even in a later run. It takes the place of [`inner_size`](Self::inner_size)
+    /// and [`maximized`](Self::maximized), which stay the defaults for the
+    /// first run. A remembered position that is no longer on any screen, such
+    /// as one on a monitor that was unplugged, is ignored.
+    ///
+    /// Windows that share a name share the state; the last one to close wins.
+    /// A name should be short and stable, such as `"main"`.
+    #[inline]
+    pub fn remember(mut self, name: impl Into<String>) -> Self {
+        self.remember = Some(name.into());
+        self
+    }
+
+    /// The name the window's state is remembered under, if it is.
+    #[inline]
+    pub fn remembered_as(&self) -> Option<&str> {
+        self.remember.as_deref()
+    }
+
+    /// Whether the user can resize the window.
+    #[inline]
+    pub fn is_resizable(&self) -> bool {
+        self.resizable
+    }
+
     /// Whether the window is visible when it is created.
     #[inline]
     pub fn is_visible(&self) -> bool {
@@ -154,6 +186,15 @@ mod tests {
         assert!(!attributes.transparent);
         assert!(attributes.visible);
         assert!(!attributes.maximized);
+        assert_eq!(attributes.remembered_as(), None);
+    }
+
+    #[test]
+    fn a_window_can_be_remembered_by_name() {
+        let attributes = WindowAttr::new().remember("main");
+
+        assert_eq!(attributes.remembered_as(), Some("main"));
+        assert!(attributes.is_resizable());
     }
 
     #[test]

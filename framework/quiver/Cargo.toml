@@ -63,6 +63,8 @@ wgpu = { workspace = true, optional = true }
 
 winit = {workspace = true}
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Android's data directory, and where a window that remembers itself keeps its state.
+aimer_storage.workspace = true
 tokio = {workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time"]}
 aimer_cupid.workspace = true
 # Only a debug build ever starts it; see `debug_input`.
@@ -72,7 +74,6 @@ aimer_prendre = { workspace = true, features = ["host"] }
 workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-aimer_storage.workspace = true
 jni.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

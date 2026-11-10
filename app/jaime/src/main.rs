@@ -14,6 +14,7 @@ mod animated_theme;
 mod assets_media_example;
 mod bundled_assets_example;
 mod async_builder;
+mod background;
 mod backdrop_filter_example;
 mod collapsible_list_example;
 mod color_sync;
@@ -24,6 +25,7 @@ mod color_melt_example;
 mod custom_paint_example;
 mod custom_shape_example;
 pub mod custom_text_field_caret_example;
+mod daemon_example;
 mod data_view_example;
 mod dnd_completion_example;
 mod drag_and_drop;
@@ -104,6 +106,12 @@ fn main() {
     shortcuts_example::install_app_shortcuts();
     AimerApp::new()
         .render_mode(render_mode_from_args())
+        // Closing the last window leaves the app running; the tray installed in
+        // `setup` is the way back in and the way out.
+        .exit_policy(ExitPolicy::Never)
+        // Where it was and how big, kept for the next run and for the window
+        // that replaces it after it is closed.
+        .window(WindowAttr::new().remember(background::WINDOW_NAME))
         .setup(|| {
             MacosWindowing::new()
                 .titlebar_transparent(true)
@@ -113,6 +121,8 @@ fn main() {
                 .has_shadow(true)
                 .accepts_first_mouse(true)
                 .install();
+            // Kept by the app until shutdown.
+            background::install()
         })
         .child(
             AnimatedTheme::new()

@@ -2082,7 +2082,9 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
     /// work that asks it for frames.
     pub(crate) fn create_native_window(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
-            self.macos_windowing = aimer_clipboard::macos_windowing::take_pending();
+            // Not only the first window: one opened later, from a tray menu or a
+            // Dock click, is decorated like it.
+            self.macos_windowing = aimer_clipboard::macos_windowing::for_new_window();
         }
 
         #[cfg(target_os = "android")]
@@ -2106,6 +2108,18 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
                 // UIKit owns the scene's resizable bounds, not UIScreen.
                 WindowAttributes::default()
             }
+        };
+        // A window that remembers itself comes back where, and as big as, it
+        // was left.
+        #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+        let window_attributes = match self.window_attr.remembered_as() {
+            Some(name) if self.window.is_none() => crate::window_memory::restore(
+                window_attributes,
+                name,
+                self.window_attr.is_resizable(),
+                event_loop,
+            ),
+            _ => window_attributes,
         };
         let window_attributes = self.macos_windowing.apply_attributes(window_attributes);
         #[cfg(all(target_os = "windows", feature = "native", not(feature = "wgpu")))]

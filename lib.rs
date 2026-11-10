@@ -104,6 +104,10 @@ pub use aimer_lottie as lottie;
 pub use aimer_capture as capture;
 #[cfg(feature = "passkey")]
 pub use aimer_passkey as passkey;
+/// A lightweight background process: tray icon, timers, graceful quit and
+/// autostart, with no window or renderer; see [`daemon::Daemon`].
+#[cfg(feature = "daemon")]
+pub use aimer_daemon as daemon;
 #[cfg(feature = "icons")]
 pub use aimer_lucide as icons;
 #[cfg(feature = "icons")]
@@ -115,6 +119,9 @@ pub use aimer_platform::tray;
 /// registration; see [`notification::Notifier`]. In-window messages are the
 /// toasts in `feedback`.
 pub use aimer_platform::notification;
+/// The user asking a running application to show itself again, such as a click
+/// on its Dock icon on macOS; see [`reopen::subscribe`].
+pub use aimer_platform::reopen;
 
 /// Draws a Lucide icon into a [`tray::TrayIcon`].
 ///

@@ -1,0 +1,31 @@
+[package]
+name = "aimer_daemon"
+version = "0.1.0"
+edition = "2024"
+description = "A lightweight background process for Aimer: tray icon, timers, graceful quit and autostart, without a window or renderer"
+
+[dependencies]
+aimer_tray.workspace = true
+
+[target.'cfg(all(unix, not(any(target_os = "android", target_os = "ios"))))'.dependencies]
+libc.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = [
+    "std",
+    "NSApplication",
+    "NSEvent",
+    "NSGraphicsContext",
+    "NSResponder",
+    "NSRunningApplication",
+    "objc2-core-foundation",
+] }
+objc2-foundation = { workspace = true, features = ["std", "NSGeometry", "NSObject"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+    "Win32_System_Registry",
+] }
