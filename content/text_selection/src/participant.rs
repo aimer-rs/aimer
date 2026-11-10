@@ -8,9 +8,9 @@ use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{EventResult, PointerKey};
 
 use super::SelectionRegion;
-use crate::selection::selectable::{Selectable, SelectionBinding, SelectionScope, TextGeometry};
-use crate::selection::session::{SelectionSession, SelectionSlot};
-use crate::selection::ui;
+use crate::selectable::{Selectable, SelectionBinding, SelectionScope, TextGeometry};
+use crate::session::{SelectionSession, SelectionSlot};
+use crate::ui;
 
 /// A widget-owned participant in the ambient [`crate::SelectionArea`].
 ///
@@ -44,7 +44,7 @@ impl SelectionParticipant {
     }
 
     /// Creates a participant using the existing text-selection binding.
-    pub(crate) fn from_binding(binding: &SelectionBinding) -> Self {
+    pub fn from_binding(binding: &SelectionBinding) -> Self {
         Self {
             geometry: Rc::clone(&binding.geometry),
             session: Rc::clone(&binding.session),
@@ -124,7 +124,7 @@ impl SelectionParticipant {
     #[inline]
     pub fn begin(&self, offset: usize, pointer: PointerKey) {
         self.session.begin(
-            crate::selection::SelectionPoint::new(Rc::clone(&self.slot), offset),
+            crate::SelectionPoint::new(Rc::clone(&self.slot), offset),
             pointer,
         );
     }
@@ -133,8 +133,8 @@ impl SelectionParticipant {
     #[inline]
     pub fn begin_range(&self, anchor: usize, focus: usize, pointer: PointerKey) {
         self.session.begin_range(
-            crate::selection::SelectionPoint::new(Rc::clone(&self.slot), anchor),
-            crate::selection::SelectionPoint::new(Rc::clone(&self.slot), focus),
+            crate::SelectionPoint::new(Rc::clone(&self.slot), anchor),
+            crate::SelectionPoint::new(Rc::clone(&self.slot), focus),
             pointer,
         );
     }

@@ -15,7 +15,7 @@ use aimer_widget::{
 };
 
 use crate::RawTextWidget;
-use crate::text_source::TextSource;
+use crate::TextSource;
 
 /// A label-sized text control that responds to primary presses.
 ///

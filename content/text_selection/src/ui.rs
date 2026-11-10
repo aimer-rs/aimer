@@ -46,10 +46,10 @@ use aimer_modal::{AnchorHandle, ModalHandle, OverlayLayer, OverlayLayerHandle, O
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{EventResult, PointerKey, claim_pointer, release_pointer};
 
-use crate::selection::handles::{HANDLE_RADIUS, HandleCircle, HandleSide, grab_span, handle_at};
-use crate::selection::selectable::{Selectable, TextGeometry};
-use crate::selection::session::{SelectionSession, SelectionSlot};
-use crate::selection::touch_hold::enter_hold;
+use crate::handles::{HANDLE_RADIUS, HandleCircle, HandleSide, grab_span, handle_at};
+use crate::selectable::{Selectable, TextGeometry};
+use crate::session::{SelectionSession, SelectionSlot};
+use crate::touch_hold::enter_hold;
 
 /// The blue of the handles — the platform tint every system uses for them.
 const HANDLE_COLOR: Color = Color::Rgba(0, 122, 255, 255);
@@ -60,7 +60,7 @@ const HANDLE_COLOR: Color = Color::Rgba(0, 122, 255, 255);
 /// context beyond the selection itself, which is what lets the callout be
 /// answered entirely inside this crate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum MenuAction {
+pub enum MenuAction {
     /// Puts the selected text on the clipboard.
     Copy,
     /// Extends the selection to every participant of the session.
@@ -86,7 +86,7 @@ const MENU_ACTIONS: [MenuAction; 2] = [MenuAction::Copy, MenuAction::SelectAll];
 /// It lives on the session rather than on an element because the two ends of a
 /// selection can belong to two different widgets — neither of which is entitled
 /// to own the furniture of the whole selection.
-pub(crate) struct SelectionUi {
+pub struct SelectionUi {
     /// The open callout, or `None` while none is showing.
     open: RefCell<Option<ModalHandle>>,
     /// The shape the open callout was opened in.
@@ -194,7 +194,7 @@ impl SelectionUi {
     ///
     /// Only tests ask: everything else acts on the callout through
     /// [`Self::show_menu`] and [`Self::hide_menu`], which are idempotent.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn is_menu_open(&self) -> bool {
         self.open.borrow().is_some()
@@ -222,7 +222,7 @@ impl SelectionUi {
     }
 
     /// The rectangle the open callout is pinned to.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn menu_anchor_bounds(&self) -> Option<Bounds> {
         self.anchor.bounds()
@@ -272,7 +272,7 @@ impl SelectionSession {
     ///
     /// `None` unless the selection was made by a finger and both of its ends
     /// belong to participants that have painted.
-    pub(crate) fn handle_circles(&self) -> Option<(HandleCircle, HandleCircle)> {
+    pub fn handle_circles(&self) -> Option<(HandleCircle, HandleCircle)> {
         if !self.ui.is_touch() || !self.has_selection() {
             return None;
         }
@@ -288,7 +288,7 @@ impl SelectionSession {
     /// Copying dismisses the callout, the way accepting any menu does;
     /// selecting all keeps it, because the user is plainly still working with
     /// the selection.
-    pub(crate) fn perform(self: &Rc<Self>, action: MenuAction) {
+    pub fn perform(self: &Rc<Self>, action: MenuAction) {
         match action {
             MenuAction::Copy => {
                 let text = self.selected_text();
@@ -314,7 +314,7 @@ impl SelectionSession {
 ///
 /// Returns [`Some`] when the knobs or the callout took the event, in which case
 /// the caller must return that result unchanged and do nothing else.
-pub(crate) fn intercept(
+pub fn intercept(
     session: &Rc<SelectionSession>,
     event: &ElementEvent,
 ) -> Option<EventResult> {
@@ -368,7 +368,7 @@ pub(crate) fn intercept(
 ///
 /// Only a finger asks for it: a mouse has a keyboard beside it, and a menu
 /// popping up after every drag would be in the way.
-pub(crate) fn offer_menu_after_gesture(session: &Rc<SelectionSession>, source: PointerSource) {
+pub fn offer_menu_after_gesture(session: &Rc<SelectionSession>, source: PointerSource) {
     if source == PointerSource::Mouse || !session.has_selection() {
         return;
     }
@@ -383,7 +383,7 @@ pub(crate) fn offer_menu_after_gesture(session: &Rc<SelectionSession>, source: P
 /// A right-click on an existing selection acts on it; one that lands elsewhere
 /// first selects the word under the pointer, which is the convention every
 /// desktop follows. Reports whether the press was taken.
-pub(crate) fn open_context_menu(
+pub fn open_context_menu(
     session: &Rc<SelectionSession>,
     slot: &Rc<SelectionSlot>,
     geometry: &TextGeometry,
@@ -425,7 +425,7 @@ pub(crate) fn open_context_menu(
 /// moves the selection under the callout, and a desktop list — which is pinned
 /// to the click, not to the text — must *not* follow it. A callout left with
 /// nothing selected is taken down.
-pub(crate) fn track_menu(session: &Rc<SelectionSession>) {
+pub fn track_menu(session: &Rc<SelectionSession>) {
     if session.ui.menu_shape() != Some(ContextMenuShape::Pill) {
         return;
     }
@@ -447,7 +447,7 @@ pub(crate) fn track_menu(session: &Rc<SelectionSession>) {
 /// element that reported the knob as part of its box.
 ///
 /// Costs one [`Cell`] read per frame once installed.
-pub(crate) fn track_handles(session: &Rc<SelectionSession>) {
+pub fn track_handles(session: &Rc<SelectionSession>) {
     match (session.handle_circles().is_some(), session.ui.layer.get()) {
         (true, None) => session
             .ui
@@ -484,7 +484,7 @@ fn handles_painter(session: &Rc<SelectionSession>) -> OverlayPainter {
 /// encloses the region — a scroll view, which reads it as a scroll — and the
 /// selection can never be adjusted. `None` already claims everything, and a
 /// selection with no knobs claims nothing extra.
-pub(crate) fn hit_bounds_with_handles(
+pub fn hit_bounds_with_handles(
     session: &Rc<SelectionSession>,
     bounds: Option<(Vec2d, Vec2d)>,
 ) -> Option<(Vec2d, Vec2d)> {
@@ -549,9 +549,9 @@ mod tests {
     use aimer_ctxmenu::ContextMenuShape;
 
     use super::*;
-    use crate::selection::selectable::{SelectionCoordinator, TextGeometry};
-    use crate::selection::session::{SelectionSession, SelectionSlot};
-    use crate::selection::{SelectionPoint, TextHitRegion};
+    use crate::selectable::{SelectionCoordinator, TextGeometry};
+    use crate::session::{SelectionSession, SelectionSlot};
+    use crate::{SelectionPoint, TextHitRegion};
 
     const SELECTION_COLOR: Color = Color::Rgba(51, 153, 255, 96);
 

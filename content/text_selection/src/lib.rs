@@ -1,10 +1,21 @@
-pub(crate) mod cursor;
-pub(crate) mod handles;
+#![doc = include_str!("../README.md")]
+pub mod cursor;
+pub mod handles;
 mod participant;
-pub(crate) mod selectable;
-pub(crate) mod session;
-pub(crate) mod touch_hold;
-pub(crate) mod ui;
+pub mod selectable;
+pub mod session;
+pub mod touch_hold;
+pub mod ui;
+mod selection_area;
+mod text_accessibility;
+mod text_source;
+
+pub use selection_area::{SelectionArea, SelectionAreaElement};
+pub use text_accessibility::{
+    TextAccessibilityCaret, TextAccessibilityCluster, TextAccessibilityLine,
+    TextAccessibilitySelectionRect, TextAccessibilitySnapshot,
+};
+pub use text_source::TextSource;
 
 use std::ops::Range;
 use std::rc::Rc;
@@ -12,7 +23,7 @@ use std::rc::Rc;
 use aimer_attribute::Bounds;
 use aimer_widget::PointerKey;
 
-use crate::selection::session::SelectionSlot;
+use crate::session::SelectionSlot;
 
 pub use participant::SelectionParticipant;
 
@@ -40,7 +51,7 @@ impl SelectionRegion {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TextHitRegion {
+pub struct TextHitRegion {
     pub source_range: Range<usize>,
     pub bounds: Bounds,
 }
@@ -61,7 +72,7 @@ impl TextHitRegion {
     }
 }
 
-pub(crate) fn text_offset_at(regions: &[TextHitRegion], x: f32, y: f32) -> Option<usize> {
+pub fn text_offset_at(regions: &[TextHitRegion], x: f32, y: f32) -> Option<usize> {
     let region = regions.iter().min_by(|left, right| {
         vertical_distance(left.bounds, y)
             .total_cmp(&vertical_distance(right.bounds, y))
@@ -145,7 +156,7 @@ impl TextSelection {
 
 /// One end of a selection: a participant plus a UTF-8 offset inside it.
 #[derive(Clone)]
-pub(crate) struct SelectionPoint {
+pub struct SelectionPoint {
     pub slot: Rc<SelectionSlot>,
     pub offset: usize,
 }
@@ -170,7 +181,7 @@ impl SelectionPoint {
 /// The pair keeps the gesture's direction: `anchor` is where the pointer went
 /// down and `focus` is where it currently is.
 #[derive(Clone)]
-pub(crate) struct PointSelection {
+pub struct PointSelection {
     pub anchor: SelectionPoint,
     pub focus: SelectionPoint,
 }
@@ -198,7 +209,7 @@ impl PointSelection {
 /// drag may extend or end it, and cancelling restores the selection from before
 /// that pointer went down.
 #[derive(Default)]
-pub(crate) struct SelectionState {
+pub struct SelectionState {
     selection: Option<PointSelection>,
     selection_before_gesture: Option<Option<PointSelection>>,
     active_pointer: Option<PointerKey>,

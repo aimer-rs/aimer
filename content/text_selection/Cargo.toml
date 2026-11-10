@@ -1,0 +1,34 @@
+[package]
+name = "aimer_text_selection"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+# Exposes the inspection helpers the text widgets' own tests drive a selection
+# through. Never enabled by a normal build.
+test-support = []
+
+[dependencies]
+aimer_accessibility.workspace = true
+aimer_attribute.workspace = true
+aimer_canvas.workspace = true
+aimer_clipboard.workspace = true
+aimer_ctxmenu.workspace = true
+aimer_cupid.workspace = true
+aimer_events.workspace = true
+aimer_gesture.workspace = true
+aimer_haptics.workspace = true
+aimer_modal.workspace = true
+aimer_rubick.workspace = true
+aimer_utils.workspace = true
+aimer_widget.workspace = true
+unicode-segmentation.workspace = true
+unicode-bidi.workspace = true
+
+[dev-dependencies]
+aimer_text.workspace = true
+winit.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["rt"] }

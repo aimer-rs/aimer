@@ -21,6 +21,7 @@ aimer_animation.workspace = true
 unicode-segmentation.workspace = true
 aimer_macro.workspace = true
 aimer_text.workspace = true
+aimer_gesture.workspace = true
 aimer_clipboard.workspace = true
 aimer_container.workspace = true
 aimer_decoration.workspace = true

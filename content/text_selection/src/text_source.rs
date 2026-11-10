@@ -6,7 +6,7 @@ use aimer_rubick::ShareRef;
 
 /// A text payload that is either a `'static` literal or shared string data.
 ///
-/// [`Text`](crate::Text) and [`RawTextWidget`](crate::RawTextWidget) rebuild
+/// `Text` and `RawTextWidget` rebuild
 /// every frame, so the common case — a label built from a string literal —
 /// must not pay an allocation on every rebuild. `Rc<str>` cannot help a static
 /// `&str` here:

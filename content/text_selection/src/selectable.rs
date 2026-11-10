@@ -7,8 +7,8 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::{BuildContext, Color, WindowHandle};
 
 use crate::TextSource;
-use crate::selection::session::{SelectionSession, SelectionSlot};
-use crate::selection::{SelectionRegion, TextHitRegion, text_offset_at};
+use crate::session::{SelectionSession, SelectionSlot};
+use crate::{SelectionRegion, TextHitRegion, text_offset_at};
 
 use crate::TextAccessibilitySnapshot;
 use aimer_cupid::text_layout::{TextInteractionLayout, TextWritingMode};
@@ -16,14 +16,14 @@ use aimer_cupid::utilities::Mat3;
 
 /// The geometry side of a selection participant.
 ///
-/// A [`crate::selection::SelectionSlot`] owns the participant's *text*, so this
+/// A [`crate::SelectionSlot`] owns the participant's *text*, so this
 /// trait covers only what needs the laid-out paragraph: where the participant
 /// painted, and which offset a position maps to.
 ///
 /// Implementors must be reachable through an [`Rc`] that the element keeps
 /// alive, because elements themselves are stored inline in their owner and may
 /// move.
-pub(crate) trait Selectable {
+pub trait Selectable {
     /// Absolute logical bounds from the last frame, or `None` if never drawn.
     fn painted_bounds(&self) -> Option<Bounds>;
 
@@ -33,7 +33,7 @@ pub(crate) trait Selectable {
     /// every later judgement compares it against the same corner: a participant
     /// that has since moved was scrolled out from under the finger, whether or
     /// not the finger itself ever reported a move. See
-    /// [`TouchHoldGate::forget_if_content_moved`](crate::selection::touch_hold::TouchHoldGate::forget_if_content_moved).
+    /// [`TouchHoldGate::forget_if_content_moved`](crate::touch_hold::TouchHoldGate::forget_if_content_moved).
     #[inline]
     fn painted_origin(&self) -> Vec2d {
         self.painted_bounds().map_or(Vec2d::ZERO, |bounds| Vec2d {
@@ -68,7 +68,7 @@ pub(crate) trait Selectable {
 /// geometry.bounds.save(scale, x, y, width, height);
 /// assert!(geometry.painted_bounds().is_some());
 /// ```
-pub(crate) struct TextGeometry {
+pub struct TextGeometry {
     /// Absolute logical bounds of the last painted frame. Once the render tree
     /// supplies this element's node, every absolute rectangle below is shifted
     /// by how far the node has moved since that paint ([`Self::shift`]).
@@ -103,7 +103,7 @@ impl TextGeometry {
     }
 
     /// Replaces the fallback hit regions supplied by a custom participant.
-    pub(crate) fn set_regions(&self, regions: impl IntoIterator<Item = SelectionRegion>) {
+    pub fn set_regions(&self, regions: impl IntoIterator<Item = SelectionRegion>) {
         *self.regions.borrow_mut() = regions.into_iter().map(TextHitRegion::from).collect();
         *self.interaction.borrow_mut() = None;
     }
@@ -122,7 +122,7 @@ impl TextGeometry {
     ///
     /// Prepared paragraphs retain this data alongside their paint geometry, so
     /// a frame only needs another reference to install it in selection state.
-    pub(crate) fn set_shared_interaction_layout(
+    pub fn set_shared_interaction_layout(
         &self,
         layout: Option<Rc<TextInteractionLayout>>,
         transform: Mat3,
@@ -139,7 +139,7 @@ impl TextGeometry {
 
     /// Returns a portable text accessibility snapshot of the last painted
     /// Aimer layout, if one exists.
-    pub(crate) fn accessibility_snapshot(
+    pub fn accessibility_snapshot(
         &self,
         selection: Option<Range<usize>>,
     ) -> Option<TextAccessibilitySnapshot> {
@@ -181,7 +181,7 @@ impl TextGeometry {
     /// The origin this paragraph paints at, in logical pixels: its render
     /// node's once the tree supplies one, otherwise the canvas translation the
     /// caller read (`canvas_x`/`canvas_y`, device pixels).
-    pub(crate) fn origin(&self, canvas_x: f32, canvas_y: f32, scale: f32) -> Vec2d {
+    pub fn origin(&self, canvas_x: f32, canvas_y: f32, scale: f32) -> Vec2d {
         match self
             .bounds
             .is_adopted()
@@ -192,7 +192,7 @@ impl TextGeometry {
                 x: bounds.x,
                 y: bounds.y,
             },
-            None => crate::selection::touch_hold::frame_origin(canvas_x, canvas_y, scale),
+            None => crate::touch_hold::frame_origin(canvas_x, canvas_y, scale),
         }
     }
 
@@ -427,7 +427,7 @@ fn transformed_rect_bounds(transform: &Mat3, x: f32, y: f32, width: f32, height:
 ///
 /// Text widgets look this state up while building; finding it is what makes
 /// them join the region instead of owning a private selection.
-pub(crate) struct SelectionScope(pub Rc<SelectionSession>);
+pub struct SelectionScope(pub Rc<SelectionSession>);
 
 /// Arbitrates between selection sessions inside one widget tree.
 ///
@@ -435,7 +435,7 @@ pub(crate) struct SelectionScope(pub Rc<SelectionSession>);
 /// previous one. This is what makes clicking a standalone text drop a region's
 /// selection, and the other way round.
 #[derive(Default)]
-pub(crate) struct SelectionCoordinator {
+pub struct SelectionCoordinator {
     current: RefCell<Weak<SelectionSession>>,
 }
 
@@ -456,14 +456,14 @@ impl SelectionCoordinator {
     }
 
     /// The session currently holding the selection, if it is still alive.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn current(&self) -> Option<Rc<SelectionSession>> {
         self.current.borrow().upgrade()
     }
 }
 
 /// Returns the tree-wide coordinator, inserting it on first use.
-pub(crate) fn selection_coordinator(ctx: &BuildContext) -> Rc<SelectionCoordinator> {
+pub fn selection_coordinator(ctx: &BuildContext) -> Rc<SelectionCoordinator> {
     if let Some(coordinator) = ctx.get_state::<SelectionCoordinator>() {
         return coordinator;
     }
@@ -477,7 +477,7 @@ pub(crate) fn selection_coordinator(ctx: &BuildContext) -> Rc<SelectionCoordinat
 /// It lives behind one [`std::cell::RefCell`] so a rebuilt element can adopt the
 /// whole registration from the element it replaces, which is what keeps a
 /// selection alive across a rebuild.
-pub(crate) struct SelectionBinding {
+pub struct SelectionBinding {
     pub geometry: Rc<TextGeometry>,
     pub session: Rc<SelectionSession>,
     pub slot: Rc<SelectionSlot>,

@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 //! Gesture recognition: pointer events in, [`GestureEvent`]s out.
 //!
 //! The recognizer is a **pure function over a state machine**
@@ -14,7 +15,7 @@
 
 use aimer_events::pointer::{PointerButton, PointerInfo, PointerSource};
 
-use crate::callback::VoidParamedFunction;
+use aimer_utils::callback::VoidParamedFunction;
 
 pub mod gesture_detector;
 pub mod handlers;
@@ -73,7 +74,7 @@ pub const MOUSE_TAP_TOLERANCE: f32 = 8.0;
 ///
 /// ```
 /// use aimer_events::pointer::PointerSource;
-/// use aimer_input::gesture::{MOUSE_SLOP, TAP_SLOP, tap_slop};
+/// use aimer_gesture::{MOUSE_SLOP, TAP_SLOP, tap_slop};
 ///
 /// assert_eq!(tap_slop(PointerSource::Touch), TAP_SLOP);
 /// assert_eq!(tap_slop(PointerSource::Mouse), MOUSE_SLOP);
@@ -97,7 +98,7 @@ pub const fn tap_slop(source: PointerSource) -> f32 {
 ///
 /// ```
 /// use aimer_events::pointer::PointerSource;
-/// use aimer_input::gesture::{MOUSE_TAP_TOLERANCE, TAP_SLOP, tap_tolerance};
+/// use aimer_gesture::{MOUSE_TAP_TOLERANCE, TAP_SLOP, tap_tolerance};
 ///
 /// assert_eq!(tap_tolerance(PointerSource::Touch), TAP_SLOP);
 /// assert_eq!(tap_tolerance(PointerSource::Mouse), MOUSE_TAP_TOLERANCE);
@@ -355,7 +356,7 @@ impl GestureEvent {
 /// # Examples
 ///
 /// ```
-/// use aimer_input::gesture::GestureMask;
+/// use aimer_gesture::GestureMask;
 ///
 /// let mask = GestureMask::TAP.union(GestureMask::SCALE);
 ///
@@ -451,7 +452,7 @@ impl GestureMask {
 /// ```
 /// use aimer_attribute::position::Vec2d;
 /// use aimer_events::pointer::PointerInfo;
-/// use aimer_input::gesture::{GestureEvent, GestureOutput};
+/// use aimer_gesture::{GestureEvent, GestureOutput};
 ///
 /// let pointer = PointerInfo::touch(Vec2d { x: 1.0, y: 1.0 }, 0);
 /// let mut output = GestureOutput::new();

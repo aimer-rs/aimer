@@ -20,45 +20,59 @@
 //! browser's scroll deltas, momentum, an animation — from selecting a word half
 //! a second in.
 //!
-//! Like the gesture recognizers in `aimer_input`, everything here is pure with
-//! respect to time: nothing reads the clock, so a five-hundred-millisecond
-//! threshold is exercised by handing in an instant rather than by sleeping.
+//! What a hold *is* — how long, and how much wobble — is not decided here. The
+//! press is handed to the recognizer in [`aimer_gesture`], the one behind every
+//! `GestureDetector`, and a selection is earned by exactly the long press a
+//! button or a drag handle would report. This module only adds what is the
+//! selection's own: the offset the finger landed on, and the rule about content
+//! that moves.
+//!
+//! Like that recognizer, everything here is pure with respect to time: nothing
+//! reads the clock, so a five-hundred-millisecond threshold is exercised by
+//! handing in an instant rather than by sleeping.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
 use aimer_attribute::position::Vec2d;
+use aimer_events::pointer::{PointerButton, PointerEvent, PointerInfo};
+use aimer_gesture::recognize::{poll as poll_recognizer, recognize};
+use aimer_gesture::state::GestureState;
+use aimer_gesture::{GestureEvent, GestureMask};
 use aimer_haptics::{Haptics, ImpactStyle};
 use aimer_utils::AnimInstant;
 use aimer_widget::{EventResult, PointerKey};
 
-use crate::selection::SelectionPoint;
-use crate::selection::session::{SelectionSession, SelectionSlot};
+use crate::SelectionPoint;
+use crate::session::{SelectionSession, SelectionSlot};
 
-/// How long a finger must rest on a text before it starts selecting.
-///
-/// The same five hundred milliseconds `aimer_input`'s `LONG_PRESS_DURATION`
-/// uses. It is restated here rather than imported because `aimer_input` depends
-/// on this crate, and the two must not disagree about what a hold is.
-pub(crate) const TOUCH_SELECTION_HOLD: Duration = Duration::from_millis(500);
+/// How long a finger must rest on a text before it starts selecting: the
+/// recognizer's own long press, so a hold means the same thing here as on every
+/// other widget.
+pub const TOUCH_SELECTION_HOLD: Duration = aimer_gesture::LONG_PRESS_DURATION;
 
 /// How far a finger may travel during the hold and still be resting, in logical
-/// pixels.
-///
-/// Mirrors `aimer_input`'s `TAP_SLOP`, which is Flutter's `kTouchSlop`: a
+/// pixels: the recognizer's touch slop, which is Flutter's `kTouchSlop`. A
 /// contact patch centimetres wide rolls as it presses, so a finger that meant
 /// to stay still does not.
-pub(crate) const TOUCH_SELECTION_SLOP: f32 = 18.0;
+pub const TOUCH_SELECTION_SLOP: f32 = aimer_gesture::TAP_SLOP;
+
+/// What the recognizer is asked to tell a hold apart from: resting long enough
+/// is a long press, travelling past the slop first is a drag — which, for a
+/// finger on text inside a page, is a scroll.
+const HOLD_GESTURES: GestureMask = GestureMask::LONG_PRESS.union(GestureMask::DRAG);
 
 /// A touch press that has not yet earned a selection.
+///
+/// Only what the selection adds to the press: the recognizer keeps the time and
+/// the travel.
 #[derive(Clone, Copy)]
 struct PendingTouch {
     pointer: PointerKey,
     offset: usize,
     at: Vec2d,
     origin: Vec2d,
-    since: AnimInstant,
 }
 
 /// A hold promoted by a frame while its pointer remains down.
@@ -70,7 +84,7 @@ struct PromotedTouch {
 
 /// What a pending touch press has become.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TouchHold {
+pub enum TouchHold {
     /// Nothing is pending for this pointer; the caller handles the event as it
     /// otherwise would.
     Idle,
@@ -105,9 +119,12 @@ pub(crate) enum TouchHold {
 ///     TouchHold::Entered(4),
 /// );
 /// ```
-pub(crate) struct TouchHoldGate {
+pub struct TouchHoldGate {
     pending: Cell<Option<PendingTouch>>,
     promoted: Cell<Option<PromotedTouch>>,
+    /// The shared recognizer's view of the pending press. Only read while
+    /// `pending` is set, so an idle gate still costs one [`Cell`] read.
+    recognizer: RefCell<GestureState>,
 }
 
 impl TouchHoldGate {
@@ -117,7 +134,22 @@ impl TouchHoldGate {
         Self {
             pending: Cell::new(None),
             promoted: Cell::new(None),
+            recognizer: RefCell::new(GestureState::default()),
         }
+    }
+
+    /// The pending press as the recognizer sees a pointer: at `pos`, with the
+    /// identity it went down with.
+    #[inline]
+    fn contact(pointer: PointerKey, pos: Vec2d) -> PointerInfo {
+        PointerInfo::new(pos, pointer.source, pointer.id, PointerButton::Primary)
+    }
+
+    /// Drops the pending press and the recognizer's memory of it.
+    #[inline]
+    fn forget(&self) {
+        self.pending.set(None);
+        *self.recognizer.borrow_mut() = GestureState::default();
     }
 
     /// Records a touch press on `offset` that may become a selection.
@@ -148,8 +180,17 @@ impl TouchHoldGate {
             offset,
             at,
             origin,
-            since: now,
         }));
+        // A fresh recognizer per press: a second finger replaces the first
+        // rather than turning the pair into a pinch.
+        let mut recognizer = GestureState::default();
+        recognize(
+            &mut recognizer,
+            &PointerEvent::Down(Self::contact(pointer, at)),
+            now,
+            HOLD_GESTURES,
+        );
+        *self.recognizer.borrow_mut() = recognizer;
         aimer_events::window::request_animation_frame();
     }
 
@@ -179,14 +220,16 @@ impl TouchHoldGate {
         let dx = origin.x - pending.origin.x;
         let dy = origin.y - pending.origin.y;
         if dx * dx + dy * dy >= TOUCH_SELECTION_SLOP * TOUCH_SELECTION_SLOP {
-            self.pending.set(None);
+            self.forget();
         }
     }
 
     /// Forgets whatever was pending, as a cancelled gesture must.
     #[inline]
     pub fn clear(&self) {
-        self.pending.set(None);
+        if self.pending.get().is_some() {
+            self.forget();
+        }
         self.promoted.set(None);
     }
 
@@ -202,15 +245,32 @@ impl TouchHoldGate {
         if pending.pointer != pointer {
             return TouchHold::Idle;
         }
-        if now.duration_since(pending.since) >= TOUCH_SELECTION_HOLD {
-            self.pending.set(None);
-
+        // The hold is judged before the travel, as the recognizer's release
+        // does: a finger that rested for the whole threshold earned the
+        // selection, whatever it has done since.
+        let held = {
+            let mut recognizer = self.recognizer.borrow_mut();
+            poll_recognizer(&mut recognizer, now, HOLD_GESTURES)
+                .iter()
+                .any(|gesture| matches!(gesture, GestureEvent::LongPressStart { .. }))
+        };
+        if held {
+            self.forget();
             return TouchHold::Entered(pending.offset);
         }
-        let dx = pos.x - pending.at.x;
-        let dy = pos.y - pending.at.y;
-        if (dx * dx + dy * dy).sqrt() >= TOUCH_SELECTION_SLOP {
-            self.pending.set(None);
+        let wandered = {
+            let mut recognizer = self.recognizer.borrow_mut();
+            recognize(
+                &mut recognizer,
+                &PointerEvent::Move(Self::contact(pointer, pos)),
+                now,
+                HOLD_GESTURES,
+            )
+            .iter()
+            .any(|gesture| matches!(gesture, GestureEvent::DragStart { .. }))
+        };
+        if wandered {
+            self.forget();
             return TouchHold::Abandoned;
         }
         TouchHold::Waiting
@@ -271,11 +331,10 @@ impl TouchHoldGate {
 
     /// Rewinds the pending press so a test can reach the far side of the hold
     /// without waiting for it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn backdate(&self, by: Duration) {
-        if let Some(mut pending) = self.pending.get() {
-            pending.since = pending.since - by;
-            self.pending.set(Some(pending));
+        if let Some(press) = self.recognizer.borrow_mut().press.as_mut() {
+            press.down_at = press.down_at - by;
         }
     }
 }
@@ -289,7 +348,7 @@ impl TouchHoldGate {
 ///
 /// Offsets that fall inside a character, or past the end of the text, collapse
 /// to an empty range rather than panicking.
-pub(crate) fn word_range_at(text: &str, offset: usize) -> std::ops::Range<usize> {
+pub fn word_range_at(text: &str, offset: usize) -> std::ops::Range<usize> {
     use unicode_segmentation::UnicodeSegmentation;
 
     if offset > text.len() || !text.is_char_boundary(offset) {
@@ -336,7 +395,7 @@ pub(crate) fn word_range_at(text: &str, offset: usize) -> std::ops::Range<usize>
 ///
 /// The result is left unconsumed, so the press goes on reaching the region
 /// behind the text.
-pub(crate) fn press_touch(
+pub fn press_touch(
     session: &Rc<SelectionSession>,
     gate: &TouchHoldGate,
     pointer: PointerKey,
@@ -357,7 +416,7 @@ pub(crate) fn press_touch(
 /// positions its pointer events arrive in — a press and the frames that judge it
 /// must not disagree because the window is on a retina display.
 #[inline]
-pub(crate) fn frame_origin(abs_x: f32, abs_y: f32, scale: f32) -> Vec2d {
+pub fn frame_origin(abs_x: f32, abs_y: f32, scale: f32) -> Vec2d {
     Vec2d {
         x: abs_x / scale,
         y: abs_y / scale,
@@ -370,7 +429,7 @@ pub(crate) fn frame_origin(abs_x: f32, abs_y: f32, scale: f32) -> Vec2d {
 /// The gesture stays open and owned by `pointer`, so the finger can go on to
 /// extend the selection into the next participant. A light haptic confirms the
 /// single transition from waiting to active selection.
-pub(crate) fn enter_hold(
+pub fn enter_hold(
     session: &Rc<SelectionSession>,
     slot: &Rc<SelectionSlot>,
     offset: usize,
@@ -483,7 +542,7 @@ mod tests {
         assert_eq!(
             gate.poll(
                 pointer(0),
-                at(10.0, 10.0 + TOUCH_SELECTION_SLOP),
+                at(10.0, 10.0 + TOUCH_SELECTION_SLOP + 1.0),
                 now + Duration::from_millis(50)
             ),
             TouchHold::Abandoned
@@ -492,6 +551,48 @@ mod tests {
             gate.poll(pointer(0), at(10.0, 10.0), now + TOUCH_SELECTION_HOLD),
             TouchHold::Idle,
             "an abandoned press must not come back once the hold would have elapsed"
+        );
+    }
+
+    /// The gate and every `GestureDetector` draw the line in the same place:
+    /// travel *past* the slop is a drag, travel of exactly the slop is not. A
+    /// hold that gave up a pixel earlier than a button's long press would make
+    /// the same finger mean two things on one screen.
+    #[test]
+    fn the_hold_ends_exactly_where_the_shared_recognizer_starts_a_drag() {
+        use aimer_gesture::state::moved_beyond_slop;
+
+        let now = AnimInstant::now();
+        for travel in [TOUCH_SELECTION_SLOP, TOUCH_SELECTION_SLOP + 0.5] {
+            let gate = TouchHoldGate::new();
+            gate.press(pointer(0), 3, at(10.0, 10.0), at(0.0, 0.0), now);
+            let moved_to = at(10.0, 10.0 + travel);
+
+            let drags = moved_beyond_slop(
+                &TouchHoldGate::contact(pointer(0), at(10.0, 10.0)),
+                &TouchHoldGate::contact(pointer(0), moved_to),
+            );
+            let expected = if drags {
+                TouchHold::Abandoned
+            } else {
+                TouchHold::Waiting
+            };
+
+            assert_eq!(
+                gate.poll(pointer(0), moved_to, now + Duration::from_millis(50)),
+                expected,
+                "travel of {travel} px"
+            );
+        }
+    }
+
+    /// The thresholds are the recognizer's, not a copy of them.
+    #[test]
+    fn the_hold_thresholds_are_the_shared_recognizers() {
+        assert_eq!(TOUCH_SELECTION_HOLD, aimer_gesture::LONG_PRESS_DURATION);
+        assert_eq!(
+            TOUCH_SELECTION_SLOP,
+            aimer_gesture::tap_slop(PointerSource::Touch)
         );
     }
 

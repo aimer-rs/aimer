@@ -7,8 +7,8 @@
 use aimer_events::pointer::PointerInfo;
 use aimer_utils::AnimInstant;
 
-use crate::gesture::state::{GestureState, Press, Tap, moved_beyond_tap_tolerance};
-use crate::gesture::{
+use crate::state::{GestureState, Press, Tap, moved_beyond_tap_tolerance};
+use crate::{
     DOUBLE_TAP_TIMEOUT, GestureEvent, GestureMask, GestureOutput, LONG_PRESS_DURATION,
 };
 
@@ -166,7 +166,7 @@ mod tests {
         let now = AnimInstant::now();
         let pointer = touch(3.0, 4.0);
         let mut state = GestureState {
-            drag: Some(crate::gesture::state::Drag {
+            drag: Some(crate::state::Drag {
                 origin: pointer,
                 last: pointer,
                 started_at: now,
@@ -187,7 +187,7 @@ mod tests {
         let pointer = touch(0.0, 0.0);
         let mut state = GestureState {
             press: Some(held(pointer, now, false)),
-            drag: Some(crate::gesture::state::Drag {
+            drag: Some(crate::state::Drag {
                 origin: pointer,
                 last: pointer,
                 started_at: now,

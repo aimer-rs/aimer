@@ -176,6 +176,18 @@ impl aimer_widget::Rebuildable for RawSelectableText {
 }
 
 impl LayoutElement for RawSelectableText {
+    /// Left out of the event index's cached rectangles.
+    ///
+    /// This text sits where its render node is, and a scroll moves that node
+    /// without invalidating layout. A rectangle cached at index time would go
+    /// on describing where it *was*: after a scroll only the strip where the
+    /// old and the new position overlap would still take a press. Dispatch
+    /// checks the live bounds instead, as it does for a `GestureDetector`.
+    #[inline]
+    fn event_tree_bounds(&self) -> Option<(aimer_attribute::Vec2d, aimer_attribute::Vec2d)> {
+        None
+    }
+
     fn computed_size(&self, ctx: &BuildContext) -> ResolvedSize {
         self.paragraph.prepare_for_paint(ctx).size
     }

@@ -15,9 +15,9 @@
 //! ```
 //! use aimer_attribute::position::Vec2d;
 //! use aimer_events::pointer::{PointerEvent, PointerInfo};
-//! use aimer_input::gesture::recognize::recognize;
-//! use aimer_input::gesture::state::GestureState;
-//! use aimer_input::gesture::{GestureEvent, GestureMask};
+//! use aimer_gesture::recognize::recognize;
+//! use aimer_gesture::state::GestureState;
+//! use aimer_gesture::{GestureEvent, GestureMask};
 //! use aimer_utils::AnimInstant;
 //!
 //! let mut state = GestureState::default();
@@ -40,8 +40,8 @@ use aimer_events::pointer::{PointerEvent, PointerInfo};
 use aimer_utils::AnimInstant;
 
 use super::{GestureEvent, GestureMask, GestureOutput};
-use crate::gesture::STALE_GESTURE_TOUCH_MS;
-use crate::gesture::state::GestureState;
+use crate::STALE_GESTURE_TOUCH_MS;
+use crate::state::GestureState;
 
 /// Advances the state machine by one pointer event and reports what the user
 /// did.
@@ -194,9 +194,9 @@ pub fn recognize_claiming(
 ///
 /// use aimer_attribute::position::Vec2d;
 /// use aimer_events::pointer::{PointerEvent, PointerInfo};
-/// use aimer_input::gesture::recognize::{poll, recognize};
-/// use aimer_input::gesture::state::GestureState;
-/// use aimer_input::gesture::{GestureEvent, GestureMask, LONG_PRESS_DURATION};
+/// use aimer_gesture::recognize::{poll, recognize};
+/// use aimer_gesture::state::GestureState;
+/// use aimer_gesture::{GestureEvent, GestureMask, LONG_PRESS_DURATION};
 /// use aimer_utils::AnimInstant;
 ///
 /// let mut state = GestureState::default();
@@ -341,7 +341,7 @@ mod tests {
     use aimer_events::pointer::{PointerButton, PointerInfo};
 
     use super::*;
-    use crate::gesture::{DOUBLE_TAP_TIMEOUT, LONG_PRESS_DURATION, SwipeDirection};
+    use crate::{DOUBLE_TAP_TIMEOUT, LONG_PRESS_DURATION, SwipeDirection};
 
     /// A clock a test drives by hand, so a 500 ms threshold costs no wall time.
     struct Clock {

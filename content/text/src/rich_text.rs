@@ -763,6 +763,18 @@ impl LayoutElement for RawRichText {
         self.paragraph.invalidate();
     }
 
+    /// Left out of the event index's cached rectangles.
+    ///
+    /// This text sits where its render node is, and a scroll moves that node
+    /// without invalidating layout. A rectangle cached at index time would go
+    /// on describing where it *was*: after a scroll only the strip where the
+    /// old and the new position overlap would still take a press. Dispatch
+    /// checks the live bounds instead, as it does for a `GestureDetector`.
+    #[inline]
+    fn event_tree_bounds(&self) -> Option<(aimer_attribute::Vec2d, aimer_attribute::Vec2d)> {
+        None
+    }
+
     /// The box this text painted, grown to cover the knobs of a selection it
     /// owns.
     ///

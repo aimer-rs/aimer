@@ -32,7 +32,7 @@ pub const MAX_TRACKED_TOUCHES: usize = 4;
 /// ```
 /// use aimer_attribute::position::Vec2d;
 /// use aimer_events::pointer::{PointerInfo, PointerSource};
-/// use aimer_input::gesture::state::ActiveTouches;
+/// use aimer_gesture::state::ActiveTouches;
 ///
 /// let mut touches = ActiveTouches::default();
 /// touches.insert(PointerInfo::touch(Vec2d { x: 0.0, y: 0.0 }, 1));

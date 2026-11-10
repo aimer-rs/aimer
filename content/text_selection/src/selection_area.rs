@@ -8,9 +8,9 @@ use aimer_widget::{
     RawFocusable, Rebuildable, RequiredChild, VisitorElement, Widget,
 };
 
-use crate::selection::selectable::{SelectionScope, selection_coordinator};
-use crate::selection::session::SelectionSession;
-use crate::selection::ui;
+use crate::selectable::{SelectionScope, selection_coordinator};
+use crate::session::SelectionSession;
+use crate::ui;
 
 /// The default highlight color of a selection region.
 const DEFAULT_SELECTION_COLOR: Color = Color::Rgba(51, 153, 255, 96);
@@ -20,7 +20,7 @@ const DEFAULT_SELECTION_COLOR: Color = Color::Rgba(51, 153, 255, 96);
 /// Inside a `SelectionArea` a drag that starts in one text and ends in another
 /// selects the suffix of the first, all of the widgets in between and the prefix
 /// of the last — including across the empty gaps between them. Plain
-/// [`Text`](crate::Text) becomes selectable simply by being inside the region;
+/// `Text` becomes selectable simply by being inside the region;
 /// outside one it stays the non-selectable fast path and pays nothing.
 ///
 /// The region also owns the keyboard: `Ctrl`/`Cmd` + `A` selects every text in
@@ -164,7 +164,7 @@ impl<W: Widget + 'static> Widget for SelectionArea<W> {
 /// Holding the focus is also how the region hears about the presses it is never
 /// offered: routing hit-tests, so a press outside its bounds reaches whatever is
 /// under it and nothing else — but it moves the focus all the same, and
-/// [`SelectionSession::blur`](crate::selection::session::SelectionSession::blur)
+/// [`SelectionSession::blur`](crate::session::SelectionSession::blur)
 /// answers that. The notification travels back down into the region, so the
 /// element below still handles [`ElementEvent::FocusLost`] itself.
 fn focus_target(session: &Rc<SelectionSession>, region: AnyElement) -> AnyElement {
@@ -186,8 +186,8 @@ fn focus_target(session: &Rc<SelectionSession>, region: AnyElement) -> AnyElemen
 /// held by the [`RawFocusable`] wrapped around it by [`focus_target`], which is
 /// the same attachment every other focusable region of the framework uses.
 pub struct SelectionAreaElement {
-    pub(crate) session: Rc<SelectionSession>,
-    pub(crate) child: AnyElement,
+    pub session: Rc<SelectionSession>,
+    pub child: AnyElement,
 }
 
 impl SelectionAreaElement {
@@ -265,6 +265,18 @@ impl LayoutElement for SelectionAreaElement {
 
     fn invalidate_layout(&self) {
         self.child.invalidate_layout();
+    }
+
+    /// Left out of the event index's cached rectangles.
+    ///
+    /// The region sits where its child's render node is, and a scroll moves that node
+    /// without invalidating layout. A rectangle cached at index time would go
+    /// on describing where it *was*: after a scroll only the strip where the
+    /// old and the new position overlap would still take a press. Dispatch
+    /// checks the live bounds instead, as it does for a `GestureDetector`.
+    #[inline]
+    fn event_tree_bounds(&self) -> Option<(Vec2d, Vec2d)> {
+        None
     }
 
     /// The box its child painted, grown to cover the selection's knobs.
@@ -369,10 +381,10 @@ mod tests {
     use aimer_widget::base::WindowHandle;
 
     use super::*;
-    use crate::selection::TextHitRegion;
-    use crate::selection::handles::HandleSide;
-    use crate::selection::selectable::{SelectionCoordinator, TextGeometry};
-    use crate::selection::session::SelectionSlot;
+    use crate::TextHitRegion;
+    use crate::handles::HandleSide;
+    use crate::selectable::{SelectionCoordinator, TextGeometry};
+    use crate::session::SelectionSlot;
 
     /// A child that occupies a fixed rectangle and never handles anything.
     struct StubChild {
@@ -737,7 +749,7 @@ mod tests {
         let (region, slot, _geometry) = region();
         let pointer = PointerKey::new(PointerSource::Mouse, 0);
         region.session.begin(
-            crate::selection::SelectionPoint::new(Rc::clone(&slot), 0),
+            crate::SelectionPoint::new(Rc::clone(&slot), 0),
             pointer,
         );
         region.session.extend_to_position(9.0, 10.0, pointer);

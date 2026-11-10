@@ -7,7 +7,7 @@
 //! the same two fingers.
 //!
 //! Measured between the two contacts that arrived first, which is why
-//! [`crate::gesture::state::ActiveTouches`] preserves arrival order: reading the
+//! [`crate::state::ActiveTouches`] preserves arrival order: reading the
 //! pair from a hash map, as this once did, could swap the reference points
 //! between two moves of the same pinch and make the reported scale jump.
 
@@ -15,8 +15,8 @@ use std::f32::consts::{PI, TAU};
 
 use aimer_events::pointer::PointerInfo;
 
-use crate::gesture::state::{GestureState, Pinch};
-use crate::gesture::{GestureEvent, GestureOutput};
+use crate::state::{GestureState, Pinch};
+use crate::{GestureEvent, GestureOutput};
 
 /// The direction of the line from `first` to `second`, in radians.
 ///

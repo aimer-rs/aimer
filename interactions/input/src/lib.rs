@@ -1,5 +1,8 @@
 mod editable_text;
-pub mod gesture;
+/// Gesture recognition lives in `aimer_gesture`, below `aimer_text`, so text
+/// selection can share the detector. It is re-exported here so existing
+/// `aimer_input::gesture::*` paths keep working.
+pub use aimer_gesture as gesture;
 mod input_field;
 pub mod mouse_region;
 mod text_area;

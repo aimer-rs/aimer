@@ -23,7 +23,7 @@ use aimer_widget::base::WindowHandle;
 /// cursor.apply(&window, &event, true, false, true); // I-beam over glyphs
 /// ```
 #[derive(Default)]
-pub(crate) struct HoverCursor {
+pub struct HoverCursor {
     current: Cell<Option<CursorIcon>>,
 }
 
@@ -103,7 +103,7 @@ impl HoverCursor {
     }
 
     /// The shape this element currently owns, if any.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn owned(&self) -> Option<CursorIcon> {
         self.current.get()
     }

@@ -1,0 +1,20 @@
+[package]
+name = "aimer_gesture"
+version = "0.1.0"
+edition = "2024"
+resolver = "3"
+
+[dependencies]
+aimer_widget.workspace = true
+aimer_attribute.workspace = true
+aimer_events.workspace = true
+aimer_utils.workspace = true
+aimer_canvas.workspace = true
+
+[dev-dependencies]
+aimer_text.workspace = true
+aimer_cupid.workspace = true
+winit.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

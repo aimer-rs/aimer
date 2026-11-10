@@ -10,7 +10,7 @@ use aimer_widget::{AnyElement, Element, LayoutCache, Widget};
 use crate::selection::selectable::SelectionScope;
 use crate::text::raw_text::RawTextWidget;
 use crate::text::selectable_text::RawSelectableText;
-use crate::text_source::TextSource;
+use crate::TextSource;
 
 /// The highlight color a selectable `Text` falls back to when it somehow sits
 /// outside a region; regions always supply their own.
@@ -213,7 +213,7 @@ mod tests {
     use super::{RawTextWidget, Text};
     use crate::selection::selectable::{SelectionCoordinator, SelectionScope};
     use crate::selection::session::SelectionSession;
-    use crate::text_source::TextSource;
+    use crate::TextSource;
 
     /// The debug name of the non-selectable fast path.
     const RAW_TEXT_NAME: &str = "RawTextWidget";

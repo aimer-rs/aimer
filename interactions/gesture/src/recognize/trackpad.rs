@@ -20,8 +20,8 @@
 use aimer_attribute::position::Vec2d;
 use aimer_events::element::TouchPhase;
 
-use crate::gesture::state::{GestureState, PlatformTransform};
-use crate::gesture::{GestureEvent, GestureOutput};
+use crate::state::{GestureState, PlatformTransform};
+use crate::{GestureEvent, GestureOutput};
 
 /// The smallest factor one platform step may scale by.
 ///
@@ -472,7 +472,7 @@ mod tests {
 
     #[test]
     fn a_platform_pinch_stands_down_while_two_fingers_are_pinching() {
-        use crate::gesture::state::Pinch;
+        use crate::state::Pinch;
 
         let mut state = GestureState {
             pinch: Some(Pinch {

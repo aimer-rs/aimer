@@ -12,7 +12,7 @@ use aimer_widget::{TextOverflowMode, *};
 
 use crate::paragraph::Paragraph;
 use crate::paragraph::geometry::{DecorationPaint, prepare_decoration_paint};
-use crate::text_source::TextSource;
+use crate::TextSource;
 use crate::text_span::ResolvedTextSpan;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -610,7 +610,7 @@ mod tests {
     use aimer_style::{LineHeight, TextAlign, TextShadow, TextStyle};
     use aimer_widget::{Drawable, LayoutCache, LayoutElement};
 
-    use crate::text_source::TextSource;
+    use crate::TextSource;
 
     use super::{RawTextWidget, horizontal_alignment_offset, vertical_alignment_baseline};
 

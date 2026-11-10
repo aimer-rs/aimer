@@ -26,12 +26,14 @@ aimer_clipboard.workspace = true
 aimer_haptics.workspace = true
 aimer_rubick.workspace = true
 aimer_utils.workspace = true
+aimer_text_selection.workspace = true
 unicode-linebreak.workspace = true
 unicode-segmentation.workspace = true
 unicode-bidi.workspace = true
 
 [dev-dependencies]
 winit.workspace = true
+aimer_text_selection = { workspace = true, features = ["test-support"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["rt"] }

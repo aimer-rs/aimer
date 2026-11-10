@@ -9,8 +9,8 @@
 
 use aimer_events::pointer::PointerButton;
 
-use crate::callback::{CallbackExecutor, VoidCallback};
-use crate::gesture::{
+use aimer_utils::callback::{CallbackExecutor, VoidCallback};
+use crate::{
     DragCallback, DragUpdateCallback, DragUpdateData, GestureEvent, GestureMask, GestureOutput,
     GestureStreamCallback, PanCallback, PanData, ScaleCallback, ScaleData, ScrollCallback,
     ScrollData, SmartZoomCallback, SmartZoomData, SwipeCallback,
@@ -93,12 +93,11 @@ impl GestureHandlers {
     ///
     /// The same distinction as [`Self::consumes_scroll`], for the same reason: a
     /// platform pinch carries no contact to capture, so it is delivered to every
-    /// detector under the cursor, innermost first. A [`Button`] that watches its
+    /// detector under the cursor, innermost first. A `Button` that watches its
     /// press through `on_gesture` must not swallow the trackpad pinch meant for
     /// the zoomable canvas it sits on. Only a handler installed for the gesture
     /// itself claims it.
     ///
-    /// [`Button`]: crate::button::Button
     #[inline]
     pub const fn claims(&self, gestures: GestureMask) -> bool {
         self.claims.intersects(gestures)
@@ -294,7 +293,7 @@ mod tests {
     use aimer_events::pointer::PointerInfo;
 
     use super::*;
-    use crate::gesture::SwipeDirection;
+    use crate::SwipeDirection;
 
     fn mouse(button: PointerButton) -> PointerInfo {
         PointerInfo::mouse(Vec2d { x: 4.0, y: 4.0 }, button)

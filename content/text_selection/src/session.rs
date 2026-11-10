@@ -8,10 +8,10 @@ use aimer_widget::base::{Color, WindowHandle};
 use aimer_widget::{FocusNode, PointerKey, claim_pointer, is_pointer_claimed, release_pointer};
 
 use crate::TextSource;
-use crate::selection::handles::HandleSide;
-use crate::selection::selectable::{Selectable, SelectionCoordinator};
-use crate::selection::ui::SelectionUi;
-use crate::selection::{PointSelection, SelectionPoint, SelectionState};
+use crate::handles::HandleSide;
+use crate::selectable::{Selectable, SelectionCoordinator};
+use crate::ui::SelectionUi;
+use crate::{PointSelection, SelectionPoint, SelectionState};
 
 /// A participant's registration inside a [`SelectionSession`].
 ///
@@ -26,7 +26,7 @@ use crate::selection::{PointSelection, SelectionPoint, SelectionState};
 /// slot.stamp();
 /// assert_eq!(slot.text().as_ref(), "Title");
 /// ```
-pub(crate) struct SelectionSlot {
+pub struct SelectionSlot {
     session: Weak<SelectionSession>,
     text: RefCell<TextSource>,
     draw_stamp: Cell<u64>,
@@ -121,7 +121,7 @@ impl SelectionSlot {
 /// session.select_all();
 /// assert_eq!(session.selected_text(), "Hello");
 /// ```
-pub(crate) struct SelectionSession {
+pub struct SelectionSession {
     slots: RefCell<Vec<Weak<SelectionSlot>>>,
     state: RefCell<SelectionState>,
     next_stamp: Cell<u64>,
@@ -140,7 +140,7 @@ pub(crate) struct SelectionSession {
     coordinator: Rc<SelectionCoordinator>,
     selection_color: Color,
     /// The knobs and the callout offered on top of the selection.
-    pub(crate) ui: SelectionUi,
+    pub ui: SelectionUi,
 }
 
 impl SelectionSession {
@@ -551,7 +551,7 @@ impl SelectionSession {
     }
 
     /// Replaces the selection with a range inside one participant.
-    pub(crate) fn set_local_range(
+    pub fn set_local_range(
         self: &Rc<Self>,
         slot: &Rc<SelectionSlot>,
         anchor: usize,
@@ -749,8 +749,8 @@ mod tests {
 
     use super::{SelectionSession, SelectionSlot};
     use crate::TextSource;
-    use crate::selection::selectable::{SelectionCoordinator, TextGeometry};
-    use crate::selection::{SelectionPoint, TextHitRegion};
+    use crate::selectable::{SelectionCoordinator, TextGeometry};
+    use crate::{SelectionPoint, TextHitRegion};
 
     const SELECTION_COLOR: Color = Color::Rgba(51, 153, 255, 96);
 

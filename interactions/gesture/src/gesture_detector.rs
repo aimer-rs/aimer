@@ -2,9 +2,9 @@
 //!
 //! [`GestureDetector`] is deliberately thin: it translates
 //! [`ElementEvent`] into [`PointerEvent`], calls
-//! [`recognize`](crate::gesture::recognize::recognize), and hands the result to
+//! [`recognize`](crate::recognize::recognize), and hands the result to
 //! [`GestureHandlers`]. All the interesting behaviour lives in
-//! [`crate::gesture::recognize`], where it can be tested without a window.
+//! [`crate::recognize`], where it can be tested without a window.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,11 +21,11 @@ use aimer_widget::{
     LayoutElement, PointerKey, Rebuildable, RequiredChild, VisitorElement, Widget,
 };
 
-use crate::callback::VoidCallback;
-use crate::gesture::handlers::GestureHandlers;
-use crate::gesture::recognize::{poll, recognize_claiming};
-use crate::gesture::state::GestureState;
-use crate::gesture::{
+use aimer_utils::callback::VoidCallback;
+use crate::handlers::GestureHandlers;
+use crate::recognize::{poll, recognize_claiming};
+use crate::state::GestureState;
+use crate::{
     DragCallback, DragUpdateCallback, GestureMask, GestureStreamCallback, PanCallback,
     ScaleCallback, ScrollCallback, SmartZoomCallback, SwipeCallback,
 };
@@ -65,7 +65,7 @@ impl Default for GestureDetectorBehavior {
 /// The common gestures have one-line setters:
 ///
 /// ```
-/// use aimer_input::gesture::gesture_detector::GestureDetector;
+/// use aimer_gesture::gesture_detector::GestureDetector;
 /// use aimer_text::Text;
 ///
 /// let detector = GestureDetector::new()
@@ -80,8 +80,8 @@ impl Default for GestureDetectorBehavior {
 /// multi-finger pan ([`GestureDetector::on_pan`]):
 ///
 /// ```
-/// use aimer_input::gesture::gesture_detector::GestureDetector;
-/// use aimer_input::gesture::{ScaleData, SmartZoomData};
+/// use aimer_gesture::gesture_detector::GestureDetector;
+/// use aimer_gesture::{ScaleData, SmartZoomData};
 /// use aimer_text::Text;
 ///
 /// let photo = GestureDetector::new()
@@ -105,8 +105,8 @@ impl Default for GestureDetectorBehavior {
 ///
 /// ```
 /// use aimer_events::pointer::PointerButton;
-/// use aimer_input::gesture::GestureEvent;
-/// use aimer_input::gesture::gesture_detector::GestureDetector;
+/// use aimer_gesture::GestureEvent;
+/// use aimer_gesture::gesture_detector::GestureDetector;
 /// use aimer_text::Text;
 ///
 /// let detector = GestureDetector::new()
@@ -202,23 +202,23 @@ builder_setters! {
     on_drag_start => set_on_drag_start: DragCallback,
         "Sets the handler fired when movement first exceeds the pointer's slop.\n\nThe handler receives the position the press *started* at, so a dragged widget does not jump by the slop distance as it picks up.";
     on_drag_update => set_on_drag_update: DragUpdateCallback,
-        "Sets the handler fired for movement while a drag is active.\n\n[`crate::gesture::DragUpdateData`] reports the current position and the delta since the previous update.";
+        "Sets the handler fired for movement while a drag is active.\n\n[`crate::DragUpdateData`] reports the current position and the delta since the previous update.";
     on_drag_end => set_on_drag_end: VoidCallback,
         "Sets the handler fired when an active drag ends.\n\nA flick fires this *and* [`Self::on_swipe`], in that order.";
     on_right_tap => set_on_right_tap: VoidCallback,
         "Sets the handler for a completed secondary-button tap.";
     on_swipe => set_on_swipe: SwipeCallback,
-        "Sets the handler for a fast directional drag recognized as a swipe.\n\nThe handler receives the resulting [`crate::gesture::SwipeDirection`].";
+        "Sets the handler for a fast directional drag recognized as a swipe.\n\nThe handler receives the resulting [`crate::SwipeDirection`].";
     on_scroll => set_on_scroll: ScrollCallback,
         "Sets the handler for mouse-wheel or trackpad scrolling over the child.\n\nInstalling this causes the detector to consume matching scroll events; without it, those events fall through to lower layers.";
     on_scale => set_on_scale: ScaleCallback,
-        "Sets the handler for a pinch, rotation or two-finger pan, from touch contacts or from the trackpad.\n\n[`crate::gesture::ScaleData`] reports the scale and rotation relative to the start of the gesture and since the previous update. A touch pinch measures them between the two contacts that arrived first; a trackpad pinch or twist is reported by the platform, so the focal point stays where the cursor was and does not move. The detector consumes the trackpad's pinch and rotate events only when this is set.";
+        "Sets the handler for a pinch, rotation or two-finger pan, from touch contacts or from the trackpad.\n\n[`crate::ScaleData`] reports the scale and rotation relative to the start of the gesture and since the previous update. A touch pinch measures them between the two contacts that arrived first; a trackpad pinch or twist is reported by the platform, so the focal point stays where the cursor was and does not move. The detector consumes the trackpad's pinch and rotate events only when this is set.";
     on_pan => set_on_pan: PanCallback,
         "Sets the handler for a platform multi-finger pan, such as an N-finger pan on iOS.\n\nThis is not the single-pointer drag: use [`Self::on_drag_update`] for that, and [`Self::on_scale`] for the pan of two touch contacts. The detector consumes the platform's pan events only when this is set.";
     on_smart_zoom => set_on_smart_zoom: SmartZoomCallback,
-        "Sets the handler for the platform's smart-zoom gesture, a two-finger double tap on a macOS trackpad.\n\nConventionally it toggles the content between fitted and actual size around [`crate::gesture::SmartZoomData`]'s point. The detector consumes the event only when this is set.";
+        "Sets the handler for the platform's smart-zoom gesture, a two-finger double tap on a macOS trackpad.\n\nConventionally it toggles the content between fitted and actual size around [`crate::SmartZoomData`]'s point. The detector consumes the event only when this is set.";
     on_gesture => set_on_gesture: GestureStreamCallback,
-        "Sets the handler that receives every recognized gesture.\n\nThe escape hatch: a gesture with no setter of its own — the press lifecycle, the long-press start/move/end triple, drag cancellation, the scale and pan boundaries, a middle click — is read here. A new gesture is therefore a new [`crate::gesture::GestureEvent`] variant, not a new field on this struct.";
+        "Sets the handler that receives every recognized gesture.\n\nThe escape hatch: a gesture with no setter of its own — the press lifecycle, the long-press start/move/end triple, drag cancellation, the scale and pan boundaries, a middle click — is read here. A new gesture is therefore a new [`crate::GestureEvent`] variant, not a new field on this struct.";
 }
 
 impl<W> GestureDetector<W> {
@@ -303,7 +303,7 @@ impl<W: Widget + 'static> Widget for GestureDetector<W> {
 /// child.
 ///
 /// It renders nothing of its own — pressed overlays and hover effects belong to
-/// higher-level widgets such as [`crate::button::Button`] — and mirrors Flutter's
+/// higher-level widgets such as `Button` — and mirrors Flutter's
 /// `GestureDetector` in that respect.
 pub struct RawGestureDetector<E: Element> {
     pub child: E,
@@ -553,7 +553,7 @@ impl<E: Element> EventElement for RawGestureDetector<E> {
         // scroll view stand down whenever the first sample past the press already
         // travelled beyond the tap slop, which is every fast flick.
         if self.handlers.owns_drag()
-            && output.iter().any(|gesture| matches!(gesture, crate::gesture::GestureEvent::DragStart { .. }))
+            && output.iter().any(|gesture| matches!(gesture, crate::GestureEvent::DragStart { .. }))
         {
             aimer_widget::claim_pointer(aimer_widget::PointerKey::new(pointer.source, pointer.id));
         }
@@ -665,7 +665,7 @@ impl<E: Element + 'static> Rebuildable for RawGestureDetector<E> {
     ///
     /// A gesture outlives the element that started it. `TapDown` fires while the
     /// pointer is still down, so anything that reacts to a press — a
-    /// [`crate::button::Button`] darkening itself, a row highlighting — calls
+    /// `Button` darkening itself, a row highlighting — calls
     /// `set_state`, and that rebuild replaces every element below it, this one
     /// included. A replacement starting from nothing would find no press when
     /// the release arrived and report no tap at all: the button would light up
@@ -701,8 +701,8 @@ mod tests {
     use aimer_widget::{CaptureRequest, broadcast_event, dispatch_event, dispatch_focused_event};
 
     use super::*;
-    use crate::gesture::state::Press;
-    use crate::gesture::{GestureMask, ScaleData, ScrollData, SwipeDirection};
+    use crate::state::Press;
+    use crate::{GestureMask, ScaleData, ScrollData, SwipeDirection};
 
     struct TestWidget;
 
@@ -880,7 +880,7 @@ mod tests {
             .on_double_press(|| {})
             .on_long_press(|| {})
             .on_drag_start(|_: PointerInfo| {})
-            .on_drag_update(|_: crate::gesture::DragUpdateData| {})
+            .on_drag_update(|_: crate::DragUpdateData| {})
             .on_drag_end(|| {})
             .on_right_tap(|| {})
             .on_swipe(|_: SwipeDirection| {})
@@ -1003,7 +1003,7 @@ mod tests {
     #[test]
     fn a_raw_gesture_handler_asks_for_every_gesture() {
         let detector = GestureDetector::new()
-            .on_gesture(|_: crate::gesture::GestureEvent| {})
+            .on_gesture(|_: crate::GestureEvent| {})
             .child(TestWidget);
 
         assert!(detector.handlers.mask().contains(GestureMask::SCALE));
@@ -1426,7 +1426,7 @@ mod tests {
 
     use aimer_events::element::TouchPhase;
 
-    use crate::gesture::{GestureEvent, PanData, SmartZoomData};
+    use crate::{GestureEvent, PanData, SmartZoomData};
 
     const CURSOR: Vec2d = Vec2d { x: 30.0, y: 40.0 };
 

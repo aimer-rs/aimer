@@ -7,8 +7,8 @@
 use aimer_events::pointer::PointerInfo;
 use aimer_utils::AnimInstant;
 
-use crate::gesture::state::{Drag, GestureState, moved_beyond_slop};
-use crate::gesture::{
+use crate::state::{Drag, GestureState, moved_beyond_slop};
+use crate::{
     GestureEvent, GestureMask, GestureOutput, SWIPE_MAX_DURATION_MS, SWIPE_VELOCITY_THRESHOLD,
     SwipeDirection,
 };
@@ -140,7 +140,7 @@ mod tests {
     use aimer_attribute::position::Vec2d;
 
     use super::*;
-    use crate::gesture::state::Press;
+    use crate::state::Press;
 
     fn touch(x: f32, y: f32) -> PointerInfo {
         PointerInfo::touch(Vec2d { x, y }, 0)

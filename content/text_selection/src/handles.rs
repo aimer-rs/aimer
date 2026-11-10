@@ -14,17 +14,17 @@
 use aimer_attribute::Bounds;
 
 /// Radius of the round knob, in logical pixels.
-pub(crate) const HANDLE_RADIUS: f32 = 6.0;
+pub const HANDLE_RADIUS: f32 = 6.0;
 
 /// Width of the bar drawn along the caret, in logical pixels.
-pub(crate) const HANDLE_BAR_WIDTH: f32 = 2.0;
+pub const HANDLE_BAR_WIDTH: f32 = 2.0;
 
 /// How far outside the knob a press still grabs it, in logical pixels.
 ///
 /// A fingertip is about nine millimetres across and lands where it *looks*,
 /// which is above where it touches, so the grabbable area is far larger than
 /// the twelve-pixel dot it grabs.
-pub(crate) const HANDLE_TOUCH_SLOP: f32 = 12.0;
+pub const HANDLE_TOUCH_SLOP: f32 = 12.0;
 
 /// Which end of the selection a knob belongs to.
 ///
@@ -32,7 +32,7 @@ pub(crate) const HANDLE_TOUCH_SLOP: f32 = 12.0;
 /// is always the earlier point in the text, whichever end the finger began
 /// from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum HandleSide {
+pub enum HandleSide {
     /// The knob at the beginning of the selection, drawn above its caret.
     Start,
     /// The knob at the end of the selection, drawn below its caret.
@@ -51,7 +51,7 @@ pub(crate) enum HandleSide {
 /// assert!(knob.contains(21.0, 34.0));
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct HandleCircle {
+pub struct HandleCircle {
     pub center_x: f32,
     pub center_y: f32,
     /// The caret the knob is attached to, which is drawn as the bar.
@@ -133,7 +133,7 @@ impl HandleCircle {
 /// this much. Purely the union of the two [`HandleCircle::grab_bounds`]: the
 /// area between them belongs to the text, which is already claiming it.
 #[inline]
-pub(crate) fn grab_span(start: HandleCircle, end: HandleCircle) -> Bounds {
+pub fn grab_span(start: HandleCircle, end: HandleCircle) -> Bounds {
     let start = start.grab_bounds();
     let end = end.grab_bounds();
     let x = start.x.min(end.x);
@@ -145,7 +145,7 @@ pub(crate) fn grab_span(start: HandleCircle, end: HandleCircle) -> Bounds {
 
 /// Picks the knob a press grabbed, preferring the nearer one when the two
 /// overlap on a very short selection.
-pub(crate) fn handle_at(
+pub fn handle_at(
     start: HandleCircle,
     end: HandleCircle,
     x: f32,
