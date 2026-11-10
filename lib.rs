@@ -36,6 +36,7 @@ pub use aimer_dnd::{
 };
 pub use aimer_events as events;
 pub use aimer_events::element::ElementEvent;
+#[cfg(feature = "device")]
 pub use aimer_device as device;
 pub use aimer_feedback as feedback;
 pub use aimer_flex::*;
@@ -45,10 +46,15 @@ pub use aimer_focus::{
     FocusTrap, FocusTrapId, active_focus_trap,
 };
 pub use aimer_form as form;
+#[cfg(feature = "haptics")]
 pub use aimer_haptics as haptics;
+#[cfg(feature = "file-picker")]
 pub use aimer_file_picker as file_picker;
+#[cfg(feature = "image-picker")]
 pub use aimer_image_picker as image_picker;
+#[cfg(feature = "audio")]
 pub use aimer_audio as audio;
+#[cfg(feature = "video")]
 pub use aimer_video as video;
 pub use aimer_i18n as i18n;
 pub use aimer_indicator as indicator;
@@ -151,8 +157,10 @@ pub fn lucide_tray_icon(
     let raster = aimer_lucide::rasterize(icon, size, color);
     tray::TrayIcon::from_rgba(raster.width(), raster.height(), raster.into_rgba())
 }
+#[cfg(feature = "custom-paint")]
 pub use aimer_custom_paint::{CanvasPainter, CustomPaint};
 /// Application-defined shader effects; see [`effects::ShaderEffect`].
+#[cfg(feature = "effects")]
 pub use aimer_effect_pipeline as effects;
 pub use aimer_scroll::*;
 pub use aimer_space::*;
@@ -239,6 +247,7 @@ pub mod console {
 }
 
 // wasm dependencies
+#[cfg(feature = "provider")]
 pub use aimer_provider as provider;
 pub use aimer_router as router;
 #[doc(hidden)]
@@ -2794,6 +2803,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             assert_eq!(begin.lerp(&end, 0.5), GenericTheme { value: 4.0 });
         }
 
+        #[cfg(feature = "provider")]
         #[test]
         fn derived_theme_exposes_snapshot_and_copy_lookup_signatures() {
             let _: fn(&BuildContext) -> aimer::provider::Snapshot<AppTheme> = AppTheme::of;
