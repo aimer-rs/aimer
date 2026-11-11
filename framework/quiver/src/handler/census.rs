@@ -57,7 +57,74 @@ pub struct PaintSourceCensus {
     pub invalid_bounds: Vec<CensusElement>,
 }
 
+/// How many elements of one type record draw commands.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PaintOwnerCount {
+    /// Elements of this type under the root.
+    pub elements: usize,
+    /// Of those, elements whose render node holds at least one command.
+    pub with_commands: usize,
+    /// Total commands recorded by this type.
+    pub commands: usize,
+    /// Elements whose node never recorded a paint (`Unresolved`): the walk has
+    /// not reached them, for example rows outside the scroll window.
+    pub unresolved: usize,
+    /// Resolved elements that have exactly one retained child and record
+    /// nothing: a wrapper that only passes the walk through.
+    pub pass_through: usize,
+}
+
+/// Which element types record draw commands, for deciding which layers of a
+/// wrapper chain could skip the per-element paint pipeline.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct PaintOwnerCensus {
+    /// Counts by element `debug_name`.
+    pub by_type: std::collections::BTreeMap<&'static str, PaintOwnerCount>,
+    /// All elements visited.
+    pub elements: usize,
+    /// Elements without a render node.
+    pub unmapped: usize,
+}
+
 impl WindowRenderTree {
+    /// Counts, per element type, how many elements record draw commands.
+    pub(crate) fn paint_owner_census(&self, root: &dyn Element) -> PaintOwnerCensus {
+        fn walk(tree: &WindowRenderTree, element: &dyn Element, out: &mut PaintOwnerCensus) {
+            out.elements += 1;
+            let node = tree.node_for_element(element.id());
+            let resolved = node.is_some_and(|node| {
+                tree.tree.paint_source(node).ok() == Some(RenderPaintSource::LocalV2)
+            });
+            let commands = match node {
+                Some(node) if resolved => tree
+                    .tree
+                    .draw_list_snapshot(node)
+                    .map_or(0, |snapshot| snapshot.commands.len()),
+                Some(_) => 0,
+                None => {
+                    out.unmapped += 1;
+                    0
+                }
+            };
+            let mut children = 0usize;
+            element.visit_retained_v2_children(&mut |_, _| children += 1);
+            let count = out.by_type.entry(element.debug_name()).or_default();
+            count.elements += 1;
+            count.commands += commands;
+            if !resolved {
+                count.unresolved += 1;
+            } else if commands > 0 {
+                count.with_commands += 1;
+            } else if children == 1 {
+                count.pass_through += 1;
+            }
+            element.visit_retained_v2_children(&mut |_, child| walk(tree, child, out));
+        }
+        let mut out = PaintOwnerCensus::default();
+        walk(self, root, &mut out);
+        out
+    }
+
     /// Logs the census, and the element types behind every island, whenever it
     /// differs from the last reported one.
     #[cfg(feature = "frame-stats")]

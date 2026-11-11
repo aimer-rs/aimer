@@ -598,6 +598,58 @@ fn profile_resize_frames() {
     }
 }
 
+/// Prints, per element type, how many elements of the showcase scene record
+/// draw commands and how many only pass the walk to a single child.
+///
+/// Run with `cargo test -p jaime --lib -- --ignored --nocapture
+/// profile_paint_owner_census`. It prints counts only; it asserts nothing.
+#[test]
+#[ignore = "profiling harness: prints counts and asserts nothing"]
+fn profile_paint_owner_census() {
+    use aimer::HeadlessOptions;
+    use aimer::quiver::winit::dpi::PhysicalSize;
+
+    let mut app = AimerApp::start_headless_with(
+        theme::provide(ExampleShowcase::new().boxed()),
+        HeadlessOptions {
+            size: PhysicalSize::new(2560, 1600),
+            scale_factor: 2.0,
+        },
+    );
+    app.pump_frames(8);
+    let census = app
+        .paint_owner_census()
+        .expect("the showcase is mounted after 8 frames");
+    let (mut with_commands, mut pass_through, mut unresolved) = (0, 0, 0);
+    let mut rows: Vec<_> = census.by_type.iter().collect();
+    rows.sort_by_key(|(_, count)| std::cmp::Reverse(count.elements));
+    for (name, count) in &rows {
+        with_commands += count.with_commands;
+        pass_through += count.pass_through;
+        unresolved += count.unresolved;
+        // Generic arguments make names unreadable; keep the type itself.
+        let short = name.split('<').next().unwrap_or(name);
+        eprintln!(
+            "=== census {:>5} elements {:>5} record {:>5} pass-through {:>5} unresolved {:>6} cmds  {}",
+            count.elements,
+            count.with_commands,
+            count.pass_through,
+            count.unresolved,
+            count.commands,
+            short
+        );
+    }
+    eprintln!(
+        "=== census TOTAL {} elements (unmapped {}): {} unresolved (never walked), {} record commands, {} single-child pass-through, {} other resolved",
+        census.elements,
+        census.unmapped,
+        unresolved,
+        with_commands,
+        pass_through,
+        census.elements - unresolved - with_commands - pass_through
+    );
+}
+
 /// Prints one window of the geometry-walk probe (counts need
 /// `--features aimer/frame-stats`; all zero otherwise).
 fn print_geometry_walk(

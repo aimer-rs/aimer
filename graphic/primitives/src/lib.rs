@@ -19,6 +19,7 @@ pub struct Rect {
 }
 
 impl Rect {
+    #[inline(always)]
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             x,
@@ -31,25 +32,25 @@ impl Rect {
 
 impl Rect {
     /// Returns this rectangle moved by `(x, y)`.
-    #[inline]
+    #[inline(always)]
     pub fn translated(self, x: f32, y: f32) -> Self {
         Self::new(self.x + x, self.y + y, self.width, self.height)
     }
 
     /// Returns the x coordinate of the right edge.
-    #[inline]
+    #[inline(always)]
     pub fn right(self) -> f32 {
         self.x + self.width
     }
 
     /// Returns the y coordinate of the bottom edge.
-    #[inline]
+    #[inline(always)]
     pub fn bottom(self) -> f32 {
         self.y + self.height
     }
 
     /// Returns whether every component is finite and the size is non-negative.
-    #[inline]
+    #[inline(always)]
     pub fn is_valid(self) -> bool {
         self.x.is_finite()
             && self.y.is_finite()

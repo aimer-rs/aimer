@@ -97,7 +97,7 @@ impl From<u32> for Spacing {
 impl Spacing {
     pub const DEFAULT_VALUE: Spacing = Spacing::None;
 
-    #[inline]
+    #[inline(always)]
     pub fn value(&self, total: f32, scale: f32) -> f32 {
         match self {
             Spacing::Px(px) => *px as f32 * scale,

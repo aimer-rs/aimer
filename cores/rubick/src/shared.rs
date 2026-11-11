@@ -518,7 +518,7 @@ impl<T: ?Sized> Shared<T> {
         ShareRef::from_projection(self, |value: &T| value)
     }
 
-    #[inline]
+    #[inline(always)]
     fn inner(&self) -> &SharedAllocation<T> {
         // SAFETY: every live `Shared` owns one strong reference, so its
         // allocation remains initialized for the duration of this borrow.
@@ -530,7 +530,7 @@ impl<T: ?Sized> Shared<T> {
         self.inner().origin.ui_allocator()
     }
 
-    #[inline]
+    #[inline(always)]
     fn value_ptr(&self) -> *const T {
         match &self.inner().value {
             SharedValueStorage::Inline(value) => value.as_ptr(),
@@ -682,7 +682,7 @@ impl<T: ?Sized> Drop for Shared<T> {
 impl<T: ?Sized> Deref for Shared<T> {
     type Target = T;
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &T {
         // SAFETY: the allocation is live, and shared ownership only permits an
         // immutable reference here.

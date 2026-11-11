@@ -32,7 +32,7 @@ impl<const WORDS: usize> InlineStorage<WORDS> {
     }
 
     /// Returns the address of the first payload byte.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn as_ptr(&self) -> *const u8 {
         self.words.as_ptr().cast()
     }
@@ -49,7 +49,7 @@ impl<const WORDS: usize> InlineStorage<WORDS> {
     ///
     /// The owner must be in heap mode, so the first word must hold a pointer
     /// written by [`InlineStorage::set_pointer`].
-    #[inline]
+    #[inline(always)]
     pub(crate) unsafe fn pointer(&self) -> *mut u8 {
         // SAFETY: Heap mode initializes the first word with a valid pointer.
         unsafe { self.words[0].assume_init() }

@@ -249,6 +249,102 @@ fn a_child_that_cannot_sync_itself_still_receives_the_forward() {
     assert!(with < without, "the repeats from further up should be gone: {with} vs {without}");
 }
 
+/// A leaf that paints nothing but owns a render node, like every wrapper layer:
+/// its own update syncs its geometry once, so a forward before it is a repeat.
+struct TransparentCounter {
+    calls: Rc<Cell<usize>>,
+}
+
+impl Widget for TransparentCounter {
+    fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+        TransparentCounterElement { calls: self.calls }.boxed()
+    }
+}
+
+struct TransparentCounterElement {
+    calls: Rc<Cell<usize>>,
+}
+
+impl VisitorElement for TransparentCounterElement {
+    fn debug_name(&self) -> &'static str {
+        "TransparentCounter"
+    }
+}
+
+impl EventElement for TransparentCounterElement {}
+impl Rebuildable for TransparentCounterElement {}
+
+impl LayoutElement for TransparentCounterElement {
+    fn size(&self) -> Option<Size> {
+        Some(Size::new(Dimension::Px(40.0), Dimension::Px(20.0)))
+    }
+}
+
+impl Drawable for TransparentCounterElement {
+    fn update(&self, _ctx: &BuildContext) {}
+
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
+        true
+    }
+
+    fn paint(&self, ctx: &BuildContext) {
+        aimer_canvas::Canvas::of(ctx).finish();
+    }
+
+    fn paints_nothing(&self) -> bool {
+        true
+    }
+
+    fn sync_paint_geometry(&self, _ctx: &BuildContext) {
+        self.calls.set(self.calls.get() + 1);
+    }
+}
+
+/// How many geometry syncs the transparent leaf gets over `frames` frames drawn
+/// from the first one on, with the wrappers above it promising its update.
+fn transparent_syncs_from_the_first_frame(skip: bool, frames: usize) -> usize {
+    aimer_widget::set_geometry_forward_skip(skip);
+    let calls = Rc::new(Cell::new(0));
+    let mut app = AimerApp::start_headless_with(
+        Container::new().height(80).color(Color::Rgb(30, 30, 60)).child(
+            MouseRegion::new().box_child(
+                Container::new()
+                    .padding(LayoutSpacing::all(4))
+                    .child(TransparentCounter { calls: calls.clone() }),
+            ),
+        ),
+        HeadlessOptions {
+            size: PhysicalSize::new(WIDTH, HEIGHT),
+            scale_factor: 1.0,
+        },
+    );
+    for _ in 0..frames {
+        app.render_frame();
+    }
+    aimer_widget::set_geometry_forward_skip(true);
+    calls.get()
+}
+
+/// A wrapper does not forward geometry to a transparent child that has a render
+/// node: the child's own update, which the wrapper promised, syncs it. That holds
+/// from the first frame, not only once the node has recorded its paint.
+#[test]
+fn a_transparent_child_is_synced_once_per_frame_from_the_first_frame() {
+    const FRAMES: usize = 4;
+    let _serial = VIRTUALIZED_RENDER_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let without = transparent_syncs_from_the_first_frame(false, FRAMES);
+    let with = transparent_syncs_from_the_first_frame(true, FRAMES);
+    assert!(with >= 1, "the leaf was never synced: {with}");
+    assert!(
+        with <= without,
+        "the skip must never add syncs: {with} vs {without}"
+    );
+    assert!(
+        with <= FRAMES + 1,
+        "repeats were forwarded: {with} syncs over {FRAMES} frames (without the skip: {without})"
+    );
+}
+
 fn assert_same_trace(scale: f64) {
     let _serial = VIRTUALIZED_RENDER_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let without = run(false, scale);

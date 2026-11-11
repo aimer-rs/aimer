@@ -233,11 +233,12 @@ fn reset_node_for_element_hashes() {
 
 /// Maps each element to its render node in the window's retained render tree.
 ///
-/// It is consulted for every element on every draw, so it uses `hashbrown`'s
-/// default hasher: the keys are process-local identifiers, and the standard
-/// library's DoS-resistant SipHash costs far more than the lookup itself,
-/// especially in unoptimized builds.
-pub type ElementNodeMap = HashMap<ElementId, RenderNodeId>;
+/// It is consulted for every element on every draw, so it uses the one-multiply
+/// identifier hasher: the keys are process-local counters that nobody outside
+/// the process chooses, so DoS resistance buys nothing, and hashing them with
+/// anything heavier costs more than the lookup itself, especially in
+/// unoptimized builds.
+pub type ElementNodeMap = HashMap<ElementId, RenderNodeId, IdBuildHasher>;
 
 /// The retained render tree a traversal paints into, and how elements map to
 /// its nodes.
@@ -262,7 +263,7 @@ pub(crate) struct V2RenderScope {
 impl std::ops::Deref for V2RenderContext {
     type Target = V2RenderScope;
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &V2RenderScope {
         &self.0
     }
@@ -1537,7 +1538,7 @@ pub fn take_unmapped_draws() -> Vec<(ElementId, &'static str)> {
 /// The generation advances whenever a generated child subtree is replaced. It
 /// can be used to invalidate path indexes without rescanning the tree for every
 /// event.
-#[inline]
+#[inline(always)]
 pub fn element_tree_generation() -> u64 {
     ELEMENT_TREE_GENERATION.load(Ordering::Acquire)
 }

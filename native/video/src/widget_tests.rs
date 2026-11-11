@@ -52,7 +52,7 @@ fn context(scale: f32) -> BuildContext<'static> {
 
 /// Runs one retained paint frame for `element`.
 fn paint_frame(ctx: &BuildContext, element: &AnyElement, tree: &RenderTree, node: RenderNodeId) {
-    let nodes = std::rc::Rc::new(aimer_widget::ElementNodeMap::from([(element.id(), node)]));
+    let nodes = std::rc::Rc::new([(element.id(), node)].into_iter().collect::<aimer_widget::ElementNodeMap>());
     ctx.canvas.begin_frame();
     aimer_widget::begin_paint_frame(160, 90);
     aimer_widget::with_v2_render_tree_context(tree.clone(), nodes, Some(element.id()), || {

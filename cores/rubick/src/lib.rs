@@ -510,7 +510,7 @@ impl<T: ?Sized + 'static, const WORDS: usize> Rubick<T, WORDS> {
         self.operations = operations;
     }
 
-    #[inline]
+    #[inline(always)]
     fn data(&self) -> *const u8 {
         if self.operations.inline {
             self.storage.as_ptr()
@@ -563,7 +563,7 @@ impl Drop for PooledBlock {
 impl<T: ?Sized + 'static, const WORDS: usize> Deref for Rubick<T, WORDS> {
     type Target = T;
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         let data = self.data();
         // SAFETY: The projection was installed for the concrete initialized
@@ -586,7 +586,7 @@ impl<T: ?Sized + 'static, const WORDS: usize> DerefMut for Rubick<T, WORDS> {
 
 /// Returns a shared borrow of the owned target.
 impl<T: ?Sized + 'static, const WORDS: usize> AsRef<T> for Rubick<T, WORDS> {
-    #[inline]
+    #[inline(always)]
     fn as_ref(&self) -> &T {
         self
     }

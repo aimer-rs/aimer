@@ -177,6 +177,25 @@ pub trait Drawable {
         self.update(ctx);
     }
 
+    /// Declares that this element is a transparent layer: it records no
+    /// visible commands of its own, never has a compositor animation, and
+    /// [`Self::paint_needs_recording`] is always `false`.
+    ///
+    /// The traversal then skips, for this element, the questions that exist
+    /// only for elements that can paint or animate (the compositor sample and
+    /// its clearing, and the re-record check). Geometry and state still sync and
+    /// the children are still walked. The element keeps its own render node, so
+    /// [`Self::can_paint`] **must** return `true` in every context: a wrapper
+    /// forwarding geometry to this element relies on its own update to sync it
+    /// once the element has a node, without asking about its paint source. The
+    /// default is `false`; returning `true` from an element that paints, or that
+    /// overrides [`Self::compositor_animation`], leaves its animation unapplied.
+    #[doc(hidden)]
+    #[inline]
+    fn paints_nothing(&self) -> bool {
+        false
+    }
+
     /// Reports whether an already recorded paint must be recorded again.
     ///
     /// Called before a recorded paint is replayed. It is for paint values that

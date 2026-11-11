@@ -562,6 +562,11 @@ impl Drawable for RawFocusable {
         self.child.update(ctx);
     }
 
+    #[inline]
+    fn paints_nothing(&self) -> bool {
+        true
+    }
+
     fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }

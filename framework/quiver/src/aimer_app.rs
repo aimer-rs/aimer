@@ -1063,6 +1063,12 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
         self.app.bounds_audit()
     }
 
+    /// Counts, per element type, how many elements record draw commands.
+    #[doc(hidden)]
+    pub fn paint_owner_census(&self) -> Option<crate::handler::census::PaintOwnerCensus> {
+        self.app.paint_owner_census()
+    }
+
     /// Every element's name and cached interaction rectangle, in tree order.
     #[doc(hidden)]
     pub fn interaction_rects(&self) -> Vec<(&'static str, Option<[f32; 4]>)> {
@@ -1795,6 +1801,8 @@ mod tests {
     mod scroll_frame_kind;
     mod scroll_one_step;
     mod geometry_forward;
+    mod paint_owner_census;
+    mod transparent_elements;
     mod settled_skip;
     mod skeleton_ticks;
     mod skeleton_to_rows;

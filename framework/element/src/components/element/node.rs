@@ -24,6 +24,12 @@ impl<E: Element + 'static> ElementNode<E> {
         let Some(node) = scope.node_for_element(self.id.get()) else {
             return false;
         };
+        // A transparent layer always answers `can_paint`, so once it has a node its
+        // own resolve syncs its geometry whatever its paint source is, and it can
+        // hold no compositor animation: neither question needs asking.
+        if self.element.paints_nothing() {
+            return true;
+        }
         if scope.tree.paint_source(node) != Ok(RenderPaintSource::LocalV2) {
             return false;
         }
@@ -142,7 +148,7 @@ impl<E: Element + 'static> ElementNode<E> {
         if source == RenderPaintSource::LocalV2
             && (super::take_event_paint_invalidated(self.id.get())
                 || take_local_paint_invalidated(self.id.get())
-                || self.element.paint_needs_recording(ctx))
+                || (!self.element.paints_nothing() && self.element.paint_needs_recording(ctx)))
         {
             // Recorded again, and damaged only if the picture turns out to differ.
             let _ = scope.tree.refresh_paint(render_node);
@@ -209,10 +215,13 @@ impl<E: Element + 'static> ElementNode<E> {
         capture_rebuilt_root(self.id.get(), ctx);
 
         #[cfg(not(target_arch = "wasm32"))]
-        let retained_animation_candidate = render_context.as_ref().is_some_and(|scope| {
-            scope.node_for_element(self.id.get()).is_some()
-                && self.element.can_paint(ctx)
-        });
+        // A transparent layer can never hold a compositor animation, so it skips
+        // the node lookup, `can_paint`, the sample and the clearing altogether.
+        let retained_animation_candidate = !self.element.paints_nothing()
+            && render_context.as_ref().is_some_and(|scope| {
+                scope.node_for_element(self.id.get()).is_some()
+                    && self.element.can_paint(ctx)
+            });
         #[cfg(not(target_arch = "wasm32"))]
         if retained_animation_candidate {
             match self.element.compositor_animation(ctx) {

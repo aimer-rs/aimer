@@ -199,7 +199,9 @@ async fn decoration_box_revision_repaints_only_its_background() {
         .unwrap();
     let sibling_node = tree.add_root(Rect::new(40.0, 0.0, 16.0, 10.0)).unwrap();
     let mut nodes =
-        aimer_widget::ElementNodeMap::from([(element.id(), root), (sibling.id(), sibling_node)]);
+        [(element.id(), root), (sibling.id(), sibling_node)]
+            .into_iter()
+            .collect::<aimer_widget::ElementNodeMap>();
     let mut child_id = None;
     element.visit_children(&mut |child| {
         nodes.insert(child.id(), child_node);

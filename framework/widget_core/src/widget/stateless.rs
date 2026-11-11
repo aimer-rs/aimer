@@ -308,6 +308,11 @@ impl Drawable for StatelessElement {
         child.update(ctx);
     }
 
+    #[inline]
+    fn paints_nothing(&self) -> bool {
+        true
+    }
+
     fn can_paint(&self, _ctx: &BuildContext) -> bool {
         // Stateless elements rebuild and forward to a child; their retained
         // node is transparent and the child owns its own paint list.

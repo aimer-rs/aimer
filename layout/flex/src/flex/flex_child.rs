@@ -143,6 +143,11 @@ impl<E: Element> Drawable for RawExpanded<E> {
     }
 
     #[inline]
+    fn paints_nothing(&self) -> bool {
+        true
+    }
+
+    #[inline]
     fn can_paint(&self, _ctx: &BuildContext) -> bool {
         true
     }

@@ -42,7 +42,7 @@ pub(crate) fn context(scale: f32) -> BuildContext<'static> {
 pub(crate) fn paint(ctx: &BuildContext, element: &AnyElement, width: f32, height: f32) -> Vec<DrawCommand> {
     let tree = RenderTree::new();
     let node = tree.add_root(Rect::new(0.0, 0.0, width, height)).unwrap();
-    let nodes = Rc::new(aimer_widget::ElementNodeMap::from([(element.id(), node)]));
+    let nodes = Rc::new([(element.id(), node)].into_iter().collect::<aimer_widget::ElementNodeMap>());
     ctx.canvas.begin_frame();
     aimer_widget::begin_paint_frame(200, 200);
     aimer_widget::with_v2_render_tree_context(tree.clone(), nodes, Some(element.id()), || {

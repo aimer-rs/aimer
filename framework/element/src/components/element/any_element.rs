@@ -88,7 +88,7 @@ impl DerefMut for AnyElement {
 }
 
 impl AsRef<dyn Element> for AnyElement {
-    #[inline]
+    #[inline(always)]
     fn as_ref(&self) -> &(dyn Element + 'static) {
         &*self.0
     }

@@ -348,7 +348,7 @@ mod tests {
         tree: &RenderTree,
         node: aimer_cupid::draw_cmd::RenderNodeId,
     ) {
-        let nodes = Rc::new(aimer_widget::ElementNodeMap::from([(element.id(), node)]));
+        let nodes = Rc::new([(element.id(), node)].into_iter().collect::<aimer_widget::ElementNodeMap>());
         ctx.canvas.begin_frame();
         aimer_widget::begin_paint_frame(100, 80);
         aimer_widget::with_v2_render_tree_context(tree.clone(), nodes, Some(element.id()), || {

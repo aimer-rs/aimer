@@ -15,7 +15,7 @@ impl Mat3 {
     ///
     /// Compares component-wise, so `-0.0` counts as zero and any `NaN` makes
     /// the answer `false`.
-    #[inline]
+    #[inline(always)]
     pub fn is_identity(&self) -> bool {
         // Spelled out: comparing the nested arrays goes through the generic
         // slice-equality machinery, which is several calls per row in an

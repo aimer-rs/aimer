@@ -1039,6 +1039,14 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             .map(|root| self.render_tree.paint_source_census(root.as_ref()))
     }
 
+    /// Counts, per element type, how many elements record draw commands, or
+    /// `None` before a root is mounted.
+    #[doc(hidden)]
+    pub fn paint_owner_census(&self) -> Option<census::PaintOwnerCensus> {
+        self.active_root()
+            .map(|root| self.render_tree.paint_owner_census(root.as_ref()))
+    }
+
     /// Compares every element's cached interaction rectangle with its render
     /// node's world rectangle, or `None` before a root is mounted.
     #[doc(hidden)]

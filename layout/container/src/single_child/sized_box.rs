@@ -429,10 +429,12 @@ mod tests {
         let sibling_node = tree
             .add_root(RenderRect::new(40.0, 0.0, 16.0, 10.0))
             .unwrap();
-        let element_nodes = Rc::new(aimer_widget::ElementNodeMap::from([
+        let element_nodes = Rc::new([
             (background_id, background_node),
             (sibling_id, sibling_node),
-        ]));
+        ]
+        .into_iter()
+        .collect::<aimer_widget::ElementNodeMap>());
 
         ctx.canvas.begin_frame();
         aimer_widget::begin_paint_frame(100, 80);
