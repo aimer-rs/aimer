@@ -2282,7 +2282,9 @@ fn event_callback_enabled(element: &dyn Element) -> bool {
 }
 
 fn clear_removed_focus(old: &dyn Element, new: &dyn Element) {
-    if same_retained_child(old, new) {
+    // Nothing owns focus, so nothing can be lost with the replaced subtree.
+    // This is the common case, and it spares a walk over every old node.
+    if aimer_focus::focused_node_count() == 0 || same_retained_child(old, new) {
         return;
     }
     let Some((focused_element, focused_id, focused_node)) = find_focused_element(old) else {
@@ -2298,18 +2300,23 @@ fn clear_removed_focus(old: &dyn Element, new: &dyn Element) {
     }
 }
 
-fn find_focused_element(element: &dyn Element) -> Option<(&dyn Element, ElementId, &FocusNode)> {
+// Both walks below visit children in place instead of collecting them: nothing
+// here needs a child list, and a collected list costs a copy per node.
+fn find_focused_element<'a>(
+    element: &'a dyn Element,
+) -> Option<(&'a dyn Element, ElementId, &'a FocusNode)> {
     if let (Some(id), Some(node)) = (element.element_id(), element.focus_node())
         && node.has_focus()
     {
         return Some((element, id, node));
     }
-    for child in structural_children(element) {
-        if let Some(focused) = find_focused_element(child) {
-            return Some(focused);
+    let mut found = None;
+    element.structural_children(&mut |child| {
+        if found.is_none() {
+            found = find_focused_element(child);
         }
-    }
-    None
+    });
+    found
 }
 
 fn contains_focus_attachment(
@@ -2324,7 +2331,11 @@ fn contains_focus_attachment(
     {
         return true;
     }
-    structural_children(element)
-        .into_iter()
-        .any(|child| contains_focus_attachment(child, focused_id, focused_node))
+    let mut contained = false;
+    element.structural_children(&mut |child| {
+        if !contained {
+            contained = contains_focus_attachment(child, focused_id, focused_node);
+        }
+    });
+    contained
 }

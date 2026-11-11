@@ -333,8 +333,9 @@ fn collect_matches<'a>(
     if crate::components::element::same_retained_child(old, new) {
         return;
     }
+    // Only the old side needs random access (keyed lookup and claiming); the new
+    // side is read in order, so it is visited in place rather than collected.
     let old_children = structural_children(old);
-    let new_children = structural_children(new);
     let mut claimed = SmallVec::<[bool; 8]>::from_elem(false, old_children.len());
     // Most parents have no keyed child at all, and a map made for each of them is
     // made for nothing: it is built the first time an old child has a key.
@@ -359,7 +360,8 @@ fn collect_matches<'a>(
         }
     }
 
-    for (new_index, new_child) in new_children.iter().copied().enumerate() {
+    let mut new_index = 0;
+    new.structural_children(&mut |new_child| {
         let selected = if let Some(new_key) = new_child.reconciliation_key() {
             keyed_candidates
                 .as_mut()
@@ -376,6 +378,7 @@ fn collect_matches<'a>(
                 .then_some((new_index, ReconciliationMatchKind::Positional))
             })
         };
+        new_index += 1;
 
         if let Some((old_index, kind)) = selected {
             claimed[old_index] = true;
@@ -387,7 +390,7 @@ fn collect_matches<'a>(
                 visited_pairs,
             );
         }
-    }
+    });
 }
 
 #[derive(Default)]

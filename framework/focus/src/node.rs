@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 aimer_tls::thread_local! {
     static NEXT_FOCUS_REQUEST: Cell<u64> = const { Cell::new(0) };
+    static FOCUSED_NODES: Cell<usize> = const { Cell::new(0) };
 }
 
 /// An imperative focus change recorded on a [`FocusNode`], tagged with the
@@ -34,6 +35,29 @@ struct FocusNodeState {
     /// Whether this node has already told the framework that its element wants
     /// focus on arrival; see [`FocusNode::announce_autofocus`].
     announced: Cell<bool>,
+}
+
+impl Drop for FocusNodeState {
+    #[inline]
+    fn drop(&mut self) {
+        // A node removed from the tree while it still owns focus never gets a
+        // `set_focused(false)`; release its share of the count here. Nodes are
+        // `Rc`-backed and therefore dropped on the thread that created them.
+        if self.focused.get() {
+            adjust_focused_nodes(false);
+        }
+    }
+}
+
+#[inline]
+fn adjust_focused_nodes(gained: bool) {
+    FOCUSED_NODES.with(|count| {
+        count.set(if gained {
+            count.get() + 1
+        } else {
+            count.get().saturating_sub(1)
+        });
+    });
 }
 
 /// A handle for requesting and observing keyboard focus.
@@ -141,7 +165,9 @@ impl FocusNode {
     /// which keeps the flag on every node it hands focus to or takes it from.
     #[inline]
     pub fn set_focused(&self, focused: bool) {
-        self.state.focused.set(focused);
+        if self.state.focused.replace(focused) != focused {
+            adjust_focused_nodes(focused);
+        }
     }
 
     /// Returns whether both handles refer to the same focus target.
@@ -197,9 +223,56 @@ pub fn focus_request_generation() -> u64 {
     NEXT_FOCUS_REQUEST.with(Cell::get)
 }
 
+/// Returns how many focus nodes on this thread currently own keyboard focus.
+///
+/// Zero means no focus can be lost when a subtree is replaced, so the framework
+/// skips the walk that looks for the focused element in the replaced tree. The
+/// count follows [`FocusNode::set_focused`] transitions and is released when a
+/// focused node is dropped.
+#[inline]
+pub fn focused_node_count() -> usize {
+    FOCUSED_NODES.with(Cell::get)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focused_count_follows_set_focused_transitions() {
+        let base = focused_node_count();
+        let node = FocusNode::new();
+        assert_eq!(focused_node_count(), base);
+
+        node.set_focused(true);
+        assert_eq!(focused_node_count(), base + 1);
+        // Repeating the same state, or going through a clone, changes nothing.
+        node.set_focused(true);
+        node.clone().set_focused(true);
+        assert_eq!(focused_node_count(), base + 1);
+
+        node.set_focused(false);
+        node.set_focused(false);
+        assert_eq!(focused_node_count(), base);
+    }
+
+    #[test]
+    fn dropping_a_focused_node_releases_its_count() {
+        let base = focused_node_count();
+        let node = FocusNode::new();
+        let clone = node.clone();
+        node.set_focused(true);
+
+        drop(node);
+        // A handle is still alive, so the target still owns focus.
+        assert_eq!(focused_node_count(), base + 1);
+        drop(clone);
+        assert_eq!(focused_node_count(), base);
+
+        // An unfocused node never held a count to release.
+        drop(FocusNode::new());
+        assert_eq!(focused_node_count(), base);
+    }
 
     #[test]
     fn announcing_autofocus_moves_the_request_generation_once_per_node() {

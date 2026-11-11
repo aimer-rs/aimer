@@ -92,6 +92,81 @@ fn removing_the_focused_element_clears_focus_and_emits_one_blur() {
     assert_eq!(&*lifecycle.borrow(), &["focus", "blur"]);
 }
 
+fn focus_leaf(node: &FocusNode, lifecycle: &Rc<RefCell<Vec<&'static str>>>) -> AnyElement {
+    FocusTestElement {
+        node: node.clone(),
+        lifecycle: lifecycle.clone(),
+        autofocus: false,
+    }
+    .boxed()
+}
+
+#[test]
+fn removing_a_nested_focused_element_emits_one_blur() {
+    let node = FocusNode::new();
+    let lifecycle = Rc::new(RefCell::new(Vec::new()));
+    let old = IdentityBranch(vec![
+        ReplacementLeaf.boxed(),
+        IdentityBranch(vec![ReplacementLeaf.boxed(), focus_leaf(&node, &lifecycle)]).boxed(),
+    ])
+    .boxed();
+    let replacement = ReplacementLeaf.boxed();
+    node.request_focus();
+    let _ = EventDispatcher::new().dispatch(old.as_ref(), Vec2d::default(), &ElementEvent::Cancel);
+    assert!(node.has_focus());
+
+    reconcile_generated_tree(old.as_ref(), replacement.as_ref());
+
+    assert!(!node.has_focus());
+    assert_eq!(&*lifecycle.borrow(), &["focus", "blur"]);
+}
+
+#[test]
+fn a_focused_element_kept_by_the_replacement_is_not_blurred() {
+    let node = FocusNode::new();
+    let lifecycle = Rc::new(RefCell::new(Vec::new()));
+    let old = IdentityBranch(vec![
+        ReplacementLeaf.boxed(),
+        IdentityBranch(vec![focus_leaf(&node, &lifecycle)]).boxed(),
+    ])
+    .boxed();
+    let rebuilt = IdentityBranch(vec![
+        ReplacementLeaf.boxed(),
+        IdentityBranch(vec![focus_leaf(&node, &lifecycle)]).boxed(),
+    ])
+    .boxed();
+    node.request_focus();
+    let _ = EventDispatcher::new().dispatch(old.as_ref(), Vec2d::default(), &ElementEvent::Cancel);
+
+    reconcile_generated_tree(old.as_ref(), rebuilt.as_ref());
+
+    assert!(node.has_focus());
+    assert_eq!(&*lifecycle.borrow(), &["focus"]);
+}
+
+#[test]
+fn replacing_a_tree_while_focus_lives_elsewhere_blurs_nothing() {
+    let elsewhere = FocusNode::new();
+    let elsewhere_lifecycle = Rc::new(RefCell::new(Vec::new()));
+    let focused_tree = focus_leaf(&elsewhere, &elsewhere_lifecycle);
+    elsewhere.request_focus();
+    let _ = EventDispatcher::new().dispatch(
+        focused_tree.as_ref(),
+        Vec2d::default(),
+        &ElementEvent::Cancel,
+    );
+
+    let idle_node = FocusNode::new();
+    let idle_lifecycle = Rc::new(RefCell::new(Vec::new()));
+    let old = IdentityBranch(vec![focus_leaf(&idle_node, &idle_lifecycle)]).boxed();
+    let replacement = ReplacementLeaf.boxed();
+    reconcile_generated_tree(old.as_ref(), replacement.as_ref());
+
+    assert!(elsewhere.has_focus());
+    assert_eq!(&*elsewhere_lifecycle.borrow(), &["focus"]);
+    assert!(idle_lifecycle.borrow().is_empty());
+}
+
 #[test]
 fn first_autofocus_node_in_tree_order_wins_conflicts() {
     let first_node = FocusNode::new();
