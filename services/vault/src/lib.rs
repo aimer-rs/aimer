@@ -25,6 +25,8 @@
 //! silently kept somewhere weaker. So does a Linux system with no Secret
 //! Service running.
 //!
+//! Availability: macOS, iOS, Android 7+, Windows, Linux
+//!
 //! # Venus-driven
 //!
 //! Keychain calls block on a system daemon, so operations leave the UI thread

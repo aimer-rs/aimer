@@ -28,6 +28,8 @@ let chord = "CmdOrCtrl+K".parse().unwrap();
 assert_eq!(resolve([&window], &chord), Some(&"command palette"));
 ```
 
+Availability: macOS, iOS, Android 7+, Windows, Linux, Web
+
 ## Dispatch order
 
 A key press goes to the focused element first, so a text field keeps its own

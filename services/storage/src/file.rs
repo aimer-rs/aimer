@@ -48,6 +48,8 @@ const APP_SUBDIRECTORY: &str = "storage";
 /// power loss. A store that is opened again, by a later run of the app or by a
 /// second handle, finds every value that was written.
 ///
+/// Availability: macOS, iOS, Android 7+, Windows, Linux
+///
 /// # Venus-driven
 ///
 /// This adapter owns no threads. Each operation is queued on the store and run,

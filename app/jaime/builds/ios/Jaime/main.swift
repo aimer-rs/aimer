@@ -49,25 +49,6 @@ public func aimer_ios_dismiss_keyboard() {
     }
 }
 
-// The language the software keyboard is typing in, as an IETF tag such as
-// "zh-Hans" or "ja-JP". Han ideographs are shared by Chinese, Japanese and
-// Korean but drawn with different faces, and the text alone cannot say which
-// language it is written in — the keyboard that produced it can, so Rust asks
-// for the tag on every keystroke that carries text. The answer is the value
-// cached by `KeyboardForwarder`, so the call is a memcpy of at most `capacity`
-// bytes; it returns the number of bytes written, or 0 when no keyboard is up
-// or the tag does not fit.
-@_cdecl("aimer_ios_input_language")
-public func aimer_ios_input_language(_ buffer: UnsafeMutablePointer<UInt8>?, _ capacity: Int) -> Int {
-    guard let buffer, capacity > 0 else { return 0 }
-    let utf8 = Array(KeyboardForwarder.shared.inputLanguageTag.utf8)
-    guard !utf8.isEmpty, utf8.count <= capacity else { return 0 }
-    utf8.withUnsafeBufferPointer { source in
-        buffer.update(from: source.baseAddress!, count: source.count)
-    }
-    return utf8.count
-}
-
 @_cdecl("aimer_ios_sync_text_state")
 public func aimer_ios_sync_text_state(
     _ sessionId: UInt64,
@@ -255,9 +236,9 @@ final class KeyboardForwardingTextView: UITextView, UITextViewDelegate {
             end: composingEnd,
             utf16Length: snapshot.utf16.count
         )
-        #if DEBUG
-        print("[aimer:kbd] snapshot rev=\(revision) text=\(debugQuote(snapshot)) sel=\(selection) newSession=\(newSession)")
-        #endif
+        // #if DEBUG
+        // print("[aimer:kbd] snapshot rev=\(revision) text=\(debugQuote(snapshot)) sel=\(selection) newSession=\(newSession)")
+        // #endif
         if traitsChanged && isFirstResponder {
             reloadInputViews()
         }
@@ -482,10 +463,6 @@ private struct RustTextState {
 func aimer_ios_pointer_event(_ kind: UInt32, _ x: Double, _ y: Double, _ button: UInt32, _ flags: UInt64)
 @_silgen_name("aimer_ios_scroll_event")
 func aimer_ios_scroll_event(_ x: Double, _ y: Double, _ phase: UInt32, _ flags: UInt64)
-@_silgen_name("aimer_ios_pinch_event")
-func aimer_ios_pinch_event(_ x: Double, _ y: Double, _ delta: Double, _ phase: UInt32, _ flags: UInt64)
-@_silgen_name("aimer_ios_rotation_event")
-func aimer_ios_rotation_event(_ x: Double, _ y: Double, _ delta: Double, _ phase: UInt32, _ flags: UInt64)
 @_silgen_name("aimer_ios_key_event")
 func aimer_ios_key_event(_ usage: UInt32, _ action: UInt32, _ flags: UInt64, _ ptr: UnsafePointer<UInt8>?, _ len: Int)
 
@@ -557,19 +534,7 @@ final class HardwareInputForwarder {
         scroll.cancelsTouchesInView = false
         scroll.delegate = v
         window.addGestureRecognizer(scroll)
-        // Trackpad pinch and twist. A finger pinch already reaches the framework
-        // as two touches, so these must never fire for one or it would be
-        // reported twice; HardwareInputView.gestureRecognizer(_:shouldReceive:)
-        // turns direct touches away.
-        let pinch = UIPinchGestureRecognizer(target: v, action: #selector(HardwareInputView.pinch(_:)))
-        pinch.cancelsTouchesInView = false
-        pinch.delegate = v
-        window.addGestureRecognizer(pinch)
-        let rotation = UIRotationGestureRecognizer(target: v, action: #selector(HardwareInputView.rotation(_:)))
-        rotation.cancelsTouchesInView = false
-        rotation.delegate = v
-        window.addGestureRecognizer(rotation)
-        recognizers = [hover, scroll, pinch, rotation]
+        recognizers = [hover, scroll]
         if backgroundObserver == nil {
             backgroundObserver = NotificationCenter.default.addObserver(
                 forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
@@ -740,41 +705,6 @@ final class HardwareInputView: UIView, UIGestureRecognizerDelegate {
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
 
-    // Fingers and Pencil are the framework's own multi-touch input; only the
-    // trackpad (no touch at all, or an indirect pointer) may drive these.
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        touch.type != .direct && touch.type != .pencil
-    }
-
-    private static func phase(_ state: UIGestureRecognizer.State) -> UInt32? {
-        switch state {
-        case .began: return 0
-        case .changed: return 1
-        case .ended: return 2
-        case .cancelled, .failed: return 3
-        default: return nil
-        }
-    }
-
-    // UIKit reports pinch and rotation cumulatively. The framework wants the
-    // step since the previous callback, so read the value and reset it.
-    @objc func pinch(_ recognizer: UIPinchGestureRecognizer) {
-        guard let phase = Self.phase(recognizer.state) else { return }
-        let delta = recognizer.scale - 1
-        recognizer.scale = 1
-        // Hit test at the hover position: the gesture has no contact of its own.
-        aimer_ios_pinch_event(pointer.x, pointer.y, delta.isFinite ? delta : 0, phase,
-            UInt64(recognizer.modifierFlags.rawValue))
-    }
-
-    @objc func rotation(_ recognizer: UIRotationGestureRecognizer) {
-        guard let phase = Self.phase(recognizer.state) else { return }
-        let delta = recognizer.rotation // Radians, clockwise positive, as the framework expects.
-        recognizer.rotation = 0
-        aimer_ios_rotation_event(pointer.x, pointer.y, delta.isFinite ? delta : 0, phase,
-            UInt64(recognizer.modifierFlags.rawValue))
-    }
-
     private func updateButtons(_ next: UInt, flags: UInt64) {
         let changed = buttons ^ next
         buttons = next
@@ -828,41 +758,6 @@ final class HardwareInputView: UIView, UIGestureRecognizerDelegate {
     @objc func editingShortcut(_ command: UIKeyCommand) { HardwareInputForwarder.shortcut(command) }
 }
 
-// MARK: - Links
-
-@_silgen_name("aimer_ios_open_url")
-func aimer_ios_open_url(_ ptr: UnsafePointer<UInt8>?, _ len: Int)
-
-/// Hands the links UIKit opens the app with (a custom-scheme URL, a universal
-/// link) to Rust, which offers them to the app's navigators.
-///
-/// winit owns the `UIApplicationDelegate` and does not implement
-/// `application(_:open:options:)`, so the method is added to its delegate class
-/// at runtime instead of subclassing it.
-enum AimerLinks {
-    private static var installed = false
-
-    static func open(_ url: URL) {
-        let bytes = Array(url.absoluteString.utf8)
-        bytes.withUnsafeBufferPointer { aimer_ios_open_url($0.baseAddress, $0.count) }
-    }
-
-    /// Idempotent. Never replaces a delegate that already handles URLs.
-    static func installOpenURLHook() {
-        guard !installed, let delegate = UIApplication.shared.delegate,
-              let delegateClass = object_getClass(delegate) else { return }
-        installed = true
-        let selector = #selector(UIApplicationDelegate.application(_:open:options:))
-        guard class_getInstanceMethod(delegateClass, selector) == nil else { return }
-        let handler: @convention(block) (AnyObject, UIApplication, URL, [UIApplication.OpenURLOptionsKey: Any]) -> Bool = {
-            _, _, url, _ in
-            AimerLinks.open(url)
-            return true
-        }
-        class_addMethod(delegateClass, selector, imp_implementationWithBlock(handler), "c@:@@@")
-    }
-}
-
 final class KeyboardForwarder {
     static let shared = KeyboardForwarder()
     private(set) var inputView: KeyboardForwardingTextView?
@@ -870,26 +765,6 @@ final class KeyboardForwarder {
     private var installScheduled: Bool = false
     private var observers: [NSObjectProtocol] = []
     private var pendingTextState: RustTextState?
-
-    private var cachedInputLanguage = ""
-
-    /// The `primaryLanguage` of the keyboard currently attached to the hidden
-    /// input view, or an empty string when no keyboard is up.
-    ///
-    /// UIKit answers `textInputMode` only on the main thread, which is where
-    /// every Rust event — and therefore every read of this value — runs; the
-    /// cache exists so a read arriving from anywhere else still gets the tag
-    /// last observed through `UITextInputMode.currentInputModeDidChangeNotification`.
-    var inputLanguageTag: String {
-        if Thread.isMainThread {
-            refreshInputLanguage()
-        }
-        return cachedInputLanguage
-    }
-
-    fileprivate func refreshInputLanguage() {
-        cachedInputLanguage = inputView?.textInputMode?.primaryLanguage ?? ""
-    }
 
     func dismissKeyboard() {
         guard let v = inputView else { return }
@@ -1032,7 +907,6 @@ final class KeyboardForwarder {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                AimerLinks.installOpenURLHook()
                 self?.installIfPossible()
             })
 
@@ -1070,17 +944,6 @@ final class KeyboardForwarder {
             ) { [weak self] _ in
                 self?.installIfPossible()
                 if self?.inputView?.isFirstResponder != true { HardwareInputForwarder.shared.resume() }
-            })
-
-            // Switching keyboards mid-editing changes the language the next
-            // characters are written in; refreshing the cache here keeps the
-            // tag Rust reads on the following keystroke current.
-            observers.append(center.addObserver(
-                forName: UITextInputMode.currentInputModeDidChangeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.refreshInputLanguage()
             })
         }
 

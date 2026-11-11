@@ -10,6 +10,8 @@
 //! operating system. The first call is the expensive one — a few `sysctl`s, a
 //! JNI round-trip, a registry read — and should not be made inside a frame.
 //!
+//! Availability: macOS, iOS, Android 7+, Windows, Linux, Web
+//!
 //! # Examples
 //!
 //! ```

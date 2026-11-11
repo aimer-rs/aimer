@@ -47,6 +47,8 @@ daemon
     .unwrap();
 ```
 
+Availability: macOS, Windows, Linux
+
 ## Lifecycle
 
 A quit can come from a [`DaemonHandle`], a tray menu item or the operating

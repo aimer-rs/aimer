@@ -5,6 +5,8 @@
 //! `UIPasteboard` on iOS, `android.content.ClipboardManager` through JNI on
 //! Android, and the asynchronous `navigator.clipboard` on the web.
 //!
+//! Availability: macOS, iOS, Android 7+, Windows, Linux
+//!
 //! Every call returns a [`Result`], because a clipboard is a shared system
 //! resource that can legitimately be missing: a Linux session without a display
 //! server, a browser that denies permission, an Android process whose activity

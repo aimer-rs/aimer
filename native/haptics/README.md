@@ -7,6 +7,8 @@ Haptic feedback for Aimer.
   Every call is safe on every target and does nothing where there is no
   hardware or no backend, so call sites never need a platform guard.
 
+Availability: macOS, iOS, Android 7+
+
 ## Platforms
 
 | Platform | Canned effects                                    | `play_pattern`                     |

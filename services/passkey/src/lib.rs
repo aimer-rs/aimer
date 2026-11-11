@@ -29,6 +29,8 @@
 //! no provider it still opens, and every ceremony reports
 //! [`PasskeyError::Unavailable`], so one code path builds everywhere.
 //!
+//! Availability: macOS 13+, iOS 16+, Android 9+, Windows 10+
+//!
 //! # Setup the platform requires
 //!
 //! A passkey is bound to a domain, and the platform only lets an app use a

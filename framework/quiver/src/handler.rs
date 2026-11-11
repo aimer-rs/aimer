@@ -2087,12 +2087,12 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             self.macos_windowing = aimer_clipboard::macos_windowing::for_new_window();
         }
 
-        #[cfg(target_os = "android")]
-        {
-            use winit::event_loop::ControlFlow;
-            event_loop.set_control_flow(ControlFlow::Poll);
-            debug!("Set ControlFlow::Poll for Android");
-        }
+        // #[cfg(target_os = "android")]
+        // {
+        //     use winit::event_loop::ControlFlow;
+        //     event_loop.set_control_flow(ControlFlow::Poll);
+        //     debug!("Set ControlFlow::Poll for Android");
+        // }
 
         let window_attributes = {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]

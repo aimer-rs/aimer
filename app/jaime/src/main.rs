@@ -48,6 +48,7 @@ mod http_request_button;
 mod i18n_example;
 mod justify_content_example;
 mod light_edge_example;
+mod live_activity_timer_example;
 mod liquid_tab_bar_example;
 mod loading_animation;
 mod lucide_icons_example;

@@ -23,6 +23,8 @@ let tap = Sound::from_source(AudioSource::bundled("assets/tap.wav"));
 tap.play();
 ```
 
+Availability: macOS, iOS, Android 7+, Windows 10+, Linux, Web
+
 ## Sources
 
 | Source                     | Notes                                                                  |

@@ -34,6 +34,8 @@ async fn import() -> aimer_file_picker::PickResult<()> {
 }
 ```
 
+Availability: macOS, iOS, Android 7+, Windows, Linux, Web
+
 ## Platforms
 
 | Platform | Picker                                   | Chosen file is            | `path()` |

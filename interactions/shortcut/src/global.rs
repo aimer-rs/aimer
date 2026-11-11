@@ -182,6 +182,8 @@ fn with_registry<R>(f: impl FnOnce(&mut Registry) -> R) -> R {
 
 /// A held global shortcut. Dropping it releases the chord.
 ///
+/// Availability: macOS, Windows, Linux
+///
 /// It stays on the thread that registered it, the UI thread.
 ///
 /// # Examples

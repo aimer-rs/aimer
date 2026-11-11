@@ -13,6 +13,8 @@ use crate::WindowMaterial;
 
 /// Blurs what is behind the window this widget is in.
 ///
+/// Availability: macOS, Windows 11 22H2+
+///
 /// Wrap the window's content in a backdrop and the window itself turns into the
 /// frosted glass of a Finder sidebar or a Spotlight panel: the system blurs the
 /// desktop and the windows behind it, and shows that through everything the

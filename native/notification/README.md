@@ -35,6 +35,8 @@ notifier
 In-app messages that never leave the window are a different thing: see the
 toasts in `aimer_feedback`.
 
+Availability: macOS 10.14+, iOS 10+, Android 7+, Windows, Linux
+
 ## Platforms
 
 | Platform | Mechanism                                                     |

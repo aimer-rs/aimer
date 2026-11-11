@@ -1,0 +1,12 @@
+[package]
+name = "aimer_live_activity"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+aimer_tray.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+ndk-context.workspace = true

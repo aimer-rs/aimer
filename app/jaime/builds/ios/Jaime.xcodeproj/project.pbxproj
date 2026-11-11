@@ -9,12 +9,46 @@
 /* Begin PBXBuildFile section */
 		2471626C6643ED4FC7F810D3 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0B72399071DA7A9D3A3629F8 /* Foundation.framework */; };
 		A1B2C3D4E5F60718293A4B5C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D4E5F6071829A1B2C3D4E5F6 /* Assets.xcassets */; };
+		AE1A00000000000000000010 /* AimerLiveActivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1A0000000000000000000B /* AimerLiveActivityBridge.swift */; };
+		AE1A00000000000000000011 /* AimerLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1A0000000000000000000C /* AimerLiveActivityAttributes.swift */; };
+		AE1A00000000000000000012 /* AimerLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1A0000000000000000000C /* AimerLiveActivityAttributes.swift */; };
+		AE1A00000000000000000013 /* AimerLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1A0000000000000000000D /* AimerLiveActivityWidget.swift */; };
+		AE1A00000000000000000014 /* jaimeLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AE1A00000000000000000002 /* jaimeLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C7A3B2D1F5E83D7B1E6F5092 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3F2A1C0E4B72C6A0D5E4F81 /* main.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AE1A00000000000000000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F745F1A60BF1B4F8EBEABC66 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AE1A00000000000000000001;
+			remoteInfo = jaimeLiveActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AE1A0000000000000000000A /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AE1A00000000000000000014 /* jaimeLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0B72399071DA7A9D3A3629F8 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		992093C02504A3F306172469 /* jaime.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = jaime.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE1A00000000000000000002 /* jaimeLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = jaimeLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE1A0000000000000000000B /* AimerLiveActivityBridge.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AimerLiveActivityBridge.swift; sourceTree = "<group>"; };
+		AE1A0000000000000000000C /* AimerLiveActivityAttributes.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AimerLiveActivityAttributes.swift; sourceTree = "<group>"; };
+		AE1A0000000000000000000D /* AimerLiveActivityWidget.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AimerLiveActivityWidget.swift; sourceTree = "<group>"; };
+		AE1A0000000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B3F2A1C0E4B72C6A0D5E4F81 /* main.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		C0FFEE1234567890ABCDEF01 /* RustLinkFlags.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RustLinkFlags.xcconfig; sourceTree = "<group>"; };
 		D4E5F6071829A1B2C3D4E5F6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -44,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				992093C02504A3F306172469 /* jaime.app */,
+				AE1A00000000000000000002 /* jaimeLiveActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -52,6 +87,8 @@
 			isa = PBXGroup;
 			children = (
 				B3F2A1C0E4B72C6A0D5E4F81 /* main.swift */,
+				AE1A0000000000000000000B /* AimerLiveActivityBridge.swift */,
+				AE1A0000000000000000000C /* AimerLiveActivityAttributes.swift */,
 				D4E5F6071829A1B2C3D4E5F6 /* Assets.xcassets */,
 			);
 			path = jaime;
@@ -61,10 +98,20 @@
 			isa = PBXGroup;
 			children = (
 				835F924D3E646A9F762B34B2 /* jaime */,
+				AE1A00000000000000000003 /* jaimeLiveActivity */,
 				C0FFEE1234567890ABCDEF01 /* RustLinkFlags.xcconfig */,
 				605947B78B2A2F74560FF371 /* Products */,
 				076DC3D42E3B059254AD8B27 /* Frameworks */,
 			);
+			sourceTree = "<group>";
+		};
+		AE1A00000000000000000003 /* jaimeLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				AE1A0000000000000000000D /* AimerLiveActivityWidget.swift */,
+				AE1A0000000000000000000E /* Info.plist */,
+			);
+			path = jaimeLiveActivity;
 			sourceTree = "<group>";
 		};
 		EBAD59C9D065DFC23F7D3643 /* iOS */ = {
@@ -85,15 +132,32 @@
 				3A50768CE9D6E3D95F4987D4 /* Sources */,
 				670D25E833A78BAF2A1855F7 /* Frameworks */,
 				D2F62A4BCEF723F1016DEB73 /* Resources */,
+				AE1A0000000000000000000A /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AE1A00000000000000000009 /* PBXTargetDependency */,
 			);
 			name = jaime;
 			productName = jaime;
 			productReference = 992093C02504A3F306172469 /* jaime.app */;
 			productType = "com.apple.product-type.application";
+		};
+		AE1A00000000000000000001 /* jaimeLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE1A00000000000000000007 /* Build configuration list for PBXNativeTarget "jaimeLiveActivity" */;
+			buildPhases = (
+				AE1A00000000000000000004 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = jaimeLiveActivity;
+			productName = jaimeLiveActivity;
+			productReference = AE1A00000000000000000002 /* jaimeLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -104,11 +168,6 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 2720;
-				TargetAttributes = {
-					7648BF25D679D16DF8E7E6F4 = {
-						DevelopmentTeam = YCLCW25V8V;
-					};
-				};
 			};
 			buildConfigurationList = 2387A685D112612CDD6DD78D /* Build configuration list for PBXProject "jaime" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -124,6 +183,7 @@
 			projectRoot = "";
 			targets = (
 				7648BF25D679D16DF8E7E6F4 /* jaime */,
+				AE1A00000000000000000001 /* jaimeLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -145,10 +205,29 @@
 			buildActionMask = 2147483647;
 			files = (
 				C7A3B2D1F5E83D7B1E6F5092 /* main.swift in Sources */,
+				AE1A00000000000000000010 /* AimerLiveActivityBridge.swift in Sources */,
+				AE1A00000000000000000011 /* AimerLiveActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE1A00000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AE1A00000000000000000013 /* AimerLiveActivityWidget.swift in Sources */,
+				AE1A00000000000000000012 /* AimerLiveActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AE1A00000000000000000009 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AE1A00000000000000000001 /* jaimeLiveActivity */;
+			targetProxy = AE1A00000000000000000008 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		22844781F1EDECBF9F17C0BA /* Debug */ = {
@@ -157,6 +236,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				DEVELOPMENT_TEAM = YCLCW25V8V;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = jaime/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
@@ -299,12 +379,57 @@
 			};
 			name = Release;
 		};
+		AE1A00000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = jaimeLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.aimers.jaime.LiveActivity;
+				PRODUCT_MODULE_NAME = jaimeLiveActivity;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				WRAPPER_NAME = "jaimeLiveActivity.appex";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AE1A00000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = jaimeLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.aimers.jaime.LiveActivity;
+				PRODUCT_MODULE_NAME = jaimeLiveActivity;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				WRAPPER_NAME = "jaimeLiveActivity.appex";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		BECACC829D12230529BB85F1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = C0FFEE1234567890ABCDEF01 /* RustLinkFlags.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				DEVELOPMENT_TEAM = YCLCW25V8V;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = jaime/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
@@ -333,6 +458,15 @@
 			buildConfigurations = (
 				453B4F41EBA135F16129FB77 /* Debug */,
 				79AB7DD7EE74F541074453FD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AE1A00000000000000000007 /* Build configuration list for PBXNativeTarget "jaimeLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE1A00000000000000000006 /* Release */,
+				AE1A00000000000000000005 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

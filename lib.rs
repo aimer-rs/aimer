@@ -126,6 +126,11 @@ pub use aimer_platform::tray;
 /// registration; see [`notification::Notifier`]. In-window messages are the
 /// toasts in `feedback`.
 pub use aimer_platform::notification;
+/// A Live Update on Android and a Live Activity on iOS for something in
+/// progress, with an opt-in tray stand-in on the desktop; see
+/// [`live_activity::LiveActivities`].
+#[cfg(feature = "live-activity")]
+pub use aimer_live_activity as live_activity;
 /// The user asking a running application to show itself again, such as a click
 /// on its Dock icon on macOS; see [`reopen::subscribe`].
 pub use aimer_platform::reopen;

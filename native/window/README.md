@@ -19,6 +19,8 @@ An application starts with one window, described by a [`WindowAttr`] given to
 - **[`ExitPolicy`]** — whether closing windows ends the application. [`quit`]
   ends it whatever the policy says.
 
+Availability: macOS, Windows, Linux
+
 ## Opening a window
 
 Use [`Window`] when a window's existence is part of your state, and

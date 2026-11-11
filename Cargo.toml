@@ -55,6 +55,7 @@ aimer_lottie = { workspace = true, optional = true }
 aimer_capture = { workspace = true, optional = true }
 aimer_passkey = { workspace = true, optional = true }
 aimer_daemon = { workspace = true, optional = true }
+aimer_live_activity = { workspace = true, optional = true }
 aimer_markdown.workspace = true
 aimer_modal.workspace = true
 aimer_dnd.workspace = true
@@ -140,6 +141,10 @@ video = ["dep:aimer_video"]
 media-io = ["audio", "video"]
 # Pickers, haptics and device information together.
 platform-services = ["device", "haptics", "file-picker", "image-picker"]
+# Live activities behind `aimer::live_activity`: a Live Update on Android, a Live
+# Activity on iOS (with a Swift bridge the app ships), and an opt-in tray
+# stand-in on the desktop.
+live-activity = ["dep:aimer_live_activity"]
 # Secure storage for credentials and tokens: the platform secret store (Keychain
 # on Apple platforms) behind `aimer::vault`.
 vault = ["dep:aimer_vault"]
@@ -205,6 +210,7 @@ full = [
     "platform-services",
     "vault",
     "passkey",
+    "live-activity",
     "lottie",
     "capture",
     "apple-core-text",
@@ -262,6 +268,7 @@ members = [
     "native/window",
     "native/tray",
     "native/notification",
+    "native/live_activity",
     # services
     "services/storage",
     "services/vault",
@@ -454,6 +461,7 @@ aimer_screen = { path = "native/screen" }
 aimer_window = { path = "native/window" }
 aimer_tray = { path = "native/tray" }
 aimer_notification = { path = "native/notification" }
+aimer_live_activity = { path = "native/live_activity" }
 aimer_ctxmenu = { path = "overlay/ctxmenu" }
 
 # Generic Dependencies

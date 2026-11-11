@@ -30,6 +30,8 @@ use aimer::venus::{Lifecycle, LifecycleSubscription, on_lifecycle};
 use aimer::*;
 use std::cell::Cell;
 
+use crate::test_animation::is_mobile;
+
 /// The name the showcase window's position and size are remembered under.
 pub const WINDOW_NAME: &str = "main";
 
@@ -118,6 +120,7 @@ pub fn install() -> Background {
     let tray = match tray::install(Tray::new().icon(icon).tooltip("Jaime").menu(menu()), on_tray_event) {
         Ok(installed) => Some(installed),
         Err(why) => {
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             eprintln!("jaime: no tray icon, closing the window will not leave a way back in: {why}");
             None
         }

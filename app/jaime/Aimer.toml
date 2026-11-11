@@ -1,7 +1,7 @@
 [application]
-name = "jaime"
+name = "Jaime"
 version = "0.0.1"
-group = "com.example.jaime"
+group = "rs.aimer.jaime"
 
 
 [assets]

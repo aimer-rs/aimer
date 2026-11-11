@@ -14,6 +14,8 @@
 //! `PlatformStorage::for_app("com.example.app")` opens an application's own
 //! store, so the same code loads the same data on every launch.
 //!
+//! Availability: macOS, iOS, Android 7+, Windows, Linux, Web
+//!
 //! # Batches
 //!
 //! [`Storage::commit`] applies a [`StorageBatch`] of writes and removes

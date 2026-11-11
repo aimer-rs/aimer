@@ -27,6 +27,8 @@ async fn choose() -> aimer_image_picker::PickResult<()> {
 }
 ```
 
+Availability: macOS, iOS 14+, Android 7+, Windows, Linux, Web
+
 ## Platforms
 
 | Platform | Picker |

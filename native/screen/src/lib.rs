@@ -16,6 +16,8 @@
 //! held sideways in split-screen shows a portrait window; a desktop window has a
 //! shape and no rotation at all.
 //!
+//! Availability: macOS, iOS, Android 7+, Windows, Linux, Web
+//!
 //! # Where each answer comes from
 //!
 //! | Platform | Device orientation | Folds and hinges | Hinge angle |

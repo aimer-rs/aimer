@@ -22,6 +22,8 @@ player.play();
 let video = Video::new().player(player.clone()).fit(VideoFit::Cover).height(240);
 ```
 
+Availability: macOS, iOS, Android 8+, Windows 10+, Linux, Web
+
 ## The standard player
 
 ```rust,no_run

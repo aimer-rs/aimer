@@ -31,6 +31,8 @@ let _tray = Tray::new()
 # fn aimer_tray_example_quit() {}
 ```
 
+Availability: macOS, Windows, Linux
+
 ## Platforms
 
 | Platform | Mechanism                                              |

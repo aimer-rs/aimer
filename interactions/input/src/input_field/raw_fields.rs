@@ -45,11 +45,11 @@ static NEXT_TEXT_EDITING_SESSION: AtomicU64 = AtomicU64::new(1);
 /// invisible on a device; these lines are what `aimer run` shows when a
 /// keyboard misbehaves. Release builds, and every platform whose input
 /// method talks to the field directly, compile the calls away.
-#[cfg(all(debug_assertions, any(target_os = "ios", target_os = "android")))]
+#[cfg(all(debug_assertions, any(target_os = "ios", target_os = "android"), feature = "ime_trace"))]
 macro_rules! ime_trace {
     ($($arg:tt)*) => { aimer_utils::debug!($($arg)*) };
 }
-#[cfg(not(all(debug_assertions, any(target_os = "ios", target_os = "android"))))]
+#[cfg(not(all(debug_assertions, any(target_os = "ios", target_os = "android"), feature = "ime_trace")))]
 macro_rules! ime_trace {
     ($($arg:tt)*) => {{}};
 }
