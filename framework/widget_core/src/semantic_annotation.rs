@@ -206,6 +206,12 @@ impl EventElement for RawSemantics {
 }
 
 impl Drawable for RawSemantics {
+    // `update` only forwards to the child.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn update(&self, ctx: &BuildContext) {
         self.child.update(ctx);
     }

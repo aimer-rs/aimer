@@ -157,6 +157,11 @@ impl<E: Element> EventElement for RawSizedBox<E> {
 }
 
 impl<E: Element> Drawable for RawSizedBox<E> {
+    // A fixed box lays its child out from the context and its own size.
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn update(&self, ctx: &BuildContext) {
         let size = self.computed_size(ctx);
         let width = size.width;

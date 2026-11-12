@@ -442,6 +442,13 @@ impl RawTextWidget {
 }
 
 impl Drawable for RawTextWidget {
+    // Text has no update of its own: what it records depends on its string, its
+    // style and the box it is given.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn can_paint(&self, ctx: &BuildContext) -> bool {
         self.local_v2_paint_data(ctx).is_some() || self.local_v2_paragraph_paint_data(ctx).is_some()
     }

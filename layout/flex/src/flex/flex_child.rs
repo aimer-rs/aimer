@@ -138,6 +138,12 @@ impl<E: Element> RawExpanded<E> {
 }
 
 impl<E: Element> Drawable for RawExpanded<E> {
+    // `update` only forwards to the child.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn update(&self, ctx: &BuildContext) {
         self.child.update(ctx);
     }

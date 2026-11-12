@@ -281,6 +281,17 @@ impl<'a> BuildContext<'a> {
     /// The pointer position, in the frame's coordinates.
     #[inline]
     pub fn cursor_pos(&self) -> Vec2d {
+        // A subtree that never reads the pointer does not depend on it, which is
+        // what lets one be left alone while the pointer moves elsewhere.
+        crate::components::element::note_cursor_read();
+        self.cursor_pos
+    }
+
+    /// The pointer position, without counting as a read of it. For the framework's
+    /// own bookkeeping, which must not make a subtree look pointer-dependent.
+    #[doc(hidden)]
+    #[inline]
+    pub fn cursor_pos_unobserved(&self) -> Vec2d {
         self.cursor_pos
     }
 

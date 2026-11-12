@@ -1027,6 +1027,13 @@ impl LayoutElement for RawSvg {
 }
 
 impl Drawable for RawSvg {
+    // `update` saves the bounds the context implies; the document is painted by
+    // `paint`.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     /// Hit-tested against the rectangle this element reports as its own size,
     /// which can be larger than the content box its render node is laid out as.
     #[inline]

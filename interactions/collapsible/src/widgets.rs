@@ -193,6 +193,14 @@ impl AnimatedCollapseElement {
 }
 
 impl Drawable for AnimatedCollapseElement {
+    // The body's height follows the controller, which is read against the clock
+    // while it runs. At rest the progress is fixed, and the walk that settled it
+    // happened while the controller was still animating, so it was not recorded.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        !self.controller.is_animating()
+    }
+
     /// Hit-tested over the body as it currently occupies space.
     fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {
         Some(self.current_size(ctx))

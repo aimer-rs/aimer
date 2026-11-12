@@ -220,17 +220,20 @@ impl FocusScope {
 ```
 ## Validation Commands
 
-Run commands from the workspace root unless a nested guide says otherwise. Prefer using `cargo-nextest` when available. the build and run must be use your own custom target directory to prevent blocking IDE. 
+Run commands from the workspace root unless a nested guide says otherwise. Prefer using `cargo-nextest` when available. the build and run must be use your own custom target directory to prevent blocking IDE.
 
 ```bash
 # Focused test
-CARGO_TARGET_DIR="agent_target" cargo nextest run -p aimer_animation test_curve_linear
+CARGO_TARGET_DIR="agents/target" cargo nextest run -p aimer_animation test_curve_linear
 
 # Crate tests
-CARGO_TARGET_DIR="agent_target" cargo nextest run -p aimer_animation
+CARGO_TARGET_DIR="agents/target" cargo nextest run -p aimer_animation
 
 # Entire workspace (use when the change scope warrants it)
-CARGO_TARGET_DIR="agent_target" cargo nextest run --workspace
+CARGO_TARGET_DIR="agents/target" cargo nextest run --workspace
+
+# When the agents/target is blocked
+CARGO_TARGET_DIR="agents/target_xxx" cargo check
 ```
 
 Before handing off:

@@ -192,6 +192,45 @@ impl<E: Element + 'static> ElementNode<E> {
     }
 
     fn update_inner(&self, ctx: &BuildContext) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if clean_skip::enabled() {
+            return self.update_inner_tracked(ctx);
+        }
+        self.update_inner_walk(ctx);
+    }
+
+    /// [`Self::update_inner_walk`] with the bookkeeping that lets a frame that
+    /// only scrolled leave a subtree alone: see `clean_skip`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn update_inner_tracked(&self, ctx: &BuildContext) {
+        if !self.element.reusable_walk() {
+            // An element that is not repeatable keeps every subtree above it from
+            // being recorded, so nothing needs its visit counted or its walk timed.
+            clean_skip::note_impure(|| std::any::type_name::<E>());
+            self.update_inner_walk(ctx);
+            return;
+        }
+        // The root of a traversal is never skipped: it is where the frame starts.
+        let candidate = !draw_depth_is_zero();
+        let mut verifying = None;
+        if candidate {
+            match clean_skip::try_skip(self.id.get(), ctx) {
+                clean_skip::Decision::Skip => return,
+                clean_skip::Decision::Verify => verifying = Some(clean_skip::fingerprint(self)),
+                clean_skip::Decision::Walk => {}
+            }
+        }
+        let entry = clean_skip::enter();
+        self.update_inner_walk(ctx);
+        if let Some(before) = verifying {
+            clean_skip::finish_verification(self, before);
+        }
+        if candidate {
+            clean_skip::leave(self.id.get(), ctx, entry);
+        }
+    }
+
+    fn update_inner_walk(&self, ctx: &BuildContext) {
         crate::frame_work_stats::record_paint_call();
         #[cfg(feature = "frame-stats")]
         record_draw_traversal();

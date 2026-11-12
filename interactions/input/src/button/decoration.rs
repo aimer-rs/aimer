@@ -115,6 +115,10 @@ impl ButtonDecoration {
         }
         let before = &self.decorations[self.selected()];
         flag.set(value);
+        // The revision is the selected state, so it just moved: the container that
+        // paints this decoration re-records at its next walk, and a walk that was
+        // recorded before this is no longer what a walk would do.
+        aimer_widget::note_paint_revision_changed();
         let after = &self.decorations[self.selected()];
         if before == after {
             return;

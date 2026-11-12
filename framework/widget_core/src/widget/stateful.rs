@@ -1660,6 +1660,15 @@ fn register_keyed_subtree(element: &dyn Element) {
 }
 
 impl Drawable for StatefulElement {
+    // Walking a state owner again rebuilds its child only if it is dirty, which
+    // is a change a recorded subtree notices through the generations; what else
+    // it holds that moves has to ask for frames, and a frame request counts
+    // against the subtree.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn update(&self, ctx: &BuildContext) {
         self.rebuild_if_dirty(ctx);
         // Safety: single-threaded rendering pipeline

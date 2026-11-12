@@ -594,6 +594,13 @@ unsafe impl Send for RotationTransitionElement {}
 unsafe impl Sync for RotationTransitionElement {}
 
 impl Drawable for RotationTransitionElement {
+    // The rotation follows the controller, so it is repeatable only at rest. The
+    // flag covers the walk that notices the controller has stopped.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        !self.controller.is_animating() && !self.animating.get()
+    }
+
     fn update(&self, ctx: &BuildContext) {
         update_transition_frame(ctx, self.child.as_ref(), self.sample_frame(ctx));
     }

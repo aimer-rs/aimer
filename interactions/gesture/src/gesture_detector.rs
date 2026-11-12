@@ -609,6 +609,13 @@ impl<E: Element> LayoutElement for RawGestureDetector<E> {
 }
 
 impl<E: Element> Drawable for RawGestureDetector<E> {
+    // `update` polls held gestures against the clock, but only while a press is
+    // down; with none held a walk saves the child's bounds and nothing else.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        self.state.try_borrow().is_ok_and(|state| state.press.is_none())
+    }
+
     fn update(&self, ctx: &BuildContext<'_>) {
         let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
         let child_size = self.child.computed_size(ctx);

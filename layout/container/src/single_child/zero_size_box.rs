@@ -26,6 +26,12 @@ impl ZeroSizedBox {
 }
 
 impl Drawable for ZeroSizedBox {
+    // It has no children and no state.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn update(&self, _: &BuildContext) {}
 
     #[inline]

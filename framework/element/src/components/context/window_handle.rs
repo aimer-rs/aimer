@@ -171,7 +171,9 @@ impl WindowHandle {
         aimer_events::window::WindowKey::from_address(address)
     }
 
+    #[track_caller]
     pub fn request_redraw(&self) {
+        crate::components::element::note_frame_requested();
         crate::frame_work_stats::record_redraw_request();
         aimer_events::window::notify_redraw_requested();
         match self {
@@ -187,7 +189,9 @@ impl WindowHandle {
     /// through an event-loop proxy, while the web target routes it through
     /// the browser frame callback. [`Self::request_redraw`] remains the
     /// direct redraw operation used by event-loop handling code.
+    #[track_caller]
     pub fn request_animation_frame(&self) {
+        crate::components::element::note_frame_requested();
         crate::frame_work_stats::record_redraw_request();
         aimer_events::window::notify_redraw_requested();
         match self {

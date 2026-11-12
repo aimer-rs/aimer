@@ -46,6 +46,12 @@ pub fn set_scroll_only_frame(active: bool) {
     SCROLL_ONLY_FRAME.with(|flag| flag.set(active));
 }
 
+/// Whether the frame being drawn was requested by scrolling alone.
+#[inline]
+pub(crate) fn scroll_only_frame() -> bool {
+    SCROLL_ONLY_FRAME.with(Cell::get)
+}
+
 /// Enables or disables leaving settled off-screen children alone.
 ///
 /// On by default. Turning it off makes every frame revisit every prepared

@@ -558,6 +558,12 @@ impl EventElement for RawFocusable {
 }
 
 impl Drawable for RawFocusable {
+    // `update` only forwards to the child; focus changes arrive as events.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn update(&self, ctx: &BuildContext) {
         self.child.update(ctx);
     }

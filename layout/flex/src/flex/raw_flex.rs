@@ -992,6 +992,17 @@ impl RawFlex {
 }
 
 impl Drawable for RawFlex {
+    // What a flex walks is a function of the context, the retained window the
+    // context key carries, and its own children and layout tables. A table that
+    // is a prediction is the exception: painting refines it one child at a time,
+    // so a second walk can report a different extent than the first. Only a
+    // container whose tables are exact is repeatable. Anything it asks for that
+    // is not at rest (a redraw while its table catches up) is counted against it
+    // by the caller.
+    fn reusable_walk(&self) -> bool {
+        !self.layout.holds_estimate()
+    }
+
     fn can_paint(&self, ctx: &BuildContext) -> bool {
         ctx.scale.is_finite()
             && ctx.scale > 0.0

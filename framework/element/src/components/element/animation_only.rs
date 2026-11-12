@@ -190,6 +190,7 @@ pub(crate) fn register_animating_element(
     ctx: &BuildContext,
     walk_subtree: bool,
 ) -> bool {
+    note_frame_requested();
     let in_pass = is_animation_only_pass();
     REGISTRY.with(|registry| {
         let mut registry = registry.borrow_mut();
@@ -381,6 +382,7 @@ pub fn request_isolated_subtree_animation_frame(ctx: &BuildContext) {
 }
 
 fn request_isolated(ctx: &BuildContext, walk_subtree: bool) {
+    note_frame_requested();
     let owner = DRAW_INVALIDATION_OWNER.with(Cell::get);
     match owner {
         Some(element) if register_animating_element(element, ctx, walk_subtree) => {
@@ -459,6 +461,13 @@ pub(crate) fn begin_full_traversal() {
             stale.waiting.set(!registry.is_empty());
         });
     });
+}
+
+/// Whether rebuilt roots recorded earlier are still waiting for the full walk in
+/// progress to reach them. Leaving a subtree alone would leave them unreached.
+#[inline]
+pub(crate) fn stale_roots_waiting() -> bool {
+    STALE_ROOTS.with(StaleRoots::waiting)
 }
 
 /// Called as a full traversal ends: drops the rebuilt roots it did not reach.

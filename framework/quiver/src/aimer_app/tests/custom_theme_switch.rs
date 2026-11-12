@@ -445,3 +445,54 @@ fn rows_swept_by_the_pointer_do_not_stay_hovered() {
 fn rows_swept_by_the_pointer_do_not_stay_hovered_after_a_theme_change() {
     sweep_rows_and_leave(true);
 }
+
+/// Leaving unchanged subtrees alone must not leave a walk out that would have
+/// changed what the retained tree holds. Verify mode walks them anyway and
+/// reports any that did.
+#[test]
+fn a_sweep_over_the_rows_loses_nothing_to_leaving_subtrees_alone() {
+    let _serial = VIRTUALIZED_RENDER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let seen: Seen = Rc::new(RefCell::new(vec![None; ROWS]));
+    let updater = Rc::new(RefCell::new(None));
+    aimer_widget::set_clean_subtree_skip(true);
+    aimer_widget::reset_clean_subtree_skip_stats();
+    aimer_widget::set_clean_skip_verify(true);
+    let mut app = AimerApp::start_headless_with(
+        Shell {
+            split: true,
+            seen,
+            updater,
+        },
+        HeadlessOptions {
+            size: PhysicalSize::new(300, 1000),
+            scale_factor: 2.0,
+        },
+    );
+    move_to(&mut app, -10.0, -10.0);
+    app.pump_frames(3);
+    let mut y = 60.0;
+    while y < 800.0 {
+        move_to(&mut app, 100.0, y);
+        run_for(&mut app, 16);
+        y += 12.0;
+    }
+    move_to(&mut app, 290.0, 950.0);
+    run_for(&mut app, 400);
+    // An idle window draws nothing, so ask for frames where nothing changes: those
+    // are the ones a skip decides about.
+    for _ in 0..8 {
+        app.render_frame();
+    }
+    aimer_widget::set_clean_skip_verify(false);
+
+    let stats = aimer_widget::clean_subtree_skip_stats();
+    let violations = aimer_widget::clean_skip_violations();
+    eprintln!("verified {} subtrees; {} violations", stats.verified, violations.len());
+    for violation in violations.iter().take(12) {
+        eprintln!("  {}", violation.detail);
+    }
+    assert!(stats.verified > 0, "nothing was verified, so the run proves nothing");
+    assert_eq!(violations, Vec::new());
+}

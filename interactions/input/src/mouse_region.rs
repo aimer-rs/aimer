@@ -472,6 +472,14 @@ fn seeded_interaction_bounds(seed: &CacheBounds) -> InteractionBounds {
 }
 
 impl<E: Element> Drawable for RawMouseRegion<E> {
+    // `update` saves the child's bounds and compares the pointer with them. The
+    // pointer is part of the context key and the region's place in the world is
+    // part of the subtree key, so an identical key means an identical comparison.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn update(&self, ctx: &BuildContext<'_>) {
         let child_size = self.child.computed_size(ctx);
         let (abs_x, abs_y) = ctx.canvas.get_transform_translation();

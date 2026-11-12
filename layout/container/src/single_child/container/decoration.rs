@@ -14,6 +14,11 @@ pub trait RetainedBoxDecoration {
     fn decoration(&self) -> &BoxDecoration;
 
     /// Returns the revision identifying the selected decoration.
+    ///
+    /// An implementor whose revision can change without a rebuild must call
+    /// `aimer_widget::note_paint_revision_changed()` when it does. The container
+    /// re-records when it sees the revision move, and a subtree left alone for a
+    /// frame would miss it otherwise.
     fn revision(&self) -> u64;
 }
 
@@ -22,15 +27,32 @@ pub trait RetainedBoxDecoration {
 pub(super) struct RetainedDecorationState {
     source: Rc<dyn RetainedBoxDecoration>,
     layout_revision: std::cell::Cell<Option<u64>>,
-    paint_revision: std::cell::Cell<Option<u64>>,
+    /// The revision the paint was last recorded from. Shared with the watcher the
+    /// framework polls when a revision is reported changed.
+    paint_revision: Rc<std::cell::Cell<Option<u64>>>,
+    /// What that watcher reads; it holds it weakly, so it lives as long as this does.
+    watched: Rc<dyn aimer_widget::PaintRevisionSource>,
+    /// The element the watcher was registered for, so a walk registers once.
+    registered_as: std::cell::Cell<Option<aimer_widget::ElementId>>,
+}
+
+/// The revision of a decoration source, for the framework's watchers.
+struct RevisionOf(Rc<dyn RetainedBoxDecoration>);
+
+impl aimer_widget::PaintRevisionSource for RevisionOf {
+    fn revision(&self) -> u64 {
+        self.0.revision()
+    }
 }
 
 impl RetainedDecorationState {
     pub(super) fn new(source: Rc<dyn RetainedBoxDecoration>) -> Box<Self> {
         Box::new(Self {
+            watched: Rc::new(RevisionOf(source.clone())),
             source,
             layout_revision: std::cell::Cell::new(None),
-            paint_revision: std::cell::Cell::new(None),
+            paint_revision: Rc::new(std::cell::Cell::new(None)),
+            registered_as: std::cell::Cell::new(None),
         })
     }
 }
@@ -57,15 +79,42 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
             .map(|inset| finite_nonnegative(inset) * scale)
     }
 
+    /// Says to the framework who paints from the decoration source, so that a
+    /// change to it reaches the one subtree it concerns and not every other.
+    ///
+    /// Done in a walk, which is when the element can be named: a container added to
+    /// the tree records its paint during synchronization, outside any walk, and is
+    /// registered by the first walk that reaches it.
+    #[inline]
+    fn watch_decoration(&self) {
+        let Some(state) = &self.decoration_source else {
+            return;
+        };
+        let Some(element) = aimer_widget::draw_invalidation_owner() else {
+            return;
+        };
+        if state.registered_as.get() == Some(element) {
+            return;
+        }
+        state.registered_as.set(Some(element));
+        aimer_widget::watch_paint_revision(
+            element,
+            Rc::downgrade(&state.watched),
+            state.paint_revision.clone(),
+        );
+    }
+
     #[inline]
     pub(super) fn mark_decoration_recorded(&self) {
         if let Some(state) = &self.decoration_source {
             state.paint_revision.set(Some(state.source.revision()));
+            self.watch_decoration();
         }
     }
 
     #[inline]
     pub(super) fn retained_decoration_needs_recording(&self) -> bool {
+        self.watch_decoration();
         self.decoration_source
             .as_ref()
             .is_some_and(|state| state.paint_revision.get() != Some(state.source.revision()))

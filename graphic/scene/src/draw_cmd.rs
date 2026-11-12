@@ -623,6 +623,33 @@ pub enum RenderPaintSource {
     LocalV2,
 }
 
+/// What the retained tree holds for one node that a frame draws from or hit-tests
+/// against, for telling whether anything changed between two moments.
+///
+/// It holds the node's own geometry, clip, transform and opacity, how it is
+/// painted, and the revision of its recorded list, so a walk that re-recorded or
+/// moved anything shows. It leaves out what is only bookkeeping.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderNodeState {
+    pub bounds: Rect,
+    pub clip: Option<Rect>,
+    pub clip_radius: [f32; 4],
+    pub escapes_clip: bool,
+    pub animation_clip: Option<Rect>,
+    pub presentation_transform: Mat3,
+    pub presentation_opacity: f32,
+    pub transform: Mat3,
+    pub opacity: f32,
+    pub paint_source: RenderPaintSource,
+    /// The revision of the recorded list: it moves whenever a recording changes
+    /// what the node draws.
+    pub list_revision: u64,
+    pub list_dirty: bool,
+    /// Whether the list is out of date and owes a recording.
+    pub list_stale: bool,
+}
+
 /// New geometry for one existing node, for [`RenderTree::sync_geometry`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NodeGeometry {
@@ -1851,6 +1878,31 @@ impl RenderTree {
             .borrow()
             .world_bounds(element)
             .ok_or(RenderTreeError::UnknownNode(element))
+    }
+
+    /// Returns what the tree holds for one node; see [`RenderNodeState`].
+    #[doc(hidden)]
+    pub fn node_state(&self, element: RenderNodeId) -> Result<RenderNodeState, RenderTreeError> {
+        let tree = self.draw_cmd.borrow();
+        let node = tree
+            .node(element)
+            .ok_or(RenderTreeError::UnknownNode(element))?;
+        let list = node.draw_list.borrow();
+        Ok(RenderNodeState {
+            bounds: node.bounds,
+            clip: node.clip,
+            clip_radius: node.clip_radius,
+            escapes_clip: node.escapes_clip,
+            animation_clip: node.animation_clip,
+            presentation_transform: node.presentation_transform,
+            presentation_opacity: node.presentation_opacity,
+            transform: node.transform,
+            opacity: node.opacity,
+            paint_source: node.paint_source,
+            list_revision: list.revision,
+            list_dirty: list.dirty,
+            list_stale: list.stale,
+        })
     }
 
     /// Returns where anything drawn by an element or its descendants can reach

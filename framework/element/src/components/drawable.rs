@@ -196,6 +196,33 @@ pub trait Drawable {
         false
     }
 
+    /// Declares that walking this element again, with the same context and with
+    /// nothing in the tree changed, does exactly what the last walk did.
+    ///
+    /// A frame requested by scrolling alone changes nothing but what the scroll
+    /// offset moves. A subtree whose every element makes this promise may be left
+    /// alone in such a frame when it is given the same context as in the last one:
+    /// its geometry, interaction bounds and paint are already what the walk would
+    /// produce.
+    ///
+    /// The promise is that [`update`](Drawable::update) and the paint hooks depend
+    /// on nothing but the context, the element's own state and the retained tree,
+    /// and cause nothing but what a repeat leaves unchanged. An element that reads
+    /// the clock, advances an animation, ticks a controller, or reads a value that
+    /// can change without a rebuild or an invalidation (a scroll offset another
+    /// element owns, say) must not make it, and neither may one that requests the
+    /// next frame. The answer may depend on state: an animated widget is
+    /// repeatable while it is at rest.
+    ///
+    /// The default is `false`, which keeps an element, and every ancestor of it,
+    /// walked on every frame. One element that does not make the promise only costs
+    /// the skip for the subtrees above it.
+    #[doc(hidden)]
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        false
+    }
+
     /// Reports whether an already recorded paint must be recorded again.
     ///
     /// Called before a recorded paint is replayed. It is for paint values that

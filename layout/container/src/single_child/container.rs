@@ -563,6 +563,14 @@ fn intersect_retained_clip(
 mod painting;
 
 impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
+    // A container lays its child out from the context and its own size, and its
+    // paint depends on its decoration and the background it is given, which
+    // `paint_needs_recording` compares. Nothing in its update reads the clock.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     /// Hit-tested over the box that is drawn: the computed size less the
     /// margins, which start `interaction_offset` in from the node.
     fn interaction_size(&self, ctx: &BuildContext) -> Option<ResolvedSize> {

@@ -1075,6 +1075,45 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
         self.app.interaction_rects()
     }
 
+    /// Everything the last frame would draw, one line per retained draw, in
+    /// paint order. A differential test compares two runs through it.
+    #[doc(hidden)]
+    pub fn render_plan(&self) -> Vec<String> {
+        self.app
+            .render_tree()
+            .render_all()
+            .into_iter()
+            .map(|operation| match operation {
+                aimer_cupid::draw_cmd::RenderOp::Draw(item) => format!(
+                    "{:?} {:?} {:?} {:?} {:?}",
+                    item.element,
+                    item.bounds,
+                    item.origin,
+                    item.clip,
+                    item.snapshot().commands
+                ),
+                aimer_cupid::draw_cmd::RenderOp::BeginOpacityGroup {
+                    element,
+                    bounds,
+                    opacity,
+                    clip,
+                    masked,
+                    ..
+                } => format!("begin {element:?} {bounds:?} {opacity} {clip:?} {masked}"),
+                aimer_cupid::draw_cmd::RenderOp::EndOpacityGroup { element } => {
+                    format!("end {element:?}")
+                }
+            })
+            .collect()
+    }
+
+    /// Whether scroll input is still being delivered to the content over the
+    /// frames that follow it.
+    #[doc(hidden)]
+    pub fn scroll_motion_active(&self) -> bool {
+        self.app.scroll_smoother.is_active()
+    }
+
     /// Returns a handle to this application's UI memory pool.
     ///
     /// The handle exposes committed usage and the configured limit, and keeps
@@ -1800,6 +1839,7 @@ mod tests {
     mod scalable_text;
     mod scroll_frame_kind;
     mod scroll_one_step;
+    mod clean_subtree_skip;
     mod geometry_forward;
     mod paint_owner_census;
     mod transparent_elements;

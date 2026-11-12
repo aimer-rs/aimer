@@ -1586,6 +1586,18 @@ impl FlexLayoutCache {
     }
 }
 
+impl FlexLayoutCache {
+    /// Whether any table held is a prediction that painting still refines.
+    ///
+    /// Such a table learns the exact extent of each child as it is painted, so
+    /// walking the container again can change what it reports: the walk is not
+    /// repeatable until the table is exact.
+    #[inline]
+    pub(crate) fn holds_estimate(&self) -> bool {
+        self.tables().any(|cached| cached.layout.is_estimated())
+    }
+}
+
 impl Default for FlexLayoutCache {
     fn default() -> Self {
         Self::new()

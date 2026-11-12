@@ -94,8 +94,15 @@ pub use crate::components::element::{
     ChildUpdateFollows, run_animation_only_pass, scoped_rebuild_cursor, scoped_rebuilds_since,
     set_animation_only_frame, set_frame_rebuilt_roots, set_scroll_only_frame,
     set_geometry_forward_skip, set_settled_offscreen_skip, stable_generation_cursor, stable_generations_since,
-    structural_search_count, traversal_counts, unscoped_element_tree_generation,
+    draw_invalidation_owner, note_paint_revision_changed, PaintRevisionSource, watch_paint_revision, structural_search_count, traversal_counts, unscoped_element_tree_generation,
     with_v2_animation_only_context, without_placement_marks,
+};
+#[cfg(not(target_arch = "wasm32"))]
+#[doc(hidden)]
+pub use crate::components::element::{
+    CleanSkipStats, CleanSkipViolation, clean_skip_blockers, clean_skip_frame_requesters,
+    clean_skip_violations, clean_subtree_skip_stats, reset_clean_subtree_skip_stats,
+    set_clean_skip_blocker_probe, set_clean_skip_verify, set_clean_subtree_skip,
 };
 
 #[cfg(feature = "frame-stats")]

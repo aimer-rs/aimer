@@ -1350,8 +1350,8 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         let budget = self.venus.idle_budget();
         self.venus.run_idle(&budget);
         self.venus.end_frame();
-        CALLED.print();
-        CALLED.reset();
+        // CALLED.print();
+        // CALLED.reset();
         // The next platform-input interval is a new event frame. This shared
         // epoch also reaches dispatchers nested inside scrollables and regions.
         begin_event_frame();

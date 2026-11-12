@@ -559,6 +559,12 @@ impl EventElement for RetainedChildElement {
 }
 
 impl Drawable for RetainedChildElement {
+    // `update` only forwards to the retained child, which keeps its own record.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     #[inline]
     fn prepare_layout(&self, ctx: &BuildContext) -> bool {
         if let Some(child) = self.child() {

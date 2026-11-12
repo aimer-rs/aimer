@@ -39,8 +39,11 @@ mod animation_only;
 #[cfg(target_arch = "wasm32")]
 #[path = "element/animation_only_stub.rs"]
 mod animation_only;
+#[cfg(not(target_arch = "wasm32"))]
+mod clean_skip;
 mod compositor_applied;
 mod event;
+mod paint_revision;
 #[cfg(test)]
 mod frame_instant_tests;
 #[cfg(test)]
@@ -88,7 +91,28 @@ pub use event::{
     ElementPath, EventDispatchContext, EventDispatcher, broadcast_event, dispatch_event,
     dispatch_focused_event, focus_is_settling_between_events,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use clean_skip::{note_cursor_read, note_frame_requested};
+/// Nothing leaves a subtree alone on the web, so nothing needs to know about reads.
+#[cfg(target_arch = "wasm32")]
+#[inline]
+pub(crate) fn note_cursor_read() {}
+#[cfg(not(target_arch = "wasm32"))]
+#[doc(hidden)]
+pub use clean_skip::clean_skip_frame_requesters;
+/// Frames are never skipped on the web, so nothing needs to know about requests.
+#[cfg(target_arch = "wasm32")]
+#[inline]
+pub(crate) fn note_frame_requested() {}
+#[cfg(not(target_arch = "wasm32"))]
+pub use clean_skip::{
+    CleanSkipStats, CleanSkipViolation, clean_skip_blockers, clean_skip_violations,
+    clean_subtree_skip_stats, reset_clean_subtree_skip_stats, set_clean_skip_blocker_probe,
+    set_clean_skip_verify, set_clean_subtree_skip,
+};
 pub use geometry_forward::{ChildUpdateFollows, set_geometry_forward_skip};
+pub use paint_revision::{PaintRevisionSource, watch_paint_revision};
+pub(crate) use paint_revision::sync_paint_revision_watchers;
 use geometry_forward::{child_update_follows, geometry_forward_skip_enabled};
 pub use retained_window::{
     VisibleWindow, may_escape_ancestor_clips, may_skip_settled_offscreen, retained_element_settled,
@@ -185,6 +209,9 @@ aimer_tls::thread_local! {
     static PLACEMENT_SKIP_SUSPENDED: Cell<usize> = const { Cell::new(0) };
     static PLACEMENT_MARKS_SUSPENDED: Cell<usize> = const { Cell::new(0) };
     static DRAW_DEPTH: Cell<usize> = const { Cell::new(0) };
+    /// Advances whenever a value an element's paint is recorded from changes
+    /// without a rebuild or an invalidation; see [`note_paint_revision_changed`].
+    static PAINT_REVISION_EPOCH: Cell<u64> = const { Cell::new(0) };
     static DRAW_INVALIDATION_OWNER: Cell<Option<ElementId>> = const { Cell::new(None) };
     /// Paint invalidation metadata is retained for the current pair of
     /// rebuild/tree generations so a retained scroll tile can distinguish a
@@ -400,6 +427,9 @@ pub fn with_v2_render_tree_context<R>(
     callback: impl FnOnce() -> R,
 ) -> R {
     forget_unmapped_compositor_animations(&element_nodes);
+    // A value an element paints from may have changed since the last frame without
+    // anything else showing it; say which elements it concerns before they are walked.
+    sync_paint_revision_watchers();
     begin_full_traversal();
     V2_RENDER_CONTEXT_STACK.with(|stack| {
         stack
@@ -997,6 +1027,57 @@ impl Drop for DrawInvalidationOwnerGuard {
     fn drop(&mut self) {
         DRAW_INVALIDATION_OWNER.with(|current| current.set(self.previous));
     }
+}
+
+/// The element whose walk is in progress, if one is. An element that needs to
+/// say who it is while it is walked (the walk does not hand its element an id)
+/// reads it here.
+#[doc(hidden)]
+#[inline]
+pub fn draw_invalidation_owner() -> Option<ElementId> {
+    DRAW_INVALIDATION_OWNER.with(Cell::get)
+}
+
+/// Tells the framework that a value an element re-records its paint from has
+/// changed, though nothing was rebuilt and no paint was invalidated.
+///
+/// A container compares the revision of its decoration with the one it recorded
+/// when it is walked, so a button's hover changes what the next walk records
+/// without any signal the tree could see. Whatever owns such a value (an
+/// implementor of `RetainedBoxDecoration`) calls this when it changes; a walk
+/// that was recorded before it is then not trusted to be what a walk would do now.
+#[doc(hidden)]
+#[inline]
+pub fn note_paint_revision_changed() {
+    PAINT_REVISION_EPOCH.with(|epoch| epoch.set(epoch.get().wrapping_add(1)));
+}
+
+/// How many times [`note_paint_revision_changed`] has been called on this thread.
+#[inline]
+pub(crate) fn paint_revision_epoch() -> u64 {
+    PAINT_REVISION_EPOCH.with(Cell::get)
+}
+
+/// Whether no draw is in progress, so that an element updated now is the root of
+/// the traversal.
+#[inline]
+pub(crate) fn draw_depth_is_zero() -> bool {
+    DRAW_DEPTH.with(|depth| depth.get() == 0)
+}
+
+/// Whether any element's paint was invalidated and has not yet been resolved.
+#[inline]
+pub(crate) fn paint_invalidations_pending() -> bool {
+    PAINT_INVALIDATED_LOCAL_ELEMENTS.with(|elements| !elements.borrow().is_empty())
+        || EVENT_PAINT_INVALIDATIONS.with(|invalidations| !invalidations.borrow().is_empty())
+}
+
+/// Whether `visit` accepts any element whose paint was invalidated and has not
+/// yet been resolved. It is called for each until one is accepted.
+pub(crate) fn any_pending_paint_invalidation(mut visit: impl FnMut(ElementId) -> bool) -> bool {
+    PAINT_INVALIDATED_LOCAL_ELEMENTS.with(|elements| elements.borrow().iter().any(|id| visit(*id)))
+        || EVENT_PAINT_INVALIDATIONS
+            .with(|invalidations| invalidations.borrow().iter().any(|id| visit(*id)))
 }
 
 fn begin_draw() -> (DrawGuard, bool) {

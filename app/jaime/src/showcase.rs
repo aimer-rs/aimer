@@ -154,13 +154,25 @@ use catalog::{EXAMPLE_CATEGORIES, EXAMPLES, ExampleCategory, ExampleId};
 /// are not rebuilt, and choosing the example that is already selected rebuilds
 /// nothing.
 #[derive(StatefulWidget)]
-pub struct ExampleShowcase {}
+pub struct ExampleShowcase {
+    /// The page to start on; the first registered page when `None`.
+    selected: Option<ExampleId>,
+}
 
 impl ExampleShowcase {
     /// Creates the example browser with the first registered page selected.
     #[inline]
     pub fn new() -> Self {
-        Self {}
+        Self { selected: None }
+    }
+
+    /// Creates the example browser on `selected`, so a test or a profile can
+    /// start on a long page without clicking its way there.
+    #[cfg(test)]
+    fn starting_on(selected: ExampleId) -> Self {
+        Self {
+            selected: Some(selected),
+        }
     }
 }
 
@@ -196,7 +208,7 @@ impl StatefulWidget for ExampleShowcase {
     type State = ExampleShowcaseState;
 
     fn create_state(self) -> Self::State {
-        ExampleShowcaseState::with_selected(EXAMPLES[0])
+        ExampleShowcaseState::with_selected(self.selected.unwrap_or(EXAMPLES[0]))
     }
 }
 

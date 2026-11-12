@@ -84,6 +84,12 @@ impl Rebuildable for RawKeyRelay {
 }
 
 impl Drawable for RawKeyRelay {
+    // `update` only forwards to the child.
+    #[inline]
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
     fn update(&self, ctx: &BuildContext) {
         self.child.update(ctx);
     }

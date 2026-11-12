@@ -7,6 +7,7 @@ mod backdrop_filter;
 mod compact;
 mod focus;
 mod foreground_decoration;
+mod clean_skip_pages;
 mod geometry_forward_pages;
 mod gradient;
 mod gradient_resize;
@@ -489,6 +490,10 @@ fn profile_sidebar_hover_frames() {
         },
     );
     let device = DeviceId::dummy();
+    // A/B knob: `NO_CLEAN_SKIP=1` turns off leaving unchanged subtrees alone.
+    if std::env::var_os("NO_CLEAN_SKIP").is_some() {
+        aimer_widget::set_clean_subtree_skip(false);
+    }
     app.pump_frames(8);
 
     let frames: usize = std::env::var("HOVER_FRAMES")
@@ -688,6 +693,103 @@ fn print_geometry_walk(
     }
 }
 
+/// Scrolls a page's content with the cursor over it and the sidebar beside it
+/// standing still, with and without leaving unchanged subtrees alone.
+///
+/// The two modes run alternately in one process so that drift in the machine
+/// cancels out. `CONTENT_PAGES=<Id,Id>` picks the pages (the `Debug` names of
+/// the catalog ids); `CONTENT_ROUNDS` and `CONTENT_FRAMES` size the run. It
+/// prints timings only; it asserts nothing.
+#[test]
+#[ignore = "profiling harness: prints timings and asserts nothing"]
+fn profile_content_scroll_frames() {
+    use aimer_time::Instant;
+
+    use aimer::HeadlessOptions;
+    use aimer::quiver::winit::dpi::{PhysicalPosition, PhysicalSize};
+    use aimer::quiver::winit::event::{DeviceId, MouseScrollDelta, TouchPhase, WindowEvent};
+
+    let wanted = std::env::var("CONTENT_PAGES")
+        .unwrap_or_else(|_| "TextProperties,StyleTokens,DataView".to_owned());
+    let rounds: usize = std::env::var("CONTENT_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(3);
+    let frames: usize = std::env::var("CONTENT_FRAMES")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(80);
+    let device = DeviceId::dummy();
+    if std::env::var_os("CLEAN_SKIP_PROBE").is_some() {
+        aimer_widget::set_clean_skip_blocker_probe(true);
+    }
+
+    for name in wanted.split(',') {
+        let Some(example) = EXAMPLES
+            .iter()
+            .copied()
+            .find(|example| format!("{example:?}") == name)
+        else {
+            eprintln!("=== content {name}: no such page");
+            continue;
+        };
+        let mut medians = [Vec::new(), Vec::new()];
+        let mut last_stats = Default::default();
+        for _ in 0..rounds {
+            for (mode, skip) in [false, true].into_iter().enumerate() {
+                aimer_widget::set_clean_subtree_skip(skip);
+                aimer_widget::reset_clean_subtree_skip_stats();
+                let mut app = AimerApp::start_headless_with(
+                    theme::provide(ExampleShowcase::starting_on(example).boxed()),
+                    HeadlessOptions {
+                        size: PhysicalSize::new(2560, 1600),
+                        scale_factor: 2.0,
+                    },
+                );
+                app.pump_frames(8);
+                // The cursor rests on the content, well right of the sidebar.
+                app.send_window_event(WindowEvent::CursorMoved {
+                    device_id: device,
+                    position: PhysicalPosition::new(1600.0, 800.0),
+                });
+                app.pump_frames(3);
+                let mut times = Vec::with_capacity(frames);
+                for step in 0..frames {
+                    let direction = if (step / 20) % 2 == 0 { -48.0 } else { 48.0 };
+                    app.send_window_event(WindowEvent::MouseWheel {
+                        device_id: device,
+                        delta: MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, direction)),
+                        phase: TouchPhase::Moved,
+                    });
+                    let start = Instant::now();
+                    app.render_frame();
+                    times.push(start.elapsed().as_secs_f64() * 1e6);
+                }
+                times.sort_by(f64::total_cmp);
+                medians[mode].push(times[times.len() / 2]);
+                if skip {
+                    last_stats = aimer_widget::clean_subtree_skip_stats();
+                }
+            }
+        }
+        for mode in &mut medians {
+            mode.sort_by(f64::total_cmp);
+        }
+        let (off, on) = (medians[0][rounds / 2], medians[1][rounds / 2]);
+        eprintln!(
+            "=== content {name}: skip off p50={off:.0} us  on p50={on:.0} us  ({:+.1}%)  {last_stats:?}",
+            (on - off) / off * 100.0,
+        );
+        for (reason, count) in aimer_widget::clean_skip_blockers().into_iter().take(12) {
+            eprintln!("===     {count:>7}  {reason}");
+        }
+        for (at, count) in aimer_widget::clean_skip_frame_requesters().into_iter().take(6) {
+            eprintln!("===     {count:>7}  frames requested from {at}");
+        }
+    }
+    aimer_widget::set_clean_subtree_skip(true);
+}
+
 #[test]
 #[ignore = "profiling harness: 30,000 frames (minutes in debug), prints timings and asserts nothing"]
 fn profile_sidebar_scroll_frames() {
@@ -711,6 +813,14 @@ fn profile_sidebar_scroll_frames() {
     // A/B knob: `NO_FORWARD_SKIP=1` turns the geometry-forward skip off.
     if std::env::var_os("NO_FORWARD_SKIP").is_some() {
         aimer_widget::set_geometry_forward_skip(false);
+    }
+    // A/B knob: `NO_CLEAN_SKIP=1` turns off leaving unchanged subtrees alone in
+    // scroll-only frames; `CLEAN_SKIP_PROBE=1` prints what kept subtrees walked.
+    if std::env::var_os("NO_CLEAN_SKIP").is_some() {
+        aimer_widget::set_clean_subtree_skip(false);
+    }
+    if std::env::var_os("CLEAN_SKIP_PROBE").is_some() {
+        aimer_widget::set_clean_skip_blocker_probe(true);
     }
     app.pump_frames(8);
 
@@ -792,6 +902,10 @@ fn profile_sidebar_scroll_frames() {
         }
     }
     let scroll_frames = times.len() + 50 * (times.len() / 100);
+    eprintln!("=== clean skip: {:?}", aimer_widget::clean_subtree_skip_stats());
+    for (name, count) in aimer_widget::clean_skip_blockers().into_iter().take(16) {
+        eprintln!("===   {count:>7}  {name}");
+    }
     times.sort_by(f64::total_cmp);
     let scroll_content = frame_content_stats();
     let scroll_breakdown = frame_breakdown();
