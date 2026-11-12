@@ -84,9 +84,68 @@ struct ContextKey {
     constraint: [u32; 4],
     visible: Option<[u32; 4]>,
     background: u32,
-    /// The whole canvas transform: an element can read its place from it, and a
-    /// scale or rotation above it is as much an input as a translation.
-    transform: Mat3,
+    /// The whole canvas transform, for a subtree that read it: an element can read
+    /// its place from it, and a scale or rotation above it is as much an input as a
+    /// translation. A subtree that never looked at where it is drawn is the same
+    /// wherever it is, which is what lets the rows of a list that scrolls be left
+    /// alone while they move.
+    transform: Option<Mat3>,
+}
+
+/// What a walk looked at beyond the fixed parts of its context, and so what its key
+/// has to hold.
+#[derive(Clone, Copy, Default, PartialEq)]
+struct Reads {
+    /// The pointer position was asked for.
+    cursor: bool,
+    /// The canvas transform was asked for.
+    transform: bool,
+}
+
+impl Reads {
+    #[cfg(test)]
+    const NONE: Self = Self { cursor: false, transform: false };
+}
+
+/// What a subtree can tell of the visible rectangle it is given, as bits.
+///
+/// Elements read it to leave out what is off screen: a container walks a child only
+/// if the child's rectangle overlaps it. Along an axis on which the subtree, with a
+/// margin of its own extent all round, lies wholly inside the rectangle, every
+/// rectangle the subtree can ask about is inside it too, so where the rectangle's
+/// edges are along that axis does not change what the subtree does, and they are
+/// replaced by one marker. That is what lets the rows of a list that scrolls be told
+/// apart from rows that changed: while they move, only the rectangle moves, along
+/// the axis of the scroll. Along an axis the rectangle cuts across, its edges stay
+/// exact. The axes are told apart so that a viewport exactly as wide as its rows,
+/// which has no room for a margin across, still lets them move up and down.
+#[inline]
+fn visible_bits(ctx: &BuildContext) -> Option<[u32; 4]> {
+    let (x, y, width, height) = ctx.visible_rect()?;
+    let (mut x_bits, mut width_bits) = (x.to_bits(), width.to_bits());
+    let (mut y_bits, mut height_bits) = (y.to_bits(), height.to_bits());
+    if RELATIVE_WINDOW.with(Cell::get) {
+        let (across, down) = (ctx.parent_size.width, ctx.parent_size.height);
+        if contained_with_margin(x, width, across) {
+            (x_bits, width_bits) = (u32::MAX, u32::MAX);
+        }
+        if contained_with_margin(y, height, down) {
+            (y_bits, height_bits) = (u32::MAX, u32::MAX);
+        }
+    }
+    Some([x_bits, y_bits, width_bits, height_bits])
+}
+
+/// Whether the span `start..start + length` reaches `extent` past both ends of
+/// `0..extent`.
+#[inline]
+pub(super) fn contained_with_margin(start: f32, length: f32, extent: f32) -> bool {
+    start.is_finite()
+        && length.is_finite()
+        && extent.is_finite()
+        && extent > 0.0
+        && start <= -extent
+        && start + length >= extent + extent
 }
 
 impl ContextKey {
@@ -95,14 +154,16 @@ impl ContextKey {
     /// Compares the fields a moving subtree differs in first, and the canvas, whose
     /// queries cost the most, last: most candidates are rejected on the first or
     /// second comparison.
-    fn matches(&self, ctx: &BuildContext, read_cursor: bool) -> bool {
+    fn matches(&self, ctx: &BuildContext, reads: Reads) -> bool {
         let position = ctx.parent_pos();
         if self.position != [position.x.to_bits(), position.y.to_bits()] {
+            miss("differs: position");
             return false;
         }
         if self.size != [ctx.parent_size.width.to_bits(), ctx.parent_size.height.to_bits()]
             || self.scale != ctx.scale.to_bits()
         {
+            miss("differs: size or scale");
             return false;
         }
         let constraint = ctx.box_constraint;
@@ -114,30 +175,38 @@ impl ContextKey {
                 constraint.max_height.to_bits(),
             ]
         {
+            miss("differs: constraint");
             return false;
         }
-        let visible = ctx
-            .visible_rect()
-            .map(|(x, y, width, height)| [x.to_bits(), y.to_bits(), width.to_bits(), height.to_bits()]);
-        if self.visible != visible || self.background != ctx.paint_background().as_u32() {
+        if self.visible != visible_bits(ctx) {
+            miss("differs: visible rectangle");
             return false;
         }
-        if read_cursor {
+        if self.background != ctx.paint_background().as_u32() {
+            miss("differs: background");
+            return false;
+        }
+        if reads.cursor {
             let cursor = ctx.cursor_pos_unobserved();
             if self.cursor != [cursor.x.to_bits(), cursor.y.to_bits()] {
+                miss("differs: pointer");
                 return false;
             }
         }
-        self.transform == ctx.canvas.get_transform()
+        if reads.transform && self.transform != Some(ctx.canvas.get_transform_unobserved()) {
+            miss("differs: canvas transform");
+            return false;
+        }
+        true
     }
 
-    /// `read_cursor` is whether the subtree depends on the pointer; when it does
-    /// not, the pointer is left out of the key.
-    fn of(ctx: &BuildContext, read_cursor: bool) -> Self {
+    /// `reads` is what the subtree depends on beyond the fixed parts; what it does
+    /// not depend on is left out of the key.
+    fn of(ctx: &BuildContext, reads: Reads) -> Self {
         let position = ctx.parent_pos();
         // Asked of the field directly so that building a key is not itself a
         // read: it would make every subtree look like it depends on the pointer.
-        let cursor = if read_cursor { ctx.cursor_pos_unobserved() } else { Vec2d::default() };
+        let cursor = if reads.cursor { ctx.cursor_pos_unobserved() } else { Vec2d::default() };
         let constraint = ctx.box_constraint;
         Self {
             size: [ctx.parent_size.width.to_bits(), ctx.parent_size.height.to_bits()],
@@ -150,11 +219,9 @@ impl ContextKey {
                 constraint.max_width.to_bits(),
                 constraint.max_height.to_bits(),
             ],
-            visible: ctx.visible_rect().map(|(x, y, width, height)| {
-                [x.to_bits(), y.to_bits(), width.to_bits(), height.to_bits()]
-            }),
+            visible: visible_bits(ctx),
             background: ctx.paint_background().as_u32(),
-            transform: ctx.canvas.get_transform(),
+            transform: reads.transform.then(|| ctx.canvas.get_transform_unobserved()),
         }
     }
 }
@@ -169,7 +236,7 @@ impl ContextKey {
 /// asked for every subtree of every walk, so it reads the few fields that move
 /// with a scroll or a layout change and nothing that needs a query of the canvas.
 #[inline]
-fn context_hash(ctx: &BuildContext, read_cursor: bool) -> u64 {
+fn context_hash(ctx: &BuildContext, reads: Reads) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     let mut mix = |word: u32| {
         hash = (hash ^ u64::from(word)).wrapping_mul(0x0100_0000_01b3);
@@ -181,16 +248,20 @@ fn context_hash(ctx: &BuildContext, read_cursor: bool) -> u64 {
     mix(ctx.parent_size.height.to_bits());
     mix(ctx.box_constraint.max_width.to_bits());
     mix(ctx.box_constraint.max_height.to_bits());
-    if let Some((x, y, width, height)) = ctx.visible_rect() {
-        mix(x.to_bits());
-        mix(y.to_bits());
-        mix(width.to_bits());
-        mix(height.to_bits());
+    if let Some(visible) = visible_bits(ctx) {
+        for word in visible {
+            mix(word);
+        }
     }
-    if read_cursor {
+    if reads.cursor {
         let cursor = ctx.cursor_pos_unobserved();
         mix(cursor.x.to_bits());
         mix(cursor.y.to_bits());
+    }
+    if reads.transform {
+        let transform = ctx.canvas.get_transform_unobserved();
+        mix(transform.cols[2][0].to_bits());
+        mix(transform.cols[2][1].to_bits());
     }
     hash
 }
@@ -207,6 +278,11 @@ fn context_hash(ctx: &BuildContext, read_cursor: bool) -> u64 {
 ///
 /// Two queries of the tree, so it is kept only for a subtree whose context key
 /// held still across two walks: the only ones a skip can ever apply to.
+///
+/// Both parts are only as exact as the subtree can tell. The window is made
+/// relative where the subtree lies wholly inside it, and the place in the world
+/// only matters to a subtree that read the pointer, and then only to a pointer
+/// that is inside it: see [`same_for_the_pointer`].
 #[derive(Clone, Copy, PartialEq)]
 struct TreeKey {
     window: Option<VisibleWindow>,
@@ -214,17 +290,54 @@ struct TreeKey {
 }
 
 impl TreeKey {
-    fn of(ctx: &BuildContext, element: ElementId) -> Self {
+    fn of(ctx: &BuildContext, element: ElementId, reads: Reads) -> Self {
         STATS.with(|stats| {
             let mut current = stats.get();
             current.tree_queries += 1;
             stats.set(current);
         });
+        let relative = RELATIVE_WINDOW.with(Cell::get);
+        let window = retained_visible_window(element, ctx.scale);
         Self {
-            window: retained_visible_window(element, ctx.scale),
-            world: world_bounds(element),
+            window: match window {
+                Some(window) if relative => {
+                    Some(window.relative_to(ctx.parent_size.width, ctx.parent_size.height))
+                }
+                other => other,
+            },
+            world: if reads.cursor || !relative { world_bounds(element) } else { None },
         }
     }
+
+    /// Whether a subtree recorded with `self` sees the same of the tree as one
+    /// given `now`, with the pointer at `cursor` both times.
+    fn matches(&self, now: &Self, cursor: (f32, f32)) -> bool {
+        self.window == now.window && same_for_the_pointer(self.world, now.world, cursor)
+    }
+}
+
+/// Whether a subtree at `before` and one at `after` are the same to a pointer at
+/// `cursor`: a pointer that is inside neither is outside both times, and a hover
+/// region compares nothing else.
+///
+/// Edges count as inside, as they do when a hit test compares a pointer with a
+/// rectangle. A rectangle that appeared or vanished is a difference.
+fn same_for_the_pointer(
+    before: Option<[u32; 4]>,
+    after: Option<[u32; 4]>,
+    cursor: (f32, f32),
+) -> bool {
+    if before == after {
+        return true;
+    }
+    let (Some(before), Some(after)) = (before, after) else {
+        return false;
+    };
+    let inside = |rect: [u32; 4]| {
+        let [x, y, width, height] = rect.map(f32::from_bits);
+        x <= cursor.0 && cursor.0 <= x + width && y <= cursor.1 && cursor.1 <= y + height
+    };
+    !inside(before) && !inside(after)
 }
 
 /// Where the retained node of `element` is in the world right now.
@@ -253,8 +366,8 @@ struct Record {
     /// The tree's geometry revision when `tree_key` was last known to be current:
     /// while it is unchanged the tree shows what it showed, and is not asked.
     geometry: u64,
-    /// Whether the walk read the pointer; if it did not, the key leaves it out.
-    cursor_read: bool,
+    /// What the walk read; what it did not read, the key leaves out.
+    reads: Reads,
 }
 
 /// The context a subtree was last walked with, in one word. Written for every
@@ -273,10 +386,15 @@ pub(crate) struct Entry {
     impure: u64,
     tree: u64,
     cursor: u64,
+    transform: u64,
 }
 
 aimer_tls::thread_local! {
     static ENABLED: Cell<bool> = const { Cell::new(true) };
+    /// Whether a subtree is given the same key wherever it is: the visible
+    /// rectangle's edges are normalized when it lies wholly inside, and the canvas
+    /// transform is part of the key only for a subtree that read it.
+    static RELATIVE_WINDOW: Cell<bool> = const { Cell::new(true) };
     static VISITS: Cell<u64> = const { Cell::new(0) };
     /// What `VISITS` read when the statistics were last reset.
     static VISITS_BASE: Cell<u64> = const { Cell::new(0) };
@@ -324,6 +442,18 @@ pub fn set_clean_skip_verify(enabled: bool) {
 #[doc(hidden)]
 pub fn clean_skip_violations() -> Vec<CleanSkipViolation> {
     VIOLATIONS.with(|violations| violations.borrow().clone())
+}
+
+/// Turns on or off treating a subtree that lies wholly inside the visible
+/// rectangle as the same wherever the rectangle's edges are.
+///
+/// On by default. It is what lets the rows of a list that scrolls be left alone
+/// while they move; off, they are walked in every frame they move, as they were.
+#[doc(hidden)]
+pub fn set_clean_skip_relative_window(enabled: bool) {
+    RELATIVE_WINDOW.with(|flag| flag.set(enabled));
+    RECORDS.with(|records| records.borrow_mut().clear());
+    SEEN.with(|seen| seen.borrow_mut().clear());
 }
 
 /// Enables or disables leaving subtrees alone in scroll-only frames.
@@ -453,6 +583,7 @@ pub(crate) fn enter() -> Entry {
         impure: IMPURE.with(Cell::get),
         tree: element_tree_generation(),
         cursor: CURSOR_READS.with(Cell::get),
+        transform: aimer_canvas::transform_reads(),
     }
 }
 
@@ -557,7 +688,7 @@ pub(crate) fn try_skip(element: ElementId, ctx: &BuildContext) -> Decision {
             miss("skip: the record is not from the last traversal");
             return None;
         }
-        if !record.key.matches(ctx, record.cursor_read) {
+        if !record.key.matches(ctx, record.reads) {
             miss("skip: the context differs");
             return None;
         }
@@ -566,7 +697,8 @@ pub(crate) fn try_skip(element: ElementId, ctx: &BuildContext) -> Decision {
         // (a hover, an idle frame) the answer cannot have changed.
         let geometry = geometry_revision_now();
         if geometry != record.geometry {
-            if TreeKey::of(ctx, element) != record.tree_key {
+            let cursor = ctx.cursor_pos_unobserved();
+            if !record.tree_key.matches(&TreeKey::of(ctx, element, record.reads), (cursor.x, cursor.y)) {
                 miss("skip: the retained tree shows it differently");
                 return None;
             }
@@ -579,9 +711,9 @@ pub(crate) fn try_skip(element: ElementId, ctx: &BuildContext) -> Decision {
         // The subtree now counts as walked by this traversal, so the next one may
         // leave it alone in turn.
         record.traversal = traversal;
-        Some(record.visits)
+        Some((record.visits, record.reads))
     });
-    let Some(skipped) = visits else {
+    let Some((skipped, reads)) = visits else {
         return Decision::Walk;
     };
     if VERIFY.with(Cell::get) {
@@ -594,6 +726,16 @@ pub(crate) fn try_skip(element: ElementId, ctx: &BuildContext) -> Decision {
         return Decision::Verify;
     }
     VISITS.with(|visits| visits.set(visits.get() + skipped));
+    // Left alone, the subtree does not read anything, but whatever contains it still
+    // depends on what it would have read: a container's record that left out the
+    // pointer or the transform because its children were skipped would be taken for
+    // one that does not need them.
+    if reads.cursor {
+        note_cursor_read();
+    }
+    if reads.transform {
+        aimer_canvas::note_transform_read();
+    }
     STATS.with(|stats| {
         let mut current = stats.get();
         current.skips += 1;
@@ -735,10 +877,15 @@ pub(crate) fn leave(element: ElementId, ctx: &BuildContext, entry: Entry) {
         miss("record: the tree changed during the walk");
         return;
     }
-    let cursor_read = CURSOR_READS.with(Cell::get) != entry.cursor;
+    let reads = Reads {
+        cursor: CURSOR_READS.with(Cell::get) != entry.cursor,
+        // With position independence off, every subtree counts as having read it.
+        transform: aimer_canvas::transform_reads() != entry.transform
+            || !RELATIVE_WINDOW.with(Cell::get),
+    };
     // One word per walk is all a subtree that keeps moving costs: a record is built
     // only when the context is the one the previous walk was given.
-    let hash = context_hash(ctx, cursor_read);
+    let hash = context_hash(ctx, reads);
     let steady = SEEN.with(|seen| {
         let mut seen = seen.borrow_mut();
         if seen.is_empty() {
@@ -750,6 +897,7 @@ pub(crate) fn leave(element: ElementId, ctx: &BuildContext, entry: Entry) {
         steady
     });
     if !steady {
+        miss("record: not steady");
         return;
     }
     // Asked only of a subtree that holds still, which is rare next to one that moves.
@@ -757,8 +905,8 @@ pub(crate) fn leave(element: ElementId, ctx: &BuildContext, entry: Entry) {
         miss("record: no full traversal");
         return;
     }
-    let key = ContextKey::of(ctx, cursor_read);
-    let tree_key = TreeKey::of(ctx, element);
+    let key = ContextKey::of(ctx, reads);
+    let tree_key = TreeKey::of(ctx, element, reads);
     let geometry = geometry_revision_now();
     RECORDS.with(|records| {
         let mut records = records.borrow_mut();
@@ -775,7 +923,7 @@ pub(crate) fn leave(element: ElementId, ctx: &BuildContext, entry: Entry) {
             key,
             tree_key,
             geometry,
-            cursor_read,
+            reads,
         });
     });
     STATS.with(|stats| {

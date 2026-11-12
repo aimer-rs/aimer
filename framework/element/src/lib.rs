@@ -102,7 +102,8 @@ pub use crate::components::element::{
 pub use crate::components::element::{
     CleanSkipStats, CleanSkipViolation, clean_skip_blockers, clean_skip_frame_requesters,
     clean_skip_violations, clean_subtree_skip_stats, reset_clean_subtree_skip_stats,
-    set_clean_skip_blocker_probe, set_clean_skip_verify, set_clean_subtree_skip,
+    set_clean_skip_blocker_probe, set_clean_skip_relative_window, set_clean_skip_verify,
+    set_clean_subtree_skip,
 };
 
 #[cfg(feature = "frame-stats")]

@@ -993,8 +993,7 @@ impl RawSvg {
 
     #[inline]
     fn save_bounds(&self, ctx: &BuildContext, size: ResolvedSize) {
-        let (x, y) = ctx.canvas.get_transform_translation();
-        self.bounds.save(ctx.scale, x, y, size.width, size.height);
+        self.bounds.measure(&ctx.canvas, ctx.scale, size.width, size.height);
     }
 }
 

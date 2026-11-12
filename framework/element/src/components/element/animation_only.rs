@@ -223,8 +223,9 @@ pub(crate) fn register_animating_element(
 /// The canvas translation a lone revisit can reproduce, if the canvas holds a
 /// plain translation. Anything else (a scale, a rotation) is not reproduced.
 fn reproducible_translation(ctx: &BuildContext) -> Option<(f32, f32)> {
-    let translation = ctx.canvas.get_transform_translation();
-    (ctx.canvas.get_transform() == Mat3::translate(translation.0, translation.1))
+    // The framework's own check: it is not the subtree asking where it is drawn.
+    let translation = ctx.canvas.get_transform_translation_unobserved();
+    (ctx.canvas.get_transform_unobserved() == Mat3::translate(translation.0, translation.1))
         .then_some(translation)
 }
 

@@ -9,6 +9,7 @@ pub use canvas::TextInteractionLayout;
 pub use canvas::{
     Canvas, CanvasContext, CanvasRendering, FontFamily, FontStyle, FrameCanvas, InnerCanvas, Mat3,
     MorphParams, MorphStyle, Rect, RenderColor, TextHorizontalAlign, TextOverflowMode,
+    note_transform_read, transform_reads,
 };
 pub use material::{
     GradientShape, MAX_GRADIENT_STOPS, MagnificationStyle, MaterialClip, MaterialDrawRequest,

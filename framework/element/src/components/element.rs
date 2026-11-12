@@ -67,6 +67,9 @@ pub use animation_only::{
     set_animation_only_frame, set_frame_rebuilt_roots, traversal_counts,
     with_v2_animation_only_context,
 };
+/// Starts a full traversal, for tests of what a traversal leaves alone.
+#[cfg(test)]
+pub(crate) use animation_only::begin_full_traversal as begin_traversal_for_tests;
 use animation_only::{
     begin_full_traversal, capture_rebuilt_root, enter_subtree_walk, finish_full_traversal,
     is_animation_only_pass, pass_skips_subtree, register_animating_element,
@@ -108,7 +111,7 @@ pub(crate) fn note_frame_requested() {}
 pub use clean_skip::{
     CleanSkipStats, CleanSkipViolation, clean_skip_blockers, clean_skip_violations,
     clean_subtree_skip_stats, reset_clean_subtree_skip_stats, set_clean_skip_blocker_probe,
-    set_clean_skip_verify, set_clean_subtree_skip,
+    set_clean_skip_relative_window, set_clean_skip_verify, set_clean_subtree_skip,
 };
 pub use geometry_forward::{ChildUpdateFollows, set_geometry_forward_skip};
 pub use paint_revision::{PaintRevisionSource, watch_paint_revision};

@@ -546,6 +546,22 @@ struct HoverList {
     controller: ScrollController,
     hovered: Rc<Cell<i32>>,
     transitions: Rc<Cell<usize>>,
+    /// How many boxes each region wraps its content in: a region is only worth
+    /// leaving alone once its subtree has a few elements.
+    depth: usize,
+}
+
+/// A 200 by 60 box in `depth` more of the same.
+fn nested_box(depth: usize) -> aimer_widget::AnyWidget {
+    let mut widget = SizedBox::new().width(Dimension::Px(200.0)).height(Dimension::Px(60.0)).boxed();
+    for _ in 0..depth {
+        widget = SizedBox::new()
+            .width(Dimension::Px(200.0))
+            .height(Dimension::Px(60.0))
+            .child(widget)
+            .boxed();
+    }
+    widget
 }
 
 impl Widget for HoverList {
@@ -566,7 +582,7 @@ impl Widget for HoverList {
                         exit.0.set(exit.0.get() - 1);
                         exit.1.set(exit.1.get() + 1);
                     })
-                    .child(SizedBox::new().width(Dimension::Px(200.0)).height(Dimension::Px(60.0)))
+                    .child(nested_box(self.depth))
                     .boxed()
             })
             .collect::<Vec<_>>();
@@ -584,53 +600,56 @@ impl Widget for HoverList {
     }
 }
 
+/// Slides a list of hover regions under a pointer that does not move, with the skip
+/// on or off, and returns what hover did frame by frame.
+fn slide_under_the_pointer(skip: bool, depth: usize) -> (Vec<(i32, usize)>, aimer_widget::CleanSkipStats) {
+    aimer_widget::set_clean_subtree_skip(skip);
+    aimer_widget::reset_clean_subtree_skip_stats();
+    let (hovered, transitions) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+    let controller = ScrollController::new();
+    let mut app = AimerApp::start_headless_with(
+        HoverList {
+            controller: controller.clone(),
+            hovered: hovered.clone(),
+            transitions: transitions.clone(),
+            depth,
+        },
+        HeadlessOptions {
+            size: PhysicalSize::new(200, 300),
+            scale_factor: 1.0,
+        },
+    );
+    app.send_window_event(WindowEvent::CursorMoved {
+        device_id: DeviceId::dummy(),
+        position: PhysicalPosition::new(100.0, 150.0),
+    });
+    for _ in 0..6 {
+        app.render_frame();
+    }
+    let mut trace = vec![(hovered.get(), transitions.get())];
+    for delta in [-45.0, -60.0, -75.0, 90.0, -130.0, -45.0, -60.0, 75.0, -90.0] {
+        app.send_window_event(WindowEvent::MouseWheel {
+            device_id: DeviceId::dummy(),
+            delta: MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, delta)),
+            phase: TouchPhase::Moved,
+        });
+        let mut frames = 0;
+        while app.app.scroll_smoother.is_active() || frames == 0 {
+            app.render_frame();
+            trace.push((hovered.get(), transitions.get()));
+            frames += 1;
+            assert!(frames < 120, "the scroll never settled");
+        }
+    }
+    (trace, aimer_widget::clean_subtree_skip_stats())
+}
+
 /// Content that slides under a pointer that did not move changes which region it
 /// is over, and hover follows exactly as it does without the skip.
 #[test]
 fn hover_follows_content_that_slides_under_a_pointer_that_did_not_move() {
-    let run = |skip: bool| {
-        aimer_widget::set_clean_subtree_skip(skip);
-        aimer_widget::reset_clean_subtree_skip_stats();
-        let (hovered, transitions) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
-        let controller = ScrollController::new();
-        let mut app = AimerApp::start_headless_with(
-            HoverList {
-                controller: controller.clone(),
-                hovered: hovered.clone(),
-                transitions: transitions.clone(),
-            },
-            HeadlessOptions {
-                size: PhysicalSize::new(200, 300),
-                scale_factor: 1.0,
-            },
-        );
-        app.send_window_event(WindowEvent::CursorMoved {
-            device_id: DeviceId::dummy(),
-            position: PhysicalPosition::new(100.0, 150.0),
-        });
-        for _ in 0..6 {
-            app.render_frame();
-        }
-        let mut trace = vec![(hovered.get(), transitions.get())];
-        for delta in [-45.0, -60.0, -75.0, 90.0, -130.0] {
-            app.send_window_event(WindowEvent::MouseWheel {
-                device_id: DeviceId::dummy(),
-                delta: MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, delta)),
-                phase: TouchPhase::Moved,
-            });
-            let mut frames = 0;
-            while app.app.scroll_smoother.is_active() || frames == 0 {
-                app.render_frame();
-                trace.push((hovered.get(), transitions.get()));
-                frames += 1;
-                assert!(frames < 120, "the scroll never settled");
-            }
-        }
-        (trace, aimer_widget::clean_subtree_skip_stats())
-    };
-
-    let (without, _) = run(false);
-    let (with, stats) = run(true);
+    let (without, _) = slide_under_the_pointer(false, 0);
+    let (with, stats) = slide_under_the_pointer(true, 0);
 
     assert!(
         without.last().expect("a trace").1 > without[0].1 + 2,
@@ -640,6 +659,172 @@ fn hover_follows_content_that_slides_under_a_pointer_that_did_not_move() {
     // The enter of the region that arrives under the pointer is delivered before
     // the exit of the one that leaves, so two are hovered for a moment, never more.
     assert!(with.iter().all(|(hovered, _)| (0..=2).contains(hovered)), "{with:?}");
+}
+
+/// The same with regions big enough to be left alone: the skip applies to them
+/// while they move, and a region that moves under the pointer is still walked.
+#[test]
+fn hover_follows_regions_that_are_left_alone_while_they_slide_under_the_pointer() {
+    let (without, _) = slide_under_the_pointer(false, 10);
+    let (with, stats) = slide_under_the_pointer(true, 10);
+
+    assert!(
+        without.last().expect("a trace").1 > without[0].1 + 2,
+        "the content never slid under the pointer, so the scene proves nothing: {without:?}"
+    );
+    assert!(stats.skips > 0, "no region was left alone, so the scene proves nothing: {stats:?}");
+    assert_eq!(without, with, "hover differs when subtrees are left alone; stats {stats:?}");
+}
+
+/// A leaf that counts its updates and, if it `reads_place`, asks the canvas where
+/// it is drawn in every one of them.
+struct PlaceLeaf {
+    updates: Rc<Cell<usize>>,
+    reads_place: bool,
+}
+
+impl Widget for PlaceLeaf {
+    fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+        PlaceLeafElement { updates: self.updates, reads_place: self.reads_place }.boxed()
+    }
+}
+
+struct PlaceLeafElement {
+    updates: Rc<Cell<usize>>,
+    reads_place: bool,
+}
+
+impl VisitorElement for PlaceLeafElement {
+    fn debug_name(&self) -> &'static str {
+        "CleanSkipPlaceLeaf"
+    }
+}
+
+impl EventElement for PlaceLeafElement {}
+impl Rebuildable for PlaceLeafElement {}
+
+impl LayoutElement for PlaceLeafElement {
+    fn size(&self) -> Option<Size> {
+        Some(Size::new(Dimension::Px(200.0), Dimension::Px(60.0)))
+    }
+}
+
+impl Drawable for PlaceLeafElement {
+    fn update(&self, ctx: &BuildContext) {
+        self.updates.set(self.updates.get() + 1);
+        if self.reads_place {
+            let _ = ctx.canvas.get_transform_translation();
+        }
+    }
+
+    fn reusable_walk(&self) -> bool {
+        true
+    }
+
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
+        true
+    }
+
+    fn paint(&self, ctx: &BuildContext) {
+        Canvas::of(ctx).finish();
+    }
+}
+
+/// A list of rows that scroll, each a few boxes deep around a leaf.
+struct PlaceList {
+    updates: Rc<Cell<usize>>,
+    reads_place: bool,
+}
+
+impl Widget for PlaceList {
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        let rows = (0..30)
+            .map(|_| {
+                let mut row = PlaceLeaf {
+                    updates: self.updates.clone(),
+                    reads_place: self.reads_place,
+                }
+                .boxed();
+                for _ in 0..10 {
+                    row = SizedBox::new()
+                        .width(Dimension::Px(200.0))
+                        .height(Dimension::Px(60.0))
+                        .child(row)
+                        .boxed();
+                }
+                row
+            })
+            .collect::<Vec<_>>();
+        SizedBox::new()
+            .width(Dimension::Px(200.0))
+            .height(Dimension::Px(300.0))
+            .child(
+                Scrollable::new()
+                    .vertical_scroll_bar(None)
+                    .horizontal_scroll_bar(None)
+                    .child(Column::new().children(rows)),
+            )
+            .to_element(ctx)
+    }
+}
+
+/// How many times the leaves were updated by a script of scrolling.
+fn updates_while_scrolling(skip: bool, reads_place: bool) -> (usize, aimer_widget::CleanSkipStats) {
+    aimer_widget::set_clean_subtree_skip(skip);
+    aimer_widget::reset_clean_subtree_skip_stats();
+    let updates = Rc::new(Cell::new(0));
+    let mut app = AimerApp::start_headless_with(
+        PlaceList { updates: updates.clone(), reads_place },
+        HeadlessOptions { size: PhysicalSize::new(200, 300), scale_factor: 1.0 },
+    );
+    app.send_window_event(WindowEvent::CursorMoved {
+        device_id: DeviceId::dummy(),
+        position: PhysicalPosition::new(100.0, 150.0),
+    });
+    for _ in 0..6 {
+        app.render_frame();
+    }
+    let before = updates.get();
+    for delta in [-45.0, -60.0, -75.0, 90.0, -130.0, -45.0] {
+        app.send_window_event(WindowEvent::MouseWheel {
+            device_id: DeviceId::dummy(),
+            delta: MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, delta)),
+            phase: TouchPhase::Moved,
+        });
+        let mut frames = 0;
+        while app.app.scroll_smoother.is_active() || frames == 0 {
+            app.render_frame();
+            frames += 1;
+            assert!(frames < 120, "the scroll never settled");
+        }
+    }
+    (updates.get() - before, aimer_widget::clean_subtree_skip_stats())
+}
+
+/// Rows that scroll are the same rows in another place. Those that never asked
+/// where they are drawn are left alone while they move; those that did are walked,
+/// since their walk may depend on the answer.
+#[test]
+fn rows_that_never_ask_where_they_are_drawn_are_left_alone_while_they_move() {
+    let (always, _) = updates_while_scrolling(false, false);
+    let (blind, blind_stats) = updates_while_scrolling(true, false);
+    let (reading, reading_stats) = updates_while_scrolling(true, true);
+
+    assert!(always > 0);
+    assert!(blind_stats.skips > 0, "nothing was left alone: {blind_stats:?}");
+    assert!(
+        blind < always,
+        "rows that only moved were walked as often as without the skip: {blind} against {always}"
+    );
+    // A row that read its place is still left alone while it holds still, between
+    // one wheel step and the next, so it is walked less than without the skip; but
+    // not while it moves, so it is walked more than a row that never asked.
+    assert!(
+        blind < reading,
+        "rows that read where they are drawn were left alone as often as rows that did not: \
+         {reading} against {blind} (stats {reading_stats:?})"
+    );
+    assert!(reading <= always, "{reading} updates with the skip against {always} without");
 }
 
 /// A subtree that never asks for the pointer does not depend on it, so a pointer

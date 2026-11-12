@@ -446,9 +446,7 @@ impl<E: Element> LayoutElement for RawMouseRegion<E> {
     fn layout(&self, ctx: &BuildContext) -> ResolvedSize {
         let size = self.child.layout(ctx);
         // Cache our own bounds from the canvas transform for hit-testing
-        let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
-        self.cached_bounds
-            .save(ctx.scale, abs_x, abs_y, size.width, size.height);
+        self.cached_bounds.measure(&ctx.canvas, ctx.scale, size.width, size.height);
         size
     }
 
@@ -482,9 +480,7 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
 
     fn update(&self, ctx: &BuildContext<'_>) {
         let child_size = self.child.computed_size(ctx);
-        let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
-        self.cached_bounds
-            .save(ctx.scale, abs_x, abs_y, child_size.width, child_size.height);
+        self.cached_bounds.measure(&ctx.canvas, ctx.scale, child_size.width, child_size.height);
         self.sync_hover_from_paint(ctx.cursor_pos());
         self.child.update(ctx);
     }
@@ -524,9 +520,7 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
 
     fn sync_paint_geometry(&self, ctx: &BuildContext<'_>) {
         let child_size = self.child.computed_size(ctx);
-        let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
-        self.cached_bounds
-            .save(ctx.scale, abs_x, abs_y, child_size.width, child_size.height);
+        self.cached_bounds.measure(&ctx.canvas, ctx.scale, child_size.width, child_size.height);
 
         self.sync_hover_from_paint(ctx.cursor_pos());
         self.child.forward_paint_geometry(ctx);

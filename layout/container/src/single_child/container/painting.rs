@@ -43,11 +43,10 @@ impl<T: Element, D: Decoration> RawContainer<T, D> {
         // without live bounds an opaque container could never occlude an event
         // at a specific position (see `on_event`). Bounds start after the margin
         // translate and span the actually-drawn size (`draw_width`/`draw_height`).
-        let (start_x, start_y) = ctx.canvas.get_transform_translation();
-        self.bounds.save(
+        self.bounds.measure_offset(
+            &ctx.canvas,
             scale,
-            start_x + m_left,
-            start_y + m_top,
+            (m_left, m_top),
             draw_width,
             draw_height,
         );

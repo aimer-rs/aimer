@@ -780,12 +780,11 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         let computed = self.computed_size(ctx);
         let draw_width = (computed.width - m_left - m_right).max(0.0);
         let draw_height = (computed.height - m_top - m_bottom).max(0.0);
-        let (start_x, start_y) = ctx.canvas.get_transform_translation();
         if scale.is_finite() && scale > 0.0 {
-            self.bounds.save(
+            self.bounds.measure_offset(
+                &ctx.canvas,
                 scale,
-                start_x + m_left,
-                start_y + m_top,
+                (m_left, m_top),
                 draw_width,
                 draw_height,
             );

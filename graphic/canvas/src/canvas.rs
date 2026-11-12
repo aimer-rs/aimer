@@ -28,6 +28,31 @@ pub use aimer_cupid::utilities::Color as RenderColor;
 use crate::material::MaterialDrawRequest;
 mod native_impl;
 
+thread_local! {
+    static TRANSFORM_READS: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Counts one read of the canvas transform.
+///
+/// Called by the getters. A retained subtree that is left alone instead of walked
+/// calls it on behalf of the reads its last walk made, so that whatever contains it
+/// still sees that something below it looked at where it is drawn.
+#[inline]
+pub fn note_transform_read() {
+    TRANSFORM_READS.with(|reads| reads.set(reads.get().wrapping_add(1)));
+}
+
+/// How many times the canvas transform has been read on this thread.
+///
+/// Only [`FrameCanvas::get_transform`] and [`FrameCanvas::get_transform_translation`]
+/// count. The number only means something as a difference: an element whose walk
+/// leaves it unchanged did not look at where on the canvas it was drawn, so a walk
+/// that happens again somewhere else gives the same result.
+#[inline]
+pub fn transform_reads() -> u64 {
+    TRANSFORM_READS.with(Cell::get)
+}
+
 pub trait CanvasRendering: Clone {
     fn begin_frame(&self);
     fn translate(&self, pos: Vec2d);
@@ -423,15 +448,40 @@ impl<'a> FrameCanvas<'a> {
     }
 
     /// Returns the current transform's translation (tx, ty) in physical pixels.
+    ///
+    /// Counts as a read of the transform; see [`transform_reads`].
     #[allow(dead_code)]
     #[inline]
     pub fn get_transform_translation(&self) -> (f32, f32) {
+        note_transform_read();
         CanvasRendering::get_transform_translation(self.inner)
     }
 
     /// Returns the current local-to-physical canvas transform.
+    ///
+    /// Counts as a read of the transform; see [`transform_reads`].
     #[inline]
     pub fn get_transform(&self) -> Mat3 {
+        note_transform_read();
+        CanvasRendering::get_transform(self.inner)
+    }
+
+    /// The current transform's translation, without counting as a read of it.
+    ///
+    /// For an element whose use of it is checkable against another source and
+    /// does not decide what it draws or how it reacts: it can then be left alone
+    /// when it only moved.
+    #[inline]
+    pub fn get_transform_translation_unobserved(&self) -> (f32, f32) {
+        CanvasRendering::get_transform_translation(self.inner)
+    }
+
+    /// The current transform, without counting as a read of it.
+    ///
+    /// For the framework's own bookkeeping, which compares transforms and must not
+    /// make every subtree look like it depends on where it is.
+    #[inline]
+    pub fn get_transform_unobserved(&self) -> Mat3 {
         CanvasRendering::get_transform(self.inner)
     }
 }

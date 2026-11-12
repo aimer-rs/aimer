@@ -126,6 +126,13 @@ pub struct InteractionBounds {
     /// then only serves as the comparison value (and the fallback when the
     /// source's node disappears).
     canvas: CacheBounds,
+    /// The full traversal that took the canvas measurement through
+    /// [`measure`](Self::measure), or zero when it was not taken that way.
+    ///
+    /// An element left alone by a traversal keeps the measurement it had, so once
+    /// the render tree is the source a measurement from an earlier traversal says
+    /// nothing about where the element is now, and is not compared with it.
+    measured_in: Cell<u32>,
     /// Set once, on the first adoption; later adoptions update it in place.
     /// A `OnceCell` keeps the element at one pointer.
     source: OnceCell<Rc<SourceCell>>,
@@ -153,6 +160,7 @@ impl InteractionBounds {
     pub fn new() -> Self {
         Self {
             canvas: CacheBounds::new(),
+            measured_in: Cell::new(0),
             source: OnceCell::new(),
         }
     }
@@ -161,12 +169,47 @@ impl InteractionBounds {
     /// logical pixels.
     #[inline]
     pub fn save(&self, scale: f32, x: f32, y: f32, width: f32, height: f32) {
+        self.measured_in.set(0);
         self.canvas.save(scale, x, y, width, height);
+    }
+
+    /// Measures the rectangle from the canvas transform at the current place:
+    /// `width` and `height` are the element's size in logical pixels.
+    ///
+    /// Once the render tree is the source of the hit area the measurement only
+    /// serves as a fallback and as the audit's second opinion, and where the element
+    /// is does not decide anything it does: reading the transform is then not
+    /// counted, so that an element that only moved (a row of a list that scrolls)
+    /// is not taken for one that depends on where it is drawn.
+    #[inline]
+    pub fn measure(&self, canvas: &aimer_canvas::FrameCanvas<'_>, scale: f32, width: f32, height: f32) {
+        self.measure_offset(canvas, scale, (0.0, 0.0), width, height);
+    }
+
+    /// [`measure`](Self::measure) for a rectangle that starts `offset` (in the
+    /// canvas's units) from the current place, a margin say.
+    #[inline]
+    pub fn measure_offset(
+        &self,
+        canvas: &aimer_canvas::FrameCanvas<'_>,
+        scale: f32,
+        offset: (f32, f32),
+        width: f32,
+        height: f32,
+    ) {
+        let (x, y) = if self.is_adopted() {
+            canvas.get_transform_translation_unobserved()
+        } else {
+            canvas.get_transform_translation()
+        };
+        self.measured_in.set(crate::components::element::traversal_counts().0 as u32);
+        self.canvas.save(scale, x + offset.0, y + offset.1, width, height);
     }
 
     /// Records a rectangle already in logical pixels as the canvas measurement.
     #[inline]
     pub fn set_bounds(&self, bounds: Bounds) {
+        self.measured_in.set(0);
         self.canvas.set_bounds(bounds);
     }
 
@@ -329,6 +372,10 @@ impl InteractionBounds {
     /// measurement, when it differs by more than a pixel.
     pub fn disagreement(&self, debug_name: &'static str) -> Option<InteractionDisagreement> {
         let tree = self.source.get()?.bounds()?;
+        let measured_in = self.measured_in.get();
+        if measured_in != 0 && measured_in != crate::components::element::traversal_counts().0 as u32 {
+            return None;
+        }
         let canvas = self.canvas.get_bounds()?;
         let canvas = [canvas.x, canvas.y, canvas.width, canvas.height];
         let tree = [tree.x, tree.y, tree.width, tree.height];
@@ -532,6 +579,28 @@ mod tests {
         assert_eq!(reported.debug_name, "Probe");
         assert_eq!(reported.canvas, [0.0, 0.0, 100.0, 100.0]);
         assert_eq!(reported.tree, [0.0, 14.0, 100.0, 100.0]);
+    }
+
+    /// A traversal that leaves the element alone does not measure it again, so the
+    /// canvas holds where it was and the tree where it is: not a disagreement.
+    #[test]
+    fn a_measurement_from_an_earlier_traversal_is_not_compared_with_the_tree() {
+        use crate::components::element::begin_traversal_for_tests as begin_traversal;
+        let canvas = aimer_canvas::FrameCanvas::new(Box::leak(Box::new(aimer_canvas::InnerCanvas::new())));
+        let (_tree, _node, source) = source_at(0.0, 50.0, (10.0, 10.0));
+        let bounds = InteractionBounds::new();
+        bounds.adopt(source);
+
+        begin_traversal();
+        bounds.measure(&canvas, 1.0, 10.0, 10.0);
+        assert!(bounds.disagreement("test").is_some(), "measured now, 50 pixels from the tree");
+
+        begin_traversal();
+        assert!(bounds.disagreement("test").is_none(), "measured a traversal ago");
+
+        // A measurement taken any other way is always compared.
+        bounds.save(1.0, 0.0, 0.0, 10.0, 10.0);
+        assert!(bounds.disagreement("test").is_some());
     }
 
     #[test]

@@ -590,9 +590,7 @@ impl<E: Element> LayoutElement for RawGestureDetector<E> {
 
     fn layout(&self, ctx: &BuildContext) -> ResolvedSize {
         let size = self.child.layout(ctx);
-        let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
-        self.cached_bounds
-            .save(ctx.scale, abs_x, abs_y, size.width, size.height);
+        self.cached_bounds.measure(&ctx.canvas, ctx.scale, size.width, size.height);
         size
     }
 
@@ -617,10 +615,8 @@ impl<E: Element> Drawable for RawGestureDetector<E> {
     }
 
     fn update(&self, ctx: &BuildContext<'_>) {
-        let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
         let child_size = self.child.computed_size(ctx);
-        self.cached_bounds
-            .save(ctx.scale, abs_x, abs_y, child_size.width, child_size.height);
+        self.cached_bounds.measure(&ctx.canvas, ctx.scale, child_size.width, child_size.height);
         self.poll_held_gestures();
         self.child.update(ctx);
     }
@@ -659,10 +655,8 @@ impl<E: Element> Drawable for RawGestureDetector<E> {
     }
 
     fn sync_paint_geometry(&self, ctx: &BuildContext<'_>) {
-        let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
         let child_size = self.child.computed_size(ctx);
-        self.cached_bounds
-            .save(ctx.scale, abs_x, abs_y, child_size.width, child_size.height);
+        self.cached_bounds.measure(&ctx.canvas, ctx.scale, child_size.width, child_size.height);
         self.child.forward_paint_geometry(ctx);
     }
 }
