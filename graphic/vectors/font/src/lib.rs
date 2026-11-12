@@ -11,6 +11,8 @@ pub(crate) use aimer_cupid_svg as svg;
 
 #[doc(hidden)]
 pub mod aimer_font;
+mod ascii_line_breaks;
+mod char_offsets;
 #[cfg(all(
     any(target_os = "ios", target_os = "macos"),
     feature = "apple-core-text"

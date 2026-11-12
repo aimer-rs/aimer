@@ -292,3 +292,68 @@ fn presenting_a_nested_page_follows_the_inner_presentation() {
     assert!(same(footprint, exact), "{footprint:?} is not {exact:?}");
     assert!(footprint.x + footprint.width > 900.0, "{footprint:?}");
 }
+
+/// Wrappers nested `depth` deep, each holding a leaf beside the next wrapper,
+/// the way padding, containers and flex rows nest around a paragraph.
+fn nested_wrappers(depth: usize) -> (RenderTree, Vec<RenderNodeId>) {
+    let tree = RenderTree::new();
+    let root = tree.add_root(Rect::new(0.0, 0.0, 800.0, 700.0)).unwrap();
+    let mut ids = vec![root];
+    let mut parent = root;
+    for level in 0..depth {
+        let inset = level as f32;
+        parent = tree
+            .add_child(parent, Rect::new(1.0, 1.0, 790.0 - inset, 690.0 - inset))
+            .unwrap();
+        ids.push(parent);
+        ids.push(tree.add_child(parent, Rect::new(2.0, 2.0, 50.0, 12.0)).unwrap());
+    }
+    (tree, ids)
+}
+
+#[test]
+fn choosing_paint_sources_for_a_nested_page_does_not_walk_every_subtree() {
+    const DEPTH: usize = 40;
+    // A page arriving: every node picks its paint source once, from the outside in.
+    let (tree, ids) = nested_wrappers(DEPTH);
+    let nodes = ids.len();
+
+    reset_node_lookups();
+    for id in &ids {
+        tree.set_paint_source(*id, RenderPaintSource::LocalV2).unwrap();
+    }
+    let derived = frame_derivations();
+
+    // Walking the subtree of each node costs about nodes^2 / 2 frames; knowing
+    // each subtree once costs a few per node.
+    assert!(
+        derived <= nodes * 8,
+        "{derived} frames were derived to choose paint sources for {nodes} nodes"
+    );
+}
+
+#[test]
+fn choosing_a_paint_source_damages_what_the_subtree_covered() {
+    for seed in [3, 17, 505, 9_090] {
+        for (tree, ids) in [
+            plain_tree(seed, 60),
+            varied_tree(seed, 60),
+            untransformed_tree(seed, 60),
+        ] {
+            let _ = tree.take_damage();
+            for id in ids {
+                let exact = tree.draw_cmd.borrow().visible_subtree_bounds(id);
+                let _ = tree.take_damage();
+                tree.set_paint_source(id, RenderPaintSource::LocalV2).unwrap();
+                let damage = tree.take_damage().into_iter().reduce(Rect::union);
+                if let Some(exact) = exact {
+                    let damage = damage.unwrap_or_else(|| panic!("no damage for {id:?}, seed {seed}"));
+                    assert!(
+                        contains(damage, exact),
+                        "damage {damage:?} misses {exact:?}, {id:?}, seed {seed}"
+                    );
+                }
+            }
+        }
+    }
+}

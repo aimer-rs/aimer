@@ -1151,6 +1151,8 @@ pub fn layout_paragraph_with_shaper(
     )
 }
 
+pub use crate::char_offsets::for_each_char;
+
 /// Byte-indexed table of the line break opportunities in `text`, where index
 /// `i` reports whether a line may start at byte `i`.
 ///
@@ -1169,9 +1171,25 @@ pub fn line_break_opportunities(text: &str) -> Vec<bool> {
     allowed
 }
 
-fn line_break_opportunities_into(text: &str, allowed: &mut Vec<bool>) {
-    allowed.clear();
-    allowed.resize(text.len() + 1, false);
+/// [`line_break_opportunities`] into a buffer the caller keeps.
+///
+/// `allowed` may hold anything and be any length: it is resized to
+/// `text.len() + 1` and every entry is written, so a caller measuring many
+/// paragraphs reuses one allocation and pays for no clearing.
+pub fn line_break_opportunities_into(text: &str, allowed: &mut Vec<bool>) {
+    let entries = text.len() + 1;
+    if allowed.len() < entries {
+        allowed.resize(entries, false);
+    } else {
+        allowed.truncate(entries);
+    }
+    // Plain ASCII prose is decided by a pair table; anything else, or any
+    // punctuation it does not know, goes through the general algorithm.
+    if crate::ascii_line_breaks::fill(text, allowed) {
+        return;
+    }
+    // A declined text may have been partly written.
+    allowed.fill(false);
     for (offset, _) in linebreaks(text) {
         allowed[offset] = true;
     }

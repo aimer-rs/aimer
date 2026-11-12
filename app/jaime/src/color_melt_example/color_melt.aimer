@@ -4,6 +4,7 @@ import aimer::clip::clip_alpha;
 import aimer::color::srgb_color_to_linear;
 import aimer::sdf::sdf_rounded_rect;
 
+
 // Colors that flow into one another like wax or paint on a warm surface.
 //
 // The pattern is a stack of sine bands whose coordinates are bent four times by

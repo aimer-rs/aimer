@@ -1,5 +1,7 @@
 mod glyph_run;
 mod run_advances;
+#[cfg(test)]
+mod script_run_tests;
 
 pub use run_advances::RunAdvances;
 
@@ -510,6 +512,11 @@ pub struct GlyphRasterizer {
     cache: HashMap<GlyphKey, RasterizedGlyph>,
     retained_bitmap_bytes: usize,
     advance_cache: HashMap<GlyphKey, f32>,
+    /// ASCII advances remembered across measure calls, one table per style.
+    ///
+    /// Owned and kept in step with the faces by [`run_advances`]; every site
+    /// that drops or changes what a face answers must clear it.
+    ascii_advances: Vec<(run_advances::AsciiAdvanceKey, [f32; 128])>,
     /// Lazy cmap and script-coverage answers, partitioned by face.
     coverage_index_cache: HashMap<FontId, CoverageIndex>,
     /// Whether the fixed primary face covers the printable ASCII range.
@@ -657,6 +664,7 @@ impl GlyphRasterizer {
             cache: HashMap::default(),
             retained_bitmap_bytes: 0,
             advance_cache: HashMap::default(),
+            ascii_advances: Vec::new(),
             coverage_index_cache: HashMap::default(),
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
@@ -700,6 +708,7 @@ impl GlyphRasterizer {
             cache: HashMap::default(),
             retained_bitmap_bytes: 0,
             advance_cache: HashMap::default(),
+            ascii_advances: Vec::new(),
             coverage_index_cache: HashMap::default(),
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
@@ -937,6 +946,7 @@ impl GlyphRasterizer {
             cache: HashMap::default(),
             retained_bitmap_bytes: 0,
             advance_cache: HashMap::default(),
+            ascii_advances: Vec::new(),
             coverage_index_cache: HashMap::default(),
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
@@ -1178,6 +1188,9 @@ impl GlyphRasterizer {
         // none of the old face ids disappeared, so selection answers must not
         // survive a registry revision.
         self.resolved_codepoint_cache.clear();
+        // A new face of an already known family can change which face answers
+        // for it without any old id changing, so no remembered advance survives.
+        self.ascii_advances.clear();
         let (family_faces, revision) = registered_family_faces();
         let changed_ids = self
             .family_faces
@@ -1204,6 +1217,7 @@ impl GlyphRasterizer {
     /// invalidated together: keeping either one would allow an old face to
     /// answer after a registration was replaced or removed.
     fn invalidate_face_caches(&mut self, invalidated_ids: &HashSet<FontId>) {
+        self.ascii_advances.clear();
         if invalidated_ids.is_empty() {
             return;
         }
@@ -1268,16 +1282,33 @@ impl GlyphRasterizer {
         #[cfg(test)]
         KEY_LOOKUPS.with(|count| count.set(count.get() + 1));
         self.refresh_registered_family_faces();
-        if let Some(font_id) = self
-            .family_record(family, weight, style)
-            .map(|record| record.id)
-            && let Some(glyph_id) = self.glyph_index_for_font(font_id, codepoint)
-        {
-            let glyph_weight = self.glyph_weight_for_request(font_id, weight);
-            return GlyphKey::new(font_id, glyph_id, font_size).weighted(glyph_weight);
+        if let Some(key) = self.family_face_glyph_key(codepoint, font_size, family, weight, style) {
+            return key;
         }
 
         self.glyph_key_for_codepoint_at_weight(codepoint, font_size, weight)
+    }
+
+    /// The key of `codepoint` in the face the family itself picks, when that
+    /// face has the glyph.
+    ///
+    /// `None` sends the caller on to the fallback chain, whose answer also
+    /// depends on which fallback lanes happen to be loaded; this one depends
+    /// only on the family's faces, so it is the half that can be remembered.
+    /// The caller has refreshed the registered faces.
+    #[inline]
+    fn family_face_glyph_key(
+        &mut self,
+        codepoint: char,
+        font_size: f32,
+        family: FontFamily,
+        weight: FontWeight,
+        style: FontStyle,
+    ) -> Option<GlyphKey> {
+        let font_id = self.family_record(family, weight, style)?.id;
+        let glyph_id = self.glyph_index_for_font(font_id, codepoint)?;
+        let glyph_weight = self.glyph_weight_for_request(font_id, weight);
+        Some(GlyphKey::new(font_id, glyph_id, font_size).weighted(glyph_weight))
     }
 
     /// Returns a family-resolved glyph key at arbitrary OpenType variation
@@ -1306,6 +1337,11 @@ impl GlyphRasterizer {
         style: FontStyle,
     ) -> f32 {
         let key = self.glyph_key_for_family_codepoint(codepoint, font_size, family, weight, style);
+        self.advance_for_key(key, font_size)
+    }
+
+    /// The advance of the glyph `key` names, measured once per key.
+    fn advance_for_key(&mut self, key: GlyphKey, font_size: f32) -> f32 {
         if let Some(width) = self.advance_cache.get(&key) {
             return *width;
         }
@@ -1334,11 +1370,12 @@ impl GlyphRasterizer {
         // The language travels with it for the same reason: a run drawn in a
         // Chinese face may not be measured in a Japanese one.
         self.begin_script_run(text, language);
-        let mut advances = RunAdvances::new();
+        let mut advances = RunAdvances::begin(self, font_size, family, weight, style);
         let width = text
             .chars()
             .map(|codepoint| advances.advance(self, codepoint, font_size, family, weight, style))
             .sum();
+        advances.finish(self);
         self.end_script_run();
         width
     }
@@ -1376,6 +1413,7 @@ impl GlyphRasterizer {
         self.cache.clear();
         self.retained_bitmap_bytes = 0;
         self.advance_cache.clear();
+        self.ascii_advances.clear();
         self.coverage_index_cache.clear();
         self.resolved_codepoint_cache.clear();
         self.platform_only_cache.clear();
@@ -1677,6 +1715,15 @@ impl GlyphRasterizer {
     /// pass it here; see [`ScriptRequirement::from_run`] for how far it
     /// reaches.
     pub fn begin_script_run(&mut self, text: &str, language: Option<TextLanguage>) {
+        // A requirement is built from the ideographs of the run and the
+        // companion is its first kana; ASCII has neither, whatever `language`
+        // hints, so the scan is skipped for the text that is most of what gets
+        // measured. `is_ascii` is a vectorized std call, not a per-char loop.
+        if text.is_ascii() {
+            self.script_run = ScriptRequirement::EMPTY;
+            self.run_companion = None;
+            return;
+        }
         self.script_run = ScriptRequirement::from_run(text, language);
         self.run_companion = text.chars().find(|codepoint| is_kana(*codepoint));
     }

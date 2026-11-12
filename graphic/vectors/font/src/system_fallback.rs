@@ -479,6 +479,18 @@ pub(crate) fn script_probes(codepoint: char) -> &'static [char] {
 /// only samples a Japanese face never carries.
 ///
 /// The set is a fixed inline array, so passing one costs no allocation.
+// Counts the runs scanned for a requirement, so tests can show which text
+// skips the scan. Compiled out of every non-test build.
+#[cfg(test)]
+aimer_tls::thread_local! {
+    static FROM_RUN_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn from_run_calls() -> usize {
+    FROM_RUN_CALLS.with(std::cell::Cell::get)
+}
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct ScriptRequirement {
     chars: [char; Self::CAPACITY],
@@ -531,6 +543,8 @@ impl ScriptRequirement {
     /// Empty when `run` holds no partly covered script, which leaves every
     /// other script on the plain per-character path.
     pub(crate) fn from_run(run: &str, language: Option<TextLanguage>) -> Self {
+        #[cfg(test)]
+        FROM_RUN_CALLS.with(|calls| calls.set(calls.get() + 1));
         let ideographs = || {
             run.chars()
                 .filter(|codepoint| !script_probes(*codepoint).is_empty())

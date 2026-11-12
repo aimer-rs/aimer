@@ -1436,7 +1436,11 @@ impl RenderTree {
         if current_source == source {
             return Ok(());
         }
-        let bounds = tree.visible_subtree_bounds(element);
+        // Damage only has to cover the subtree, and a cover is known once per
+        // subtree instead of by walking it: a page arriving picks a paint source
+        // for every node from the outside in, and walking made that the sum of
+        // every subtree's size.
+        let bounds = tree.damage_footprint(element);
         let node = tree
             .node_mut_paint(element)
             .ok_or(RenderTreeError::UnknownNode(element))?;

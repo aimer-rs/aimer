@@ -7,7 +7,7 @@ use crate::font::{FontFamily, FontStyle, FontWeight, TextLanguage};
 use crate::frame::RetainedRenderPlan;
 use crate::lru_map::LruMap;
 use crate::text_pipeline::glyph_rasterizer::{GlyphRasterizer, RunAdvances};
-use crate::text_pipeline::text_layout::line_break_opportunities;
+use crate::text_pipeline::text_layout::{for_each_char, line_break_opportunities_into};
 use crate::utilities::{Mat3, TextureId};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -128,6 +128,9 @@ pub struct CupidCanvas {
     texture_registry: Arc<TextureRegistry>,
     rasterizer: Rc<RefCell<GlyphRasterizer>>,
     metrics_cache: Rc<RefCell<LruMap<TextMetricsKey, CachedTextMetrics>>>,
+    /// The break opportunities of the text being measured. Measuring many
+    /// paragraphs reuses one allocation instead of building a table for each.
+    break_scratch: Rc<RefCell<Vec<bool>>>,
     shaping_cache: Rc<RefCell<LruMap<TextShapeKey, Rc<crate::text_layout::ShapedText>>>>,
     unwrapped_layout_cache:
         Rc<RefCell<LruMap<TextShapeKey, Rc<crate::text_layout::TextInteractionLayout>>>>,
@@ -158,6 +161,7 @@ impl CupidCanvas {
             texture_registry,
             rasterizer: Rc::new(RefCell::new(GlyphRasterizer::new())),
             metrics_cache: Rc::new(RefCell::new(LruMap::new(METRICS_CACHE_CAPACITY))),
+            break_scratch: Rc::new(RefCell::new(Vec::new())),
             shaping_cache: Rc::new(RefCell::new(LruMap::new(SHAPING_CACHE_CAPACITY))),
             unwrapped_layout_cache: Rc::new(RefCell::new(LruMap::new(
                 UNWRAPPED_LAYOUT_CACHE_CAPACITY,
@@ -184,6 +188,7 @@ impl CupidCanvas {
             texture_registry: self.texture_registry.clone(),
             rasterizer: self.rasterizer.clone(),
             metrics_cache: self.metrics_cache.clone(),
+            break_scratch: self.break_scratch.clone(),
             shaping_cache: self.shaping_cache.clone(),
             unwrapped_layout_cache: self.unwrapped_layout_cache.clone(),
             text_language: Rc::new(Cell::new(self.text_language.get())),
@@ -540,18 +545,20 @@ impl CupidCanvas {
         // so the measured line count matches the rendered one (otherwise the
         // last line would be clipped).
         let mut last_break_end: Option<f32> = None;
-        let can_break_before = line_break_opportunities(text);
-        // One run, one style: each distinct ASCII character is resolved once.
-        let mut advances = RunAdvances::new();
+        let mut can_break_before = self.break_scratch.borrow_mut();
+        line_break_opportunities_into(text, &mut can_break_before);
+        // One run, one style: each distinct ASCII character is resolved once,
+        // and the next run of this style starts from what this one learned.
+        let mut advances = RunAdvances::begin(&mut rasterizer, font_size, font_family, weight, font_style);
 
-        for (offset, c) in text.char_indices() {
+        for_each_char(text, #[inline(always)] |offset, c| {
             if c == '\n' {
                 width = width.max(current_width);
                 line_widths.push(current_width);
                 current_width = 0.0;
                 line_count += 1;
                 last_break_end = None;
-                continue;
+                return;
             }
 
             let glyph_width =
@@ -582,10 +589,11 @@ impl CupidCanvas {
                 }
             }
             current_width += glyph_width;
-        }
+        });
 
         width = width.max(current_width);
         line_widths.push(current_width);
+        advances.finish(&mut rasterizer);
         rasterizer.end_script_run();
 
         // Subtract one line_gap: it only appears *between* lines, not after
@@ -778,6 +786,149 @@ mod family_metrics_tests {
 
     use super::CupidCanvas;
     use crate::font::{FontFamily, FontStyle, FontWeight};
+
+    /// A canvas that has already measured other text, and so starts each run
+    /// with remembered ASCII advances, must report exactly what a canvas that
+    /// has measured nothing reports.
+    ///
+    /// Printable text only: the advance of a control character such as a tab
+    /// already differs between a fresh and a used canvas (a fallback face answers
+    /// for it, and which one depends on the lanes loaded so far), independently
+    /// of any remembered advance.
+    #[test]
+    fn metrics_do_not_depend_on_what_the_canvas_measured_before() {
+        let texts = [
+            "The compositor keeps this decorated scrolling row on the live culled path.",
+            "Text shaping is cached per width, while stable paint islands elsewhere",
+            "with 数字 and あいう mixed in, then plain ASCII again.",
+            "Zebra quick brown fox JUMPS over 0123456789 lazy dogs!?",
+        ];
+        let styles = [
+            (16.0, FontFamily::SANS_SERIF, FontStyle::Normal, 400),
+            (16.0, FontFamily::SANS_SERIF, FontStyle::Normal, 700),
+            (13.5, FontFamily::MONOSPACE, FontStyle::Italic, 400),
+        ];
+        let warm = CupidCanvas::new();
+        for _ in 0..2 {
+            for (size, family, style, weight) in styles {
+                for text in texts {
+                    for max_width in [0.0, 120.0, 300.0] {
+                        let fresh = CupidCanvas::new();
+                        let expected =
+                            fresh.measure_text_metrics_styled(text, size, max_width, family, style, weight);
+                        let got =
+                            warm.measure_text_metrics_styled(text, size, max_width, family, style, weight);
+                        assert_eq!(
+                            (got.width, got.height, got.line_count),
+                            (expected.width, expected.height, expected.line_count),
+                            "{text:?} at {size} {style:?} {weight} wrapped to {max_width}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The wrapping algorithm as it was before measuring reused a break buffer
+    /// and walked the bytes of ASCII text itself: `char_indices`, a fresh table
+    /// of break opportunities, and one advance at a time straight from the
+    /// rasterizer. The measured metrics must equal what this says.
+    fn reference_metrics(
+        canvas: &CupidCanvas,
+        text: &str,
+        font_size: f32,
+        max_width: f32,
+        family: FontFamily,
+        style: FontStyle,
+        weight: u16,
+    ) -> (f32, f32, usize, Vec<f32>) {
+        use crate::text_pipeline::text_layout::line_break_opportunities;
+        let mut rasterizer = canvas.rasterizer.borrow_mut();
+        rasterizer.begin_script_run(text, canvas.text_language());
+        let weight = FontWeight::Value(u32::from(weight));
+        let (ascent, descent, line_gap) =
+            rasterizer.line_metrics_for_family(font_size, family, weight, style);
+        let line_height = ascent - descent + line_gap;
+        let (mut width, mut current, mut lines) = (0.0_f32, 0.0_f32, 1_usize);
+        let mut line_widths = Vec::new();
+        let mut last_break_end: Option<f32> = None;
+        let can_break_before = line_break_opportunities(text);
+        for (offset, c) in text.char_indices() {
+            if c == '\n' {
+                width = width.max(current);
+                line_widths.push(current);
+                current = 0.0;
+                lines += 1;
+                last_break_end = None;
+                continue;
+            }
+            let glyph = rasterizer.advance_width_for_family(c, font_size, family, weight, style);
+            if can_break_before[offset] {
+                last_break_end = Some(current);
+            }
+            if max_width > 0.0 && current > 0.0 && current + glyph > max_width {
+                if let Some(break_end) = last_break_end {
+                    let moved = (current - break_end).max(0.0);
+                    width = width.max(break_end);
+                    line_widths.push(break_end);
+                    current = moved;
+                    lines += 1;
+                    last_break_end = None;
+                } else {
+                    width = width.max(current);
+                    line_widths.push(current);
+                    current = 0.0;
+                    lines += 1;
+                }
+            }
+            current += glyph;
+        }
+        width = width.max(current);
+        line_widths.push(current);
+        rasterizer.end_script_run();
+        (width, lines as f32 * line_height - line_gap, lines, line_widths)
+    }
+
+    #[test]
+    fn metrics_equal_the_wrapping_algorithm_they_replaced() {
+        let texts = [
+            "",
+            "x",
+            "The compositor keeps this decorated scrolling row on the live culled path because \
+             its container owns clipping and hit-test bounds. Text shaping is cached per width.",
+            "Detail paragraph 12: well-known a-b 5-6 -x! ok? a/b, 3.14; trailing  ",
+            "  leading spaces and a veryveryveryveryveryverylongunbreakablewordthatmustwrap here",
+            "with (brackets) and 'quotes' and 100% sure",
+            "line one\nline two is longer than the first one\n\nline four",
+            "with 数字 and あいう mixed in, then plain ASCII again.",
+            "tab\there",
+        ];
+        let styles = [
+            (16.0, FontFamily::SANS_SERIF, FontStyle::Normal, 400),
+            (15.0, FontFamily::SANS_SERIF, FontStyle::Normal, 700),
+            (13.5, FontFamily::MONOSPACE, FontStyle::Italic, 400),
+        ];
+        let canvas = CupidCanvas::new();
+        for _ in 0..2 {
+            for (size, family, style, weight) in styles {
+                for text in texts {
+                    for max_width in [0.0, 60.0, 150.0, 400.0] {
+                        let got = canvas.measure_text_metrics_styled(text, size, max_width, family, style, weight);
+                        let lines = canvas.measure_text_line_widths_styled(text, size, max_width, family, style, weight);
+                        let (width, height, count, widths) =
+                            reference_metrics(&canvas, text, size, max_width, family, style, weight);
+                        let what = format!("{text:?} {size} {style:?} {weight} wrapped to {max_width}");
+                        assert_eq!(
+                            (got.width, got.height, got.line_count),
+                            (width, height, count),
+                            "{what}"
+                        );
+                        assert_eq!(lines, widths, "{what}");
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn metrics_cache_isolated_by_selected_family() {
