@@ -2,3 +2,7 @@
 # generated WebGPU WebIDL bindings are currently marked unstable.
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg=web_sys_unstable_apis"]
+
+
+[registry]
+global-min-publish-age = "7 days"

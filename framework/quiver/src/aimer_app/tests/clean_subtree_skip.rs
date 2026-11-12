@@ -713,3 +713,26 @@ fn verify_mode_names_an_element_that_breaks_its_promise() {
         "the violation does not name the element: {violations:?}"
     );
 }
+
+/// Once a steady subtree has been asked what the retained tree shows of it, the
+/// tree is not asked again for as long as its geometry holds still.
+#[test]
+fn a_steady_subtree_is_not_asked_what_the_tree_shows_while_the_tree_holds_still() {
+    let mut scene = Scene::new(true);
+    for _ in 0..8 {
+        scene.app.render_frame();
+    }
+    let asked = aimer_widget::clean_subtree_skip_stats().tree_queries;
+    let skips = aimer_widget::clean_subtree_skip_stats().skips;
+
+    for _ in 0..16 {
+        scene.app.render_frame();
+    }
+    let stats = aimer_widget::clean_subtree_skip_stats();
+
+    assert!(stats.skips > skips, "nothing was skipped, so the run proves nothing");
+    assert_eq!(
+        stats.tree_queries, asked,
+        "the tree was asked again although nothing in it moved"
+    );
+}

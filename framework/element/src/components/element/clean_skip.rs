@@ -35,6 +35,9 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
+#[cfg(test)]
+mod tests;
+
 use aimer_cupid::draw_cmd::RenderNodeState;
 use aimer_cupid::utilities::Mat3;
 use aimer_attribute::position::Vec2d;
@@ -62,6 +65,8 @@ pub struct CleanSkipStats {
     pub records: u64,
     /// Subtrees verify mode would have skipped and walked instead.
     pub verified: u64,
+    /// How many times the retained tree was asked what it shows of a subtree.
+    pub tree_queries: u64,
 }
 
 /// Everything an element can read from the context it is given, as bits so that
@@ -154,6 +159,42 @@ impl ContextKey {
     }
 }
 
+/// What distinguishes the context a subtree is given from the one it was given a
+/// walk ago, folded into one word.
+///
+/// Only a heuristic, for telling a subtree that holds still from one that moves:
+/// a record carries its own exact key and is checked against it, so a field left
+/// out here (the canvas transform, the scale, the background) can at worst make a
+/// subtree look steady a walk too early, and cost a record that is replaced. It is
+/// asked for every subtree of every walk, so it reads the few fields that move
+/// with a scroll or a layout change and nothing that needs a query of the canvas.
+#[inline]
+fn context_hash(ctx: &BuildContext, read_cursor: bool) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut mix = |word: u32| {
+        hash = (hash ^ u64::from(word)).wrapping_mul(0x0100_0000_01b3);
+    };
+    let position = ctx.parent_pos();
+    mix(position.x.to_bits());
+    mix(position.y.to_bits());
+    mix(ctx.parent_size.width.to_bits());
+    mix(ctx.parent_size.height.to_bits());
+    mix(ctx.box_constraint.max_width.to_bits());
+    mix(ctx.box_constraint.max_height.to_bits());
+    if let Some((x, y, width, height)) = ctx.visible_rect() {
+        mix(x.to_bits());
+        mix(y.to_bits());
+        mix(width.to_bits());
+        mix(height.to_bits());
+    }
+    if read_cursor {
+        let cursor = ctx.cursor_pos_unobserved();
+        mix(cursor.x.to_bits());
+        mix(cursor.y.to_bits());
+    }
+    hash
+}
+
 /// What the retained tree shows of a subtree's root, for the inputs a walk reads
 /// from the tree rather than from its context.
 ///
@@ -174,6 +215,11 @@ struct TreeKey {
 
 impl TreeKey {
     fn of(ctx: &BuildContext, element: ElementId) -> Self {
+        STATS.with(|stats| {
+            let mut current = stats.get();
+            current.tree_queries += 1;
+            stats.set(current);
+        });
         Self {
             window: retained_visible_window(element, ctx.scale),
             world: world_bounds(element),
@@ -202,11 +248,23 @@ struct Record {
     /// How many elements the walk visited, so a skip can count them.
     visits: u64,
     key: ContextKey,
-    /// Present once the subtree held still across two walks; a record without
-    /// it is never used to skip.
-    tree_key: Option<TreeKey>,
+    /// What the retained tree showed of the subtree's root when it was recorded.
+    tree_key: TreeKey,
+    /// The tree's geometry revision when `tree_key` was last known to be current:
+    /// while it is unchanged the tree shows what it showed, and is not asked.
+    geometry: u64,
     /// Whether the walk read the pointer; if it did not, the key leaves it out.
     cursor_read: bool,
+}
+
+/// The context a subtree was last walked with, in one word. Written for every
+/// walk of a subtree big enough to matter, and read to tell whether the next walk
+/// gave it the same one: only then is it worth building a record, because only a
+/// subtree that holds still can be left alone.
+#[derive(Clone, Copy)]
+struct Seen {
+    element: u64,
+    hash: u64,
 }
 
 /// What an element's walk started from, to tell afterwards what happened below it.
@@ -225,8 +283,9 @@ aimer_tls::thread_local! {
     static IMPURE: Cell<u64> = const { Cell::new(0) };
     /// How many times a context has been asked for the pointer.
     static CURSOR_READS: Cell<u64> = const { Cell::new(0) };
-    static STATS: Cell<CleanSkipStats> = const { Cell::new(CleanSkipStats { visits: 0, skips: 0, records: 0, verified: 0 }) };
+    static STATS: Cell<CleanSkipStats> = const { Cell::new(CleanSkipStats { visits: 0, skips: 0, records: 0, verified: 0, tree_queries: 0 }) };
     static RECORDS: RefCell<Vec<Option<Record>>> = const { RefCell::new(Vec::new()) };
+    static SEEN: RefCell<Vec<Seen>> = const { RefCell::new(Vec::new()) };
     static PROBE: Cell<bool> = const { Cell::new(false) };
     static VERIFY: Cell<bool> = const { Cell::new(false) };
     static VIOLATIONS: RefCell<Vec<CleanSkipViolation>> = const { RefCell::new(Vec::new()) };
@@ -276,6 +335,7 @@ pub fn set_clean_subtree_skip(enabled: bool) {
     ENABLED.with(|flag| flag.set(enabled));
     if !enabled {
         RECORDS.with(|records| records.borrow_mut().clear());
+        SEEN.with(|seen| seen.borrow_mut().clear());
     }
 }
 
@@ -448,6 +508,12 @@ fn invalidated_within(root: ElementId) -> bool {
     })
 }
 
+/// The retained tree's geometry revision, or zero when none is active.
+#[inline]
+fn geometry_revision_now() -> u64 {
+    current_v2_render_context().map_or(0, |scope| scope.tree.geometry_revision())
+}
+
 /// What to do with a subtree that is a candidate for being left alone.
 pub(crate) enum Decision {
     /// Walk it.
@@ -495,13 +561,16 @@ pub(crate) fn try_skip(element: ElementId, ctx: &BuildContext) -> Decision {
             miss("skip: the context differs");
             return None;
         }
-        let Some(tree_key) = record.tree_key else {
-            miss("skip: the subtree has not held still yet");
-            return None;
-        };
-        if TreeKey::of(ctx, element) != tree_key {
-            miss("skip: the retained tree shows it differently");
-            return None;
+        // What the tree shows of the subtree is only asked while its geometry has
+        // moved since it was last known to match: in a frame where nothing moved
+        // (a hover, an idle frame) the answer cannot have changed.
+        let geometry = geometry_revision_now();
+        if geometry != record.geometry {
+            if TreeKey::of(ctx, element) != record.tree_key {
+                miss("skip: the retained tree shows it differently");
+                return None;
+            }
+            record.geometry = geometry;
         }
         if invalidated_within(element) {
             miss("skip: a paint invalidation is pending inside");
@@ -666,24 +735,37 @@ pub(crate) fn leave(element: ElementId, ctx: &BuildContext, entry: Entry) {
         miss("record: the tree changed during the walk");
         return;
     }
+    let cursor_read = CURSOR_READS.with(Cell::get) != entry.cursor;
+    // One word per walk is all a subtree that keeps moving costs: a record is built
+    // only when the context is the one the previous walk was given.
+    let hash = context_hash(ctx, cursor_read);
+    let steady = SEEN.with(|seen| {
+        let mut seen = seen.borrow_mut();
+        if seen.is_empty() {
+            seen.resize(SLOTS, Seen { element: 0, hash: 0 });
+        }
+        let held = &mut seen[slot(element)];
+        let steady = held.element == element.get() && held.hash == hash;
+        *held = Seen { element: element.get(), hash };
+        steady
+    });
+    if !steady {
+        return;
+    }
+    // Asked only of a subtree that holds still, which is rare next to one that moves.
     if is_animation_only_pass() || !has_active_v2_render_tree() {
         miss("record: no full traversal");
         return;
     }
-    let cursor_read = CURSOR_READS.with(Cell::get) != entry.cursor;
     let key = ContextKey::of(ctx, cursor_read);
+    let tree_key = TreeKey::of(ctx, element);
+    let geometry = geometry_revision_now();
     RECORDS.with(|records| {
         let mut records = records.borrow_mut();
         if records.is_empty() {
             records.resize(SLOTS, None);
         }
-        let slot = &mut records[slot(element)];
-        // A subtree given the same context twice in a row is the kind a skip can
-        // apply to; only then is it worth asking the tree what it shows of it.
-        let steady = slot
-            .as_ref()
-            .is_some_and(|held| held.element == element.get() && held.key == key);
-        *slot = Some(Record {
+        records[slot(element)] = Some(Record {
             element: element.get(),
             traversal: traversal_counts().0,
             tree: element_tree_generation(),
@@ -691,7 +773,8 @@ pub(crate) fn leave(element: ElementId, ctx: &BuildContext, entry: Entry) {
             rebuild: rebuild_invalidation_generation(),
             visits,
             key,
-            tree_key: steady.then(|| TreeKey::of(ctx, element)),
+            tree_key,
+            geometry,
             cursor_read,
         });
     });
