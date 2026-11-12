@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 resolver = "3"
 
+[lints]
+workspace = true
+
 [features]
 # Keep the allocation-free draw traversal counter available to release
 # acceptance probes without paying for it in ordinary release applications.

@@ -5,6 +5,9 @@ edition = "2024"
 publish = false
 description = "Aimer's image picker: the photo library on mobile, an image-filtered open dialog elsewhere"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_file_picker.workspace = true
 

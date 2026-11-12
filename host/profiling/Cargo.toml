@@ -3,6 +3,9 @@ name = "aimer_profiling"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 # Show build / encode / present phase timings in the overlay. Without it the
 # panel says the phase timings are not collected.

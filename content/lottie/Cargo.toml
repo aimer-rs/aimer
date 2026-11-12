@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Lottie vector animation playback for Aimer"
 
+[lints]
+workspace = true
+
 # The JSON parser and the expression subset are written in-crate (see
 # DEPENDENCY_POLICY.md). Rendering goes through the SVG scene of `aimer_cupid`,
 # so a frame is drawn with the same pipeline and mesh cache as `aimer_svg`.

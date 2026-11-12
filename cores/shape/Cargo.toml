@@ -3,3 +3,6 @@ name = "aimer_shape"
 version = "0.1.0"
 edition = "2024"
 description = "Validated, platform-neutral paths and paint values for Aimer shapes"
+
+[lints]
+workspace = true

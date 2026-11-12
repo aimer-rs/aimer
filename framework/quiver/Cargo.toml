@@ -5,6 +5,9 @@ edition = "2024"
 resolver = "3"
 
 
+[lints]
+workspace = true
+
 [features]
 default = ["native", "web"]
 # Enables the optional native API dependencies. Target cfgs choose which

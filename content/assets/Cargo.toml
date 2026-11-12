@@ -3,6 +3,9 @@ name = "aimer_assets"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 bundled-fonts = ["aimer_cupid/bundled-fonts"]
 [dependencies]

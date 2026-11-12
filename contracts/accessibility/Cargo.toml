@@ -3,3 +3,6 @@ name = "aimer_accessibility"
 version = "0.1.0"
 edition = "2024"
 resolver = "3"
+
+[lints]
+workspace = true

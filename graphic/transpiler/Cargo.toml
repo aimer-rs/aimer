@@ -5,6 +5,9 @@ edition = "2024"
 description = "Transpiler from the .aimer shader language to WGSL, MSL, HLSL, GLSL and GLSL ES"
 publish = false
 
+[lints]
+workspace = true
+
 [lib]
 name = "aimer_transpiler"
 path = "src/lib.rs"

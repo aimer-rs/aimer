@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Font parsing, shaping, fallback and glyph rasterization for the Cupid rendering engine"
 
+[lints]
+workspace = true
+
 [features]
 default = []
 # Apple's Core Text as an additional rasterization and fallback backend on

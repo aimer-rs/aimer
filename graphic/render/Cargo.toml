@@ -3,6 +3,9 @@ name = "aimer_render"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 default = ["native", "web"]
 # Enables the optional native API dependencies. Target cfgs choose which

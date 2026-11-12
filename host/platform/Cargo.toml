@@ -3,6 +3,9 @@ name = "aimer_platform"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 # These only select code; the dependencies they need are target-gated below.
 native = []

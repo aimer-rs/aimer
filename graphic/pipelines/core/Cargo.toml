@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Types shared by the Cupid render pipeline crates"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_cupid_gpu.workspace = true
 bytemuck.workspace = true

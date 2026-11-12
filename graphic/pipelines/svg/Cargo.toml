@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "SVG mesh render pipeline for the Cupid rendering engine"
 
+[lints]
+workspace = true
+
 [features]
 # Adds the `wgpu` vertex-layout helpers and the tests that read them.
 wgpu = ["dep:wgpu"]

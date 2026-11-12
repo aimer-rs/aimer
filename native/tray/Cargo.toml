@@ -3,6 +3,9 @@ name = "aimer_tray"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 
 [target.'cfg(target_os = "macos")'.dependencies]

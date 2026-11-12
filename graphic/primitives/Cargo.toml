@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Geometry, color and id primitives shared by the Cupid scene and pipeline crates"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_color.workspace = true
 bytemuck.workspace = true

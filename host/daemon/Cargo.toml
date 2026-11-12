@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "A lightweight background process for Aimer: tray icon, timers, graceful quit and autostart, without a window or renderer"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_tray.workspace = true
 

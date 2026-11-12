@@ -3,6 +3,9 @@ name = "aimer_prendre"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 # Both are on for `cargo test -p aimer_prendre`. The workspace entry turns the
 # defaults off, so a dependent names exactly the side it is: an app that accepts

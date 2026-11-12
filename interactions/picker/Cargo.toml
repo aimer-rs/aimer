@@ -3,6 +3,9 @@ name = "aimer_picker"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_attribute.workspace = true
 aimer_canvas.workspace = true

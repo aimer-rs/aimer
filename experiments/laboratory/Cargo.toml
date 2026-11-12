@@ -6,6 +6,9 @@ resolver = "3"
 publish = false
 description = "Isolated experiments for Aimer's core ownership model, published nowhere and depended on by nothing"
 
+[lints]
+workspace = true
+
 [features]
 # Forward the release flex benchmark control to the root framework dependency.
 force-scalar = ["aimer/force-scalar"]

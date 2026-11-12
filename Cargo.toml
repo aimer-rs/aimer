@@ -10,6 +10,9 @@ readme = "README.md"
 keywords = ["gui", "rust"]
 categories = ["development-tools", "gui"]
 
+[lints]
+workspace = true
+
 [lib]
 path = "lib.rs"
 
@@ -349,7 +352,6 @@ members = [
     "host/platform",
     "host/prendre",
     "host/profiling",
-    "host/prendre",
     # app
     "app/jaime",
     # experiments
@@ -623,7 +625,7 @@ windows = { version = "0.62.2", default-features = false, features = [
 colored = "3.1.1"
 arboard = "3.6.1"
 thiserror = "2.0.18"
-toml = "1.2.1+spec-1.1.0"
+toml = "1.2.0+spec-1.1.0"
 tempfile = "3.27.0"
 ring = "0.17.14"
 subtle = "2.6.1"

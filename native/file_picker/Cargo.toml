@@ -5,6 +5,9 @@ edition = "2024"
 publish = false
 description = "Aimer's file picker: the operating system's own open dialog, as a future"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_venus.workspace = true
 

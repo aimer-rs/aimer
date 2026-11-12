@@ -6,6 +6,9 @@ resolver = "3"
 description = "Platform-neutral slider and range-slider controls for Aimer"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_canvas.workspace = true
 aimer_attribute.workspace = true

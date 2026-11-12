@@ -3,6 +3,9 @@ name = "aimer_text_selection"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 default = []
 # Exposes the inspection helpers the text widgets' own tests drive a selection

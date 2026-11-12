@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "A thread_local! replacement that spends one OS TLS key per thread on every target"
 
+[lints]
+workspace = true
+
 [[bench]]
 name = "tls"
 harness = false

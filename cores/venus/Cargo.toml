@@ -10,6 +10,9 @@ readme = "README.md"
 keywords = ["gui", "async", "runtime", "scheduler"]
 categories = ["asynchronous", "gui"]
 
+[lints]
+workspace = true
+
 [features]
 # Adds per-microtask timing diagnostics without burdening the default poll path.
 venus-debug = []

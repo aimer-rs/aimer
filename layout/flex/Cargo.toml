@@ -3,6 +3,9 @@ name = "aimer_flex"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 # Keeps the release benchmark able to compare the optimized kernel with the
 # compiler-optimized scalar implementation on the same workload.

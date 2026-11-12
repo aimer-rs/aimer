@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "A widget that hands a box of the layout to application painting code"
 
+[lints]
+workspace = true
+
 [features]
 [dependencies]
 aimer_attribute.workspace = true

@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Retained SVG parsing and widgets for Aimer"
 
+[lints]
+workspace = true
+
 [features]
 [dependencies]
 aimer_canvas.workspace = true

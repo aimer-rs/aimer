@@ -3,6 +3,9 @@ name = "aimer_markdown"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_tls.workspace = true
 aimer_rubick.workspace = true

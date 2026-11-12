@@ -5,6 +5,9 @@ edition = "2024"
 resolver = "3"
 description = "Aimer's passkeys: WebAuthn ceremonies through the operating system's own provider (AuthenticationServices, Credential Manager, Windows Hello)"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_time.workspace = true
 [dev-dependencies]

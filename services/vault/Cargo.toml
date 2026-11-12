@@ -5,6 +5,9 @@ edition = "2024"
 resolver = "3"
 description = "Aimer's secure storage: credentials and tokens kept in the platform's secret store (Keychain), never in plain files"
 
+[lints]
+workspace = true
+
 [dependencies]
 subtle.workspace = true
 zeroize.workspace = true

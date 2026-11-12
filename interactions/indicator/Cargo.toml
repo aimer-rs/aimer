@@ -5,6 +5,9 @@ edition = "2024"
 description = "A sliding selection indicator, with a liquid glass lens style, for Aimer"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [lib]
 path = "src/lib.rs"
 

@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 resolver = "3"
 
+[lints]
+workspace = true
+
 # Native disk I/O leaves the UI thread through Venus's offload pool, so the
 # crate carries no threads or channels of its own. The browser has no pool to
 # offload onto; IndexedDB is already asynchronous there.

@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Turns what an Aimer app draws into an image: the window, or the content of a widget"
 
+[lints]
+workspace = true
+
 [features]
 [dependencies]
 aimer_attribute.workspace = true

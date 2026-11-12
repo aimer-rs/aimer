@@ -5,6 +5,9 @@ edition = "2024"
 description = "Backend-independent draw lists, render tree, compositor and frame packets for the Cupid rendering engine"
 
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_cupid_font.workspace = true
 aimer_cupid_svg.workspace = true

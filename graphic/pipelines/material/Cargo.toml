@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Backdrop blur, glass and gradient material pipeline for the Cupid rendering engine"
 
+[lints]
+workspace = true
+
 [features]
 # Exposes `MaterialRequest::encode_for_test` to the renderer-driven tests in `aimer_cupid`.
 test-support = []

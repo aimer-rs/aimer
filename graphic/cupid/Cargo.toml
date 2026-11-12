@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "A rendering engine that optimized for the ui framework"
 
+[lints]
+workspace = true
+
 [features]
 default = ["native", "web"]
 # Enable the optional native API dependencies. Backend selection is performed

@@ -5,6 +5,9 @@ edition = "2024"
 publish = false
 description = "Video playback drawn straight from the decoder's GPU memory"
 
+[lints]
+workspace = true
+
 [dependencies]
 aimer_attribute.workspace = true
 aimer_canvas.workspace = true
