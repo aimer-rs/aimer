@@ -15,7 +15,7 @@ async fn hover_and_press_keep_the_mounted_button_wrappers() {
     };
     ctx.box_constraint.max_width = 100.0;
     ctx.box_constraint.max_height = 40.0;
-    ctx.cursor_pos = (-10.0, -10.0).into();
+    ctx.set_cursor_pos((-10.0, -10.0).into());
     let builds = Rc::new(Cell::new(0));
     let button = Button::new()
         .decoration(BoxDecoration::new().background_color(Color::WHITE))
@@ -104,7 +104,7 @@ pub(super) fn button_context() -> BuildContext<'static> {
     };
     ctx.box_constraint.max_width = 100.0;
     ctx.box_constraint.max_height = 40.0;
-    ctx.cursor_pos = (-10.0, -10.0).into();
+    ctx.set_cursor_pos((-10.0, -10.0).into());
     ctx
 }
 

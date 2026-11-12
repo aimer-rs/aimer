@@ -288,10 +288,10 @@ impl LayoutElement for BackgroundProbe {
 }
 impl Drawable for BackgroundProbe {
     fn update(&self, ctx: &BuildContext) {
-        self.0.set(ctx.paint_background);
+        self.0.set(ctx.paint_background());
     }
     fn sync_paint_geometry(&self, ctx: &BuildContext) {
-        self.0.set(ctx.paint_background);
+        self.0.set(ctx.paint_background());
     }
 }
 

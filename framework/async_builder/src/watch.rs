@@ -52,7 +52,7 @@ where
 fn building_scope() -> Option<(Rc<BuildConsumer>, aimer_events::window::WindowKey)> {
     let current = BuildContext::try_current().ok()?;
     let ctx = current.get();
-    Some((ctx.current_build_consumer()?, ctx.window.key()))
+    Some((ctx.current_build_consumer()?, ctx.window().key()))
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

@@ -481,7 +481,7 @@ where
 
         let future = (self.future_factory)();
         let runtime = Rc::downgrade(&self.runtime);
-        let window = ctx.window.clone();
+        let window = ctx.window().clone();
         venus.spawn_in(scope, async move {
             let result = future.await;
             let Some(runtime) = Weak::upgrade(&runtime) else {
@@ -886,7 +886,7 @@ mod tests {
         assert_eq!(launches.get(), 1);
 
         venus.run_microtasks();
-        assert!(ctx.window.take_redraw_request());
+        assert!(ctx.window().take_redraw_request());
         element.rebuild_if_dirty(&ctx);
 
         assert!(contains(element.as_ref(), "Data"));

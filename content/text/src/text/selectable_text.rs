@@ -301,7 +301,7 @@ impl Drawable for RawSelectableText {
             }
         } else {
             for rect in
-                geometry::selection_runs(&data.layout, selected_range.clone(), ctx.visible_rect)
+                geometry::selection_runs(&data.layout, selected_range.clone(), ctx.visible_rect())
             {
                 canvas.fill_rect(
                     aimer_cupid::utilities::Rect::new(
@@ -389,7 +389,7 @@ impl Drawable for RawSelectableText {
                 abs_x,
                 abs_y,
                 data.scale,
-                ctx.visible_rect,
+                ctx.visible_rect(),
                 &mut geometry_state.regions.borrow_mut(),
             );
         }

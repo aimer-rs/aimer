@@ -813,12 +813,12 @@ mod tests {
         let root = ElementId::next();
         remember_rebuilt(root, &ctx);
         begin_full_traversal();
-        ctx.paint_background = Color::WHITE;
+        ctx.set_paint_background(Color::WHITE);
 
         capture_rebuilt_root(root, &ctx);
 
         let remembered = REGISTRY.with(|registry| {
-            registry.borrow()[&root].snapshot.restore(ctx.canvas.clone()).paint_background
+            registry.borrow()[&root].snapshot.restore(ctx.canvas.clone()).paint_background()
         });
         assert_eq!(remembered, Color::WHITE);
     }

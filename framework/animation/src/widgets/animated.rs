@@ -214,7 +214,7 @@ impl<T: Widget + 'static> Widget for Animated<T> {
 
         // Create a StateUpdater-like mechanism: we use a shared dirty flag + window ref
         // to request redraws while the animation is running.
-        let window = ctx.window.clone();
+        let window = ctx.window().clone();
         AnimatedElement {
             child: child_element,
             controller,

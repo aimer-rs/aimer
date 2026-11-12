@@ -187,7 +187,7 @@ impl Widget for ContextMenuRows {
             pressed_by: Cell::new(None),
             hovered: Cell::new(None),
             paint_state,
-            window: Some(ctx.window.clone()),
+            window: Some(ctx.window().clone()),
         }
         .boxed()
     }

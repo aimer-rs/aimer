@@ -6512,7 +6512,7 @@ mod tests {
 
     impl Drawable for CursorElement {
         fn update(&self, ctx: &BuildContext) {
-            ctx.window.set_pointer_cursor();
+            ctx.window().set_pointer_cursor();
         }
     }
     impl LayoutElement for CursorElement {}
@@ -6644,7 +6644,7 @@ mod tests {
                 phases: self.phases,
                 redraw_on_scroll: self.redraw_on_scroll,
                 direct_redraw_on_scroll: self.direct_redraw_on_scroll,
-                window: ctx.window.clone(),
+                window: ctx.window().clone(),
             }
             .boxed()
         }
@@ -6974,7 +6974,7 @@ mod tests {
 
     impl Drawable for RedrawElement {
         fn update(&self, ctx: &BuildContext) {
-            ctx.window.request_redraw();
+            ctx.window().request_redraw();
         }
     }
     impl LayoutElement for RedrawElement {}

@@ -263,7 +263,7 @@ impl State<VideoPlayerView> for VideoPlayerViewState {
                 let in_fullscreen = config.session.is_some();
                 let session = self.session.clone();
                 let view = config.clone();
-                let window = ctx.window.clone();
+                let window = ctx.window().clone();
                 controls = controls.fullscreen_button(in_fullscreen, move |enter| {
                     if enter {
                         session.enter(&view, &window);

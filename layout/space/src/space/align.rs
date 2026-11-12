@@ -151,19 +151,18 @@ impl RawAlign {
             return None;
         }
 
-        let child_ctx = BuildContext {
-            parent_size: child_size,
-            box_constraint: BoxConstraint {
-                min_width: 0.0,
-                min_height: 0.0,
-                max_width: child_size.width,
-                max_height: child_size.height,
-            },
-            visible_rect: ctx
-                .visible_rect
-                .map(|(x, y, width, height)| (x - offset_x, y - offset_y, width, height)),
-            ..ctx.clone()
+        let mut child_ctx = ctx.clone();
+        child_ctx.parent_size = child_size;
+        child_ctx.box_constraint = BoxConstraint {
+            min_width: 0.0,
+            min_height: 0.0,
+            max_width: child_size.width,
+            max_height: child_size.height,
         };
+        child_ctx.set_visible_rect(
+            ctx.visible_rect()
+                .map(|(x, y, width, height)| (x - offset_x, y - offset_y, width, height)),
+        );
         Some((
             Vec2d {
                 x: offset_x,
@@ -261,9 +260,9 @@ impl Drawable for RawAlign {
             let mut child_ctx = ctx.clone();
             child_ctx.parent_size = child_size;
             child_ctx.box_constraint = child_constraint;
-            child_ctx.visible_rect = ctx
-                .visible_rect
-                .map(|(x, y, width, height)| (x - offset_x, y - offset_y, width, height));
+            child_ctx.set_visible_rect(ctx
+                .visible_rect()
+                .map(|(x, y, width, height)| (x - offset_x, y - offset_y, width, height)));
 
             ctx.canvas.translate(Vec2d {
                 x: offset_x,

@@ -396,7 +396,7 @@ impl RawTextButton {
             && if sizes_differ {
                 self.hovered.get()
             } else {
-                self.bounds.is_inside(ctx.cursor_pos.x, ctx.cursor_pos.y)
+                self.bounds.is_inside(ctx.cursor_pos().x, ctx.cursor_pos().y)
             };
         let (text, text_ctx, size, _, _) = if hovered {
             hover.expect("enabled buttons have a hover layout")
@@ -597,7 +597,7 @@ impl Drawable for RawTextButton {
         let (text, text_ctx, size, line_widths, line_height) = self.text_layout(ctx);
         self.save_bounds(ctx, size, &line_widths, line_height);
         let hover_changed = !self.widget.disabled
-            && self.set_hovered(self.bounds.is_inside(ctx.cursor_pos.x, ctx.cursor_pos.y));
+            && self.set_hovered(self.bounds.is_inside(ctx.cursor_pos().x, ctx.cursor_pos().y));
         if hover_changed {
             // The first layout above is needed to establish the transformed
             // hit bounds. Re-resolve the text after syncing hover so a cursor
@@ -874,7 +874,7 @@ mod tests {
             .unwrap();
         let _guard = runtime.enter();
         let (mut ctx, _canvas) = context_with_canvas(45.0);
-        ctx.cursor_pos = Vec2d { x: -1.0, y: -1.0 };
+        ctx.set_cursor_pos(Vec2d { x: -1.0, y: -1.0 });
         let button = raw_button(
             TextButton::new("MMMM i").style(
                 TextStyle::default()
@@ -908,7 +908,7 @@ mod tests {
             .unwrap();
         let _guard = runtime.enter();
         let (mut ctx, _canvas) = context_with_canvas(300.0);
-        ctx.cursor_pos = Vec2d { x: 1.0, y: 1.0 };
+        ctx.set_cursor_pos(Vec2d { x: 1.0, y: 1.0 });
         let button = raw_button(
             TextButton::new("Open")
                 .hover_style(TextStyle::default().text_decoration(TextDecoration::Underline)),
@@ -972,7 +972,7 @@ mod tests {
             .unwrap();
         let _guard = runtime.enter();
         let mut ctx = context(300.0);
-        ctx.cursor_pos = Vec2d { x: -1.0, y: -1.0 };
+        ctx.set_cursor_pos(Vec2d { x: -1.0, y: -1.0 });
         let button = underline_on_hover_button();
 
         assert!(button.can_paint(&ctx));
@@ -988,7 +988,7 @@ mod tests {
         let button = underline_on_hover_button();
         button.layout(&ctx);
         let mut hovered = ctx.clone();
-        hovered.cursor_pos = Vec2d { x: 2.0, y: 2.0 };
+        hovered.set_cursor_pos(Vec2d { x: 2.0, y: 2.0 });
 
         assert!(button.can_paint(&hovered));
     }

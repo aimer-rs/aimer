@@ -370,7 +370,7 @@ impl ProviderContext for BuildContext<'_> {
                 type_name::<T>()
             )
         };
-        provided.0.subscribe_watch(&consumer, &self.window);
+        provided.0.subscribe_watch(&consumer, &self.window());
         Some(provided.0.read())
     }
     #[track_caller]
@@ -404,7 +404,7 @@ impl ProviderContext for BuildContext<'_> {
         let selected = selector(&provided.0.read());
         provided
             .0
-            .subscribe_selector(&consumer, &self.window, selector);
+            .subscribe_selector(&consumer, &self.window(), selector);
         selected
     }
 

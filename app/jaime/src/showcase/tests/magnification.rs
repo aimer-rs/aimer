@@ -148,8 +148,8 @@ fn collect_bounds(
         .pos()
         .unwrap_or_default();
     let origin = Vec2d {
-        x: ctx.parent_pos.x + position.x,
-        y: ctx.parent_pos.y + position.y,
+        x: ctx.parent_pos().x + position.x,
+        y: ctx.parent_pos().y + position.y,
     };
     let rect = Rect::new(
         origin.x / ctx.scale,
@@ -173,7 +173,7 @@ fn collect_bounds(
     }
     let mut base = ctx.clone();
     base.parent_size = size;
-    base.parent_pos = origin;
+    base.set_parent_pos(origin);
     let mut child_sizes = Vec::new();
     element.visit_retained_v2_children(&mut |_, child| child_sizes.push(child.content_size(ctx)));
     if child_sizes.as_slice() != [size] {

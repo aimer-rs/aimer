@@ -880,7 +880,7 @@ impl ImageSource {
                     let task_path = path.clone();
                     let update_path = path.clone();
                     let error_path = path.clone();
-                    let window = ctx.window.clone();
+                    let window = ctx.window().clone();
                     let error_window = window.clone();
                     let limit = upload_limit(&window);
                     if !schedule_native_image_load(
@@ -912,7 +912,7 @@ impl ImageSource {
                 {
                     let url = path.to_string_lossy().to_string();
                     let path_buf = path.clone();
-                    let window = ctx.window.clone();
+                    let window = ctx.window().clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         let state = match Self::fetch_bytes(&url).await {
                             Ok(bytes) => match Self::decode_registering_browser(
@@ -997,7 +997,7 @@ impl ImageSource {
                 let task_key = key_owned.clone();
                 let update_key = key_owned.clone();
                 let error_key = key_owned;
-                let window = ctx.window.clone();
+                let window = ctx.window().clone();
                 let error_window = window.clone();
                 let limit = upload_limit(&window);
                 if !schedule_native_image_load(
@@ -1133,7 +1133,7 @@ impl ImageSource {
             CacheLookup::Error(error) => ImageResult::Error(error),
             CacheLookup::StartLoad => {
                 let headers = headers.clone();
-                let window = ctx.window.clone();
+                let window = ctx.window().clone();
 
                 #[cfg(not(target_arch = "wasm32"))]
                 {

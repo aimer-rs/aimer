@@ -34,7 +34,7 @@ impl SelectionParticipant {
     pub fn from_context(ctx: &BuildContext, text: Rc<str>) -> Option<Self> {
         let scope = ctx.get_state::<SelectionScope>()?;
         let session = Rc::clone(&scope.0);
-        let geometry = Rc::new(TextGeometry::new(ctx.window.clone()));
+        let geometry = Rc::new(TextGeometry::new(ctx.window().clone()));
         let slot = session.register(text, Rc::downgrade(&geometry) as _);
         Some(Self {
             geometry,

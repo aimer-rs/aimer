@@ -232,7 +232,7 @@ impl Widget for AnimatedBuilder {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let curved_value = self.controller.curve().transform(self.controller.value());
         let child = (self.builder)(curved_value, ctx);
-        let window = ctx.window.clone();
+        let window = ctx.window().clone();
 
         AnimatedBuilderElement {
             child: UnsafeCell::new(child),

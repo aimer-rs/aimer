@@ -365,7 +365,7 @@ impl RawFloating {
         self.anchor
             .bounds()
             .map(|bounds| bounds * scale)
-            .unwrap_or_else(|| Bounds::new(ctx.parent_pos.x, ctx.parent_pos.y, 0.0, 0.0))
+            .unwrap_or_else(|| Bounds::new(ctx.parent_pos().x, ctx.parent_pos().y, 0.0, 0.0))
     }
 
     /// Returns this frame's placement request, in the painted coordinate space.
@@ -423,8 +423,8 @@ impl RawFloating {
             ctx.parent_size,
         );
         let offset = Vec2d {
-            x: placement.origin.x - ctx.parent_pos.x,
-            y: placement.origin.y - ctx.parent_pos.y,
+            x: placement.origin.x - ctx.parent_pos().x,
+            y: placement.origin.y - ctx.parent_pos().y,
         };
         if !offset.x.is_finite() || !offset.y.is_finite() {
             return None;
@@ -433,14 +433,14 @@ impl RawFloating {
         // As in `overlay_child_context`: the panel is a child of the viewport,
         // so what it resolves a share of is the viewport, once.
         let mut child_ctx = ctx.clone();
-        child_ctx.parent_pos = Vec2d {
-            x: ctx.parent_pos.x + offset.x,
-            y: ctx.parent_pos.y + offset.y,
-        };
+        child_ctx.set_parent_pos(Vec2d {
+            x: ctx.parent_pos().x + offset.x,
+            y: ctx.parent_pos().y + offset.y,
+        });
         child_ctx.box_constraint = viewport_constraint(ctx);
-        child_ctx.visible_rect = ctx
-            .visible_rect
-            .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height));
+        child_ctx.set_visible_rect(ctx
+            .visible_rect()
+            .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height)));
         Some((child_size, offset, child_ctx))
     }
 }
@@ -470,8 +470,8 @@ impl Drawable for RawFloating {
             ctx.parent_size,
         );
         let offset = Vec2d {
-            x: placement.origin.x - ctx.parent_pos.x,
-            y: placement.origin.y - ctx.parent_pos.y,
+            x: placement.origin.x - ctx.parent_pos().x,
+            y: placement.origin.y - ctx.parent_pos().y,
         };
         let child_ctx = overlay_child_context(ctx, child_size, offset, &self.child_bounds);
         ctx.canvas.save();

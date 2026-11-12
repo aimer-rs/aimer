@@ -342,7 +342,7 @@ impl LayoutElement for OverlayFollower {
 impl Drawable for OverlayFollower {
     fn update(&self, ctx: &BuildContext) {
         let mut child_ctx = self.child_viewport_context(ctx);
-        child_ctx.visible_rect = None;
+        child_ctx.set_visible_rect(None);
         self.child.update(&child_ctx);
     }
 
@@ -373,7 +373,7 @@ impl Drawable for OverlayFollower {
         _child_index: usize,
     ) -> Option<BuildContext<'a>> {
         let mut child_ctx = self.child_viewport_context(ctx);
-        child_ctx.visible_rect = None;
+        child_ctx.set_visible_rect(None);
         Some(child_ctx)
     }
 }
@@ -581,9 +581,10 @@ impl RawModalHost {
         if self.page_covered.replace(covered) != covered {
             request_pointer_view_frame();
         }
-        covered.then(|| BuildContext {
-            cursor_pos: COVERED_CURSOR,
-            ..ctx.clone()
+        covered.then(|| {
+            let mut page = ctx.clone();
+            page.set_cursor_pos(COVERED_CURSOR);
+            page
         })
     }
 

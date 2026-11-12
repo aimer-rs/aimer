@@ -7,7 +7,7 @@ use aimer_widget::base::BuildContext;
 
 /// Builds the child context for overlay content at `offset` inside the viewport.
 ///
-/// `offset` is relative to `ctx.parent_pos`. `child_bounds` receives the
+/// `offset` is relative to `ctx.parent_pos()`. `child_bounds` receives the
 /// unscaled content rectangle used by the barrier hit test, matching the
 /// overlay's stable layout geometry throughout its animation.
 pub(crate) fn overlay_child_context<'a>(
@@ -16,7 +16,7 @@ pub(crate) fn overlay_child_context<'a>(
     offset: Vec2d,
     child_bounds: &RefCell<Option<(Vec2d, Vec2d)>>,
 ) -> BuildContext<'a> {
-    let (origin, end) = overlay_content_bounds(ctx.parent_pos, child_size, offset);
+    let (origin, end) = overlay_content_bounds(ctx.parent_pos(), child_size, offset);
     *child_bounds.borrow_mut() = Some((origin, end));
 
     // The content is a child of the viewport, so a size it is given as a share
@@ -25,11 +25,11 @@ pub(crate) fn overlay_child_context<'a>(
     // content its own size for either would resolve a percentage against
     // itself, a second time, after layout resolved it against the viewport.
     let mut child_ctx = ctx.clone();
-    child_ctx.parent_pos = origin;
+    child_ctx.set_parent_pos(origin);
     child_ctx.box_constraint = viewport_constraint(ctx);
-    child_ctx.visible_rect = ctx
-        .visible_rect
-        .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height));
+    child_ctx.set_visible_rect(ctx
+        .visible_rect()
+        .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height)));
     child_ctx
 }
 

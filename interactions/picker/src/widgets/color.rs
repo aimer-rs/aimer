@@ -613,8 +613,8 @@ impl Drawable for RawColorPicker {
         }
         let offset = super::color_slider_offset(child_index, ctx.scale);
         let mut child_ctx = ctx.clone();
-        child_ctx.parent_pos.x += offset.x;
-        child_ctx.parent_pos.y += offset.y;
+        child_ctx.parent_pos().x += offset.x;
+        child_ctx.parent_pos().y += offset.y;
         Some(child_ctx)
     }
 

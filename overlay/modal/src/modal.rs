@@ -358,14 +358,14 @@ impl RawModal {
         // so `parent_size` stays the viewport's and a share of it is resolved
         // against that once, and not again against the content itself.
         let mut child_context = ctx.clone();
-        child_context.parent_pos = Vec2d {
-            x: ctx.parent_pos.x + offset.x,
-            y: ctx.parent_pos.y + offset.y,
-        };
+        child_context.set_parent_pos(Vec2d {
+            x: ctx.parent_pos().x + offset.x,
+            y: ctx.parent_pos().y + offset.y,
+        });
         child_context.box_constraint = viewport_constraint(ctx);
-        child_context.visible_rect = ctx
-            .visible_rect
-            .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height));
+        child_context.set_visible_rect(ctx
+            .visible_rect()
+            .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height)));
         Some((child_size, offset, child_context))
     }
 }

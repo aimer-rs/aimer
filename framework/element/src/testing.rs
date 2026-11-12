@@ -79,10 +79,10 @@ fn record(element: &dyn Element, ctx: &BuildContext<'_>, recorded: &mut Vec<Reco
 
     let mut base = ctx.clone();
     base.parent_size = size;
-    base.parent_pos = Vec2d {
-        x: ctx.parent_pos.x + position.x,
-        y: ctx.parent_pos.y + position.y,
-    };
+    base.set_parent_pos(Vec2d {
+        x: ctx.parent_pos().x + position.x,
+        y: ctx.parent_pos().y + position.y,
+    });
     let mut retained_children = 0;
     let mut only_child_size = None;
     element.visit_retained_v2_children(&mut |_, child| {

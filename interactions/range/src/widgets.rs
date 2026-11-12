@@ -1565,16 +1565,15 @@ fn layout_child(child: &AnyElement, ctx: &BuildContext, offset: Vec2d) {
 }
 
 fn child_context<'a>(ctx: &BuildContext<'a>, size: ResolvedSize) -> BuildContext<'a> {
-    BuildContext {
-        parent_size: size,
-        box_constraint: BoxConstraint {
-            min_width: 0.0,
-            min_height: 0.0,
-            max_width: size.width.max(0.0),
-            max_height: size.height.max(0.0),
-        },
-        ..ctx.clone()
-    }
+    let mut sized = ctx.clone();
+    sized.parent_size = size;
+    sized.box_constraint = BoxConstraint {
+        min_width: 0.0,
+        min_height: 0.0,
+        max_width: size.width.max(0.0),
+        max_height: size.height.max(0.0),
+    };
+    sized
 }
 
 fn draw_child(child: &AnyElement, ctx: &BuildContext, offset: Vec2d) {

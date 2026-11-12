@@ -43,16 +43,39 @@ pub mod probe {
 
 /// One memoized measurement together with everything that decides whether it
 /// still describes the element.
+///
+/// An empty slot is a measurement with `valid` unset rather than an `Option`:
+/// the flag sits in padding the struct already has, while an `Option` around
+/// it would add a whole word to each of the two slots of every element.
 #[derive(Clone, Copy)]
 struct Measurement {
     constraint: BoxConstraint,
     scale_bits: u32,
+    valid: bool,
     tree_generation: u64,
     layout_generation: u64,
     size: ResolvedSize,
 }
 
 impl Measurement {
+    /// A slot that describes nothing.
+    const EMPTY: Self = Self {
+        constraint: BoxConstraint {
+            min_width: 0.0,
+            min_height: 0.0,
+            max_width: 0.0,
+            max_height: 0.0,
+        },
+        scale_bits: 0,
+        valid: false,
+        tree_generation: 0,
+        layout_generation: 0,
+        size: ResolvedSize {
+            width: 0.0,
+            height: 0.0,
+        },
+    };
+
     /// `true` when the measurement was taken under `constraint` and
     /// `scale_bits`, and nothing has replaced a generated subtree since.
     #[inline]
@@ -63,7 +86,8 @@ impl Measurement {
         tree_generation: u64,
         layout_generation: u64,
     ) -> bool {
-        self.constraint == constraint
+        self.valid
+            && self.constraint == constraint
             && self.scale_bits == scale_bits
             && self.tree_generation == tree_generation
             && self.layout_generation == layout_generation
@@ -110,16 +134,18 @@ impl Measurement {
 /// assert_eq!(cache.get_computed(constraint, scale_bits), Some(size));
 /// ```
 pub struct LayoutCache {
-    computed: UnsafeCell<Option<Measurement>>,
-    content: UnsafeCell<Option<Measurement>>,
-    extra: RefCell<Option<Box<dyn Any>>>,
+    computed: UnsafeCell<Measurement>,
+    content: UnsafeCell<Measurement>,
+    // Doubly boxed so the slot is a thin pointer: most elements never use it,
+    // and a `Box<dyn Any>` would cost them two words for nothing.
+    extra: RefCell<Option<Box<Box<dyn Any>>>>,
 }
 
 impl LayoutCache {
     pub fn new() -> Self {
         Self {
-            computed: UnsafeCell::new(None),
-            content: UnsafeCell::new(None),
+            computed: UnsafeCell::new(Measurement::EMPTY),
+            content: UnsafeCell::new(Measurement::EMPTY),
             extra: RefCell::new(None),
         }
     }
@@ -140,9 +166,9 @@ impl LayoutCache {
         let mut extra = self.extra.borrow_mut();
         let replace = extra
             .as_ref()
-            .is_none_or(|value| !value.is::<Option<T>>());
+            .is_none_or(|value| !(***value).is::<Option<T>>());
         if replace {
-            *extra = Some(Box::new(None::<T>));
+            *extra = Some(Box::new(Box::new(None::<T>)));
         }
         let slot = extra
             .as_mut()
@@ -162,7 +188,7 @@ impl LayoutCache {
     pub fn set_computed(&self, constraint: BoxConstraint, scale_bits: u32, size: ResolvedSize) {
         probe::set();
         let guard = unsafe { &mut *self.computed.get() };
-        *guard = Some(Self::measurement(constraint, scale_bits, size));
+        *guard = Self::measurement(constraint, scale_bits, size);
     }
 
     /// Returns cached content_size if constraint, scale, element tree, and
@@ -176,16 +202,18 @@ impl LayoutCache {
     pub fn set_content(&self, constraint: BoxConstraint, scale_bits: u32, size: ResolvedSize) {
         probe::set();
         let guard = unsafe { &mut *self.content.get() };
-        *guard = Some(Self::measurement(constraint, scale_bits, size));
+        *guard = Self::measurement(constraint, scale_bits, size);
     }
 
     /// Clears the memoized measurement values (call when layout inputs change).
     /// Auxiliary state from [`Self::with_extra`] is retained and owns its own
     /// invalidation policy.
     pub fn invalidate(&self) {
+        // Clearing the flag is enough: an invalid slot describes nothing, and
+        // the stale fields are overwritten whole by the next `set_*`.
         unsafe {
-            *self.computed.get() = None;
-            *self.content.get() = None;
+            (*self.computed.get()).valid = false;
+            (*self.content.get()).valid = false;
         }
     }
 
@@ -198,6 +226,7 @@ impl LayoutCache {
         Measurement {
             constraint,
             scale_bits,
+            valid: true,
             tree_generation: element_tree_generation(),
             layout_generation: layout_invalidation_generation(),
             size,
@@ -206,14 +235,14 @@ impl LayoutCache {
 
     #[inline]
     fn read(
-        slot: &Option<Measurement>,
+        measurement: &Measurement,
         constraint: BoxConstraint,
         scale_bits: u32,
     ) -> Option<ResolvedSize> {
-        let Some(measurement) = slot.as_ref() else {
+        if !measurement.valid {
             probe::miss();
             return None;
-        };
+        }
         let result = measurement
             .describes(
                 constraint,
@@ -265,6 +294,47 @@ mod tests {
             width: 100.0,
             height,
         }
+    }
+
+    /// Every container, text, flex and sized-box element embeds one of these, so
+    /// its size is paid once per element and copied with the element. Two
+    /// measurements and the auxiliary slot need no more than this.
+    #[test]
+    fn a_layout_cache_stays_within_its_size_budget() {
+        assert!(
+            size_of::<LayoutCache>() <= 112,
+            "a layout cache grew past its size budget: {} bytes",
+            size_of::<LayoutCache>()
+        );
+    }
+
+    #[test]
+    fn invalidation_empties_both_measurements() {
+        let cache = LayoutCache::new();
+        let constraint = BoxConstraint::new();
+        let scale_bits = 1.0_f32.to_bits();
+        assert_eq!(cache.get_computed(constraint, scale_bits), None);
+        assert_eq!(cache.get_content(constraint, scale_bits), None);
+
+        cache.set_computed(constraint, scale_bits, size(10.0));
+        cache.set_content(constraint, scale_bits, size(20.0));
+        assert_eq!(cache.get_computed(constraint, scale_bits), Some(size(10.0)));
+        assert_eq!(cache.get_content(constraint, scale_bits), Some(size(20.0)));
+
+        cache.invalidate();
+        assert_eq!(cache.get_computed(constraint, scale_bits), None);
+        assert_eq!(cache.get_content(constraint, scale_bits), None);
+    }
+
+    #[test]
+    fn a_nested_auxiliary_borrow_still_panics_instead_of_aliasing() {
+        let cache = LayoutCache::new();
+        let nested = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            cache.with_extra(|_: &mut Option<u32>| {
+                cache.with_extra(|_: &mut Option<u32>| {});
+            });
+        }));
+        assert!(nested.is_err());
     }
 
     #[test]

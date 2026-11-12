@@ -240,7 +240,7 @@ async fn builder_observes_disabled_and_configuration_updates() {
     // The newly enabled input wrappers receive geometry during the frame.
     root.update(&ctx);
     let pointer = PointerInfo::mouse((1.0, 1.0).into(), PointerButton::Primary);
-    ctx.cursor_pos = pointer.pos;
+    ctx.set_cursor_pos(pointer.pos);
     let _ = dispatcher.dispatch(root.as_ref(), pointer.pos, &ElementEvent::PointerDown(pointer));
     root.rebuild_if_dirty(&ctx);
     assert_eq!(snapshots.borrow().last(), Some(&(true, true, false)));

@@ -363,7 +363,7 @@ mod tests {
             .unwrap();
         let ctx = context(FrameCanvas::new(&inner), &runtime);
         let session = SelectionSession::new(
-            ctx.window.clone(),
+            ctx.window().clone(),
             Rc::new(SelectionCoordinator::default()),
             super::DEFAULT_SELECTION_COLOR,
         );
@@ -385,7 +385,7 @@ mod tests {
             .unwrap();
         let ctx = context(FrameCanvas::new(&inner), &runtime);
         let session = SelectionSession::new(
-            ctx.window.clone(),
+            ctx.window().clone(),
             Rc::new(SelectionCoordinator::default()),
             super::DEFAULT_SELECTION_COLOR,
         );

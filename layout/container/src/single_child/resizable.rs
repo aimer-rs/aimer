@@ -922,7 +922,7 @@ mod tests {
         );
         context.box_constraint.max_width = 100.0;
         context.box_constraint.max_height = 100.0;
-        context.visible_rect = visible_rect;
+        context.set_visible_rect(visible_rect);
         context
     }
 
@@ -959,7 +959,7 @@ mod tests {
 
         assert_eq!(draws.get(), 0);
 
-        ctx.visible_rect = Some((0.0, 0.0, 100.0, 100.0));
+        ctx.set_visible_rect(Some((0.0, 0.0, 100.0, 100.0)));
         element.update(&ctx);
         assert_eq!(draws.get(), 1);
     }

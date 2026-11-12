@@ -944,7 +944,7 @@ impl<T: aimer_widget::Widget + 'static> aimer_widget::Widget for AnimatedLayout<
         AnimatedLayoutElement {
             child: self.child.to_element(ctx),
             transition: std::cell::RefCell::new(LayoutTransition::new(self.config)),
-            window: ctx.window.clone(),
+            window: ctx.window().clone(),
             last_geometry: std::cell::Cell::new(None),
         }
         .boxed()

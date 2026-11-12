@@ -12,6 +12,7 @@ use aimer_cupid::draw_cmd::CurrentBuildContext;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::runtime::Handle;
 
+use crate::CALLED;
 use crate::components::element::DirtySource;
 
 mod current;
@@ -73,23 +74,66 @@ impl BuildContextSnapshot {
     }
 }
 
+/// What an element is given while it builds, lays out and updates: its
+/// constraints, scale, canvas and the state inherited from its ancestors.
+///
+/// The fields a widget lays itself out with are public: [`parent_size`],
+/// [`scale`], [`box_constraint`] and [`canvas`]. The rest describe where the
+/// frame is and which window it belongs to, or are the framework's own
+/// plumbing, so they are read through methods and changed through setters: the
+/// framework can then keep them consistent with each other.
+///
+/// The frame state is read through methods:
+///
+/// ```
+/// # fn check(ctx: &aimer_element::base::BuildContext<'_>) {
+/// let _ = (ctx.parent_pos(), ctx.cursor_pos(), ctx.visible_rect(), ctx.window());
+/// # }
+/// ```
+///
+/// The fields behind them are private, so reaching for one is an error:
+///
+/// ```compile_fail,E0616
+/// # fn check(ctx: &aimer_element::base::BuildContext<'_>) {
+/// let _ = &ctx.inherited_states;
+/// # }
+/// ```
+///
+/// [`parent_size`]: BuildContext::parent_size
+/// [`scale`]: BuildContext::scale
+/// [`box_constraint`]: BuildContext::box_constraint
+/// [`canvas`]: BuildContext::canvas
 #[derive(Clone)]
 pub struct BuildContext<'a> {
     pub parent_size: ResolvedSize,
     pub canvas: FrameCanvas<'a>,
     pub scale: f32,
-    pub parent_pos: Vec2d,
-    pub cursor_pos: Vec2d,
+    parent_pos: Vec2d,
+    cursor_pos: Vec2d,
     pub box_constraint: BoxConstraint,
-    pub visible_rect: Option<(f32, f32, f32, f32)>, // (x, y, width, height)
+    visible_rect: Option<(f32, f32, f32, f32)>, // (x, y, width, height)
     /// Declared solid surface behind this element; transparent means unknown.
-    #[doc(hidden)]
-    pub paint_background: Color,
-    pub window: WindowHandle,
+    paint_background: Color,
+    window: WindowHandle,
     #[cfg(not(target_arch = "wasm32"))]
-    pub async_handle: Handle,
-    pub inherited_states: Rc<RefCell<InheritedStates>>,
+    async_handle: Handle,
+    inherited_states: Rc<RefCell<InheritedStates>>,
 }
+
+
+// impl Clone for BuildContext<'_>  {
+//     fn clone(&self) -> Self {
+
+//         CALLED.increase();
+//         Self {
+//             inherited_states: Rc::clone(&self.inherited_states),
+//             async_handle: self.async_handle.clone(),
+//             window: self.window.clone(),
+//             canvas: self.canvas.clone(),
+//             ..*self
+//         }
+//     }
+// }
 
 impl<'a> CanvasContext for BuildContext<'a> {
     #[inline]
@@ -218,6 +262,82 @@ impl<'a> std::fmt::Debug for BuildContext<'a> {
             .field("cursor_pos", &self.cursor_pos)
             .field("box_constraint", &self.box_constraint)
             .finish()
+    }
+}
+
+impl<'a> BuildContext<'a> {
+    /// The position of the parent's origin, in the frame's coordinates.
+    #[inline]
+    pub fn parent_pos(&self) -> Vec2d {
+        self.parent_pos
+    }
+
+    /// Sets the position of the parent's origin.
+    #[inline]
+    pub fn set_parent_pos(&mut self, parent_pos: Vec2d) {
+        self.parent_pos = parent_pos;
+    }
+
+    /// The pointer position, in the frame's coordinates.
+    #[inline]
+    pub fn cursor_pos(&self) -> Vec2d {
+        self.cursor_pos
+    }
+
+    /// Sets the pointer position this context reports.
+    #[inline]
+    pub fn set_cursor_pos(&mut self, cursor_pos: Vec2d) {
+        self.cursor_pos = cursor_pos;
+    }
+
+    /// The part of this context's local space that is on screen, as
+    /// `(x, y, width, height)`, or `None` when the whole space may be visible.
+    #[inline]
+    pub fn visible_rect(&self) -> Option<(f32, f32, f32, f32)> {
+        self.visible_rect
+    }
+
+    /// Sets the visible rectangle; see [`BuildContext::visible_rect`].
+    #[inline]
+    pub fn set_visible_rect(&mut self, visible_rect: Option<(f32, f32, f32, f32)>) {
+        self.visible_rect = visible_rect;
+    }
+
+    /// The window this context draws into.
+    #[inline]
+    pub fn window(&self) -> &WindowHandle {
+        &self.window
+    }
+
+    /// The declared solid surface behind this element; transparent means
+    /// unknown.
+    #[doc(hidden)]
+    #[inline]
+    pub fn paint_background(&self) -> Color {
+        self.paint_background
+    }
+
+    /// Declares the solid surface behind this element.
+    #[doc(hidden)]
+    #[inline]
+    pub fn set_paint_background(&mut self, paint_background: Color) {
+        self.paint_background = paint_background;
+    }
+
+    /// The handle of the async runtime that owns this window's tasks.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[doc(hidden)]
+    #[inline]
+    pub fn async_handle(&self) -> &Handle {
+        &self.async_handle
+    }
+
+    /// The state this context inherits from its ancestors. Framework plumbing:
+    /// widgets use [`BuildContext::insert_state`] and [`BuildContext::get_state`].
+    #[doc(hidden)]
+    #[inline]
+    pub fn inherited_states(&self) -> &Rc<RefCell<InheritedStates>> {
+        &self.inherited_states
     }
 }
 
@@ -360,6 +480,25 @@ impl<'a> BuildContext<'a> {
         let mut inherited_states = self.inherited_states.borrow().clone();
         inherited_states.insert(TypeId::of::<T>(), Rc::new(state));
         context.inherited_states = Rc::new(RefCell::new(inherited_states));
+        context
+    }
+
+    /// Replaces the inherited-state map this context shares with its
+    /// descendants. A window opened to share its opener's providers installs
+    /// the opener's map here, so scoped changes are made on one map.
+    #[doc(hidden)]
+    #[inline]
+    pub fn set_inherited_states(&mut self, states: Rc<RefCell<InheritedStates>>) {
+        self.inherited_states = states;
+    }
+
+    /// Returns a copy of this context whose inherited state is a private copy
+    /// of the map, so scoped changes made through it cannot reach this context
+    /// or any other. The stored values still share their own `Rc` state.
+    #[doc(hidden)]
+    pub fn with_private_inherited_states(&self) -> Self {
+        let mut context = self.clone();
+        context.inherited_states = Rc::new(RefCell::new(self.inherited_states.borrow().clone()));
         context
     }
 

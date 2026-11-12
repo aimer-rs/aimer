@@ -366,8 +366,7 @@ impl<E: Element> RawPositionedElement<E> {
         }
 
         let mut child_ctx = ctx.clone();
-        child_ctx.visible_rect =
-            shift_visible_rect(ctx.visible_rect, offset_x, offset_y, &self.transform);
+        child_ctx.set_visible_rect(shift_visible_rect(ctx.visible_rect(), offset_x, offset_y, &self.transform));
         if !is_auto {
             child_ctx.parent_size = child_size;
             child_ctx.box_constraint = BoxConstraint {
@@ -595,7 +594,7 @@ impl<E: Element> Drawable for RawPositionedElement<E> {
         if is_auto {
             self.child.update(ctx);
         } else {
-            let parent_pos = ctx.parent_pos;
+            let parent_pos = ctx.parent_pos();
 
             let parent_size = child_size;
 
@@ -612,22 +611,13 @@ impl<E: Element> Drawable for RawPositionedElement<E> {
             // positioned block's top children (e.g. a title above a body) are
             // culled too early and disappear while the taller body survives.
             let child_visible_rect =
-                shift_visible_rect(ctx.visible_rect, offset_x, offset_y, &self.transform);
+                shift_visible_rect(ctx.visible_rect(), offset_x, offset_y, &self.transform);
 
-            let child_ctx = BuildContext {
-                parent_size,
-                canvas: ctx.canvas.clone(),
-                scale: ctx.scale,
-                parent_pos,
-                cursor_pos: ctx.cursor_pos,
-                box_constraint: child_constraint,
-                visible_rect: child_visible_rect,
-                paint_background: ctx.paint_background,
-                window: ctx.window.clone(),
-                #[cfg(not(target_arch = "wasm32"))]
-                async_handle: ctx.async_handle.clone(),
-                inherited_states: ctx.inherited_states.clone(),
-            };
+            let mut child_ctx = ctx.clone();
+            child_ctx.parent_size = parent_size;
+            child_ctx.set_parent_pos(parent_pos);
+            child_ctx.box_constraint = child_constraint;
+            child_ctx.set_visible_rect(child_visible_rect);
 
             self.child.update(&child_ctx);
         }

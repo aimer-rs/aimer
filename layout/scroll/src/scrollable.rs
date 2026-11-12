@@ -738,8 +738,8 @@ impl Widget for ScrollableFrame {
                 let bounds = InteractionBounds::new();
                 bounds.save(
                     1.0,
-                    child_ctx.parent_pos.x,
-                    child_ctx.parent_pos.y,
+                    child_ctx.parent_pos().x,
+                    child_ctx.parent_pos().y,
                     0.0,
                     0.0,
                 );

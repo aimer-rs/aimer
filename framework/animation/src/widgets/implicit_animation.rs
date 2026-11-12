@@ -509,7 +509,7 @@ mod tests {
         element.rebuild_if_dirty(&ctx);
 
         assert_eq!(test_frame_requester::count(), 1);
-        assert!(!ctx.window.take_redraw_request());
+        assert!(!ctx.window().take_redraw_request());
     }
 
     // Regression: the child element used to be replaced outright on every

@@ -604,14 +604,14 @@ impl RawGrid {
             x: alignment_offset(horizontal, cell_size.width, child_size.width),
             y: alignment_offset(vertical, cell_size.height, child_size.height),
         };
-        child_ctx.visible_rect = ctx.visible_rect.map(|(x, y, width, height)| {
+        child_ctx.set_visible_rect(ctx.visible_rect().map(|(x, y, width, height)| {
             (
                 x - cell_pos.x - offset.x,
                 y - cell_pos.y - offset.y,
                 width,
                 height,
             )
-        });
+        }));
         let overflow = detect_overflow(child_size, cell_size, offset);
 
         ctx.canvas.save();
@@ -691,14 +691,14 @@ impl RawGrid {
             x: alignment_offset(horizontal, cell_size.width, child_size.width),
             y: alignment_offset(vertical, cell_size.height, child_size.height),
         };
-        child_ctx.visible_rect = ctx.visible_rect.map(|(x, y, width, height)| {
+        child_ctx.set_visible_rect(ctx.visible_rect().map(|(x, y, width, height)| {
             (
                 x - cell_pos.x - offset.x,
                 y - cell_pos.y - offset.y,
                 width,
                 height,
             )
-        });
+        }));
         let overflow = detect_overflow(child_size, cell_size, offset);
         let render_size = child
             .paint_bounds(&child_ctx)
@@ -866,7 +866,7 @@ impl Drawable for RawGrid {
                         ),
                     };
                     if self.overflow == GridOverflow::Clip
-                        && !rect_intersects_visible_rect(cell_pos, cell_size, ctx.visible_rect)
+                        && !rect_intersects_visible_rect(cell_pos, cell_size, ctx.visible_rect())
                     {
                         continue;
                     }
@@ -1119,7 +1119,7 @@ mod tests {
 
     impl Drawable for VisibleRectRecorder {
         fn update(&self, ctx: &BuildContext) {
-            *self.visible_rect.borrow_mut() = ctx.visible_rect;
+            *self.visible_rect.borrow_mut() = ctx.visible_rect();
         }
     }
 
@@ -1231,7 +1231,7 @@ mod tests {
     fn grid_shifts_visible_rect_into_child_cell_coordinates() {
         let canvas = Box::leak(Box::new(InnerCanvas::new()));
         let mut ctx = build_context(canvas);
-        ctx.visible_rect = Some((0.0, 60.0, 200.0, 20.0));
+        ctx.set_visible_rect(Some((0.0, 60.0, 200.0, 20.0)));
         let visible_rect = Rc::new(RefCell::new(None));
         let grid = RawGrid {
             columns: vec![GridTrack::Px(200.0)],
@@ -1378,7 +1378,7 @@ mod tests {
     fn grid_skips_cells_outside_visible_rect() {
         let canvas = Box::leak(Box::new(InnerCanvas::new()));
         let mut ctx = build_context(canvas);
-        ctx.visible_rect = Some((0.0, 0.0, 200.0, 40.0));
+        ctx.set_visible_rect(Some((0.0, 0.0, 200.0, 40.0)));
         let visible_draws = Rc::new(RefCell::new(0));
         let hidden_draws = Rc::new(RefCell::new(0));
         let child = |draw_count: Rc<RefCell<usize>>, row| RawGridItem {
@@ -1476,7 +1476,7 @@ mod tests {
     fn visible_overflow_keeps_offscreen_cells_drawable() {
         let canvas = Box::leak(Box::new(InnerCanvas::new()));
         let mut ctx = build_context(canvas);
-        ctx.visible_rect = Some((0.0, 0.0, 200.0, 40.0));
+        ctx.set_visible_rect(Some((0.0, 0.0, 200.0, 40.0)));
         let draw_count = Rc::new(RefCell::new(0));
         let grid = RawGrid {
             columns: vec![GridTrack::Px(200.0)],

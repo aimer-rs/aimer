@@ -261,7 +261,7 @@ async fn light_edge_auto_color_reuses_inherited_background_without_allocating() 
         WindowHandle::headless(Default::default(), 1.0),
         tokio::runtime::Handle::current(),
     );
-    ctx.paint_background = Color::WHITE;
+    ctx.set_paint_background(Color::WHITE);
     let element = DecorationBox::new()
         .decoration(aimer_decoration::LightEdge::new())
         .child(SizedBox::new().width(40).height(20))
@@ -281,7 +281,7 @@ async fn light_edge_auto_color_reuses_inherited_background_without_allocating() 
         checking, 0,
         "automatic contrast must not allocate during retained checks"
     );
-    ctx.paint_background = Color::BLACK;
+    ctx.set_paint_background(Color::BLACK);
     assert!(element.paint_needs_recording(&ctx));
 }
 

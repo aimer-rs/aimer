@@ -238,7 +238,96 @@ fn reset_node_for_element_hashes() {
 /// the process chooses, so DoS resistance buys nothing, and hashing them with
 /// anything heavier costs more than the lookup itself, especially in
 /// unoptimized builds.
-pub type ElementNodeMap = HashMap<ElementId, RenderNodeId, IdBuildHasher>;
+///
+/// Even that is too much for a question asked of every element several times a
+/// frame, because an unoptimized hash table lookup is dozens of calls. A map is
+/// built once per synchronization and then only read, so it keeps a table of the
+/// answers it has given, indexed by the low bits of the element id. The table is
+/// filled from the map it belongs to, which does not change while it is shared,
+/// so it can never be stale.
+pub struct ElementNodeMap {
+    nodes: HashMap<ElementId, RenderNodeId, IdBuildHasher>,
+    /// Allocated on the first question: a map nobody asks about costs nothing.
+    recent: std::cell::OnceCell<Box<[Cell<Option<(ElementId, RenderNodeId)>>]>>,
+}
+
+impl ElementNodeMap {
+    /// How many answers the table keeps. Ids are handed out in sequence, so a
+    /// window with up to this many live elements maps them to distinct slots.
+    pub(crate) const SLOTS: usize = 4096;
+
+    /// Maps `element` to `node`, returning the node it had before.
+    pub fn insert(&mut self, element: ElementId, node: RenderNodeId) -> Option<RenderNodeId> {
+        // The one way a map that has answered can change: forget the answer.
+        if let Some(recent) = self.recent.get_mut() {
+            recent[Self::slot(element)].set(None);
+        }
+        self.nodes.insert(element, node)
+    }
+
+    /// Returns the render node of `element`, if it has one.
+    #[inline(always)]
+    pub fn get(&self, element: &ElementId) -> Option<RenderNodeId> {
+        let recent = self
+            .recent
+            .get_or_init(|| vec![Cell::new(None); Self::SLOTS].into_boxed_slice());
+        let slot = &recent[Self::slot(*element)];
+        if let Some((cached, node)) = slot.get()
+            && cached == *element
+        {
+            return Some(node);
+        }
+        self.get_by_hash(element, slot)
+    }
+
+    #[inline(never)]
+    fn get_by_hash(
+        &self,
+        element: &ElementId,
+        slot: &Cell<Option<(ElementId, RenderNodeId)>>,
+    ) -> Option<RenderNodeId> {
+        #[cfg(test)]
+        NODE_FOR_ELEMENT_HASHES.with(|count| count.set(count.get() + 1));
+        let node = self.nodes.get(element).copied()?;
+        // An element without a node is not remembered.
+        slot.set(Some((*element, node)));
+        Some(node)
+    }
+
+    #[inline(always)]
+    fn slot(element: ElementId) -> usize {
+        (element.get() as usize) & (Self::SLOTS - 1)
+    }
+}
+
+impl Default for ElementNodeMap {
+    fn default() -> Self {
+        Self {
+            nodes: HashMap::default(),
+            recent: std::cell::OnceCell::new(),
+        }
+    }
+}
+
+impl FromIterator<(ElementId, RenderNodeId)> for ElementNodeMap {
+    fn from_iter<I: IntoIterator<Item = (ElementId, RenderNodeId)>>(entries: I) -> Self {
+        Self {
+            nodes: entries.into_iter().collect(),
+            recent: std::cell::OnceCell::new(),
+        }
+    }
+}
+
+/// Everything that only reads the map (`contains_key`, `len`, `iter`) is the
+/// hash map's own.
+impl std::ops::Deref for ElementNodeMap {
+    type Target = HashMap<ElementId, RenderNodeId, IdBuildHasher>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.nodes
+    }
+}
 
 /// The retained render tree a traversal paints into, and how elements map to
 /// its nodes.
@@ -277,9 +366,7 @@ impl V2RenderScope {
         {
             return Some(node);
         }
-        #[cfg(test)]
-        NODE_FOR_ELEMENT_HASHES.with(|count| count.set(count.get() + 1));
-        let node = self.element_nodes.get(&element).copied()?;
+        let node = self.element_nodes.get(&element)?;
         self.last_element_node.set(Some((element, node)));
         Some(node)
     }

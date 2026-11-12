@@ -263,16 +263,15 @@ fn field_text_context<'a>(
     width: f32,
     height: f32,
 ) -> BuildContext<'a> {
-    BuildContext {
-        parent_size: ResolvedSize { width, height },
-        box_constraint: aimer_attribute::BoxConstraint {
-            min_width: 0.0,
-            min_height: 0.0,
-            max_width: width,
-            max_height: height,
-        },
-        ..ctx.clone()
-    }
+    let mut sized = ctx.clone();
+    sized.parent_size = ResolvedSize { width, height };
+    sized.box_constraint = aimer_attribute::BoxConstraint {
+        min_width: 0.0,
+        min_height: 0.0,
+        max_width: width,
+        max_height: height,
+    };
+    sized
 }
 
 impl RawTextField {
@@ -530,7 +529,7 @@ impl Drawable for RawTextField {
             self.enable
                 && self
                     .cached_bounds
-                    .is_inside(ctx.cursor_pos.x, ctx.cursor_pos.y),
+                    .is_inside(ctx.cursor_pos().x, ctx.cursor_pos().y),
         );
         self.caret_origin
             .set((outline_left + padding_left, outline_top + padding_top));
@@ -867,7 +866,7 @@ impl Drawable for RawTextField {
             self.enable
                 && self
                     .cached_bounds
-                    .is_inside(ctx.cursor_pos.x, ctx.cursor_pos.y),
+                    .is_inside(ctx.cursor_pos().x, ctx.cursor_pos().y),
         );
 
         // A field focused at construction time — `auto_focus`, or a rebuild that

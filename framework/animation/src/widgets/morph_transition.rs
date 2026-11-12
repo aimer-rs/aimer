@@ -399,7 +399,7 @@ impl Widget for MorphTransitionFrame {
             current_child: SyncChild::new(current_child),
             old_child: SyncChild(UnsafeCell::new(old_child)),
             controller: self.controller,
-            window: ctx.window.clone(),
+            window: ctx.window().clone(),
             look: self.look,
             progress: Cell::new(0.0),
             recorded: Cell::new(None),

@@ -732,7 +732,7 @@ async fn offscreen_container_skips_unknown_child_draw_but_keeps_traversal_views(
         max_width: 100.0,
         max_height: 100.0,
     };
-    ctx.visible_rect = Some((0.0, 101.0, 100.0, 20.0));
+    ctx.set_visible_rect(Some((0.0, 101.0, 100.0, 20.0)));
 
     container.update(&ctx);
 
@@ -754,7 +754,7 @@ async fn offscreen_container_skips_unknown_child_draw_but_keeps_traversal_views(
     container.hit_test_children(&mut |_| hit_test += 1);
     assert_eq!(hit_test, 1);
 
-    ctx.visible_rect = Some((0.0, 0.0, 100.0, 100.0));
+    ctx.set_visible_rect(Some((0.0, 0.0, 100.0, 100.0)));
     container.update(&ctx);
     assert_eq!(
         draws.get(),
@@ -842,6 +842,21 @@ fn a_container_element_stays_within_its_size_budget() {
         size_of::<RawContainer<AnyElement>>() <= 512,
         "a container element grew past its payload size budget: {} bytes",
         size_of::<RawContainer<AnyElement>>()
+    );
+}
+
+/// The element is stored behind a 16-byte provenance header, and its node adds
+/// an 8-byte identity, so a payload this size is what keeps an ordinary
+/// container inside the pool's largest class instead of the global allocator.
+#[test]
+fn a_container_node_with_its_header_fits_the_largest_pool_class() {
+    const POOL_LARGEST_CLASS: usize = 512;
+    const HEAP_HEADER: usize = 16;
+    const NODE_IDENTITY: usize = 8;
+    let block = HEAP_HEADER + NODE_IDENTITY + size_of::<RawContainer<AnyElement>>();
+    assert!(
+        block <= POOL_LARGEST_CLASS,
+        "a container block is {block} bytes and spills out of the pool"
     );
 }
 

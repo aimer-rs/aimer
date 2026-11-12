@@ -29,7 +29,7 @@ fn refresh(
     preserve_content_end: bool,
 ) -> bool {
     let ctx = drawing_context(None);
-    let _ = ctx.window.take_redraw_request();
+    let _ = ctx.window().take_redraw_request();
     scrollable.refresh_content_size_after_draw(
         &ctx,
         VIEWPORT,
@@ -38,7 +38,7 @@ fn refresh(
         provisional,
         preserve_content_end,
     );
-    ctx.window.take_redraw_request()
+    ctx.window().take_redraw_request()
 }
 
 /// The window was resized by a few pixels: the cross-axis extent follows the

@@ -411,7 +411,7 @@ impl WindowRenderTree {
     /// Returns the render node currently associated with a stable element ID.
     #[inline]
     pub fn node_for_element(&self, element: ElementId) -> Option<RenderNodeId> {
-        self.element_nodes.get(&element).copied()
+        self.element_nodes.get(&element)
     }
 
     fn covers_unbounded_stateful_invalidations(
@@ -543,10 +543,10 @@ fn child_base_context<'c>(
 ) -> BuildContext<'c> {
     let mut child_base_ctx = ctx.clone();
     child_base_ctx.parent_size = size;
-    child_base_ctx.parent_pos = Vec2d {
-        x: ctx.parent_pos.x + position.x,
-        y: ctx.parent_pos.y + position.y,
-    };
+    child_base_ctx.set_parent_pos(Vec2d {
+        x: ctx.parent_pos().x + position.x,
+        y: ctx.parent_pos().y + position.y,
+    });
     // A transparent wrapper hands `draw`'s own context to its child. It adds
     // nothing of its own, so its size is exactly what its only child measures
     // under the constraint it received. Feeding that size back down as the
@@ -732,7 +732,7 @@ fn collect_render_tree_nodes<'element, 'context>(
         new_elements.push((node_index, element, ctx.clone(), element_path.clone()));
     }
     specs.push(RenderNodeSpec::new(
-        existing.get(&element_id).copied(),
+        existing.get(&element_id),
         parent_index,
         bounds,
     ));
@@ -1350,8 +1350,8 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         let budget = self.venus.idle_budget();
         self.venus.run_idle(&budget);
         self.venus.end_frame();
-        // CALLED.print();
-        // CALLED.reset();
+        CALLED.print();
+        CALLED.reset();
         // The next platform-input interval is a new event frame. This shared
         // epoch also reaches dispatchers nested inside scrollables and regions.
         begin_event_frame();
@@ -1646,7 +1646,7 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         // with them. Scoped providers are added and removed on this map as the
         // traversal enters and leaves them, so it is the same map every frame.
         if let Some(states) = &self.inherited_states {
-            build_ctx.inherited_states = states.clone();
+            build_ctx.set_inherited_states(states.clone());
         }
 
         if self.widget_root.is_none()

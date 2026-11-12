@@ -143,9 +143,9 @@ impl RawCenter {
             max_width: size.width,
             max_height: size.height,
         };
-        child_ctx.visible_rect = ctx
-            .visible_rect
-            .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height));
+        child_ctx.set_visible_rect(ctx
+            .visible_rect()
+            .map(|(x, y, width, height)| (x - offset.x, y - offset.y, width, height)));
         child_ctx
     }
 

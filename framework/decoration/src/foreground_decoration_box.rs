@@ -310,7 +310,7 @@ impl<D: Decoration> ForegroundLayer<D> {
     fn paint_key(&self, ctx: &BuildContext) -> PaintKey {
         PaintKey {
             revision: self.decoration.revision(),
-            background: ctx.paint_background,
+            background: ctx.paint_background(),
             geometry: PaintGeometry::new(ctx.parent_size, ctx.scale),
         }
     }

@@ -494,7 +494,7 @@ impl SelectionBinding {
         text: impl Into<crate::TextSource>,
         fallback_color: Color,
     ) -> Self {
-        let window = ctx.window.clone();
+        let window = ctx.window().clone();
         let (session, owns_session) = match ctx.get_state::<SelectionScope>() {
             Some(scope) => (Rc::clone(&scope.0), false),
             None => (

@@ -17,10 +17,9 @@ fn tree() -> (RenderTree, RenderNodeId, RenderNodeId, RenderNodeId) {
 #[test]
 fn repeated_queries_about_one_node_hash_its_id_once() {
     let (tree, root, a, b) = tree();
-    // Building the tree asked about its nodes; leave `root` and `b` in the
-    // memory so that `a` has to be found.
-    tree.paint_source(root).unwrap();
-    tree.paint_source(b).unwrap();
+    let c = tree.add_child(root, Rect::new(20.0, 0.0, 10.0, 10.0)).unwrap();
+    // Building the tree asked about its nodes; start from a table that knows none.
+    tree.draw_cmd.borrow().forget_lookup_hints();
     reset_node_lookups();
 
     for _ in 0..3 {
@@ -30,22 +29,73 @@ fn repeated_queries_about_one_node_hash_its_id_once() {
     tree.context(a).unwrap();
     assert_eq!(index_hash_lookups(), 1, "six questions about one node");
 
-    // The memory now holds `a` and `b`; `root` is the one pushed out.
-    tree.paint_source(root).unwrap();
-    assert_eq!(index_hash_lookups(), 2, "a node that was pushed out is looked up again");
-
     // A wrapper's resolve alternates between itself and the child it checks.
     for _ in 0..3 {
         tree.paint_source(a).unwrap();
-        tree.paint_source(root).unwrap();
+        tree.paint_source(b).unwrap();
     }
-    assert_eq!(index_hash_lookups(), 2, "the memory holds the last two nodes");
+    assert_eq!(index_hash_lookups(), 2, "each of the two nodes is hashed once");
 
-    // `root` and `a` are held; a third node pushes the older one, `a`, out.
-    tree.paint_source(b).unwrap();
-    assert_eq!(index_hash_lookups(), 3);
+    // A third node does not push either of the others out.
+    tree.paint_source(c).unwrap();
     tree.paint_source(a).unwrap();
-    assert_eq!(index_hash_lookups(), 4, "the oldest of three is gone");
+    tree.paint_source(b).unwrap();
+    assert_eq!(index_hash_lookups(), 3, "only the new node is hashed");
+}
+
+/// A frame asks about every node of a window, one after another and then again
+/// for the next question about each. Remembering only the last few positions
+/// hashes every one of them every time.
+#[test]
+fn many_nodes_asked_about_in_rotation_are_hashed_once_each() {
+    const COUNT: usize = 300;
+    let tree = RenderTree::new();
+    let root = tree.add_root(Rect::new(0.0, 0.0, 100.0, 100.0)).unwrap();
+    let mut ids = vec![root];
+    for _ in 1..COUNT {
+        ids.push(tree.add_child(root, Rect::new(0.0, 0.0, 1.0, 1.0)).unwrap());
+    }
+    tree.draw_cmd.borrow().forget_lookup_hints();
+    reset_node_lookups();
+
+    for _ in 0..3 {
+        for id in &ids {
+            tree.paint_source(*id).unwrap();
+        }
+    }
+
+    // The root sits at position 0, which an empty slot already names, so it
+    // is found without hashing; every other node is hashed on the first pass
+    // only.
+    assert_eq!(
+        index_hash_lookups(),
+        COUNT - 1,
+        "three passes over {COUNT} nodes hash each node on the first pass only"
+    );
+}
+
+/// Two nodes whose ids share a table slot still each get their own answer.
+#[test]
+fn nodes_that_share_a_table_slot_are_still_told_apart() {
+    let mut list = DrawCommandList::default();
+    let root = list.insert(None, Rect::new(0.0, 0.0, 100.0, 100.0)).unwrap();
+    let mut children = Vec::new();
+    for offset in 0..(HINT_SLOTS + 8) {
+        children.push(
+            list.insert(Some(root), Rect::new(offset as f32, 0.0, 1.0, 1.0))
+                .unwrap(),
+        );
+    }
+    // `children[0]` and `children[HINT_SLOTS]` have ids that differ by exactly
+    // the table size, so they map to one slot.
+    let (first, second) = (children[0], children[HINT_SLOTS]);
+    assert_eq!(first.get() as usize % HINT_SLOTS, second.get() as usize % HINT_SLOTS);
+    list.forget_lookup_hints();
+
+    for _ in 0..4 {
+        assert_eq!(list.node(first).unwrap().bounds.x, 0.0);
+        assert_eq!(list.node(second).unwrap().bounds.x, HINT_SLOTS as f32);
+    }
 }
 
 #[test]

@@ -426,7 +426,7 @@ impl RawFlex {
             if rebuilt {
                 layout = self.measure_layout(ctx);
             } else {
-                ctx.window.request_redraw();
+                ctx.window().request_redraw();
             }
             distribution = self.main_distribution(ctx, layout.total(), layout.len());
             range = self.painted_range(ctx, &layout, distribution);
@@ -716,7 +716,7 @@ impl RawFlex {
             // first viewport row is therefore the fallback in that case.
             let cold_probe = || {
                 let main_start = ctx
-                    .visible_rect
+                    .visible_rect()
                     .map(|(x, y, _, _)| if is_row { x } else { y });
                 (main_start.is_some_and(|start| start > 0.0) && len > 1).then_some(1)
             };
@@ -929,23 +929,22 @@ impl RawFlex {
             x: (offset_x * scale).round() / scale,
             y: (offset_y * scale).round() / scale,
         };
-        let child_ctx = BuildContext {
-            parent_size: child_size,
-            box_constraint: BoxConstraint {
-                min_width: 0.0,
-                min_height: 0.0,
-                max_width: child_size.width,
-                max_height: child_size.height,
-            },
-            visible_rect: ctx
-                .visible_rect
-                .map(|(vx, vy, vw, vh)| (vx - offset.x, vy - offset.y, vw, vh)),
-            ..ctx.clone()
+        let mut child_ctx = ctx.clone();
+        child_ctx.parent_size = child_size;
+        child_ctx.box_constraint = BoxConstraint {
+            min_width: 0.0,
+            min_height: 0.0,
+            max_width: child_size.width,
+            max_height: child_size.height,
         };
+        child_ctx.set_visible_rect(
+            ctx.visible_rect()
+                .map(|(vx, vy, vw, vh)| (vx - offset.x, vy - offset.y, vw, vh)),
+        );
         Some((offset, child_ctx))
     }
 
-    /// Resolves the children that `ctx.visible_rect` exposes.
+    /// Resolves the children that `ctx.visible_rect()` exposes.
     ///
     /// `base_main` is the main-axis shift the container's own alignment applies.
     /// Without a visible rectangle every child is in range, which keeps an
@@ -956,7 +955,7 @@ impl RawFlex {
         layout: &FlexLayout,
         distribution: (f32, f32),
     ) -> Range<usize> {
-        let (start, extent) = match ctx.visible_rect {
+        let (start, extent) = match ctx.visible_rect() {
             Some((vx, vy, vw, vh)) => {
                 if self.is_row() {
                     (vx, vw)
@@ -1103,7 +1102,7 @@ impl Drawable for RawFlex {
                 // `content_size` before it draws its child. Asking for another
                 // frame is what lets the scroll range catch up. It cannot loop:
                 // a recorded child agrees with the table from now on.
-                ctx.window.request_redraw();
+                ctx.window().request_redraw();
             }
             distribution = self.main_distribution(ctx, layout.total(), layout.len());
             range = self.painted_range(ctx, &layout, distribution);
@@ -1199,19 +1198,18 @@ impl Drawable for RawFlex {
                 return;
             }
 
-            let draw_ctx = BuildContext {
-                parent_size: child_size,
-                box_constraint: BoxConstraint {
-                    min_width: 0.0,
-                    min_height: 0.0,
-                    max_width: c_w,
-                    max_height: c_h,
-                },
-                visible_rect: ctx
-                    .visible_rect
-                    .map(|(vx, vy, vw, vh)| (vx - offset_x, vy - offset_y, vw, vh)),
-                ..ctx.clone()
+            let mut draw_ctx = ctx.clone();
+            draw_ctx.parent_size = child_size;
+            draw_ctx.box_constraint = BoxConstraint {
+                min_width: 0.0,
+                min_height: 0.0,
+                max_width: c_w,
+                max_height: c_h,
             };
+            draw_ctx.set_visible_rect(
+                ctx.visible_rect()
+                    .map(|(vx, vy, vw, vh)| (vx - offset_x, vy - offset_y, vw, vh)),
+            );
 
             let rx = (offset_x * scale).round() / scale;
             let ry = (offset_y * scale).round() / scale;

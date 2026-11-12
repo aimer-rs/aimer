@@ -494,7 +494,7 @@ impl Widget for SvgAsset {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let loader = SvgLoader::new(SvgSource::Asset(self.key.clone()));
         let (source, updates) = loader.background_parts();
-        let window = ctx.window.clone();
+        let window = ctx.window().clone();
         // An asset that has loaded before is ready already, and loading it again
         // would only read the file once more for every time the widget is made.
         let initial = loader.state();

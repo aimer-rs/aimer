@@ -772,9 +772,7 @@ impl Drawable for PageElement {
     fn update(&self, ctx: &BuildContext) { self.scoped(ctx, |ctx| self.child.update(ctx)); }
     fn child_context<'a>(&self, ctx: &BuildContext<'a>, _: &dyn Element) -> Option<BuildContext<'a>> {
         self.scoped(ctx, |ctx| {
-            let mut child = ctx.clone();
-            child.inherited_states = Rc::new(RefCell::new(ctx.inherited_states.borrow().clone()));
-            Some(child)
+            Some(ctx.with_private_inherited_states())
         })
     }
     fn sync_paint_geometry(&self, ctx: &BuildContext) { self.scoped(ctx, |ctx| self.child.sync_paint_geometry(ctx)); }

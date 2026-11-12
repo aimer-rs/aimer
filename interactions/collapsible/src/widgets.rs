@@ -127,7 +127,7 @@ impl AnimatedCollapseElement {
         natural_ctx.box_constraint.min_height = 0.0;
         natural_ctx.box_constraint.max_height = f32::MAX;
         natural_ctx.parent_size.height = f32::MAX;
-        natural_ctx.visible_rect = None;
+        natural_ctx.set_visible_rect(None);
         self.child.computed_size(&natural_ctx)
     }
 

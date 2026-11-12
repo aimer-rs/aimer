@@ -432,7 +432,7 @@ async fn decoration_box_invalid_outsets_do_not_poison_the_paint_origin() {
 #[tokio::test]
 async fn decoration_box_nested_wrappers_preserve_spacing_and_flex_layout() {
     let mut ctx = context(2.0);
-    ctx.visible_rect = Some((10.0, 20.0, 80.0, 60.0));
+    ctx.set_visible_rect(Some((10.0, 20.0, 80.0, 60.0)));
     let content = || {
         Padding::new()
             .padding(LayoutSpacing::all(3))
@@ -454,7 +454,7 @@ async fn decoration_box_nested_wrappers_preserve_spacing_and_flex_layout() {
         wrapped.visit_children(&mut |child| {
             let child_ctx = wrapped.child_context(&ctx, child).unwrap();
             assert_eq!(child_ctx.box_constraint, ctx.box_constraint);
-            assert_eq!(child_ctx.visible_rect, ctx.visible_rect);
+            assert_eq!(child_ctx.visible_rect(), ctx.visible_rect());
         });
     }
     let expanded = DecorationBox::new()

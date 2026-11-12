@@ -894,7 +894,7 @@ mod tests {
         element.update(&ctx);
 
         assert_eq!(test_frame_requester::count(), 1);
-        assert!(!ctx.window.take_redraw_request());
+        assert!(!ctx.window().take_redraw_request());
     }
 
     #[test]

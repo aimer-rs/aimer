@@ -747,19 +747,35 @@ fn node_lookups() -> usize {
     NODE_LOOKUPS.with(std::cell::Cell::get)
 }
 
+/// How many positions the lookup table keeps. Ids are handed out in sequence,
+/// so a window with up to this many live nodes maps them to distinct slots.
+const HINT_SLOTS: usize = 4096;
+
+/// A direct-mapped table of positions in [`DrawCommandList::nodes`], by the low
+/// bits of the node id. Every entry is a hint, never an answer: see
+/// [`DrawCommandList::lookup_hints`].
+struct IndexHints([std::cell::Cell<u32>; HINT_SLOTS]);
+
+impl Default for IndexHints {
+    fn default() -> Self {
+        Self([const { std::cell::Cell::new(0) }; HINT_SLOTS])
+    }
+}
+
 /// A retained tree of local paint lists and ordered child links.
 #[derive(Default)]
 pub struct DrawCommandList {
     nodes: Vec<RenderNode>,
     indices: HashMap<RenderNodeId, usize, crate::utilities::IdBuildHasher>,
-    /// The ids and positions of the two nodes found last, newest first.
-    /// Resolving one element's paint asks about the same node many times in a
-    /// row, and a wrapper alternates between itself and the child it checks;
-    /// the memory answers all but the first question about each without
-    /// hashing. It is only a hint: a hit is accepted when the node at that
-    /// position carries the id, so a rearranged or shortened `nodes` can never
-    /// make it return the wrong node. Id `0` is never handed out.
-    last_lookups: std::cell::Cell<[(u64, usize); 2]>,
+    /// Where each node was last found in `nodes`, indexed by the low bits of its
+    /// id. Resolving one element's paint asks about the same node many times in
+    /// a row, a wrapper alternates between itself and the child it checks, and a
+    /// frame asks about every node of the window; the table answers all but the
+    /// first question about each node without hashing. It is only a hint: a hit
+    /// is accepted when the node at that position carries the id, so a
+    /// rearranged or shortened `nodes`, or two ids sharing a slot, can never make
+    /// it return the wrong node.
+    lookup_hints: IndexHints,
     roots: Vec<RenderNodeId>,
     next_id: u64,
     clip_escape_count: usize,
@@ -860,23 +876,37 @@ impl DrawCommandList {
         Ok(id)
     }
 
-    /// Where `id` sits in `nodes`. See [`Self::last_lookups`].
-    #[inline]
+    /// Where `id` sits in `nodes`. See [`Self::lookup_hints`].
+    #[inline(always)]
     fn index_of(&self, id: RenderNodeId) -> Option<usize> {
-        let [newest, older] = self.last_lookups.get();
-        if newest.0 == id.0 && self.nodes.get(newest.1).is_some_and(|node| node.id == id) {
-            return Some(newest.1);
+        let slot = &self.lookup_hints.0[(id.0 as usize) & (HINT_SLOTS - 1)];
+        let hint = slot.get() as usize;
+        if self.nodes.get(hint).is_some_and(|node| node.id == id) {
+            return Some(hint);
         }
-        if older.0 == id.0 && self.nodes.get(older.1).is_some_and(|node| node.id == id) {
-            // Keep the pair in order of use so the node just asked about stays.
-            self.last_lookups.set([older, newest]);
-            return Some(older.1);
-        }
+        self.index_of_by_hash(id, slot)
+    }
+
+    /// The slow half of [`Self::index_of`]: hashes the id and remembers the
+    /// position for the next question about it.
+    #[inline(never)]
+    fn index_of_by_hash(&self, id: RenderNodeId, slot: &std::cell::Cell<u32>) -> Option<usize> {
         #[cfg(test)]
         INDEX_HASH_LOOKUPS.with(|count| count.set(count.get() + 1));
         let index = *self.indices.get(&id)?;
-        self.last_lookups.set([(id.0, index), newest]);
+        // Positions past `u32::MAX` are not remembered; they are still found.
+        if let Ok(hint) = u32::try_from(index) {
+            slot.set(hint);
+        }
         Some(index)
+    }
+
+    /// Forgets every remembered position, as a freshly built list has.
+    #[cfg(test)]
+    fn forget_lookup_hints(&self) {
+        for slot in self.lookup_hints.0.iter() {
+            slot.set(0);
+        }
     }
 
     fn node(&self, id: RenderNodeId) -> Option<&RenderNode> {

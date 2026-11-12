@@ -163,7 +163,7 @@ impl<W: Widget + 'static> Widget for MouseRegion<W> {
             cursor: self.cursor,
             current_state: self.current_state.clone(),
             cached_bounds: seeded_interaction_bounds(&self.cached_bounds),
-            window: ctx.window.clone(),
+            window: ctx.window().clone(),
             child,
         }
         .boxed()
@@ -477,7 +477,7 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
         let (abs_x, abs_y) = ctx.canvas.get_transform_translation();
         self.cached_bounds
             .save(ctx.scale, abs_x, abs_y, child_size.width, child_size.height);
-        self.sync_hover_from_paint(ctx.cursor_pos);
+        self.sync_hover_from_paint(ctx.cursor_pos());
         self.child.update(ctx);
     }
 
@@ -520,7 +520,7 @@ impl<E: Element> Drawable for RawMouseRegion<E> {
         self.cached_bounds
             .save(ctx.scale, abs_x, abs_y, child_size.width, child_size.height);
 
-        self.sync_hover_from_paint(ctx.cursor_pos);
+        self.sync_hover_from_paint(ctx.cursor_pos());
         self.child.forward_paint_geometry(ctx);
     }
 }

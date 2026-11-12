@@ -411,7 +411,7 @@ impl<E: Element> RawScrollableContainer<E> {
         if preserve_content_end || followed_range || painted_range != Some(corrected_range) {
             // The child may have changed the extent without owning a redraw source
             // (RawFlex requests one itself, but custom elements need this fallback).
-            ctx.window.request_redraw();
+            ctx.window().request_redraw();
         }
     }
 
@@ -1113,7 +1113,7 @@ mod tests {
             max_width: 100.0,
             max_height: 100.0,
         };
-        context.visible_rect = visible_rect;
+        context.set_visible_rect(visible_rect);
         context
     }
 
@@ -1127,7 +1127,7 @@ mod tests {
 
         assert_eq!(draws.get(), 0);
 
-        ctx.visible_rect = Some((0.0, 0.0, 100.0, 100.0));
+        ctx.set_visible_rect(Some((0.0, 0.0, 100.0, 100.0)));
         scrollable.update(&ctx);
         assert_eq!(draws.get(), 1);
     }

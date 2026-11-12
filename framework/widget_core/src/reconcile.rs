@@ -1500,7 +1500,7 @@ mod tests {
                     let c_h = child_size.height;
 
                     let mut is_visible = true;
-                    if let Some((vx, vy, vw, vh)) = ctx.visible_rect
+                    if let Some((vx, vy, vw, vh)) = ctx.visible_rect()
                         && (c_w < vx
                             || 0.0 > vx + vw
                             || current_y + c_h < vy
@@ -1512,9 +1512,9 @@ mod tests {
                     if is_visible {
                         let mut child_ctx = ctx.clone();
                         child_ctx.parent_size = child_size;
-                        child_ctx.visible_rect = ctx
-                            .visible_rect
-                            .map(|(vx, vy, vw, vh)| (vx, vy - current_y, vw, vh));
+                        child_ctx.set_visible_rect(ctx
+                            .visible_rect()
+                            .map(|(vx, vy, vw, vh)| (vx, vy - current_y, vw, vh)));
                         child.update(&child_ctx);
                     }
 
@@ -1780,11 +1780,11 @@ mod tests {
             );
 
             let mut resize_ctx = initial_ctx.clone();
-            resize_ctx.visible_rect = if culled {
+            resize_ctx.set_visible_rect(if culled {
                 Some((0.0, 0.0, 500.0, 250.0))
             } else {
                 None
-            };
+            });
 
             for _ in 0..resize_count {
                 driver.mark_needs_rebuild();

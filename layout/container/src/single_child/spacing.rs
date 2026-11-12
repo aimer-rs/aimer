@@ -227,9 +227,9 @@ fn translated_context<'a>(ctx: &BuildContext<'a>, spacing: ResolvedSpacing) -> B
         width: child_ctx.box_constraint.max_width,
         height: child_ctx.box_constraint.max_height,
     };
-    child_ctx.visible_rect = ctx
-        .visible_rect
-        .map(|(x, y, width, height)| (x - spacing.left, y - spacing.top, width, height));
+    child_ctx.set_visible_rect(ctx
+        .visible_rect()
+        .map(|(x, y, width, height)| (x - spacing.left, y - spacing.top, width, height)));
     child_ctx
 }
 

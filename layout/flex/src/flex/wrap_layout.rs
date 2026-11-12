@@ -254,9 +254,9 @@ impl RawFlex {
             max_width: child_size.width,
             max_height: child_size.height,
         };
-        child_ctx.visible_rect = ctx
-            .visible_rect
-            .map(|(x, y, width, height)| (x - offset_x, y - offset_y, width, height));
+        child_ctx.set_visible_rect(ctx
+            .visible_rect()
+            .map(|(x, y, width, height)| (x - offset_x, y - offset_y, width, height)));
         Some((offset, child_ctx))
     }
 
@@ -305,9 +305,9 @@ impl RawFlex {
                 max_width: child_size.width,
                 max_height: child_size.height,
             };
-            child_ctx.visible_rect = ctx
-                .visible_rect
-                .map(|(x, y, width, height)| (x - offset_x, y - offset_y, width, height));
+            child_ctx.set_visible_rect(ctx
+                .visible_rect()
+                .map(|(x, y, width, height)| (x - offset_x, y - offset_y, width, height)));
             draw_commands.push((child.layer(), offset_x, offset_y, child_ctx, child));
         }
 

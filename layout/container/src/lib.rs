@@ -301,7 +301,7 @@ mod tests {
             max_width: width,
             max_height: height,
         };
-        context.visible_rect = visible_rect;
+        context.set_visible_rect(visible_rect);
         context
     }
 

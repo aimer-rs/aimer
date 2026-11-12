@@ -97,10 +97,10 @@ impl RawContextMenuPanel {
         };
         let mut child_context = ctx.clone();
         child_context.parent_size = child_size;
-        child_context.parent_pos = Vec2d {
-            x: ctx.parent_pos.x + offset.x,
-            y: ctx.parent_pos.y + offset.y,
-        };
+        child_context.set_parent_pos(Vec2d {
+            x: ctx.parent_pos().x + offset.x,
+            y: ctx.parent_pos().y + offset.y,
+        });
         child_context.box_constraint = BoxConstraint {
             min_width: 0.0,
             min_height: 0.0,

@@ -109,9 +109,9 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
                 ScrollAxis::Horizontal => child_ctx.box_constraint.max_width = f32::MAX,
             }
             let offset = snap_scroll_offset(self.ctrl.visual_offset(self.ctrl.scroll_offset.get()));
-            child_ctx.parent_pos.x += offset.x;
-            child_ctx.parent_pos.y += offset.y;
-            child_ctx.visible_rect = Some(cache_rect(
+            child_ctx.parent_pos().x += offset.x;
+            child_ctx.parent_pos().y += offset.y;
+            child_ctx.set_visible_rect(Some(cache_rect(
                 self.ctrl.axis,
                 Vec2d {
                     x: -offset.x,
@@ -119,7 +119,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
                 },
                 (viewport_w, viewport_h),
                 Vec2d::ZERO,
-            ));
+            )));
             return Some(child_ctx);
         }
 
@@ -135,7 +135,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
                 width: self.vertical_bar_width,
                 height: viewport_h,
             };
-            bar_ctx.parent_pos.x += self
+            bar_ctx.parent_pos().x += self
                 .ctrl
                 .scroll_bar_placement
                 .cross_offset(viewport_w, self.vertical_bar_width);
@@ -152,7 +152,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
                 width: viewport_w,
                 height: self.horizontal_bar_height,
             };
-            bar_ctx.parent_pos.y += self
+            bar_ctx.parent_pos().y += self
                 .ctrl
                 .scroll_bar_placement
                 .cross_offset(viewport_h, self.horizontal_bar_height);
@@ -297,7 +297,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             ScrollAxis::Horizontal => prepare_ctx.box_constraint.max_width = f32::MAX,
         }
         let initial_offset = self.ctrl.scroll_offset.get();
-        prepare_ctx.visible_rect = Some(cache_rect(
+        prepare_ctx.set_visible_rect(Some(cache_rect(
             self.ctrl.axis,
             Vec2d {
                 x: -initial_offset.x,
@@ -305,7 +305,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             },
             (viewport_w, viewport_h),
             Vec2d::ZERO,
-        ));
+        )));
         let mut prepared_extent = self.child.prepare_layout(&prepare_ctx);
         let initial_content_size = self.content_size(ctx);
         let mut content_size = initial_content_size;
@@ -313,7 +313,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
         // just as the windowed flex layout bounds its own reconciliation.
         for _ in 0..3 {
             let offset = self.ctrl.scroll_offset.get();
-            prepare_ctx.visible_rect = Some(cache_rect(
+            prepare_ctx.set_visible_rect(Some(cache_rect(
                 self.ctrl.axis,
                 Vec2d {
                     x: -offset.x,
@@ -321,7 +321,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
                 },
                 (viewport_w, viewport_h),
                 Vec2d::ZERO,
-            ));
+            )));
             prepared_extent |= self.child.prepare_layout(&prepare_ctx);
             let refined = self.child.computed_size(&prepare_ctx);
             if refined == content_size {
@@ -375,7 +375,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             layout_size.height,
         );
         self.ctrl.cached_viewport.set((viewport_w, viewport_h));
-        self.ctrl.cursor_pos.set(Some(ctx.cursor_pos));
+        self.ctrl.cursor_pos.set(Some(ctx.cursor_pos()));
 
         let mut final_max = Vec2d { x: max_x, y: max_y };
         let user_max = self.ctrl.scroll_behavior.max_scroll;
@@ -536,7 +536,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
         // crosses the boundary, and that frame is the pause the user feels.
         // The extra content is still clipped on the GPU by the viewport clip
         // set above, so it costs nothing to draw.
-        child_ctx.visible_rect = Some(cache_rect(
+        child_ctx.set_visible_rect(Some(cache_rect(
             self.ctrl.axis,
             Vec2d {
                 x: -offset_x,
@@ -544,7 +544,7 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             },
             (viewport_w, viewport_h),
             travel,
-        ));
+        )));
 
         if aimer_widget::has_active_v2_render_tree() {
             let scale = ctx.scale;
@@ -616,8 +616,8 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
                 if aimer_widget::has_active_v2_render_tree() {
                     self.child.rebuild_if_dirty(&child_ctx);
                     let mut v2_child_ctx = child_ctx.clone();
-                    v2_child_ctx.parent_pos.x += offset_x;
-                    v2_child_ctx.parent_pos.y += offset_y;
+                    v2_child_ctx.parent_pos().x += offset_x;
+                    v2_child_ctx.parent_pos().y += offset_y;
                     self.child.update(&v2_child_ctx);
                 } else {
                     self.child.update(&child_ctx);
@@ -650,12 +650,12 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
             };
             if should_dispatch_hover {
                 let event = ElementEvent::PointerMove(PointerInfo::mouse(
-                    ctx.cursor_pos,
+                    ctx.cursor_pos(),
                     PointerButton::Primary,
                 ));
                 let _ = self.event_dispatcher.borrow_mut().dispatch(
                     &self.child,
-                    ctx.cursor_pos,
+                    ctx.cursor_pos(),
                     &event,
                 );
             }

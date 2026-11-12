@@ -834,8 +834,8 @@ impl GifSlot {
                 Some(bytes) => SlotState::Playing(Box::new(GifPlayer::new(
                     bytes,
                     &self.options,
-                    upload_limit(&ctx.window),
-                    &ctx.window,
+                    upload_limit(&ctx.window()),
+                    &ctx.window(),
                 ))),
                 None => SlotState::Static,
             };

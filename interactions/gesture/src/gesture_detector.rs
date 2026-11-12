@@ -289,7 +289,7 @@ impl<W: Widget + 'static> Widget for GestureDetector<W> {
         RawGestureDetector {
             child: self.child.to_element(ctx),
             cached_bounds: InteractionBounds::new(),
-            window: ctx.window.clone(),
+            window: ctx.window().clone(),
             // One refcount bump, whatever the detector was configured with.
             handlers: self.handlers.clone(),
             state: RefCell::new(GestureState::default()),

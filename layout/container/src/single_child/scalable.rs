@@ -107,7 +107,7 @@ impl RawScalable {
         let mut child_ctx = ctx.clone();
         // An ancestor's visible window must not cull the pixels whose clip the
         // retained node escapes. A viewport inside this child sets its own window.
-        child_ctx.visible_rect = None;
+        child_ctx.set_visible_rect(None);
         child_ctx
     }
 

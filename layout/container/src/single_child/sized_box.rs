@@ -227,20 +227,7 @@ impl<E: Element> LayoutElement for RawSizedBox<E> {
 
         let scale = ctx.scale;
 
-        let mut child_ctx = BuildContext {
-            parent_size: ctx.parent_size,
-            canvas: ctx.canvas.clone(),
-            scale: ctx.scale,
-            parent_pos: ctx.parent_pos,
-            cursor_pos: ctx.cursor_pos,
-            box_constraint: ctx.box_constraint,
-            visible_rect: ctx.visible_rect,
-            paint_background: ctx.paint_background,
-            window: ctx.window.clone(),
-            #[cfg(not(target_arch = "wasm32"))]
-            async_handle: ctx.async_handle.clone(),
-            inherited_states: ctx.inherited_states.clone(),
-        };
+        let mut child_ctx = ctx.clone();
 
         child_ctx.box_constraint.max_width =
             self.width.resolve(ctx.box_constraint.max_width, scale);

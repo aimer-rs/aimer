@@ -92,7 +92,7 @@ impl<T: Element, D: Decoration> RawContainer<T, D> {
         });
 
         let mut child_ctx = ctx.clone();
-        child_ctx.paint_background = self.child_paint_background(ctx);
+        child_ctx.set_paint_background(self.child_paint_background(ctx));
         let content_w = (box_width - p_left - b_left - _p_right - b_right).max(0.0);
         let content_h = (box_height - p_top - b_top - _p_bottom - b_bottom).max(0.0);
         child_ctx.box_constraint.max_width = content_w;
@@ -109,9 +109,9 @@ impl<T: Element, D: Decoration> RawContainer<T, D> {
         // they actually leave the viewport.
         let inset_x = m_left + p_left + b_left;
         let inset_y = m_top + p_top + b_top;
-        child_ctx.visible_rect = ctx
-            .visible_rect
-            .map(|(vx, vy, vw, vh)| (vx - inset_x, vy - inset_y, vw, vh));
+        child_ctx.set_visible_rect(ctx
+            .visible_rect()
+            .map(|(vx, vy, vw, vh)| (vx - inset_x, vy - inset_y, vw, vh)));
 
         // The child may intentionally paint outside its measured content into
         // the padding area, so use the complete clipping region rather than

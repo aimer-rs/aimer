@@ -505,25 +505,25 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
             self.decoration()
                 .background_color()
                 .or(self.fallback_background()),
-            ctx.paint_background,
+            ctx.paint_background(),
         )
     }
 
     fn local_v2_child_context<'a>(&self, ctx: &BuildContext<'a>) -> Option<BuildContext<'a>> {
         let geometry = self.local_v2_geometry(ctx)?;
         let mut child_ctx = ctx.clone();
-        child_ctx.paint_background = self.child_paint_background(ctx);
+        child_ctx.set_paint_background(self.child_paint_background(ctx));
         child_ctx.box_constraint.max_width = geometry.content_size.width;
         child_ctx.box_constraint.max_height = geometry.content_size.height;
         child_ctx.parent_size = geometry.content_size;
-        child_ctx.visible_rect = ctx.visible_rect.map(|(x, y, width, height)| {
+        child_ctx.set_visible_rect(ctx.visible_rect().map(|(x, y, width, height)| {
             (
                 x - geometry.child_origin.x,
                 y - geometry.child_origin.y,
                 width,
                 height,
             )
-        });
+        }));
         Some(child_ctx)
     }
 }
@@ -636,7 +636,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         self.mark_decoration_recorded();
         let mut state = self.paint_state.get();
         state.revision = self.decoration().revision();
-        state.background = ctx.paint_background;
+        state.background = ctx.paint_background();
         self.flags.set(self.flags.get() | RECORDED);
         self.paint_state.set(state);
     }
@@ -644,7 +644,7 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
     fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         let state = self.paint_state.get();
         self.flags.get() & RECORDED == 0
-            || state.background != ctx.paint_background
+            || state.background != ctx.paint_background()
             || self.retained_decoration_needs_recording()
             || state.revision != self.decoration().revision()
     }
@@ -803,16 +803,16 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         let inset_y = m_top + padding_top + border_top;
 
         let mut child_ctx = ctx.clone();
-        child_ctx.paint_background = self.child_paint_background(ctx);
+        child_ctx.set_paint_background(self.child_paint_background(ctx));
         child_ctx.box_constraint.max_width = content_width;
         child_ctx.box_constraint.max_height = content_height;
         child_ctx.parent_size = ResolvedSize {
             width: content_width,
             height: content_height,
         };
-        child_ctx.visible_rect = ctx
-            .visible_rect
-            .map(|(x, y, width, height)| (x - inset_x, y - inset_y, width, height));
+        child_ctx.set_visible_rect(ctx
+            .visible_rect()
+            .map(|(x, y, width, height)| (x - inset_x, y - inset_y, width, height)));
 
         ctx.canvas.save();
         ctx.canvas.translate(Vec2d {

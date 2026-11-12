@@ -212,7 +212,7 @@ impl<W: Widget + 'static> State<WindowBackdrop<W>> for WindowBackdropState<W> {
     }
 
     fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.sync(&ctx.window);
+        self.sync(&ctx.window());
         self.child.clone()
     }
 }

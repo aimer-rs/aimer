@@ -155,7 +155,7 @@ impl NewWindow<ContentBuilder> {
 /// The providers in scope where `ctx` is building, as a map a window can start
 /// from.
 pub(crate) fn inherited_from(ctx: &BuildContext) -> Rc<RefCell<InheritedStates>> {
-    Rc::new(RefCell::new(ctx.inherited_states.borrow().clone()))
+    Rc::new(RefCell::new(ctx.inherited_states().borrow().clone()))
 }
 
 #[cfg(test)]

@@ -1056,7 +1056,7 @@ impl StatefulElement {
             state_cell.clone(),
             dirty_source.clone(),
             failure.clone(),
-            ctx.window.key(),
+            ctx.window().key(),
         );
 
         {

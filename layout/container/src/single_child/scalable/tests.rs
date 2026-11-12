@@ -32,11 +32,11 @@ async fn scaling_preserves_layout_size_and_parent_constraints() {
         .to_element(&ctx);
     assert_eq!(percent.computed_size(&ctx), ResolvedSize { width: 50.0, height: 24.0 });
 
-    ctx.visible_rect = Some((0.0, 0.0, 100.0, 40.0));
+    ctx.set_visible_rect(Some((0.0, 0.0, 100.0, 40.0)));
     let centered = Scalable::new().scale(2.0)
         .child(SizedBox::new().width(30).height(12)).to_element(&ctx);
     centered.visit_children(&mut |child| {
         let child_ctx = centered.child_context_at(&ctx, child, 0).unwrap();
-        assert_eq!(child_ctx.visible_rect, None);
+        assert_eq!(child_ctx.visible_rect(), None);
     });
 }

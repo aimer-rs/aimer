@@ -390,7 +390,7 @@ impl RawRichText {
         let origin = self.geometry().origin(canvas_x, canvas_y, data.scale);
         self.paragraph.link_at_point(
             &data.layout,
-            ctx.cursor_pos,
+            ctx.cursor_pos(),
             aimer_attribute::Vec2d {
                 x: origin.x * data.scale,
                 y: origin.y * data.scale,
@@ -822,7 +822,7 @@ impl Drawable for RawRichText {
             enter_hold(&self.session(), &self.slot(), offset, pointer);
             self.pressed_link.borrow_mut().take();
         }
-        self.set_hovered_link(self.link_at(ctx.cursor_pos.x, ctx.cursor_pos.y));
+        self.set_hovered_link(self.link_at(ctx.cursor_pos().x, ctx.cursor_pos().y));
         true
     }
 
@@ -901,7 +901,7 @@ impl Drawable for RawRichText {
                 }
             } else {
                 for rect in
-                    geometry::selection_runs(&data.layout, selection.clone(), ctx.visible_rect)
+                    geometry::selection_runs(&data.layout, selection.clone(), ctx.visible_rect())
                 {
                     draw_rect(rect.x, rect.y, rect.width, rect.height);
                 }
@@ -995,7 +995,7 @@ impl Drawable for RawRichText {
                     abs_x,
                     abs_y,
                     data.scale,
-                    ctx.visible_rect,
+                    ctx.visible_rect(),
                     &mut geometry.regions.borrow_mut(),
                 );
             }
@@ -1003,7 +1003,7 @@ impl Drawable for RawRichText {
         let mut link_regions = self.link_regions.borrow_mut();
         link_regions.clear();
         self.paragraph
-            .visit_link_fragments(&data.layout, ctx.visible_rect, |target, fragment| {
+            .visit_link_fragments(&data.layout, ctx.visible_rect(), |target, fragment| {
                 link_regions.push(LinkRegion {
                     target: target.clone(),
                     bounds: Bounds::new(
@@ -1034,7 +1034,7 @@ impl Drawable for RawRichText {
             self.pressed_link.borrow_mut().take();
         }
 
-        self.set_hovered_link(self.link_at(ctx.cursor_pos.x, ctx.cursor_pos.y));
+        self.set_hovered_link(self.link_at(ctx.cursor_pos().x, ctx.cursor_pos().y));
 
         // Inside a region the furniture is kept by the region, on behalf of
         // every participant. A standalone text has no region to do it. Neither
@@ -1498,7 +1498,7 @@ mod tests {
             selectable: true,
             selection_color,
             binding: standalone_binding(
-                &context.window,
+                &context.window(),
                 Rc::new(SelectionCoordinator::default()),
                 Rc::from("selected"),
             ),
@@ -1581,7 +1581,7 @@ mod tests {
             selectable: true,
             selection_color: DEFAULT_SELECTION_COLOR,
             binding: standalone_binding(
-                &context.window,
+                &context.window(),
                 Rc::new(SelectionCoordinator::default()),
                 Rc::from("normal italic"),
             ),
@@ -1651,7 +1651,7 @@ mod tests {
             selectable: true,
             selection_color: DEFAULT_SELECTION_COLOR,
             binding: standalone_binding(
-                &context.window,
+                &context.window(),
                 Rc::new(SelectionCoordinator::default()),
                 Rc::from("first second third"),
             ),
@@ -1728,7 +1728,7 @@ mod tests {
             selectable: true,
             selection_color: DEFAULT_SELECTION_COLOR,
             binding: standalone_binding(
-                &context.window,
+                &context.window(),
                 Rc::new(SelectionCoordinator::default()),
                 Rc::from("first\n\nthird"),
             ),
@@ -1849,7 +1849,7 @@ mod tests {
             selectable: false,
             selection_color: DEFAULT_SELECTION_COLOR,
             binding: standalone_binding(
-                &context.window,
+                &context.window(),
                 Rc::new(SelectionCoordinator::default()),
                 Rc::from("italic"),
             ),
@@ -1924,7 +1924,7 @@ mod tests {
             selectable: false,
             selection_color: DEFAULT_SELECTION_COLOR,
             binding: standalone_binding(
-                &context.window,
+                &context.window(),
                 Rc::new(SelectionCoordinator::default()),
                 Rc::from("linked"),
             ),
@@ -1953,7 +1953,7 @@ mod tests {
             selectable: false,
             selection_color: DEFAULT_SELECTION_COLOR,
             binding: standalone_binding(
-                &context.window,
+                &context.window(),
                 Rc::new(SelectionCoordinator::default()),
                 Rc::from("linked"),
             ),
@@ -2053,7 +2053,7 @@ mod tests {
             selectable: false,
             selection_color: DEFAULT_SELECTION_COLOR,
             binding: standalone_binding(
-                &context.window,
+                &context.window(),
                 Rc::new(SelectionCoordinator::default()),
                 Rc::from("abcdef"),
             ),

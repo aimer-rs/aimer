@@ -186,7 +186,7 @@ mod tests {
         assert!(!dirty.get());
 
         context
-            .window
+            .window()
             .update_headless_metrics(winit::dpi::PhysicalSize::new(1000, 1200), 2.0);
         crate::notify_window_metrics_changed();
 

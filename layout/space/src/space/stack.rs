@@ -461,31 +461,21 @@ impl Drawable for RawStackElement {
     fn update(&self, ctx: &BuildContext) {
         self.invalidate_hit_test_index();
         let content_size = self.content_size(ctx);
-        let child_ctx = BuildContext {
-            parent_size: content_size,
-            canvas: ctx.canvas.clone(),
-            scale: ctx.scale,
-            parent_pos: ctx.parent_pos,
-            cursor_pos: ctx.cursor_pos,
-            box_constraint: BoxConstraint {
-                min_width: 0.0,
-                min_height: 0.0,
-                max_width: content_size.width,
-                max_height: content_size.height,
-            },
-            visible_rect: ctx.visible_rect,
-            paint_background: ctx.paint_background,
-            window: ctx.window.clone(),
-            #[cfg(not(target_arch = "wasm32"))]
-            async_handle: ctx.async_handle.clone(),
-            inherited_states: ctx.inherited_states.clone(),
+        let mut child_ctx = ctx.clone();
+        child_ctx.parent_size = content_size;
+        child_ctx.box_constraint = BoxConstraint {
+            min_width: 0.0,
+            min_height: 0.0,
+            max_width: content_size.width,
+            max_height: content_size.height,
         };
 
         let sorted_children = self.sorted_child_indices();
-        let covering = self.covering_rank(&sorted_children, ctx.cursor_pos);
-        let covered_ctx = covering.map(|_| BuildContext {
-            cursor_pos: COVERED_CURSOR,
-            ..child_ctx.clone()
+        let covering = self.covering_rank(&sorted_children, ctx.cursor_pos());
+        let covered_ctx = covering.map(|_| {
+            let mut covered = child_ctx.clone();
+            covered.set_cursor_pos(COVERED_CURSOR);
+            covered
         });
         let child_ctx_for = |rank: usize| match (&covered_ctx, covering) {
             (Some(covered), Some(covering)) if rank < covering => covered,
@@ -512,10 +502,11 @@ impl Drawable for RawStackElement {
         // A region decides its hover from the cursor it is handed here, so a
         // layer under a covering one is handed none: it stops being hovered
         // beneath a bar the pointer is on, and does not start.
-        let covering = self.covering_rank(&sorted_children, ctx.cursor_pos);
-        let covered_ctx = covering.map(|_| BuildContext {
-            cursor_pos: COVERED_CURSOR,
-            ..child_ctx.clone()
+        let covering = self.covering_rank(&sorted_children, ctx.cursor_pos());
+        let covered_ctx = covering.map(|_| {
+            let mut covered = child_ctx.clone();
+            covered.set_cursor_pos(COVERED_CURSOR);
+            covered
         });
         let child_ctx_for = |rank: usize| match (&covered_ctx, covering) {
             (Some(covered), Some(covering)) if rank < covering => covered,

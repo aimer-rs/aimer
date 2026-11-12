@@ -241,13 +241,13 @@ impl<D: Decoration> RawDecorationBox<D> {
     ) -> R {
         let background = aimer_canvas::composite_background(
             self.decoration.background_color(),
-            ctx.paint_background,
+            ctx.paint_background(),
         );
-        if background == ctx.paint_background {
+        if background == ctx.paint_background() {
             return callback(ctx);
         }
         let mut child_ctx = ctx.clone();
-        child_ctx.paint_background = background;
+        child_ctx.set_paint_background(background);
         callback(&child_ctx)
     }
 
@@ -263,7 +263,7 @@ impl<D: Decoration> RawDecorationBox<D> {
     fn paint_key(&self, ctx: &BuildContext) -> PaintKey {
         PaintKey {
             revision: self.decoration.revision(),
-            background: ctx.paint_background,
+            background: ctx.paint_background(),
             geometry: self.paint_geometry(ctx),
         }
     }
@@ -337,10 +337,10 @@ impl<D: Decoration> Drawable for RawDecorationBox<D> {
         // back into the child's constraints or parent size.
         std::ptr::eq(child, self.child.as_ref()).then(|| {
             let mut child_ctx = ctx.clone();
-            child_ctx.paint_background = aimer_canvas::composite_background(
+            child_ctx.set_paint_background(aimer_canvas::composite_background(
                 self.decoration.background_color(),
-                ctx.paint_background,
-            );
+                ctx.paint_background(),
+            ));
             child_ctx
         })
     }

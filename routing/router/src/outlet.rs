@@ -34,7 +34,7 @@ impl RouteChildContext {
 
     pub(crate) fn capture(ctx: &BuildContext) -> Self {
         Self {
-            states: ctx.inherited_states.borrow().clone(),
+            states: ctx.inherited_states().borrow().clone(),
         }
     }
 
@@ -53,9 +53,9 @@ impl RouteChildContext {
     pub(crate) fn with_shared_state<'a, T: Any, R>(&self, ctx: &BuildContext<'a>, state: Rc<T>, callback: impl FnOnce(&BuildContext<'a>) -> R) -> R {
         self.with(ctx, |ctx| {
             let type_id = TypeId::of::<T>();
-            let old = ctx.inherited_states.borrow_mut().insert(type_id, state);
+            let old = ctx.inherited_states().borrow_mut().insert(type_id, state);
             let _guard = RouteChildContextGuard {
-                states: ctx.inherited_states.clone(), previous: smallvec::smallvec![(type_id, old)],
+                states: ctx.inherited_states().clone(), previous: smallvec::smallvec![(type_id, old)],
             };
             callback(ctx)
         })
@@ -66,7 +66,7 @@ impl RouteChildContext {
         // Keep that hot-path bookkeeping on the stack; larger scopes can spill.
         let mut previous = SmallVec::new();
         {
-            let mut states = ctx.inherited_states.borrow_mut();
+            let mut states = ctx.inherited_states().borrow_mut();
             for (type_id, state) in &self.states {
                 let metadata = page && (*type_id == TypeId::of::<RouteBoundary>() || *type_id == TypeId::of::<NavigationRequest>());
                 if states.get(type_id).is_none_or(|current| metadata && !Rc::ptr_eq(current, state)) {
@@ -77,7 +77,7 @@ impl RouteChildContext {
         }
 
         let _guard = RouteChildContextGuard {
-            states: ctx.inherited_states.clone(),
+            states: ctx.inherited_states().clone(),
             previous,
         };
         callback(ctx)

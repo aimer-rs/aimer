@@ -191,14 +191,14 @@ impl Drawable for RawCaretPlacement {
             max_width: placement.size.width,
             max_height: placement.size.height,
         };
-        caret_ctx.visible_rect = ctx.visible_rect.map(|(x, y, width, height)| {
+        caret_ctx.set_visible_rect(ctx.visible_rect().map(|(x, y, width, height)| {
             (
                 x - placement.offset.x,
                 y - placement.offset.y,
                 width,
                 height,
             )
-        });
+        }));
         ctx.canvas.save();
         ctx.canvas.translate(placement.offset);
         self.child.update(&caret_ctx);
