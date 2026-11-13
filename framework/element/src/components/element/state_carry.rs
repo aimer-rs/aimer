@@ -12,6 +12,16 @@ use std::any::Any;
 
 use super::*;
 
+/// What the positional (unkeyed) walk hands over for a pair of stateful elements.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Carry {
+    /// Adopt the live state of every pair that describes the same widget.
+    Live,
+    /// The old tree was just built from fresh state, so there is no live state in
+    /// its unkeyed elements to adopt; see [`carry_candidate_child_state`].
+    Candidate,
+}
+
 /// The state-owning part of an element, as the state carry sees it.
 ///
 /// Reached through [`Rebuildable::state_carrier`]. Two carriers describe the
@@ -127,11 +137,39 @@ fn element_children(element: &dyn Element) -> SmallVec<[&dyn Element; 8]> {
 /// even when those children are hidden from event dispatch.
 #[doc(hidden)]
 pub fn carry_child_state(old: &dyn Element, new: &dyn Element, ctx: &BuildContext) {
+    carry_child_state_as(old, new, ctx, Carry::Live);
+}
+
+/// [`carry_child_state`] for an `old` tree that was just built from fresh state.
+///
+/// A stateful element builds its child when it is created, from the state it was
+/// created with. When the live state of an older element then replaces that
+/// state, the child is built again from the live one, and the two children are
+/// paired so that what only the first one holds is not lost.
+///
+/// The unkeyed stateful elements of the first child hold fresh state, the same
+/// fresh state the second child's own elements were just created with, so
+/// adopting it changes nothing. Each adoption still builds again and carries
+/// again below it, and the real old subtree is walked right after by the caller,
+/// which is what carries live state. Doing both made every nested stateful level
+/// double the work of the levels beneath it, so this walk leaves those pairs
+/// alone.
+///
+/// Everything else is carried as [`carry_child_state`] does: keyed states, found
+/// by key wherever they are, the careful walk below a keyed element (which the
+/// collapsed-list tests in `aimer_quiver` depend on), and the runtime state
+/// elements keep beside their children.
+#[doc(hidden)]
+pub fn carry_candidate_child_state(old: &dyn Element, new: &dyn Element, ctx: &BuildContext) {
+    carry_child_state_as(old, new, ctx, Carry::Candidate);
+}
+
+fn carry_child_state_as(old: &dyn Element, new: &dyn Element, ctx: &BuildContext, carry: Carry) {
     if same_element(old, new) {
         return;
     }
     carry_keyed_child_state(old, new, ctx);
-    carry_unkeyed_child_state(old, new, ctx);
+    carry_unkeyed_child_state(old, new, ctx, carry);
 }
 
 fn carry_keyed_child_state(old_root: &dyn Element, new: &dyn Element, ctx: &BuildContext) {
@@ -279,7 +317,7 @@ fn adopt_runtime_state(old: &dyn Element, new: &dyn Element) {
     new.adopt_runtime_state_from(old);
 }
 
-fn carry_unkeyed_child_state(old: &dyn Element, new: &dyn Element, ctx: &BuildContext) {
+fn carry_unkeyed_child_state(old: &dyn Element, new: &dyn Element, ctx: &BuildContext, carry: Carry) {
     // A retained child is placed into the old and the new tree alike, so the
     // pairing walk can arrive with the same element on both sides. Nothing can
     // be carried from an element into itself, and descending would carry
@@ -289,11 +327,11 @@ fn carry_unkeyed_child_state(old: &dyn Element, new: &dyn Element, ctx: &BuildCo
         return;
     }
     new.with_rebuild_context(ctx, &mut |ctx| {
-        carry_unkeyed_child_state_in_context(old, new, ctx)
+        carry_unkeyed_child_state_in_context(old, new, ctx, carry)
     });
 }
 
-fn carry_unkeyed_child_state_in_context(old: &dyn Element, new: &dyn Element, ctx: &BuildContext) {
+fn carry_unkeyed_child_state_in_context(old: &dyn Element, new: &dyn Element, ctx: &BuildContext, carry: Carry) {
     adopt_runtime_state(old, new);
 
     if old.is_stateful_element() && new.is_stateful_element() {
@@ -304,7 +342,9 @@ fn carry_unkeyed_child_state_in_context(old: &dyn Element, new: &dyn Element, ct
             return;
         }
 
-        carry_stateful(old, new, ctx);
+        if carry == Carry::Live {
+            carry_stateful(old, new, ctx);
+        }
     }
 
     let old_children = element_children(old);
@@ -315,7 +355,7 @@ fn carry_unkeyed_child_state_in_context(old: &dyn Element, new: &dyn Element, ct
     let new_children = element_children(new);
 
     for (old_child, new_child) in old_children.iter().zip(new_children.iter()) {
-        carry_unkeyed_child_state(*old_child, *new_child, ctx);
+        carry_unkeyed_child_state(*old_child, *new_child, ctx, carry);
     }
 }
 

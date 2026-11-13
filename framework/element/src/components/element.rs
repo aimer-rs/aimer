@@ -86,7 +86,7 @@ pub use scoped_rebuild::{
     unscoped_element_tree_generation,
 };
 use scoped_rebuild::{note_scoped_rebuild, note_unscoped_tree_change};
-pub use state_carry::{StateCarrier, carry_child_state, carry_stateful};
+pub use state_carry::{StateCarrier, carry_candidate_child_state, carry_child_state, carry_stateful};
 
 mod any_element;
 pub use any_element::AnyElement;
@@ -2405,6 +2405,17 @@ pub fn reconcile_generated_tree(old: &dyn Element, new: &dyn Element) {
 pub fn reconcile_carried_tree(old: &dyn Element, new: &dyn Element, ctx: &BuildContext) {
     let carried_from = scoped_rebuild_cursor();
     carry_child_state(old, new, ctx);
+    crate::reconciliation_plan::plan_element_reconciliation(old, new)
+        .commit_carried_tree(carried_from)
+        .expect("fresh reconciliation plan must remain valid until commit");
+}
+
+/// [`reconcile_carried_tree`] for an `old` tree that was just built from fresh
+/// state; see [`carry_candidate_child_state`] for what it carries.
+#[doc(hidden)]
+pub fn reconcile_carried_candidate_tree(old: &dyn Element, new: &dyn Element, ctx: &BuildContext) {
+    let carried_from = scoped_rebuild_cursor();
+    carry_candidate_child_state(old, new, ctx);
     crate::reconciliation_plan::plan_element_reconciliation(old, new)
         .commit_carried_tree(carried_from)
         .expect("fresh reconciliation plan must remain valid until commit");

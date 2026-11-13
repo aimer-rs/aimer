@@ -334,11 +334,13 @@ impl State<NestingParent> for NestingParentState {
 }
 
 /// Pins today's behaviour for a stateful widget inside another stateful
-/// widget's build output: the user-visible state is kept, but the child is
-/// constructed from scratch first, so its `create_state`, `init_state` and
-/// `build` all run again, and `build` runs a second time on the carried state.
+/// widget's build output: the user-visible state is kept. The widget still has
+/// to become an element to be matched with the old one, so a throwaway state is
+/// created and initialised for it, but that state never builds: the element's
+/// first build waits for the carry, which replaces the state, and only the
+/// carried state builds.
 #[test]
-fn a_nested_stateful_child_keeps_its_state_but_builds_again_when_the_parent_updates() {
+fn a_nested_stateful_child_keeps_its_state_and_builds_once_when_the_parent_updates() {
     let context = dummy_build_context();
     let nested = Rc::new(NestedCounts::default());
     let updater: NestedUpdater = Rc::default();
@@ -368,12 +370,12 @@ fn a_nested_stateful_child_keeps_its_state_but_builds_again_when_the_parent_upda
 
     // The state the user can see survives the parent's update...
     assert_eq!(nested.last_built_value.get(), 7, "state must be carried over");
-    // ...but a throwaway state was created and initialised for the new element,
-    // and the nested `build` ran twice: once in the new element's constructor,
-    // and again on the carried state.
+    // ...a throwaway state was created and initialised for the new element, but
+    // the nested `build` ran once, on the carried state; it used to run a second
+    // time, on the throwaway one, in the new element's constructor.
     assert_eq!(nested.create_states.get(), 2);
     assert_eq!(nested.init_states.get(), 2);
-    assert_eq!(nested.builds.get(), 4);
+    assert_eq!(nested.builds.get(), 3);
 }
 
 /// Cost of `set_state` as a function of subtree size. Debug-mode numbers are the

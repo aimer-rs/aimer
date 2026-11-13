@@ -965,8 +965,107 @@ impl Drop for KeyedStateScope {
     }
 }
 
+aimer_tls::thread_local! {
+    static DEFERRED_BUILD_DEPTH: Cell<usize> = const { Cell::new(0) };
+    /// Elements created under a [`DeferredBuilds`] scope that have not built yet.
+    static DEFERRED_BUILD_PENDING: Cell<usize> = const { Cell::new(0) };
+}
+
+/// While one is alive, a stateful element created from a widget creates and
+/// initializes its state but does not build its child yet.
+///
+/// A rebuild converts the child widget it describes into elements, and a stateful
+/// element used to build its own child on the spot, from the fresh state it was
+/// created with. Right after, the carry replaces that state with the live state of
+/// the element it stands in for and builds again. For a chain of nested stateful
+/// widgets each level built a fresh copy of everything below it, then built it
+/// again from the live state: the work grew with the square of the depth.
+///
+/// Inside a scope the first build waits. If the carry adopts a live state into
+/// the element, the build never happens and the live state is built once.
+/// [`finish`](DeferredBuilds::finish) then builds whatever is still waiting
+/// (elements with nothing to adopt) before the rebuild returns, so no element
+/// outside of a rebuild is ever left without a child.
+struct DeferredBuilds;
+
+impl DeferredBuilds {
+    fn enter() -> Self {
+        DEFERRED_BUILD_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        Self
+    }
+
+    fn active() -> bool {
+        DEFERRED_BUILD_DEPTH.with(|depth| depth.get() > 0)
+    }
+
+    /// Leaves the scope, and if it was the outermost one, builds every element
+    /// under `root` that is still waiting for its first build.
+    fn finish(self, root: &dyn Element, ctx: &BuildContext) {
+        // Walk while the scope is still entered: what the walk builds converts
+        // more widgets into elements, and those wait too, until the walk reaches
+        // them. Leaving first would reset the count of what is waiting.
+        if DEFERRED_BUILD_DEPTH.with(|depth| depth.get() == 1) {
+            build_pending_subtree(root, ctx);
+        }
+        drop(self);
+    }
+}
+
+impl Drop for DeferredBuilds {
+    fn drop(&mut self) {
+        DEFERRED_BUILD_DEPTH.with(|depth| {
+            depth.set(depth.get() - 1);
+            if depth.get() == 0 {
+                // Whatever is left was dropped with a discarded subtree.
+                DEFERRED_BUILD_PENDING.with(|pending| pending.set(0));
+            }
+        });
+    }
+}
+
+/// Builds the elements under `root` that were created in a [`DeferredBuilds`]
+/// scope and never adopted a live state, top down.
+///
+/// Each element is entered through its own rebuild scope, as the carry walk does,
+/// so a state it provides to its descendants is in the context they build in.
+fn build_pending_subtree(root: &dyn Element, ctx: &BuildContext) {
+    if DEFERRED_BUILD_PENDING.with(|pending| pending.get()) == 0 {
+        return;
+    }
+    root.with_rebuild_context(ctx, &mut |ctx| {
+        if let Some(stateful) = root
+            .option_any()
+            .and_then(|element| element.downcast_ref::<StatefulElement>())
+        {
+            stateful.build_pending(ctx);
+        }
+        for child in structural_children(root) {
+            build_pending_subtree(child, ctx);
+        }
+    });
+}
+
+/// Stands where the child of a stateful element will be until its first build.
+struct PendingChild;
+
+impl VisitorElement for PendingChild {
+    fn debug_name(&self) -> &'static str {
+        "PendingChild"
+    }
+}
+impl Drawable for PendingChild {
+    fn update(&self, _ctx: &BuildContext) {}
+}
+impl LayoutElement for PendingChild {}
+impl EventElement for PendingChild {}
+impl Rebuildable for PendingChild {}
+
 pub struct StatefulElement {
     child: SyncChild,
+    /// Created under a [`DeferredBuilds`] scope and not built yet: `child` is a
+    /// [`PendingChild`] until the carry adopts a live state into this element or
+    /// the scope builds it.
+    pending: Cell<bool>,
     /// Marked when this element (or its state's own `set_state`) requests a
     /// rebuild. Wrapped in `RefCell` so `adopt_state_from` can *repoint* it to
     /// the OLD element's flag during reconciliation, see `adopt_state_from`
@@ -1099,6 +1198,7 @@ impl StatefulElement {
                     adopt_config_fn: SyncAdoptConfigFn(UnsafeCell::new(live.adopt_config_fn)),
                     failed: live.failed,
                     failure: live.failure,
+                    pending: Cell::new(false),
                 };
                 let updater = element
                     .state_updater()
@@ -1207,7 +1307,11 @@ impl StatefulElement {
             })
         });
 
-        let child = {
+        // Inside a rebuild the first build waits for the carry; see `DeferredBuilds`.
+        let defer_first_build = DeferredBuilds::active();
+        let child = if defer_first_build {
+            PendingChild.boxed()
+        } else {
             // Safety: single-threaded, initial build during construction.
             let s = unsafe {
                 (&*state_cell.0.get())
@@ -1272,7 +1376,11 @@ impl StatefulElement {
             adopt_config_fn: SyncAdoptConfigFn(UnsafeCell::new(adopt_config_fn)),
             failed,
             failure,
+            pending: Cell::new(defer_first_build),
         };
+        if defer_first_build {
+            DEFERRED_BUILD_PENDING.with(|pending| pending.set(pending.get() + 1));
+        }
 
         let element = if KeyedStateScope::is_active() {
             recover_operation(debug_name, BuildPhase::KeyedState, || {
@@ -1298,7 +1406,24 @@ impl StatefulElement {
     /// tree to let any nested `StatefulElement`s rebuild independently.
     /// This avoids destroying and recreating the entire subtree when only a
     /// deeply-nested element's state has changed.
+    /// Builds the child this element has not built yet, the way a rebuild would.
+    ///
+    /// A no-op unless the element was created under a [`DeferredBuilds`] scope and
+    /// has neither adopted a live state nor been built since.
+    fn build_pending(&self, ctx: &BuildContext) {
+        if !self.pending.replace(false) {
+            return;
+        }
+        DEFERRED_BUILD_PENDING.with(|pending| pending.set(pending.get().saturating_sub(1)));
+        self.dirty.borrow().set(true);
+        self.rebuild_if_dirty(ctx);
+    }
+
     pub fn rebuild_if_dirty(&self, ctx: &BuildContext) {
+        if self.pending.get() {
+            self.build_pending(ctx);
+            return;
+        }
         #[cfg(feature = "frame-stats")]
         crate::rebuild_stats::record_stateful_check();
         let invalidation_generation =
@@ -1356,6 +1481,9 @@ impl StatefulElement {
         // `BuildContext` starts with an empty `inherited_states` map, would
         // look up state the provider has not re-inserted yet this frame and
         // panic ("No Navigator found in context").
+        // Elements the new child is converted into wait for the carry below before
+        // they build; see `DeferredBuilds`.
+        let deferred = DeferredBuilds::enter();
         let new_child = {
             #[cfg(feature = "frame-stats")]
             crate::rebuild_stats::record_stateful_build();
@@ -1412,6 +1540,10 @@ impl StatefulElement {
         self.rebuild_generation.fetch_add(1);
         self.last_rebuilt_generation
             .set(self.rebuild_generation.get());
+
+        // Whatever the carry left unbuilt is built before this returns.
+        let installed = unsafe { &*self.child.0.get() };
+        deferred.finish(installed.as_ref(), ctx);
     }
 
     /// Walk the element tree and rebuild any nested dirty `StatefulElement`s.
@@ -1498,6 +1630,12 @@ impl StatefulElement {
         // configuration hook below already assumes.
         if Any::type_id(&**self_state) != Any::type_id(&**old_state) {
             return;
+        }
+        // From here this element takes the live state, so the first build it was
+        // waiting for would run on a state about to be replaced: it never happens.
+        let was_pending = self.pending.replace(false);
+        if was_pending {
+            DEFERRED_BUILD_PENDING.with(|pending| pending.set(pending.get().saturating_sub(1)));
         }
         // Safety: called only from `update_from_widget` during single-threaded
         // reconciliation, before the new element is visible to any other code.
@@ -1599,23 +1737,48 @@ impl StatefulElement {
         // value. Regenerating the child here, against the current
         // `BuildContext`, guarantees the live state is reflected regardless of
         // whether this element is ever drawn.
+        // No scope is opened here: this runs inside a walk it does not own, which
+        // may still have nested pairs to adopt. If a `rebuild_if_dirty` enclosing
+        // the walk opened one, the elements this converts wait like any others and
+        // that rebuild builds what is left once its carry is done; if none did, they
+        // are built now, as they always were.
         let new_child = {
             let rf = unsafe { &*self.rebuild_fn.0.get() };
             // The child placed here is new content, so no placement may skip it;
             // see `without_placement_skip`.
             crate::components::element::without_placement_skip(|| rf(ctx))
         };
-        // Carry live state from nested StatefulElements into the new tree.
+        // Carry what only the old subtree knows into the new one.
+        //
+        // If this element built its child when it was created, that child came from
+        // the fresh state the live one has just replaced, and it is what `new_child`
+        // is paired with: the keyed pass over the whole tree already carried keyed
+        // states into it, and this hands them on. Its unkeyed stateful states are
+        // fresh, so they are not adopted; the live state of those elements is carried
+        // by the walk that called this, against the real old subtree.
+        //
+        // If the first build was deferred there is no such child, and the old child
+        // takes its place: the keyed states below it are found by key, and the
+        // positional pairs are left to the caller's walk as before.
         let child_reconciliation = recover_operation(
             self.debug_name.get(),
             BuildPhase::ReconcileChildren,
             || {
-                let old_child = unsafe { &*self.child.0.get() };
-                crate::components::element::reconcile_carried_tree(
-                    old_child.as_ref(),
-                    new_child.as_ref(),
-                    ctx,
-                );
+                if was_pending {
+                    let old_child = unsafe { &*old.child.0.get() };
+                    crate::components::element::carry_candidate_child_state(
+                        old_child.as_ref(),
+                        new_child.as_ref(),
+                        ctx,
+                    );
+                } else {
+                    let old_child = unsafe { &*self.child.0.get() };
+                    crate::components::element::reconcile_carried_candidate_tree(
+                        old_child.as_ref(),
+                        new_child.as_ref(),
+                        ctx,
+                    );
+                }
             },
         );
         if let Err(diagnostic) = child_reconciliation {
@@ -3487,6 +3650,229 @@ mod tests {
         let state = MountedProbeState { seen: Rc::default() };
         let view = StateView::detached(&state);
         assert!(!view.mounted());
+    }
+
+    /// A chain of nested stateful widgets, `depth` levels deep. Every create,
+    /// init and build is counted, so what a rebuild costs can be read off.
+    #[derive(Default)]
+    struct ChainCounts {
+        creates: Cell<u32>,
+        builds: Cell<u32>,
+        /// The latest updater of the level at each depth (index 0 is depth 1).
+        updaters: RefCell<Vec<Option<StateUpdater<ChainState>>>>,
+    }
+
+    struct ChainWidget {
+        depth: usize,
+        counts: Rc<ChainCounts>,
+    }
+
+    struct ChainState {
+        depth: usize,
+        /// Set by a test on a live state; only that state can carry it.
+        mark: usize,
+        counts: Rc<ChainCounts>,
+    }
+
+    impl Widget for ChainWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, ChainState>(self, ctx, "ChainWidget", None)
+        }
+    }
+
+    impl State<ChainWidget> for ChainState {
+        fn create(widget: ChainWidget) -> Self {
+            widget.counts.creates.set(widget.counts.creates.get() + 1);
+            Self { depth: widget.depth, mark: 0, counts: widget.counts }
+        }
+
+        fn adopt_config_from(&mut self, new: Self) {
+            self.depth = new.depth;
+        }
+
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.counts.builds.set(this.counts.builds.get() + 1);
+            {
+                let mut updaters = this.counts.updaters.borrow_mut();
+                if updaters.len() < this.depth {
+                    updaters.resize(this.depth, None);
+                }
+                updaters[this.depth - 1] = Some(this.updater());
+            }
+            if this.depth > 1 {
+                ChainWidget { depth: this.depth - 1, counts: this.counts.clone() }.boxed()
+            } else {
+                LeafProbe.boxed()
+            }
+        }
+    }
+
+    fn chain(depth: usize, counts: &Rc<ChainCounts>, context: &BuildContext) -> AnyElement {
+        ChainWidget { depth, counts: counts.clone() }.to_element(context)
+    }
+
+    /// Rebuilding the outermost level of a nested chain builds each level exactly
+    /// once: `d` builds for `d` levels, and one state created for each level below
+    /// the one that rebuilt.
+    ///
+    /// A child that the rebuild converts into an element does not build until the
+    /// carry has had its say. If the carry adopts the live state of the old
+    /// element into it, the first build, which would run on a fresh state that is
+    /// about to be replaced, never happens, and the live state is built once.
+    /// Whatever is still unbuilt when the carry is done is built before the
+    /// rebuild returns.
+    ///
+    /// Without that, every level built a fresh copy of everything below it and then
+    /// built again from the live state, `d(d+1)/2` builds. Before the carry also
+    /// stopped adopting the fresh state of that throwaway copy it was `2^d - 1`.
+    #[test]
+    fn rebuilding_a_nested_chain_builds_each_level_once() {
+        let context = dummy_build_context();
+        for depth in 1..=8u32 {
+            let counts = Rc::new(ChainCounts::default());
+            let element = chain(depth as usize, &counts, &context);
+            assert_eq!(
+                (counts.creates.take(), counts.builds.take()),
+                (depth, depth),
+                "depth {depth}: first build is one create and one build per level"
+            );
+
+            let outermost = counts.updaters.borrow()[depth as usize - 1].expect("the outermost level has built");
+            outermost.set_state(|_| {});
+            element.rebuild_if_dirty(&context);
+
+            assert_eq!(
+                (counts.creates.take(), counts.builds.take()),
+                (depth - 1, depth),
+                "depth {depth}: set_state on the outermost level"
+            );
+        }
+    }
+
+    /// Levels that did not exist before have no live state to adopt, so nothing
+    /// replaces the build that was put off. They must still be built by the time
+    /// the rebuild returns, or the tree would have elements with no child in it.
+    #[test]
+    fn a_rebuild_that_adds_nested_levels_builds_every_new_level() {
+        let context = dummy_build_context();
+        let counts = Rc::new(ChainCounts::default());
+        let element = chain(3, &counts, &context);
+        counts.creates.take();
+        counts.builds.take();
+
+        let outermost = counts.updaters.borrow()[2].expect("the outermost level has built");
+        outermost.set_state(|state| state.depth = 5);
+        element.rebuild_if_dirty(&context);
+
+        // Three live levels rebuilt once each, two new ones built once each.
+        assert_eq!(counts.builds.take(), 5);
+        let updaters = counts.updaters.borrow();
+        assert_eq!(updaters.len(), 5);
+        assert!(
+            updaters.iter().all(Option::is_some),
+            "every level, old and new, has built and published its updater"
+        );
+    }
+
+    #[test]
+    fn a_nested_chain_keeps_the_state_of_every_level_across_a_rebuild() {
+        let context = dummy_build_context();
+        let counts = Rc::new(ChainCounts::default());
+        let element = chain(4, &counts, &context);
+
+        // Give each level a distinct mark that only its own state can carry.
+        let marks: Vec<StateUpdater<ChainState>> = counts
+            .updaters
+            .borrow()
+            .iter()
+            .map(|updater| updater.expect("every level has built"))
+            .collect();
+        for (index, updater) in marks.iter().enumerate() {
+            updater.set_state(move |state| state.mark = 100 + index);
+        }
+        element.rebuild_if_dirty(&context);
+
+        let outermost = counts.updaters.borrow()[3].expect("the outermost level has built");
+        outermost.set_state(|_| {});
+        element.rebuild_if_dirty(&context);
+
+        // Every level still answers to the same updater it had before, and the
+        // marks set on them are still there: nothing was replaced by a fresh state.
+        for (index, updater) in marks.iter().enumerate() {
+            assert_eq!(
+                updater.try_read(|state| state.mark),
+                Some(100 + index),
+                "level {} lost its state",
+                index + 1
+            );
+        }
+    }
+
+    /// The same chain with a key on every level, to see what the keyed walk costs.
+    struct KeyedChainWidget {
+        depth: usize,
+        counts: Rc<ChainCounts>,
+    }
+
+    impl Widget for KeyedChainWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            let key = crate::Key::Value(format!("chain-{}", self.depth));
+            StatefulElement::from_widget::<Self, KeyedChainState>(self, ctx, "KeyedChainWidget", Some(key))
+        }
+    }
+
+    struct KeyedChainState {
+        depth: usize,
+        counts: Rc<ChainCounts>,
+    }
+
+    impl State<KeyedChainWidget> for KeyedChainState {
+        fn create(widget: KeyedChainWidget) -> Self {
+            widget.counts.creates.set(widget.counts.creates.get() + 1);
+            Self { depth: widget.depth, counts: widget.counts }
+        }
+
+        fn adopt_config_from(&mut self, new: Self) {
+            self.depth = new.depth;
+        }
+
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.counts.builds.set(this.counts.builds.get() + 1);
+            if this.depth > 1 {
+                KeyedChainWidget { depth: this.depth - 1, counts: this.counts.clone() }.boxed()
+            } else {
+                LeafProbe.boxed()
+            }
+        }
+    }
+
+    /// A keyed element is found by key and reuses its live state when it is
+    /// created, so a chain of them never built a level twice: a rebuild of the
+    /// outermost costs one build per level and one state created for each level
+    /// below it. Pinned so that the unkeyed chain's cost above is not bought with
+    /// this one.
+    #[test]
+    fn rebuilding_a_keyed_nested_chain_builds_each_level_once() {
+        let context = dummy_build_context();
+        for depth in 1..=8u32 {
+            let counts = Rc::new(ChainCounts::default());
+            let (element, updater) = StatefulElement::new_with_name::<KeyedChainWidget, KeyedChainState>(
+                KeyedChainWidget { depth: depth as usize, counts: counts.clone() },
+                &context,
+                "KeyedChainWidget",
+                Some(crate::Key::Value(format!("chain-{depth}"))),
+            );
+            assert_eq!((counts.creates.take(), counts.builds.take()), (depth, depth), "depth {depth}: first build");
+
+            updater.set_state(|_| {});
+            element.rebuild_if_dirty(&context);
+
+            assert_eq!(
+                (counts.creates.take(), counts.builds.take()),
+                (depth - 1, depth),
+                "depth {depth}: set_state on the outermost level"
+            );
+        }
     }
 
     #[test]

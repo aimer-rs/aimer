@@ -108,14 +108,15 @@ mod chain_cost {
     use super::*;
     use crate::consistency::{Chain, ChainCounts, ChainProps, build_context};
 
-    /// The migration changed how a state is created and built, not how the
-    /// reconciler carries it, so the cost a nested chain pays per rebuild is the
-    /// one measured before: `2^(d-1) - 1` throwaway creates and `2^d - 1` builds
-    /// for `d` levels that need `d`. Pinned so that fixing it shows up here.
+    /// A rebuild of a nested chain builds each of its `d` levels once, and creates
+    /// and initialises one state for each level below the one that rebuilt: linear in
+    /// the depth. It was `d(d+1)/2` builds before the first build of an element
+    /// waited for the carry, and `2^d - 1` before that. The copy of the old machinery
+    /// in `stateful_v1` still pins the exponential numbers, for comparison.
     #[test]
-    fn a_nested_chain_still_pays_the_doubling_per_level() {
+    fn a_nested_chain_pays_linearly_in_its_depth_through_the_framework() {
         let context = build_context();
-        for depth in 1..=6u32 {
+        for depth in 1..=8u32 {
             let counts = Rc::new(ChainCounts::default());
             let element = Framework::element::<Chain>(
                 ChainProps { depth: depth as usize, counts: counts.clone() },
@@ -128,8 +129,56 @@ mod chain_cost {
             counts.handle(depth as usize).set_state(|_| {});
             element.rebuild_if_dirty(&context);
 
-            let throwaway = (1 << (depth - 1)) - 1;
-            assert_eq!(counts.take(), (throwaway, throwaway, (1 << depth) - 1), "depth {depth}: set_state on the outermost level");
+            assert_eq!(counts.take(), (depth - 1, depth - 1, depth), "depth {depth}: set_state on the outermost level");
+        }
+    }
+
+    /// Time of one outermost `set_state` + rebuild as the chain gets deeper, on the
+    /// framework. Debug numbers are the ones that matter here, so run it
+    /// unoptimised and alone:
+    ///
+    /// ```text
+    /// cargo nextest run -p stateful_widget_2 framework_chain_cost_profile --run-ignored only --no-capture
+    /// ```
+    #[test]
+    #[ignore = "profiling harness; run explicitly with --run-ignored only"]
+    fn framework_chain_cost_profile() {
+        use aimer_time::{Duration, Instant};
+
+        fn median(mut samples: Vec<Duration>) -> Duration {
+            samples.sort();
+            samples[samples.len() / 2]
+        }
+
+        println!("\nset_state on the outermost of D nested stateful levels, then rebuild (median)");
+        println!("{:>6} {:>12} {:>9} {:>9} {:>14}", "D", "time", "builds", "creates", "ns per build");
+        let context = build_context();
+        for depth in [1usize, 2, 4, 6, 8, 10] {
+            let counts = Rc::new(ChainCounts::default());
+            let element = Framework::element::<Chain>(
+                ChainProps { depth, counts: counts.clone() },
+                &context,
+                "Chain",
+                None,
+            );
+            let iterations = (40_000usize >> depth).clamp(200, 4_000);
+            let mut samples = Vec::with_capacity(iterations);
+            let mut last = (0, 0, 0);
+            for _ in 0..iterations {
+                counts.take();
+                let start = Instant::now();
+                counts.handle(depth).set_state(|_| {});
+                element.rebuild_if_dirty(&context);
+                samples.push(start.elapsed());
+                last = counts.take();
+            }
+            let time = median(samples);
+            println!(
+                "{depth:>6} {time:>12.1?} {:>9} {:>9} {:>14.0}",
+                last.2,
+                last.0,
+                time.as_nanos() as f64 / last.2.max(1) as f64
+            );
         }
     }
 }
