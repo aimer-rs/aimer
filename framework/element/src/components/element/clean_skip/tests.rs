@@ -200,7 +200,7 @@ fn a_subtree_that_never_reads_the_canvas_transform_may_move() {
 
 #[test]
 fn a_subtree_that_reads_the_canvas_transform_may_not() {
-    let reads = Reads { cursor: false, transform: true };
+    let reads = Reads { cursor: false, transform: true, window: false };
     let (here, there) = (moved(100.0, (0.0, 0.0)), moved(100.0, (0.0, 240.0)));
     assert!(!ContextKey::of(&here, reads).matches(&there, reads));
     assert_ne!(context_hash(&here, reads), context_hash(&there, reads));
@@ -215,7 +215,7 @@ fn a_subtree_that_reads_the_canvas_transform_may_not() {
 fn building_a_key_does_not_read_the_transform() {
     let ctx = moved(100.0, (3.0, 4.0));
     let before = aimer_canvas::transform_reads();
-    let reads = Reads { cursor: false, transform: true };
+    let reads = Reads { cursor: false, transform: true, window: false };
     let key = ContextKey::of(&ctx, reads);
     let _ = key.matches(&ctx, reads);
     let _ = context_hash(&ctx, reads);

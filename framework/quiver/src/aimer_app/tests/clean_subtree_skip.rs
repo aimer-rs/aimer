@@ -730,10 +730,50 @@ impl Drawable for PlaceLeafElement {
     }
 }
 
+/// Asks for another frame in every update, the way a running animation does. A
+/// frame that someone else wants is a full frame, so beside a list that scrolls
+/// it turns every scroll frame into one.
+struct Restless;
+
+impl Widget for Restless {
+    fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+        RestlessElement.boxed()
+    }
+}
+
+struct RestlessElement;
+
+impl VisitorElement for RestlessElement {
+    fn debug_name(&self) -> &'static str {
+        "CleanSkipRestless"
+    }
+}
+
+impl EventElement for RestlessElement {}
+impl Rebuildable for RestlessElement {}
+
+impl LayoutElement for RestlessElement {
+    fn size(&self) -> Option<Size> {
+        Some(Size::new(Dimension::Px(1.0), Dimension::Px(1.0)))
+    }
+}
+
+impl Drawable for RestlessElement {
+    fn update(&self, _ctx: &BuildContext) {
+        aimer_events::window::request_animation_frame();
+    }
+
+    fn can_paint(&self, _ctx: &BuildContext) -> bool {
+        false
+    }
+}
+
 /// A list of rows that scroll, each a few boxes deep around a leaf.
 struct PlaceList {
     updates: Rc<Cell<usize>>,
     reads_place: bool,
+    /// Whether something beside the list keeps asking for frames.
+    restless: bool,
 }
 
 impl Widget for PlaceList {
@@ -755,7 +795,7 @@ impl Widget for PlaceList {
                 row
             })
             .collect::<Vec<_>>();
-        SizedBox::new()
+        let list = SizedBox::new()
             .width(Dimension::Px(200.0))
             .height(Dimension::Px(300.0))
             .child(
@@ -764,18 +804,33 @@ impl Widget for PlaceList {
                     .horizontal_scroll_bar(None)
                     .child(Column::new().children(rows)),
             )
-            .to_element(ctx)
+            .boxed();
+        if self.restless {
+            Row::new().children(vec![Restless.boxed(), list]).to_element(ctx)
+        } else {
+            list.to_element(ctx)
+        }
     }
 }
 
 /// How many times the leaves were updated by a script of scrolling.
 fn updates_while_scrolling(skip: bool, reads_place: bool) -> (usize, aimer_widget::CleanSkipStats) {
+    updates_while_scrolling_with(skip, reads_place, false)
+}
+
+/// [`updates_while_scrolling`], optionally with something beside the list that
+/// keeps asking for frames, so that every frame of the scroll is a full one.
+fn updates_while_scrolling_with(
+    skip: bool,
+    reads_place: bool,
+    restless: bool,
+) -> (usize, aimer_widget::CleanSkipStats) {
     aimer_widget::set_clean_subtree_skip(skip);
     aimer_widget::reset_clean_subtree_skip_stats();
     let updates = Rc::new(Cell::new(0));
     let mut app = AimerApp::start_headless_with(
-        PlaceList { updates: updates.clone(), reads_place },
-        HeadlessOptions { size: PhysicalSize::new(200, 300), scale_factor: 1.0 },
+        PlaceList { updates: updates.clone(), reads_place, restless },
+        HeadlessOptions { size: PhysicalSize::new(240, 300), scale_factor: 1.0 },
     );
     app.send_window_event(WindowEvent::CursorMoved {
         device_id: DeviceId::dummy(),
@@ -825,6 +880,35 @@ fn rows_that_never_ask_where_they_are_drawn_are_left_alone_while_they_move() {
          {reading} against {blind} (stats {reading_stats:?})"
     );
     assert!(reading <= always, "{reading} updates with the skip against {always} without");
+}
+
+/// What a walk reads from the retained tree is part of what a record must match,
+/// and the visible window is read only by a container that leaves settled rows
+/// alone, which it does in a frame that scrolling alone requested. A frame that
+/// something else wants too is a full one: nothing reads the window in it, so
+/// rows that cross the edge of the viewport are the same rows in another place
+/// there as well, and most of the walks the skip saves are saved in it.
+#[test]
+fn rows_that_scroll_are_left_alone_in_full_frames_too() {
+    let (always, _) = updates_while_scrolling_with(false, false, true);
+    let (skipped, stats) = updates_while_scrolling_with(true, false, true);
+
+    assert!(always > 0);
+    assert!(
+        skipped * 2 <= always,
+        "full frames walked the rows {skipped} times, {always} without the skip (stats {stats:?})"
+    );
+}
+
+/// The rows a full frame leaves alone are the rows it would have drawn the same.
+#[test]
+fn verify_mode_finds_nothing_wrong_with_rows_left_alone_in_full_frames() {
+    aimer_widget::set_clean_skip_verify(true);
+    let (_, stats) = updates_while_scrolling_with(true, false, true);
+    aimer_widget::set_clean_skip_verify(false);
+
+    assert!(stats.verified > 0, "nothing was verified, so the run proves nothing: {stats:?}");
+    assert_eq!(aimer_widget::clean_skip_violations(), Vec::new());
 }
 
 /// A subtree that never asks for the pointer does not depend on it, so a pointer

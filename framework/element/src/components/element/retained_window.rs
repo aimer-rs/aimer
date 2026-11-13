@@ -154,6 +154,9 @@ pub fn retained_visible_window(element: ElementId, scale: f32) -> Option<Visible
 /// calls it does. `None` outside such a traversal.
 #[doc(hidden)]
 pub fn retained_visible_window_of_current(scale: f32) -> Option<VisibleWindow> {
+    // A subtree recorded around this walk depends on the window from here on.
+    #[cfg(not(target_arch = "wasm32"))]
+    clean_skip::note_window_read();
     let element = DRAW_INVALIDATION_OWNER.with(Cell::get)?;
     retained_visible_window(element, scale)
 }

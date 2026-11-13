@@ -18,8 +18,12 @@
 //!    that window to decide which rows to walk, and a scroll that moves content
 //!    under a fixed clip changes it without changing the context. Every clip
 //!    inside a subtree of repeatable elements is fixed relative to its root, so
-//!    the root's window stands for all of them. The same holds for where it is
-//!    in the world: a hover region compares the pointer with it.
+//!    the root's window stands for all of them. Only a walk that read the window
+//!    has it in its key: a container asks for it in a frame that scrolling alone
+//!    requested and not in one that something else wanted too, a running
+//!    animation say, so in that frame the rows that move do not depend on it.
+//!    The same holds for where it is in the world: a hover region compares the
+//!    pointer with it.
 //! 3. Nothing was invalidated since: the tree, layout and rebuild generations are
 //!    the ones the walk ended with, and no paint invalidation is pending.
 //! 4. The last full traversal walked it. A record from an older traversal may
@@ -100,11 +104,14 @@ struct Reads {
     cursor: bool,
     /// The canvas transform was asked for.
     transform: bool,
+    /// The visible window of an element was asked for, to leave rows that are
+    /// settled and off screen alone: see `retained_visible_window_of_current`.
+    window: bool,
 }
 
 impl Reads {
     #[cfg(test)]
-    const NONE: Self = Self { cursor: false, transform: false };
+    const NONE: Self = Self { cursor: false, transform: false, window: false };
 }
 
 /// What a subtree can tell of the visible rectangle it is given, as bits.
@@ -297,7 +304,9 @@ impl TreeKey {
             stats.set(current);
         });
         let relative = RELATIVE_WINDOW.with(Cell::get);
-        let window = retained_visible_window(element, ctx.scale);
+        // What no walk of the subtree asked for is not part of what it saw, and
+        // asking the tree for it would cost a query for nothing.
+        let window = if reads.window { retained_visible_window(element, ctx.scale) } else { None };
         Self {
             window: match window {
                 Some(window) if relative => {
@@ -387,6 +396,7 @@ pub(crate) struct Entry {
     tree: u64,
     cursor: u64,
     transform: u64,
+    window: u64,
 }
 
 aimer_tls::thread_local! {
@@ -401,6 +411,8 @@ aimer_tls::thread_local! {
     static IMPURE: Cell<u64> = const { Cell::new(0) };
     /// How many times a context has been asked for the pointer.
     static CURSOR_READS: Cell<u64> = const { Cell::new(0) };
+    /// How many times the visible window of an element has been asked for.
+    static WINDOW_READS: Cell<u64> = const { Cell::new(0) };
     static STATS: Cell<CleanSkipStats> = const { Cell::new(CleanSkipStats { visits: 0, skips: 0, records: 0, verified: 0, tree_queries: 0 }) };
     static RECORDS: RefCell<Vec<Option<Record>>> = const { RefCell::new(Vec::new()) };
     static SEEN: RefCell<Vec<Seen>> = const { RefCell::new(Vec::new()) };
@@ -532,6 +544,12 @@ pub(crate) fn note_cursor_read() {
     CURSOR_READS.with(|reads| reads.set(reads.get() + 1));
 }
 
+/// Records that the visible window of an element was asked for.
+#[inline]
+pub(crate) fn note_window_read() {
+    WINDOW_READS.with(|reads| reads.set(reads.get() + 1));
+}
+
 /// Records that something asked for another frame while a subtree was walked. A
 /// walk that did is not at rest, whatever its elements promised, so no subtree
 /// that contains it is recorded.
@@ -584,6 +602,7 @@ pub(crate) fn enter() -> Entry {
         tree: element_tree_generation(),
         cursor: CURSOR_READS.with(Cell::get),
         transform: aimer_canvas::transform_reads(),
+        window: WINDOW_READS.with(Cell::get),
     }
 }
 
@@ -736,6 +755,9 @@ pub(crate) fn try_skip(element: ElementId, ctx: &BuildContext) -> Decision {
     if reads.transform {
         aimer_canvas::note_transform_read();
     }
+    if reads.window {
+        note_window_read();
+    }
     STATS.with(|stats| {
         let mut current = stats.get();
         current.skips += 1;
@@ -882,6 +904,7 @@ pub(crate) fn leave(element: ElementId, ctx: &BuildContext, entry: Entry) {
         // With position independence off, every subtree counts as having read it.
         transform: aimer_canvas::transform_reads() != entry.transform
             || !RELATIVE_WINDOW.with(Cell::get),
+        window: WINDOW_READS.with(Cell::get) != entry.window,
     };
     // One word per walk is all a subtree that keeps moving costs: a record is built
     // only when the context is the one the previous walk was given.

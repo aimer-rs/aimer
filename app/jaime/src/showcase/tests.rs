@@ -5,6 +5,7 @@ use super::*;
 mod animation_walks;
 mod backdrop_filter;
 mod compact;
+mod event_cost_profile;
 mod focus;
 mod foreground_decoration;
 mod clean_skip_pages;

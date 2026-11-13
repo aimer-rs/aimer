@@ -24,6 +24,8 @@ mod context_bounds_tests;
 #[cfg(test)]
 mod lookup_cache_tests;
 #[cfg(test)]
+mod clipped_out_tests;
+#[cfg(test)]
 mod render_order_tests;
 #[cfg(test)]
 mod sync_damage_tests;

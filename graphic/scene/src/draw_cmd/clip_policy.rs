@@ -25,6 +25,13 @@ impl RenderTree {
         let old = tree.subtree_damage_bounds(element);
         tree.node_mut(element).unwrap().escapes_clip = enabled;
         tree.escape_revision = tree.escape_revision.wrapping_add(1);
+        // Whether a node above this one is clipped out *with nothing below it that
+        // escapes* is what a plan leaves underived, and this changes the answer:
+        // starting to escape makes the nodes above it derived again, with frames
+        // that were never derived for the ones between, and stopping lets a node
+        // above it be left alone with visible bounds this node contributed. Neither
+        // is something deriving this node alone can put right, so derive it all.
+        tree.geometry_edits.get_mut().overflow();
         if enabled {
             tree.clip_escape_count += 1;
         } else {

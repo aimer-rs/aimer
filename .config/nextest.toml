@@ -14,3 +14,14 @@ test-group = 'secret-store'
 # running after this is waiting on a prompt that will never be answered. Fail it
 # instead of holding the job until the runner's own limit.
 slow-timeout = { period = "30s", terminate-after = 2 }
+
+# `aimer_prendre`'s server tests measure real time: a trackpad swipe must not
+# stall, typing must keep its pace, a glide must bend rather than jump. Under a
+# full-workspace run the other test processes take the cores, a pacing thread
+# wakes tens or hundreds of milliseconds late, the catch-up fires the keystrokes
+# in a burst, and the assertions fail without the pacing being wrong. The plans
+# themselves are tested deterministically; these are the ones that need a quiet
+# machine, so they run alone.
+[[profile.default.overrides]]
+filter = 'package(aimer_prendre) & test(/^server::tests::.*(trackpad|typing|glide|scroll|settle|held_up|mid_flight|promptly)/)'
+threads-required = 'num-test-threads'

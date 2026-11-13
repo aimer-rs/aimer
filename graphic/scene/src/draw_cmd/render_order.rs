@@ -1,5 +1,30 @@
 use super::*;
 
+// Whether a plan leaves out what lies below a node that is clipped out entirely.
+// Tests switch it off to get the plan a full derivation makes, to hold the
+// pruned plan against.
+#[cfg(test)]
+aimer_tls::thread_local! {
+    static PRUNE_CLIPPED_OUT: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+#[cfg(test)]
+pub(super) fn set_prune_clipped_out(enabled: bool) {
+    PRUNE_CLIPPED_OUT.with(|flag| flag.set(enabled));
+}
+
+#[inline]
+fn pruning_clipped_out() -> bool {
+    #[cfg(test)]
+    {
+        PRUNE_CLIPPED_OUT.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
 /// Marks a root in [`Topology::parent`].
 pub(super) const NO_PARENT: usize = usize::MAX;
 
@@ -133,6 +158,24 @@ impl GeometryEdits {
     }
 }
 
+/// # What a state is worth
+///
+/// A node whose clip comes out empty, with nothing below it that escapes
+/// clipping, can show nothing and neither can anything under it, so a plan does
+/// not derive what is under it: those nodes keep whatever state they last had,
+/// which says nothing about now. That is safe because nothing reads them:
+///
+/// * [`RenderWorkspace::collect`] stops at the first node with no visible bounds,
+///   which such a node is, and an escape below would have given it some;
+/// * [`RenderWorkspace::refresh_ancestor_bounds`] reads the children of the
+///   ancestors of a node it has just derived, and those ancestors are not under
+///   such a node, or the node would not have been derived;
+/// * an edit under such a node derives nothing and is left for the day the node
+///   is drawn again, when whatever edit moves it re-derives everything below it.
+///
+/// Anything that could end this, a node below starting to escape or the structure
+/// changing, forces a full derivation instead of an incremental one, so a state
+/// is never read after the reason it was left alone has gone.
 #[derive(Default)]
 pub(super) struct RenderWorkspace {
     /// The structure and geometry revisions, and node count, that `states`
@@ -295,6 +338,11 @@ impl RenderWorkspace {
             {
                 continue;
             }
+            // Under a node that is clipped out entirely nothing can be seen, so
+            // there is nothing to derive until that node is drawn again.
+            if self.under_clipped_out_node(tree, topology, edited) {
+                continue;
+            }
             // Under a node that is not drawn nothing is reached, so there is
             // nothing to derive until that node is.
             let parent = topology.parent[edited];
@@ -314,6 +362,40 @@ impl RenderWorkspace {
             self.refresh_ancestor_bounds(topology, edited);
         }
         true
+    }
+
+    /// Whether a node above `index` is clipped out entirely with nothing below it
+    /// that escapes, which is to say whether a plan leaves `index` underived.
+    ///
+    /// The states of the nodes under such a node are not to be trusted, so one of
+    /// them may look clipped out when it is not. That can only happen under a node
+    /// that is, which this finds first, so the answer is right either way.
+    fn under_clipped_out_node(
+        &self,
+        tree: &DrawCommandList,
+        topology: &Topology,
+        mut index: usize,
+    ) -> bool {
+        loop {
+            index = topology.parent[index];
+            if index == NO_PARENT || index == ORPHAN_PARENT {
+                return false;
+            }
+            if self
+                .states
+                .get(index)
+                .is_some_and(|state| Self::prunes_below(tree, index, state.clip))
+            {
+                return true;
+            }
+        }
+    }
+
+    /// Whether a plan leaves out what is below the node at `index`, whose clip
+    /// came out as `clip`.
+    #[inline]
+    fn prunes_below(tree: &DrawCommandList, index: usize, clip: ClipState) -> bool {
+        matches!(clip, ClipState::Empty) && pruning_clipped_out() && !tree.escapes_below(index)
     }
 
     fn has_edited_ancestor(topology: &Topology, edited: &[usize], mut index: usize) -> bool {
@@ -411,6 +493,11 @@ impl RenderWorkspace {
             };
             self.node_order.push(index);
 
+            // Clipped out entirely: it is listed, so its own bounds are folded
+            // into its parent's, but nothing below it can be seen.
+            if Self::prunes_below(tree, index, clip) {
+                continue;
+            }
             let children = topology.children_of(index);
             let mut next = children.len();
             while next > 0 {
