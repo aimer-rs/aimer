@@ -18,7 +18,5 @@ mylog
 # Self-signed TLS certs for the Trunk dev server (generated via gen_certs.sh)
 website/builds
 .vscode
-
-app/jaime/builds/linux/bundle/
-app/jaime/builds/linux/dist/
 agent_target_check
+agents/

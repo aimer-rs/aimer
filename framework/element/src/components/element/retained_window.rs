@@ -103,6 +103,10 @@ impl VisibleWindow {
     /// Such a subtree overlaps every rectangle it can ask about, so moving the
     /// window along that axis changes none of its answers. Two windows that only
     /// differ that way compare equal once made relative.
+    ///
+    /// Only the clean-skip cache keys windows this way, and that cache is not built
+    /// for the web, where nothing leaves a subtree alone.
+    #[cfg(not(target_arch = "wasm32"))]
     #[inline]
     pub(super) fn relative_to(mut self, across: f32, down: f32) -> Self {
         if let Some((x, y, width, height)) = &mut self.rect {
@@ -387,12 +391,14 @@ mod tests {
         set_scroll_only_frame(false);
         assert!(!may_skip_settled_offscreen());
     }
+    #[cfg(not(target_arch = "wasm32"))]
     fn window(x: f32, y: f32, width: f32, height: f32) -> VisibleWindow {
         VisibleWindow { rect: Some((x, y, width, height)) }
     }
 
     /// A subtree 100 wide and 40 tall, scrolled along y inside a viewport that
     /// reaches a long way past it: only where the viewport's edges are changes.
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_window_that_only_moved_along_an_axis_the_subtree_is_wholly_inside_is_the_same() {
         let here = window(-500.0, -500.0, 2000.0, 2000.0);
@@ -401,6 +407,7 @@ mod tests {
         assert_eq!(here.relative_to(100.0, 40.0), there.relative_to(100.0, 40.0));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_window_that_cuts_across_the_subtree_keeps_its_edges() {
         let cut = window(-500.0, -500.0, 2000.0, 520.0);
@@ -411,6 +418,7 @@ mod tests {
         assert_eq!(cut.relative_to(100.0, 40.0), moved.relative_to(100.0, 40.0));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_hidden_window_stays_hidden_and_is_not_made_relative_to_anything() {
         let hidden = VisibleWindow { rect: None };
