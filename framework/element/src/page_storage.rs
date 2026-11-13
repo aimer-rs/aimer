@@ -3,7 +3,7 @@
 //!
 //! A window resize (or a tab swap, an `if/else` branch flip, an unmounted list
 //! item) rebuilds and can fully tear down everything under a `Scrollable`,
-//! re-running each nested `StatefulWidget::create_state()`. Reconciliation
+//! re-running each nested `State::create`. Reconciliation
 //! carry only preserves state when the *old* element still exists to copy from,
 //! so it cannot survive a full teardown.
 //!

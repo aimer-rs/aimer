@@ -1763,7 +1763,7 @@ mod tests {
     use aimer_widget::base::{BuildContext, Color};
     use aimer_widget::{
         AnyElement, Drawable, Element, ElementId, EventElement, FocusNode, LayoutElement,
-        Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement,
+        Rebuildable, State, StateView, StateUpdater, StatefulElement, VisitorElement,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::event::{DeviceId, MouseScrollDelta, TouchPhase, WindowEvent};
@@ -1960,7 +1960,7 @@ mod tests {
     impl Widget for HeadlessVerticalRowsWidget {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
             let updater_slot = self.updater.clone();
-            let (element, updater) = StatefulElement::new(
+            let (element, updater) = StatefulElement::new::<HeadlessVerticalRowsStateWidget, HeadlessVerticalRowsState>(
                 HeadlessVerticalRowsStateWidget {
                     item_count: self.item_count,
                     paints: self.paints,
@@ -1977,14 +1977,9 @@ mod tests {
         paints: Rc<Cell<usize>>,
     }
 
-    impl StatefulWidget for HeadlessVerticalRowsStateWidget {
-        type State = HeadlessVerticalRowsState;
-
-        fn create_state(self) -> Self::State {
-            HeadlessVerticalRowsState {
-                item_count: self.item_count,
-                paints: self.paints,
-            }
+    impl Widget for HeadlessVerticalRowsStateWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, HeadlessVerticalRowsState>(self, ctx, "HeadlessVerticalRowsStateWidget", None)
         }
     }
 
@@ -1994,12 +1989,17 @@ mod tests {
     }
 
     impl State<HeadlessVerticalRowsStateWidget> for HeadlessVerticalRowsState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: HeadlessVerticalRowsStateWidget) -> Self {
+            HeadlessVerticalRowsState {
+                item_count: widget.item_count,
+                paints: widget.paints,
+            }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            let paints = self.paints.clone();
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            let paints = this.paints.clone();
             Column::new()
-                .list(0..self.item_count)
+                .list(0..this.item_count)
                 .item_extent(Dimension::Px(20.0))
                 .builder(move |row_index| HeadlessVirtualizedRow {
                     row_index: *row_index,
@@ -2109,7 +2109,7 @@ mod tests {
     impl Widget for HeadlessHorizontalRowsWidget {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
             let updater_slot = self.updater.clone();
-            let (element, updater) = StatefulElement::new(
+            let (element, updater) = StatefulElement::new::<HeadlessHorizontalRowsStateWidget, HeadlessHorizontalRowsState>(
                 HeadlessHorizontalRowsStateWidget {
                     item_count: self.item_count,
                     paints: self.paints,
@@ -2126,14 +2126,9 @@ mod tests {
         paints: Rc<Cell<usize>>,
     }
 
-    impl StatefulWidget for HeadlessHorizontalRowsStateWidget {
-        type State = HeadlessHorizontalRowsState;
-
-        fn create_state(self) -> Self::State {
-            HeadlessHorizontalRowsState {
-                item_count: self.item_count,
-                paints: self.paints,
-            }
+    impl Widget for HeadlessHorizontalRowsStateWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, HeadlessHorizontalRowsState>(self, ctx, "HeadlessHorizontalRowsStateWidget", None)
         }
     }
 
@@ -2143,12 +2138,17 @@ mod tests {
     }
 
     impl State<HeadlessHorizontalRowsStateWidget> for HeadlessHorizontalRowsState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: HeadlessHorizontalRowsStateWidget) -> Self {
+            HeadlessHorizontalRowsState {
+                item_count: widget.item_count,
+                paints: widget.paints,
+            }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            let paints = self.paints.clone();
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            let paints = this.paints.clone();
             Row::new()
-                .list(0..self.item_count)
+                .list(0..this.item_count)
                 .item_extent(Dimension::Px(20.0))
                 .builder(move |row_index| HeadlessHorizontalVirtualizedItem {
                     row_index: *row_index,
@@ -2215,7 +2215,7 @@ mod tests {
     impl Widget for HeadlessHorizontalStatefulItemWidget {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
             let row_index = self.row_index;
-            let (element, updater) = StatefulElement::new(
+            let (element, updater) = StatefulElement::new::<HeadlessHorizontalItemStateWidget, HeadlessHorizontalItemState>(
                 HeadlessHorizontalItemStateWidget {
                     row_index,
                     paints: self.paints,
@@ -2232,15 +2232,9 @@ mod tests {
         paints: Rc<Cell<usize>>,
     }
 
-    impl StatefulWidget for HeadlessHorizontalItemStateWidget {
-        type State = HeadlessHorizontalItemState;
-
-        fn create_state(self) -> Self::State {
-            HeadlessHorizontalItemState {
-                color: headless_virtualized_row_color(self.row_index),
-                height: 80.0,
-                paints: self.paints,
-            }
+    impl Widget for HeadlessHorizontalItemStateWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, HeadlessHorizontalItemState>(self, ctx, "HeadlessHorizontalItemStateWidget", None)
         }
     }
 
@@ -2251,13 +2245,19 @@ mod tests {
     }
 
     impl State<HeadlessHorizontalItemStateWidget> for HeadlessHorizontalItemState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: HeadlessHorizontalItemStateWidget) -> Self {
+            HeadlessHorizontalItemState {
+                color: headless_virtualized_row_color(widget.row_index),
+                height: 80.0,
+                paints: widget.paints,
+            }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             HeadlessHorizontalItemPaintWidget {
-                color: self.color,
-                height: self.height,
-                paints: self.paints.clone(),
+                color: this.color,
+                height: this.height,
+                paints: this.paints.clone(),
             }
         }
     }
@@ -3424,23 +3424,18 @@ mod tests {
             second: bool,
         }
 
-        impl StatefulWidget for SwitchPage {
-            type State = SwitchState;
-            fn create_state(self) -> Self::State {
+        impl State<SwitchPage> for SwitchState {
+            fn create(widget: SwitchPage) -> Self {
                 SwitchState {
-                    morph: self.morph,
+                    morph: widget.morph,
                     second: false,
                 }
             }
-        }
 
-        impl State<SwitchPage> for SwitchState {
-            fn init_state(&mut self, updater: StateUpdater<Self>) {
-                SWITCH.replace(Some(updater));
-            }
 
-            fn build(&self, _ctx: &BuildContext) -> impl Widget {
-                let (key, width) = if self.second {
+            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        SWITCH.replace(Some(this.updater()));
+                let (key, width) = if this.second {
                     ("b", 60.0)
                 } else {
                     ("a", 90.0)
@@ -3450,7 +3445,7 @@ mod tests {
                     .height(40.0)
                     .color(Color::Rgb(200, 30, 30));
                 let duration = std::time::Duration::from_millis(120);
-                if self.morph {
+                if this.morph {
                     MorphTransition::new(duration, curves::LINEAR, picture)
                         .child_key(key)
                         .boxed()
@@ -3464,7 +3459,7 @@ mod tests {
 
         impl Widget for SwitchPage {
             fn to_element(self, ctx: &BuildContext) -> AnyElement {
-                StatefulElement::new_with_name(self, ctx, "SwitchPage", None)
+                StatefulElement::new_with_name::<Self, SwitchState>(self, ctx, "SwitchPage", None)
                     .0
                     .boxed()
             }

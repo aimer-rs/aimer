@@ -51,33 +51,27 @@ struct Bar {
     updater: Rc<RefCell<Option<StateUpdater<BarState>>>>,
 }
 
-impl StatefulWidget for Bar {
-    type State = BarState;
-
-    fn create_state(self) -> BarState {
+impl State<Bar> for BarState {
+    fn create(widget: Bar) -> Self {
         BarState {
-            filter: self.filter,
+            filter: widget.filter,
             scrolled: false,
-            updater: self.updater,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Bar> for BarState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        bar_widget(self.scrolled, self.filter)
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        bar_widget(this.scrolled, this.filter)
     }
 }
 
 impl Widget for Bar {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "PostBar", None)
+        StatefulElement::new_with_name::<Self, BarState>(self, ctx, "PostBar", None)
             .0
             .boxed()
     }
@@ -225,8 +219,9 @@ fn a_bar_that_owns_its_flag_leaves_the_rows_alone() {
 const SCROLLED_AT: f32 = 50.0;
 
 struct ScrollBarState {
-    controller: ScrollController,
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
+    controller: ScrollController,
     scrolled: bool,
 }
 
@@ -254,36 +249,34 @@ impl ScrollBarState {
     }
 }
 
-impl StatefulWidget for ScrollBar {
-    type State = ScrollBarState;
+impl State<ScrollBar> for ScrollBarState {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
+        self.updater = updater;
+        // Registers with the updater just stored, so it runs here and not in
+        // `init_state`, which comes first.
+        self.register_scroll_hook();
+    }
 
-    fn create_state(self) -> ScrollBarState {
+    fn create(widget: ScrollBar) -> Self {
         ScrollBarState {
-            controller: self.controller,
-            updater: StateUpdater::new(),
+            updater: StateUpdater::empty(),
+            controller: widget.controller,
             scrolled: false,
         }
-    }
-}
-
-impl State<ScrollBar> for ScrollBarState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-        self.register_scroll_hook();
     }
 
     fn adopt_config_from(&mut self, _new: Self) {
         self.register_scroll_hook();
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        bar_widget(self.scrolled, true)
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        bar_widget(this.scrolled, true)
     }
 }
 
 impl Widget for ScrollBar {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ScrollBar", None)
+        StatefulElement::new_with_name::<Self, ScrollBarState>(self, ctx, "ScrollBar", None)
             .0
             .boxed()
     }
@@ -300,27 +293,21 @@ struct Host {
     updater: Rc<RefCell<Option<StateUpdater<HostState>>>>,
 }
 
-impl StatefulWidget for Host {
-    type State = HostState;
-
-    fn create_state(self) -> HostState {
+impl State<Host> for HostState {
+    fn create(widget: Host) -> Self {
         HostState {
             show: true,
-            controller: self.controller,
-            updater: self.updater,
+            controller: widget.controller,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Host> for HostState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        if !self.show {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        if !this.show {
             return SizedBox::new().boxed();
         }
         let rows: Vec<aimer_widget::AnyWidget> = (0..ROWS)
@@ -335,10 +322,10 @@ impl State<Host> for HostState {
         aimer_space::Stack::new()
             .children(vec![
                 aimer_space::Positioned::new().layer(3).top(0).box_child(ScrollBar {
-                    controller: self.controller.clone(),
+                    controller: this.controller.clone(),
                 }),
                 Scrollable::new()
-                    .controller(self.controller.clone())
+                    .controller(this.controller.clone())
                     .child(Column::new().children(rows))
                     .boxed(),
             ])
@@ -348,7 +335,7 @@ impl State<Host> for HostState {
 
 impl Widget for Host {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Host", None)
+        StatefulElement::new_with_name::<Self, HostState>(self, ctx, "Host", None)
             .0
             .boxed()
     }

@@ -19,22 +19,16 @@ struct Root {
     updater: Rc<RefCell<Option<StateUpdater<RootState>>>>,
 }
 
-impl StatefulWidget for Root {
-    type State = RootState;
-
-    fn create_state(self) -> RootState {
-        RootState { target: 1.0, updater: self.updater }
-    }
-}
-
 impl State<Root> for RootState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
+    fn create(widget: Root) -> Self {
+        RootState { target: 1.0, updater: widget.updater }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
         ImplicitAnimatedBuilder::new(
-            self.target,
+            this.target,
             Duration::from_millis(100),
             curves::LINEAR,
             |scale: &f32| {
@@ -49,7 +43,7 @@ impl State<Root> for RootState {
 
 impl Widget for Root {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ScalableTextRoot", None).0.boxed()
+        StatefulElement::new_with_name::<Self, RootState>(self, ctx, "ScalableTextRoot", None).0.boxed()
     }
 }
 

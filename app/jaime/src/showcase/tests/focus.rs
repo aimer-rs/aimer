@@ -22,9 +22,7 @@ impl Widget for Captured {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let state = ExampleShowcaseState::with_selected(ExampleId::FocusNode);
         CapturedElement {
-            child: state
-                .build(ctx)
-                .to_element(ctx),
+            child: state.build_element(ctx),
             targets: self.targets,
         }
         .boxed()

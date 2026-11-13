@@ -9,7 +9,7 @@ use aimer::style::{
     BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextStyle, Theme, ThemeData,
 };
 use aimer::{
-    AimerApp, AnyWidget, BuildContext, Column, Container, State, StateUpdater, StatefulWidget,
+    AimerApp, AnyWidget, BuildContext, Column, Container, State, StateView, StateUpdater, StatefulWidget,
     Text, Widget,
 };
 
@@ -47,10 +47,11 @@ impl Default for RangeControlsExample {
 }
 
 pub struct RangeControlsExampleState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     slider_value: f64,
     range_lower: f64,
     range_upper: f64,
-    updater: StateUpdater<Self>,
 }
 
 impl RangeControlsExampleState {
@@ -66,20 +67,16 @@ impl RangeControlsExampleState {
     }
 }
 
-impl StatefulWidget for RangeControlsExample {
-    type State = RangeControlsExampleState;
-
-    fn create_state(self) -> Self::State {
-        RangeControlsExampleState::initial()
-    }
-}
-
 impl State<RangeControlsExample> for RangeControlsExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: RangeControlsExample) -> Self {
+        RangeControlsExampleState::initial()
+    }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         let slider_trail = SliderTrail::new()
@@ -91,11 +88,11 @@ impl State<RangeControlsExample> for RangeControlsExampleState {
             .radius(10.0)
             .color(app_theme.primary_color);
 
-        let slider_updater = self.updater;
+        let slider_updater = this.updater();
         let slider = Slider::new()
             .range(0.0..100.0)
             .step(1.0)
-            .value(self.slider_value)
+            .value(this.slider_value)
             .width(320.0)
             .trail(slider_trail.clone())
             .thumb(slider_thumb.clone())
@@ -103,11 +100,11 @@ impl State<RangeControlsExample> for RangeControlsExampleState {
                 slider_updater.set_state(move |state| state.slider_value = value);
             });
 
-        let range_updater = self.updater;
+        let range_updater = this.updater();
         let range_slider = RangeSlider::new()
             .range(0.0..100.0)
             .step(10.0)
-            .values(self.range_lower..self.range_upper)
+            .values(this.range_lower..this.range_upper)
             .width(320.0)
             .trail(slider_trail)
             .thumbs(slider_thumb.clone(), slider_thumb)
@@ -125,7 +122,7 @@ impl State<RangeControlsExample> for RangeControlsExampleState {
             .disabled(true)
             .width(320.0);
 
-        let keyboard_sample = keyboard_sample(self.slider_value);
+        let keyboard_sample = keyboard_sample(this.slider_value);
         let (invalid_config, invalid_semantics) = invalid_sample();
 
         let pointer_value = slider
@@ -165,7 +162,7 @@ impl State<RangeControlsExample> for RangeControlsExampleState {
                             "Single value",
                             format!(
                                 "Value: {} · pointer 75%: {}\nArrowRight sample: {}",
-                                self.slider_value, pointer_value, keyboard_sample
+                                this.slider_value, pointer_value, keyboard_sample
                             ),
                             slider.boxed(),
                             app_theme,
@@ -174,8 +171,8 @@ impl State<RangeControlsExample> for RangeControlsExampleState {
                             "Two values",
                             format!(
                                 "Lower: {} · upper: {} · semantic role: {:?}",
-                                self.range_lower,
-                                self.range_upper,
+                                this.range_lower,
+                                this.range_upper,
                                 lower_semantics.role()
                             ),
                             range_slider.boxed(),

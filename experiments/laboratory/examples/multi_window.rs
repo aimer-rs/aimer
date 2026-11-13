@@ -33,8 +33,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use aimer::{
-    AimerApp, AnyElement, BuildContext, Column, ExitPolicy, NewWindow, State, StateUpdater,
-    StatefulElement, StatefulWidget, Text, TextButton, Widget, Window, WindowAttr, WindowId,
+    AimerApp, AnyElement, BuildContext, Column, ExitPolicy, NewWindow, State, StateView, StateUpdater,
+    StatefulElement, Text, TextButton, Widget, Window, WindowAttr, WindowId,
 };
 
 /// What every window shares: how many have been opened, for their titles.
@@ -66,42 +66,38 @@ struct PanelState {
     updater: Option<StateUpdater<PanelState>>,
 }
 
-impl StatefulWidget for Panel {
-    type State = PanelState;
-
-    fn create_state(self) -> PanelState {
+impl State<Panel> for PanelState {
+    fn create(widget: Panel) -> Self {
         PanelState {
-            number: self.number,
-            opened: self.opened,
-            id: self.id,
-            controls: self.controls,
-            settings: self.settings,
+            number: widget.number,
+            opened: widget.opened,
+            id: widget.id,
+            controls: widget.controls,
+            settings: widget.settings,
             clicks: 0,
             settings_open: false,
             settings_title: "Settings",
             updater: None,
         }
     }
-}
 
-impl State<Panel> for PanelState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = Some(updater);
         if self.settings {
             *self.controls.borrow_mut() = Some(updater);
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater.expect("initialised before the first build");
-        let opened = self.opened.clone();
-        let id = self.id.clone();
-        let controls = self.controls.clone();
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater.expect("initialised before the first build");
+        let opened = this.opened.clone();
+        let id = this.id.clone();
+        let controls = this.controls.clone();
 
         let mut children = vec![
             Text::new(format!(
                 "Window {} - clicked {} times",
-                self.number, self.clicks
+                this.number, this.clicks
             ))
             .boxed(),
             TextButton::new("Click")
@@ -124,8 +120,8 @@ impl State<Panel> for PanelState {
                 .boxed(),
         ];
 
-        if self.settings {
-            let shown = self.settings_open;
+        if this.settings {
+            let shown = this.settings_open;
             children.push(
                 TextButton::new(if shown {
                     "Hide settings"
@@ -141,9 +137,9 @@ impl State<Panel> for PanelState {
             // window itself, the state is told so the button stays truthful.
             children.push(
                 Window::new()
-                    .title(self.settings_title)
+                    .title(this.settings_title)
                     .size(360, 200)
-                    .open(self.settings_open)
+                    .open(this.settings_open)
                     .on_close(move || updater.set_state(|state| state.settings_open = false))
                     .builder(|_ctx| Text::new("Settings live in a window of their own"))
                     .boxed(),
@@ -156,7 +152,7 @@ impl State<Panel> for PanelState {
 
 impl Widget for Panel {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "MultiWindowPanel", None)
+        StatefulElement::new_with_name::<Self, PanelState>(self, ctx, "MultiWindowPanel", None)
             .0
             .boxed()
     }

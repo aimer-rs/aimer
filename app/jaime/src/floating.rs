@@ -37,36 +37,30 @@ impl FloatingShowcase {
 }
 
 pub struct FloatingShowcaseState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     menu_anchor: AnchorHandle,
     tooltip_anchor: AnchorHandle,
     corner_anchor: AnchorHandle,
     selected: Option<&'static str>,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for FloatingShowcase {
-    type State = FloatingShowcaseState;
+impl State<FloatingShowcase> for FloatingShowcaseState {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
+        self.updater = updater;
+    }
 
-    fn create_state(self) -> Self::State {
+    fn create(widget: FloatingShowcase) -> Self {
         FloatingShowcaseState {
+            updater: StateUpdater::empty(),
             menu_anchor: AnchorHandle::new(),
             tooltip_anchor: AnchorHandle::new(),
             corner_anchor: AnchorHandle::new(),
             selected: None,
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<FloatingShowcase> for FloatingShowcaseState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         Container::new()
@@ -88,7 +82,7 @@ impl State<FloatingShowcase> for FloatingShowcaseState {
                     Container::new()
                         .height(Dimension::Px(24.0))
                         .child(
-                            Text::new(match self.selected {
+                            Text::new(match this.selected {
                                 Some(item) => format!("Selected: {item}"),
                                 None => "Nothing selected yet".to_string(),
                             })
@@ -107,8 +101,8 @@ impl State<FloatingShowcase> for FloatingShowcaseState {
                             Row::new()
                                 .gaps(LayoutSpacing::all(Spacing::Px(16)))
                                 .children(vec![
-                                    self.menu_trigger(app_theme),
-                                    self.tooltip_trigger(app_theme),
+                                    this.menu_trigger(app_theme),
+                                    this.tooltip_trigger(app_theme),
                                 ]),
                         )
                         .boxed(),
@@ -116,7 +110,7 @@ impl State<FloatingShowcase> for FloatingShowcaseState {
                         .child(
                             Align::new()
                                 .alignment(Alignment::BotRight)
-                                .child(self.corner_trigger(app_theme)),
+                                .child(this.corner_trigger(app_theme)),
                         )
                         .boxed(),
                 ]))

@@ -15,6 +15,7 @@ pub fn start_my_animated_list() {
 }
 #[allow(non_snake_case)]
 #[derive(StatefulWidget)]
+#[state(MyListState)]
 pub struct MyAnimatedList;
 
 pub struct ListItem {
@@ -27,7 +28,6 @@ pub struct ListItem {
 
 pub struct MyListState {
     list: Vec<ListItem>,
-    updater: StateUpdater<Self>,
 }
 
 impl Drop for ListItem {
@@ -36,31 +36,19 @@ impl Drop for ListItem {
     }
 }
 
-impl StatefulWidget for MyAnimatedList {
-    type State = MyListState;
-    fn create_state(self) -> Self::State {
+impl State<MyAnimatedList> for MyListState {
+    fn create(widget: MyAnimatedList) -> Self {
         MyListState {
             list: vec![],
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<MyAnimatedList> for MyListState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = _updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
 
         {
             let now = AnimInstant::now();
-            let has_dismissed = self
-                .list
+            let has_dismissed = this.list
                 .iter()
                 .any(|item| {
                     item.pending_removal
@@ -86,7 +74,7 @@ impl State<MyAnimatedList> for MyListState {
                                     .children(vec![
                                         Container::new()
                                             .child(
-                                                Text::new(format!("Item in List: {}", self.list.iter().filter(|i| !i.pending_removal).count()))
+                                                Text::new(format!("Item in List: {}", this.list.iter().filter(|i| !i.pending_removal).count()))
                                                     .text_align(TextAlign::MidCenter)
                                                     .text_style(TextStyle::new()
                                                         .font_size(20)
@@ -98,7 +86,7 @@ impl State<MyAnimatedList> for MyListState {
                                             .child(
                                                 Button::new()
                                                     .on_press({
-                                                        let updater = self.updater;
+                                                        let updater = this.updater();
                                                         move || {
                                                             updater.set_state(|state| {
                                                                 let uuid = Uuid::new_v4().to_string();
@@ -136,7 +124,7 @@ impl State<MyAnimatedList> for MyListState {
                             ).boxed(),
                         Scrollable::new()
                             .child(Column::new()
-                                .children(self.list.iter().map(|item| {
+                                .children(this.list.iter().map(|item| {
                                     Animated::new(
                                         item.controller.clone(),
                                         AnimationEffect::SlideX { from: -1.0, to: 0.0 },
@@ -163,7 +151,7 @@ impl State<MyAnimatedList> for MyListState {
                                                                 Button::new()
                                                                     .on_press({
                                                                         let item_id = item.id.clone();
-                                                                        let updater = self.updater;
+                                                                        let updater = this.updater();
                                                                         move || {
                                                                             #[allow(clippy::collapsible_if)]
                                                                             updater.set_state_with(&item_id, |state, id| {

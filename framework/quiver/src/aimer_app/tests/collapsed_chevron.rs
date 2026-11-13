@@ -70,32 +70,26 @@ struct Screen {
     updater: Rc<RefCell<Option<StateUpdater<ScreenState>>>>,
 }
 
-impl StatefulWidget for Screen {
-    type State = ScreenState;
-
-    fn create_state(self) -> ScreenState {
+impl State<Screen> for ScreenState {
+    fn create(widget: Screen) -> Self {
         ScreenState {
             rebuilds: 0,
             animate: false,
-            updater: self.updater,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Screen> for ScreenState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
         // Each rebuild hands the list a new header, as a screen rebuilding does.
-        let title = format!("Categories {}", self.rebuilds % 2);
+        let title = format!("Categories {}", this.rebuilds % 2);
         // The panel around the list animates while its edge is being grabbed, and
         // rebuilds its whole content on every frame of that.
         aimer_animation::ImplicitAnimatedBuilder::new(
-            if self.animate { 1.0f32 } else { 0.0 },
+            if this.animate { 1.0f32 } else { 0.0 },
             Duration::from_millis(300),
             aimer_animation::curves::EASE_IN_OUT,
             move |value| {
@@ -120,7 +114,7 @@ impl State<Screen> for ScreenState {
 
 impl Widget for Screen {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ChevronScreen", None)
+        StatefulElement::new_with_name::<Self, ScreenState>(self, ctx, "ChevronScreen", None)
             .0
             .boxed()
     }

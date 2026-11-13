@@ -25,7 +25,7 @@ use aimer::style::{
 };
 use aimer::{
     AnyWidget, BuildContext, Column, Container, Dimension, Row, ScrollAxis, Scrollable, SizedBox,
-    State, StateUpdater, StatefulWidget, Text, Widget,
+    State, StateView, StateUpdater, StatefulWidget, Text, Widget,
 };
 
 use crate::{Assets, theme};
@@ -61,13 +61,10 @@ pub struct AudioExampleState {
     /// Where the seek bar is being dragged to, in seconds; `None` when it
     /// follows the playhead.
     scrub: Rc<Cell<Option<f64>>>,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for AudioExample {
-    type State = AudioExampleState;
-
-    fn create_state(self) -> AudioExampleState {
+impl State<AudioExample> for AudioExampleState {
+    fn create(widget: AudioExample) -> Self {
         let player = AudioPlayer::from_source(AudioSource::bundled(Assets::TRIMMED_MUSIC.path()));
         player.set_volume(0.6);
         let tap = Sound::from_source(AudioSource::bundled(Assets::TAP.path()));
@@ -80,20 +77,13 @@ impl StatefulWidget for AudioExample {
             tap,
             ticker,
             scrub: Rc::new(Cell::new(None)),
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<AudioExample> for AudioExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
-        let player = &self.player;
+        let updater = this.updater();
+        let player = &this.player;
 
         let toggle = {
             let player = player.clone();
@@ -141,7 +131,7 @@ impl State<AudioExample> for AudioExampleState {
             })
         };
         let tap = {
-            let tap = self.tap.clone();
+            let tap = this.tap.clone();
             control_button("Tap (try it fast)", app_theme, true, move || tap.play())
         };
 
@@ -174,8 +164,8 @@ impl State<AudioExample> for AudioExampleState {
         // the playhead, and flip to "Finished" when the track ends by itself.
         let progress = {
             let player = player.clone();
-            let scrub = self.scrub.clone();
-            AnimatedBuilder::new(self.ticker.clone(), move |_| {
+            let scrub = this.scrub.clone();
+            AnimatedBuilder::new(this.ticker.clone(), move |_| {
                 progress_view(&player, &scrub, app_theme)
             })
         };

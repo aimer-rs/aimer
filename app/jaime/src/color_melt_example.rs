@@ -19,7 +19,7 @@ use aimer::style::{
 };
 use aimer::{
     AimerApp, AnyWidget, BuildContext, CanvasPainter, Column, Container, CustomPaint, Row,
-    ScrollAxis, Scrollable, State, StateUpdater, StatefulWidget, Text, TextButton, Widget,
+    ScrollAxis, Scrollable, State, StateView, StateUpdater, StatefulWidget, Text, TextButton, Widget,
 };
 use aimer::ResolvedSize;
 use aimer::canvas::Canvas;
@@ -284,13 +284,10 @@ pub struct ColorMeltExampleState {
     clock: Rc<MeltClock>,
     /// Only drives frames: its value is never read.
     ticker: AnimationController,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for ColorMeltExample {
-    type State = ColorMeltExampleState;
-
-    fn create_state(self) -> Self::State {
+impl State<ColorMeltExample> for ColorMeltExampleState {
+    fn create(widget: ColorMeltExample) -> Self {
         register_effect();
         let ticker = AnimationController::new(Duration::from_secs(1), curves::LINEAR);
         ticker.set_repeat(true);
@@ -299,24 +296,17 @@ impl StatefulWidget for ColorMeltExample {
             props: Rc::new(Cell::new(Props::DEFAULT)),
             clock: Rc::new(MeltClock::new()),
             ticker,
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<ColorMeltExample> for ColorMeltExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let props = self.props.get();
+        let props = this.props.get();
 
         let picture = {
-            let props = Rc::clone(&self.props);
-            let clock = Rc::clone(&self.clock);
-            AnimatedBuilder::new(self.ticker.clone(), move |_| {
+            let props = Rc::clone(&this.props);
+            let clock = Rc::clone(&this.clock);
+            AnimatedBuilder::new(this.ticker.clone(), move |_| {
                 let current = props.get();
                 let time = clock.tick(Instant::now(), current.speed);
                 CustomPaint::new()
@@ -330,8 +320,8 @@ impl State<ColorMeltExample> for ColorMeltExampleState {
                       (low, high): (f32, f32),
                       step: f32,
                       set: fn(&mut Props, f32)| {
-            let shared = Rc::clone(&self.props);
-            let updater = self.updater;
+            let shared = Rc::clone(&this.props);
+            let updater = this.updater();
             let control = Slider::new()
                 .range(f64::from(low)..f64::from(high))
                 .step(f64::from(step))
@@ -365,8 +355,8 @@ impl State<ColorMeltExample> for ColorMeltExampleState {
             .enumerate()
             .map(|(index, palette)| {
                 let selected = index == props.palette;
-                let shared = Rc::clone(&self.props);
-                let updater = self.updater;
+                let shared = Rc::clone(&this.props);
+                let updater = this.updater();
                 let style = TextStyle::new()
                     .font_size(16)
                     .font_weight(if selected { FontWeight::Bolder } else { FontWeight::Normal })

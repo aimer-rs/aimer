@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, State, StateView, StateUpdater, StatefulElement, Widget};
 
 use crate::binary::{Binary, ChangeCallback, VisualBuilder};
 use crate::common::{Common, common_setters};
@@ -90,25 +90,21 @@ impl<T> Radio<T> {
 
 type RadioState<T> = Binary<bool, T>;
 
-impl<T: Clone + 'static> StatefulWidget for Radio<T> {
-    type State = RadioState<T>;
-
-    fn create_state(self) -> Self::State {
+impl<T: Clone + 'static> State<Radio<T>> for RadioState<T> {
+    fn create(widget: Radio<T>) -> Self {
         Binary::new(
-            self.selected,
+            widget.selected,
             Mark::Radio {
-                selected: self.selected,
+                selected: widget.selected,
             },
-            (!self.selected).then_some(self.value),
-            self.on_change,
-            self.common,
-            self.builder,
+            (!widget.selected).then_some(widget.value),
+            widget.on_change,
+            widget.common,
+            widget.builder,
         )
     }
-}
 
-impl<T: Clone + 'static> State<Radio<T>> for RadioState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.init(updater);
     }
 
@@ -116,14 +112,14 @@ impl<T: Clone + 'static> State<Radio<T>> for RadioState<T> {
         self.adopt(new);
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.render(ctx)
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.render(ctx)
     }
 }
 
 impl<T: Clone + 'static> Widget for Radio<T> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Radio", None)
+        StatefulElement::new_with_name::<Self, RadioState<T>>(self, ctx, "Radio", None)
             .0
             .boxed()
     }

@@ -18,7 +18,7 @@ use aimer::style::{
     Spacing, TextAlign, TextStyle, Theme, ThemeData,
 };
 use aimer::{
-    AimerApp, AnyWidget, BuildContext, Color, Column, Container, Dimension, FocusNode, Row, State,
+    AimerApp, AnyWidget, BuildContext, Color, Column, Container, Dimension, FocusNode, Row, State, StateView,
     StateUpdater, StatefulWidget, Text, Widget,
 };
 
@@ -55,6 +55,8 @@ impl Default for FormExample {
 }
 
 pub struct FormExampleState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     form: Form,
     email_controller: TextEditingController,
     password_controller: TextEditingController,
@@ -63,7 +65,6 @@ pub struct FormExampleState {
     password_focus: FocusNode,
     amount_focus: FocusNode,
     last_submit: Option<String>,
-    updater: StateUpdater<Self>,
 }
 
 impl FormExampleState {
@@ -304,54 +305,50 @@ impl FormExampleState {
     }
 }
 
-impl StatefulWidget for FormExample {
-    type State = FormExampleState;
-
-    fn create_state(self) -> Self::State {
-        FormExampleState::initial()
-    }
-}
-
 impl State<FormExample> for FormExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: FormExample) -> Self {
+        FormExampleState::initial()
+    }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let email_field = self.field_section(
+        let email_field = this.field_section(
             "email",
             "Email",
-            self.email_controller
+            this.email_controller
                 .clone(),
-            self.email_focus
+            this.email_focus
                 .clone(),
             InputType::Email,
             app_theme,
         );
-        let password_field = self.field_section(
+        let password_field = this.field_section(
             "password",
             "Password (min 8 characters)",
-            self.password_controller
+            this.password_controller
                 .clone(),
-            self.password_focus
+            this.password_focus
                 .clone(),
             InputType::Password,
             app_theme,
         );
-        let amount_field = self.field_section(
+        let amount_field = this.field_section(
             "amount",
             "Amount",
-            self.amount_controller
+            this.amount_controller
                 .clone(),
-            self.amount_focus
+            this.amount_focus
                 .clone(),
             InputType::Number,
             app_theme,
         );
 
-        let submit_updater = self.updater;
-        let reset_updater = self.updater;
+        let submit_updater = this.updater();
+        let reset_updater = this.updater();
         let buttons = Row::new()
             .gaps(LayoutSpacing::all(Spacing::Px(12)))
             .children([
@@ -364,8 +361,7 @@ impl State<FormExample> for FormExampleState {
             ])
             .boxed();
 
-        let status = self
-            .last_submit
+        let status = this.last_submit
             .clone();
         let status_widget = status.map_or_else(
             || Text::new(String::new()).boxed(),

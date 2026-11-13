@@ -152,7 +152,7 @@ mod tests {
     use crate::Widget;
     use crate::key::Key;
     use crate::widget::stateful::{
-        State, StateUpdater, StatefulElement, StatefulWidget, carry_child_state,
+        State, StateView, StateUpdater, StatefulElement, carry_child_state,
     };
 
     /// A no-op widget used as the inner child of a `StatefulElement` for tests.
@@ -218,28 +218,26 @@ mod tests {
     struct CounterState {
         counter: usize,
         observer: Rc<Cell<usize>>,
-        #[allow(dead_code)]
-        updater: StateUpdater<Self>,
     }
-    impl StatefulWidget for CounterWidget {
-        type State = CounterState;
-        fn create_state(self) -> Self::State {
+    impl Widget for CounterWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, CounterState>(self, ctx, "CounterWidget", None)
+        }
+    }
+
+    impl State<CounterWidget> for CounterState {
+        fn create(widget: CounterWidget) -> Self {
             CounterState {
                 counter: 1,
-                observer: self.observer.clone(),
-                updater: StateUpdater::new(),
+                observer: widget.observer.clone(),
             }
         }
-    }
-    impl State<CounterWidget> for CounterState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
-        }
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             // Record the counter value the rebuild closure actually saw. This
             // is the only observable proof of which state cell a `StatefulElement`
             // is reading from after `adopt_state_from` rewires its `rebuild_fn`.
-            self.observer.set(self.counter);
+            this.observer.set(this.counter);
             EmptyWidget
         }
     }
@@ -250,30 +248,26 @@ mod tests {
 
     struct CounterParentState {
         observer: Rc<Cell<usize>>,
-        updater: StateUpdater<Self>,
     }
 
-    impl StatefulWidget for CounterParentWidget {
-        type State = CounterParentState;
-
-        fn create_state(self) -> Self::State {
-            CounterParentState {
-                observer: self.observer.clone(),
-                updater: StateUpdater::new(),
-            }
+    impl Widget for CounterParentWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, CounterParentState>(self, ctx, "CounterParentWidget", None)
         }
     }
 
     impl State<CounterParentWidget> for CounterParentState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
+        fn create(widget: CounterParentWidget) -> Self {
+            CounterParentState {
+                observer: widget.observer.clone(),
+            }
         }
 
-        fn build(&self, ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
             let widget = CounterWidget {
-                observer: self.observer.clone(),
+                observer: this.observer.clone(),
             };
-            let (child, _) = StatefulElement::new_with_name(
+            let (child, _) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
                 widget,
                 ctx,
                 "Counter",
@@ -292,30 +286,27 @@ mod tests {
         counter: usize,
         builds: Rc<RefCell<Vec<usize>>>,
         published_updater: Rc<RefCell<Option<StateUpdater<Self>>>>,
-        updater: StateUpdater<Self>,
     }
 
-    impl StatefulWidget for BuildRecordingCounterWidget {
-        type State = BuildRecordingCounterState;
-
-        fn create_state(self) -> Self::State {
-            BuildRecordingCounterState {
-                counter: 0,
-                builds: self.builds.clone(),
-                published_updater: self.updater.clone(),
-                updater: StateUpdater::new(),
-            }
+    impl Widget for BuildRecordingCounterWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, BuildRecordingCounterState>(self, ctx, "BuildRecordingCounterWidget", None)
         }
     }
 
     impl State<BuildRecordingCounterWidget> for BuildRecordingCounterState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
-            *self.published_updater.borrow_mut() = Some(updater);
+        fn create(widget: BuildRecordingCounterWidget) -> Self {
+            BuildRecordingCounterState {
+                counter: 0,
+                builds: widget.builds.clone(),
+                published_updater: widget.updater.clone(),
+            }
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.builds.borrow_mut().push(self.counter);
+
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.published_updater.borrow_mut() = Some(this.updater());
+            this.builds.borrow_mut().push(this.counter);
             EmptyWidget
         }
     }
@@ -328,32 +319,28 @@ mod tests {
     struct BuildRecordingParentState {
         builds: Rc<RefCell<Vec<usize>>>,
         child_updater: Rc<RefCell<Option<StateUpdater<BuildRecordingCounterState>>>>,
-        updater: StateUpdater<Self>,
     }
 
-    impl StatefulWidget for BuildRecordingParentWidget {
-        type State = BuildRecordingParentState;
-
-        fn create_state(self) -> Self::State {
-            BuildRecordingParentState {
-                builds: self.builds.clone(),
-                child_updater: self.child_updater.clone(),
-                updater: StateUpdater::new(),
-            }
+    impl Widget for BuildRecordingParentWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, BuildRecordingParentState>(self, ctx, "BuildRecordingParentWidget", None)
         }
     }
 
     impl State<BuildRecordingParentWidget> for BuildRecordingParentState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
+        fn create(widget: BuildRecordingParentWidget) -> Self {
+            BuildRecordingParentState {
+                builds: widget.builds.clone(),
+                child_updater: widget.child_updater.clone(),
+            }
         }
 
-        fn build(&self, ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
             let child = BuildRecordingCounterWidget {
-                builds: self.builds.clone(),
-                updater: self.child_updater.clone(),
+                builds: this.builds.clone(),
+                updater: this.child_updater.clone(),
             };
-            let (element, _) = StatefulElement::new_with_name(
+            let (element, _) = StatefulElement::new_with_name::<BuildRecordingCounterWidget, BuildRecordingCounterState>(
                 child,
                 ctx,
                 "BuildRecordingCounter",
@@ -378,28 +365,24 @@ mod tests {
         observed_runtime: Rc<Cell<usize>>,
         config_adoptions: Rc<Cell<usize>>,
         live_updater: Rc<RefCell<Option<StateUpdater<Self>>>>,
-        updater: StateUpdater<Self>,
     }
 
-    impl StatefulWidget for ConfigWidget {
-        type State = ConfigState;
-
-        fn create_state(self) -> Self::State {
-            ConfigState {
-                config_label: self.label,
-                runtime: 0,
-                observed_label: self.observed_label.clone(),
-                observed_runtime: self.observed_runtime.clone(),
-                config_adoptions: self.config_adoptions.clone(),
-                live_updater: self.live_updater.clone(),
-                updater: StateUpdater::new(),
-            }
+    impl Widget for ConfigWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, ConfigState>(self, ctx, "ConfigWidget", None)
         }
     }
 
     impl State<ConfigWidget> for ConfigState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
+        fn create(widget: ConfigWidget) -> Self {
+            ConfigState {
+                config_label: widget.label,
+                runtime: 0,
+                observed_label: widget.observed_label.clone(),
+                observed_runtime: widget.observed_runtime.clone(),
+                config_adoptions: widget.config_adoptions.clone(),
+                live_updater: widget.live_updater.clone(),
+            }
         }
 
         // Config = `config_label`; runtime = `runtime`. On reconcile the
@@ -410,10 +393,10 @@ mod tests {
             self.config_label = new.config_label;
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.observed_label.set(self.config_label);
-            self.observed_runtime.set(self.runtime);
-            *self.live_updater.borrow_mut() = Some(self.updater);
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.observed_label.set(this.config_label);
+            this.observed_runtime.set(this.runtime);
+            *this.live_updater.borrow_mut() = Some(this.updater());
             EmptyWidget
         }
     }
@@ -558,22 +541,20 @@ mod tests {
     /// alongside the text leaf (matching jaime's flex children).
     struct NestedButtonWidget;
     struct NestedButtonState {
-        #[allow(dead_code)]
-        updater: StateUpdater<Self>,
     }
-    impl StatefulWidget for NestedButtonWidget {
-        type State = NestedButtonState;
-        fn create_state(self) -> Self::State {
+    impl Widget for NestedButtonWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, NestedButtonState>(self, ctx, "NestedButtonWidget", None)
+        }
+    }
+
+    impl State<NestedButtonWidget> for NestedButtonState {
+        fn create(widget: NestedButtonWidget) -> Self {
             NestedButtonState {
-                updater: StateUpdater::new(),
             }
         }
-    }
-    impl State<NestedButtonWidget> for NestedButtonState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
-        }
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             EmptyWidget
         }
     }
@@ -586,34 +567,33 @@ mod tests {
         counter: usize,
         drawn: Rc<Cell<usize>>,
         live_updater: Rc<RefCell<Option<StateUpdater<Self>>>>,
-        updater: StateUpdater<Self>,
     }
-    impl StatefulWidget for DrawCounterWidget {
-        type State = DrawCounterState;
-        fn create_state(self) -> Self::State {
+    impl Widget for DrawCounterWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, DrawCounterState>(self, ctx, "DrawCounterWidget", None)
+        }
+    }
+
+    impl State<DrawCounterWidget> for DrawCounterState {
+        fn create(widget: DrawCounterWidget) -> Self {
             DrawCounterState {
                 counter: 1,
-                drawn: self.drawn.clone(),
-                live_updater: self.live_updater.clone(),
-                updater: StateUpdater::new(),
+                drawn: widget.drawn.clone(),
+                live_updater: widget.live_updater.clone(),
             }
         }
-    }
-    impl State<DrawCounterWidget> for DrawCounterState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
-        }
-        fn build(&self, ctx: &BuildContext) -> impl Widget {
-            *self.live_updater.borrow_mut() = Some(self.updater);
+
+        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+            *this.live_updater.borrow_mut() = Some(this.updater());
 
             // container -> row -> [ text-leaf(counter), nested stateful button ]
             let leaf: AnyElement = RecordingLeaf {
-                value: self.counter,
-                drawn: self.drawn.clone(),
+                value: this.counter,
+                drawn: this.drawn.clone(),
             }
             .boxed();
             let (button, _ctor) =
-                StatefulElement::new_with_name(NestedButtonWidget, ctx, "NestedButton", None);
+                StatefulElement::new_with_name::<NestedButtonWidget, NestedButtonState>(NestedButtonWidget, ctx, "NestedButton", None);
             let row: AnyElement = DrawRow(vec![leaf, button.boxed()]).boxed();
             ElementWidget::new(DrawWrapper(row).boxed())
         }
@@ -630,7 +610,7 @@ mod tests {
             drawn: drawn.clone(),
             live_updater: live_updater.clone(),
         };
-        let (root, _ctor) = StatefulElement::new_with_name(widget, &ctx, "DrawCounter", None);
+        let (root, _ctor) = StatefulElement::new_with_name::<DrawCounterWidget, DrawCounterState>(widget, &ctx, "DrawCounter", None);
 
         // First frame: the initial state (counter = 1) is drawn.
         root.update(&ctx);
@@ -662,7 +642,7 @@ mod tests {
         let old_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (old_stateful, old_updater) = StatefulElement::new_with_name(
+        let (old_stateful, old_updater) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             old_widget,
             &ctx,
             "Counter",
@@ -675,7 +655,7 @@ mod tests {
         let new_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (new_stateful, _) = StatefulElement::new_with_name(
+        let (new_stateful, _) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             new_widget,
             &ctx,
             "Counter",
@@ -699,7 +679,7 @@ mod tests {
         let ctx = dummy_build_context();
         let observer = Rc::new(Cell::new(0usize));
 
-        let (old_stateful, old_updater) = StatefulElement::new_with_name(
+        let (old_stateful, old_updater) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             CounterWidget {
                 observer: observer.clone(),
             },
@@ -710,7 +690,7 @@ mod tests {
         old_updater.set_state(|state| state.counter = 7);
         old_stateful.rebuild_if_dirty(&ctx);
 
-        let (replacement, candidate_updater) = StatefulElement::new_with_name(
+        let (replacement, candidate_updater) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             CounterWidget {
                 observer: observer.clone(),
             },
@@ -739,13 +719,13 @@ mod tests {
             observer: observer.clone(),
         };
         let (stale_stateful, _) =
-            StatefulElement::new_with_name(widget(), &ctx, "Counter", key.clone());
+            StatefulElement::new_with_name::<CounterWidget, CounterState>(widget(), &ctx, "Counter", key.clone());
         let (live_stateful, live_updater) =
-            StatefulElement::new_with_name(widget(), &ctx, "Counter", key.clone());
+            StatefulElement::new_with_name::<CounterWidget, CounterState>(widget(), &ctx, "Counter", key.clone());
         live_updater.set_state(|state| state.counter = 7);
         live_stateful.rebuild_if_dirty(&ctx);
 
-        let (replacement, _) = StatefulElement::new_with_name(widget(), &ctx, "Counter", key);
+        let (replacement, _) = StatefulElement::new_with_name::<CounterWidget, CounterState>(widget(), &ctx, "Counter", key);
         let old_tree = Branches(vec![stale_stateful.boxed(), live_stateful.boxed()]);
         let new_tree = Wrapper(replacement.boxed());
         carry_child_state(&old_tree, &new_tree, &ctx);
@@ -767,7 +747,7 @@ mod tests {
             child_updater: child_updater.clone(),
         };
         let (parent, parent_updater) =
-            StatefulElement::new_with_name(parent_widget, &ctx, "BuildRecordingParent", None);
+            StatefulElement::new_with_name::<BuildRecordingParentWidget, BuildRecordingParentState>(parent_widget, &ctx, "BuildRecordingParent", None);
 
         child_updater
             .borrow()
@@ -798,13 +778,13 @@ mod tests {
         };
 
         let (stale_stateful, _) =
-            StatefulElement::new_with_name(widget(), &ctx, "Counter", key.clone());
+            StatefulElement::new_with_name::<CounterWidget, CounterState>(widget(), &ctx, "Counter", key.clone());
         let (live_stateful, live_updater) =
-            StatefulElement::new_with_name(widget(), &ctx, "Counter", key.clone());
+            StatefulElement::new_with_name::<CounterWidget, CounterState>(widget(), &ctx, "Counter", key.clone());
         live_updater.set_state(|state| state.counter = 7);
         live_stateful.rebuild_if_dirty(&ctx);
 
-        let (replacement, _) = StatefulElement::new_with_name(widget(), &ctx, "Counter", key);
+        let (replacement, _) = StatefulElement::new_with_name::<CounterWidget, CounterState>(widget(), &ctx, "Counter", key);
         carry_child_state(&live_stateful, &replacement, &ctx);
         assert_eq!(observer.get(), 7);
         assert!(
@@ -830,12 +810,12 @@ mod tests {
             observer: observer.clone(),
         };
         let (stale_parent, _) =
-            StatefulElement::new_with_name(parent_widget(), &ctx, "CounterParent", None);
+            StatefulElement::new_with_name::<CounterParentWidget, CounterParentState>(parent_widget(), &ctx, "CounterParent", None);
 
         let counter_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (live_counter, live_updater) = StatefulElement::new_with_name(
+        let (live_counter, live_updater) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             counter_widget,
             &ctx,
             "Counter",
@@ -845,7 +825,7 @@ mod tests {
         live_counter.rebuild_if_dirty(&ctx);
 
         let (replacement_parent, _) =
-            StatefulElement::new_with_name(parent_widget(), &ctx, "CounterParent", None);
+            StatefulElement::new_with_name::<CounterParentWidget, CounterParentState>(parent_widget(), &ctx, "CounterParent", None);
         let old_tree = Branches(vec![stale_parent.boxed(), live_counter.boxed()]);
         let new_tree = Wrapper(replacement_parent.boxed());
         carry_child_state(&old_tree, &new_tree, &ctx);
@@ -865,7 +845,7 @@ mod tests {
         let old_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (old_stateful, old_updater) = StatefulElement::new_with_name(
+        let (old_stateful, old_updater) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             old_widget,
             &ctx,
             "Counter",
@@ -877,7 +857,7 @@ mod tests {
         let new_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (new_stateful, _) = StatefulElement::new_with_name(
+        let (new_stateful, _) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             new_widget,
             &ctx,
             "Counter",
@@ -909,7 +889,7 @@ mod tests {
         let old_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (old_stateful, old_updater) = StatefulElement::new_with_name(
+        let (old_stateful, old_updater) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             old_widget,
             &ctx,
             "Counter",
@@ -921,7 +901,7 @@ mod tests {
         let new_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (new_stateful, _) = StatefulElement::new_with_name(
+        let (new_stateful, _) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             new_widget,
             &ctx,
             "Counter",
@@ -957,7 +937,7 @@ mod tests {
             config_adoptions: config_adoptions.clone(),
             live_updater: live_updater.clone(),
         };
-        let (old_stateful, old_updater) = StatefulElement::new_with_name(
+        let (old_stateful, old_updater) = StatefulElement::new_with_name::<ConfigWidget, ConfigState>(
             old_widget,
             &ctx,
             "Config",
@@ -973,7 +953,7 @@ mod tests {
             config_adoptions: config_adoptions.clone(),
             live_updater,
         };
-        let (new_stateful, _) = StatefulElement::new_with_name(
+        let (new_stateful, _) = StatefulElement::new_with_name::<ConfigWidget, ConfigState>(
             new_widget,
             &ctx,
             "Config",
@@ -1015,7 +995,7 @@ mod tests {
         let old_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (old_stateful, old_updater) = StatefulElement::new_with_name(
+        let (old_stateful, old_updater) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             old_widget,
             &ctx,
             "Counter",
@@ -1027,7 +1007,7 @@ mod tests {
         let new_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (new_stateful, _) = StatefulElement::new_with_name(
+        let (new_stateful, _) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             new_widget,
             &ctx,
             "Counter",
@@ -1056,7 +1036,7 @@ mod tests {
         let old_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (old_stateful, old_updater) = StatefulElement::new_with_name(
+        let (old_stateful, old_updater) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             old_widget,
             &ctx,
             "Counter",
@@ -1068,7 +1048,7 @@ mod tests {
         let new_widget = CounterWidget {
             observer: observer.clone(),
         };
-        let (new_stateful, _) = StatefulElement::new_with_name(
+        let (new_stateful, _) = StatefulElement::new_with_name::<CounterWidget, CounterState>(
             new_widget,
             &ctx,
             "Counter",
@@ -1107,30 +1087,22 @@ mod tests {
     struct SwitcherMockState {
         child_key: &'static str,
         transitions: Rc<Cell<usize>>,
-        #[allow(dead_code)]
-        updater: StateUpdater<Self>,
-    }
-    impl StatefulWidget for SwitcherMock {
-        type State = SwitcherMockState;
-        fn create_state(self) -> Self::State {
-            SwitcherMockState {
-                child_key: self.child_key,
-                transitions: self.transitions.clone(),
-                updater: StateUpdater::new(),
-            }
-        }
     }
     impl State<SwitcherMock> for SwitcherMockState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
+        fn create(widget: SwitcherMock) -> Self {
+            SwitcherMockState {
+                child_key: widget.child_key,
+                transitions: widget.transitions.clone(),
+            }
         }
+
         fn adopt_config_from(&mut self, new: Self) {
             if self.child_key != new.child_key {
                 self.transitions.set(self.transitions.get() + 1);
                 self.child_key = new.child_key;
             }
         }
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             EmptyWidget
         }
     }
@@ -1140,7 +1112,7 @@ mod tests {
         }
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
             let __key = Widget::key(&self);
-            StatefulElement::new_with_name(self, ctx, "AnimatedSwitcher", __key)
+            StatefulElement::new_with_name::<Self, SwitcherMockState>(self, ctx, "AnimatedSwitcher", __key)
                 .0
                 .boxed()
         }
@@ -1183,31 +1155,30 @@ mod tests {
         route: usize,
         transitions: Rc<Cell<usize>>,
         header_observer: Rc<Cell<usize>>,
-        updater: StateUpdater<Self>,
     }
-    impl StatefulWidget for NavMock {
-        type State = NavMockState;
-        fn create_state(self) -> Self::State {
+    impl Widget for NavMock {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, NavMockState>(self, ctx, "NavMock", None)
+        }
+    }
+
+    impl State<NavMock> for NavMockState {
+        fn create(widget: NavMock) -> Self {
             NavMockState {
                 route: 0,
-                transitions: self.transitions.clone(),
-                header_observer: self.header_observer.clone(),
-                updater: StateUpdater::new(),
+                transitions: widget.transitions.clone(),
+                header_observer: widget.header_observer.clone(),
             }
         }
-    }
-    impl State<NavMock> for NavMockState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
-        }
-        fn build(&self, ctx: &BuildContext) -> impl Widget {
+
+        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
             // Shell: publish the active route's transition key for the Outlet.
-            ctx.insert_state(RouteKeySlot(route_key(self.route)));
+            ctx.insert_state(RouteKeySlot(route_key(this.route)));
             // Frame: a stateful header sibling + a content area holding the
             // Outlet, wrapped in container-like elements as in `AppShell`.
-            let header = StatefulElement::new_with_name(
+            let header = StatefulElement::new_with_name::<CounterWidget, CounterState>(
                 CounterWidget {
-                    observer: self.header_observer.clone(),
+                    observer: this.header_observer.clone(),
                 },
                 ctx,
                 "Counter",
@@ -1216,7 +1187,7 @@ mod tests {
             .0
             .boxed();
             let outlet = OutletMock {
-                transitions: self.transitions.clone(),
+                transitions: this.transitions.clone(),
             }
             .to_element(ctx);
             let content: AnyElement = DrawWrapper(DrawWrapper(outlet).boxed()).boxed();
@@ -1231,7 +1202,7 @@ mod tests {
         let transitions = Rc::new(Cell::new(0usize));
         let header_observer = Rc::new(Cell::new(0usize));
 
-        let (nav, updater) = StatefulElement::new_with_name(
+        let (nav, updater) = StatefulElement::new_with_name::<NavMock, NavMockState>(
             NavMock {
                 transitions: transitions.clone(),
                 header_observer: header_observer.clone(),
@@ -1272,26 +1243,24 @@ mod tests {
     /// a nested `ConsumerWidget` below it.
     struct ProviderWidget;
     struct ProviderState {
-        #[allow(dead_code)]
-        updater: StateUpdater<Self>,
     }
-    impl StatefulWidget for ProviderWidget {
-        type State = ProviderState;
-        fn create_state(self) -> Self::State {
+    impl Widget for ProviderWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, ProviderState>(self, ctx, "ProviderWidget", None)
+        }
+    }
+
+    impl State<ProviderWidget> for ProviderState {
+        fn create(widget: ProviderWidget) -> Self {
             ProviderState {
-                updater: StateUpdater::new(),
             }
         }
-    }
-    impl State<ProviderWidget> for ProviderState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
-        }
-        fn build(&self, ctx: &BuildContext) -> impl Widget {
+
+        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
             // Provide the inherited value *before* building the child subtree —
             // exactly what `NavigatorState::build` does with its controller.
             ctx.insert_state(ProvidedValue);
-            let (consumer, _u) = StatefulElement::new(ConsumerWidget, ctx);
+            let (consumer, _u) = StatefulElement::new::<ConsumerWidget, ConsumerState>(ConsumerWidget, ctx);
             ElementWidget::new(consumer.boxed())
         }
     }
@@ -1302,22 +1271,20 @@ mod tests {
     /// context" when the controller has not been re-provided this frame.
     struct ConsumerWidget;
     struct ConsumerState {
-        #[allow(dead_code)]
-        updater: StateUpdater<Self>,
     }
-    impl StatefulWidget for ConsumerWidget {
-        type State = ConsumerState;
-        fn create_state(self) -> Self::State {
+    impl Widget for ConsumerWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, ConsumerState>(self, ctx, "ConsumerWidget", None)
+        }
+    }
+
+    impl State<ConsumerWidget> for ConsumerState {
+        fn create(widget: ConsumerWidget) -> Self {
             ConsumerState {
-                updater: StateUpdater::new(),
             }
         }
-    }
-    impl State<ConsumerWidget> for ConsumerState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
-        }
-        fn build(&self, ctx: &BuildContext) -> impl Widget {
+
+        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
             ctx.get_state::<ProvidedValue>().expect(
                 "No provided value in context. Ancestor provider must build before descendant.",
             );
@@ -1344,7 +1311,7 @@ mod tests {
     fn provider_reprovides_inherited_state_before_children_rebuild_on_resize() {
         // Initial build: provider inserts the value, the consumer reads it.
         let ctx = dummy_build_context();
-        let (provider, _u) = StatefulElement::new(ProviderWidget, &ctx);
+        let (provider, _u) = StatefulElement::new::<ProviderWidget, ProviderState>(ProviderWidget, &ctx);
 
         // Simulate a resize: dirty the whole subtree, then rebuild it against a
         // brand-new context whose inherited_states map is empty (a new frame).
@@ -1373,30 +1340,26 @@ mod tests {
             counter: usize,
             observer: Rc<Cell<usize>>,
             live_updater: Rc<RefCell<Option<StateUpdater<Self>>>>,
-            updater: StateUpdater<Self>,
         }
 
-        impl StatefulWidget for ResizeCounterWidget {
-            type State = ResizeCounterState;
-
-            fn create_state(self) -> Self::State {
-                ResizeCounterState {
-                    counter: 1,
-                    observer: self.observer.clone(),
-                    live_updater: self.live_updater.clone(),
-                    updater: StateUpdater::new(),
-                }
+        impl Widget for ResizeCounterWidget {
+            fn to_element(self, ctx: &BuildContext) -> AnyElement {
+                StatefulElement::from_widget::<Self, ResizeCounterState>(self, ctx, "ResizeCounterWidget", None)
             }
         }
 
         impl State<ResizeCounterWidget> for ResizeCounterState {
-            fn init_state(&mut self, updater: StateUpdater<Self>) {
-                self.updater = updater;
+            fn create(widget: ResizeCounterWidget) -> Self {
+                ResizeCounterState {
+                    counter: 1,
+                    observer: widget.observer.clone(),
+                    live_updater: widget.live_updater.clone(),
+                }
             }
 
-            fn build(&self, _ctx: &BuildContext) -> impl Widget {
-                self.observer.set(self.counter);
-                *self.live_updater.borrow_mut() = Some(self.updater);
+            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+                this.observer.set(this.counter);
+                *this.live_updater.borrow_mut() = Some(this.updater());
                 EmptyWidget
             }
         }
@@ -1699,7 +1662,7 @@ mod tests {
                 live_updater,
             };
             let (stateful, _updater) =
-                StatefulElement::new_with_name(counter_widget, ctx, "Counter", None);
+                StatefulElement::new_with_name::<ResizeCounterWidget, ResizeCounterState>(counter_widget, ctx, "Counter", None);
 
             FakeContainer::new(
                 FakeStack::new(vec![
@@ -1884,26 +1847,22 @@ mod tests {
             #[allow(dead_code)]
             hovered: bool,
             observer: Rc<Cell<i32>>,
-            updater: StateUpdater<Self>,
         }
 
-        impl StatefulWidget for TabButtonWidget {
-            type State = TabButtonState;
-
-            fn create_state(self) -> Self::State {
-                TabButtonState {
-                    index: self.index,
-                    selected: self.selected,
-                    hovered: false,
-                    observer: self.observer.clone(),
-                    updater: StateUpdater::new(),
-                }
+        impl Widget for TabButtonWidget {
+            fn to_element(self, ctx: &BuildContext) -> AnyElement {
+                StatefulElement::from_widget::<Self, TabButtonState>(self, ctx, "TabButtonWidget", None)
             }
         }
 
         impl State<TabButtonWidget> for TabButtonState {
-            fn init_state(&mut self, updater: StateUpdater<Self>) {
-                self.updater = updater;
+            fn create(widget: TabButtonWidget) -> Self {
+                TabButtonState {
+                    index: widget.index,
+                    selected: widget.selected,
+                    hovered: false,
+                    observer: widget.observer.clone(),
+                }
             }
 
             // Mirrors `ButtonState::adopt_config_from`: refresh the parent-
@@ -1914,10 +1873,10 @@ mod tests {
                 self.selected = new.selected;
             }
 
-            fn build(&self, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 // Record what this button believes its selection state is —
                 // this is what drives its visible highlight in the real app.
-                self.observer.set(if self.selected { 1 } else { 0 });
+                this.observer.set(if this.selected { 1 } else { 0 });
                 EmptyWidget
             }
         }
@@ -1944,7 +1903,7 @@ mod tests {
                 // ("TextButton") because the names differ. Reproduce that exact
                 // wrapper so reconciliation takes the same path.
                 let (stateful, _updater) =
-                    StatefulElement::new_with_name(widget, ctx, "Unknown", None);
+                    StatefulElement::new_with_name::<TabButtonWidget, TabButtonState>(widget, ctx, "Unknown", None);
                 let wrapped = StatelessElement::wrapper(stateful.boxed(), None, "TextButton");
                 children.push(wrapped.boxed());
             }

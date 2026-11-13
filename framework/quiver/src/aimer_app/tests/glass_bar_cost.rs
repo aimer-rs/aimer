@@ -27,19 +27,6 @@ struct Scene {
     updater: Rc<RefCell<Option<StateUpdater<SceneState>>>>,
 }
 
-impl StatefulWidget for Scene {
-    type State = SceneState;
-
-    fn create_state(self) -> SceneState {
-        SceneState {
-            rows: self.rows,
-            glass: self.glass,
-            hovered: false,
-            updater: self.updater,
-        }
-    }
-}
-
 fn deep_row() -> aimer_widget::AnyWidget {
     let mut row = SizedBox::new()
         .width(Dimension::Px(120.0))
@@ -53,16 +40,23 @@ fn deep_row() -> aimer_widget::AnyWidget {
 }
 
 impl State<Scene> for SceneState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
+    fn create(widget: Scene) -> Self {
+        SceneState {
+            rows: widget.rows,
+            glass: widget.glass,
+            hovered: false,
+            updater: widget.updater,
+        }
     }
+
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let opacity = if self.hovered { 1.0f32 } else { 0.4 };
-        let glass = self.glass;
-        let rows: Vec<aimer_widget::AnyWidget> = (0..self.rows).map(|_| deep_row()).collect();
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        let opacity = if this.hovered { 1.0f32 } else { 0.4 };
+        let glass = this.glass;
+        let rows: Vec<aimer_widget::AnyWidget> = (0..this.rows).map(|_| deep_row()).collect();
         aimer_space::Stack::new().children(vec![
             aimer_space::Positioned::new().layer(3).top(0).box_child(
                 aimer_animation::ImplicitAnimatedBuilder::new(
@@ -100,7 +94,7 @@ impl State<Scene> for SceneState {
 
 impl Widget for Scene {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "GlassBarScene", None)
+        StatefulElement::new_with_name::<Self, SceneState>(self, ctx, "GlassBarScene", None)
             .0
             .boxed()
     }

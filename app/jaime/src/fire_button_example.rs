@@ -22,7 +22,7 @@ use aimer::style::{
     ThemeData,
 };
 use aimer::{
-    AimerApp, Center, Column, Container, Positioned, ScrollAxis, Scrollable, Stack, State, StateUpdater,
+    AimerApp, Center, Column, Container, Positioned, ScrollAxis, Scrollable, Stack, State, StateView, StateUpdater,
     StatefulWidget, Text, Widget,
 };
 use aimer_time::Instant;
@@ -223,41 +223,38 @@ impl Default for FireButtonExample {
 }
 
 pub struct FireButtonExampleState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     /// Shared with the animation closure and the press handler, both of which
     /// outlive any one page rebuild.
     fuel: Rc<Fuel>,
     /// Only drives frames: its value is never read.
     ticker: AnimationController,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for FireButtonExample {
-    type State = FireButtonExampleState;
+impl State<FireButtonExample> for FireButtonExampleState {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
+        self.updater = updater;
+    }
 
-    fn create_state(self) -> Self::State {
+    fn create(widget: FireButtonExample) -> Self {
         let ticker = AnimationController::new(Duration::from_secs(1), curves::LINEAR);
         ticker.set_repeat(true);
         ticker.forward_from_first_tick();
         FireButtonExampleState {
+            updater: StateUpdater::empty(),
             fuel: Rc::new(Fuel::new()),
             ticker,
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<FireButtonExample> for FireButtonExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, ctx: &aimer::BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &aimer::BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         let on_tap = {
-            let fuel = Rc::clone(&self.fuel);
-            let ticker = self.ticker.clone();
-            let updater = self.updater;
+            let fuel = Rc::clone(&this.fuel);
+            let ticker = this.ticker.clone();
+            let updater = this.updater();
             move || {
                 press(&fuel, &ticker);
                 // The fire reads `fuel` itself; this refreshes the caption.
@@ -294,9 +291,9 @@ impl State<FireButtonExample> for FireButtonExampleState {
                 .boxed()]),
         );
         let fire = {
-            let fuel = Rc::clone(&self.fuel);
-            let ticker = self.ticker.clone();
-            AnimatedBuilder::with_child(self.ticker.clone(), stage, move |_, stage| {
+            let fuel = Rc::clone(&this.fuel);
+            let ticker = this.ticker.clone();
+            AnimatedBuilder::with_child(this.ticker.clone(), stage, move |_, stage| {
                 let effect = frame(&fuel, &ticker, Instant::now());
                 DecorationBox::new()
                     .decoration(ShaderEffectDecoration::new(effect))
@@ -304,7 +301,7 @@ impl State<FireButtonExample> for FireButtonExampleState {
             })
         };
 
-        let caption = match self.fuel.stage() {
+        let caption = match this.fuel.stage() {
             Stage::Burning => "Burning. Press the button to let it burn out.",
             Stage::Exhausting | Stage::Out => "Burning out. Press the button to light it again.",
         };

@@ -8,7 +8,7 @@ use aimer::range::Slider;
 use aimer::style::{BoxDecoration, Color, FontWeight, LayoutSpacing, Spacing, TextStyle};
 use aimer::{
     AimerApp, AnyWidget, BuildContext, ChildBuilder, Column, Container, Row, ScrollAxis,
-    Scrollable, SizedBox, State, StateUpdater, StatefulWidget, Text, Widget,
+    Scrollable, SizedBox, State, StateView, StateUpdater, StatefulWidget, Text, Widget,
 };
 
 use crate::theme;
@@ -58,13 +58,10 @@ pub struct GradientExampleState {
     artworks: [ChildBuilder; 2],
     caption: ChildBuilder,
     glass_caption: ChildBuilder,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for GradientExample {
-    type State = GradientExampleState;
-
-    fn create_state(self) -> Self::State {
+impl State<GradientExample> for GradientExampleState {
+    fn create(widget: GradientExample) -> Self {
         GradientExampleState {
             angle: 135.0,
             radius: 1.0,
@@ -108,42 +105,35 @@ impl StatefulWidget for GradientExample {
                         .color(Color::WHITE),
                 ),
             ),
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<GradientExample> for GradientExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater;
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater();
         Column::new().gaps(LayoutSpacing::all(Spacing::Px(16))).children([
             note("Gradients are evaluated per pixel on the GPU, so they stay smooth at any size and scale."),
             Row::new().gaps(LayoutSpacing::all(Spacing::Px(24))).children([
-                control(format!("Linear angle: {:.0}°", self.angle), self.angle, 0.0..360.0, 5.0,
+                control(format!("Linear angle: {:.0}°", this.angle), this.angle, 0.0..360.0, 5.0,
                     move |value| updater.set_state(move |state| state.angle = value)),
-                control(format!("Radial radius: {:.2}", self.radius), self.radius, 0.1..1.5, 0.05,
+                control(format!("Radial radius: {:.2}", this.radius), this.radius, 0.1..1.5, 0.05,
                     move |value| updater.set_state(move |state| state.radius = value)),
             ]).boxed(),
             Row::new().gaps(LayoutSpacing::all(Spacing::Px(24))).children([
-                control(format!("Conic start: {:.0}°", self.start), self.start, 0.0..360.0, 5.0,
+                control(format!("Conic start: {:.0}°", this.start), this.start, 0.0..360.0, 5.0,
                     move |value| updater.set_state(move |state| state.start = value)),
-                control(format!("Corner radius: {:.0} px", self.corners), self.corners, 0.0..60.0, 1.0,
+                control(format!("Corner radius: {:.0} px", this.corners), this.corners, 0.0..60.0, 1.0,
                     move |value| updater.set_state(move |state| state.corners = value)),
             ]).boxed(),
             Row::new().gaps(LayoutSpacing::all(Spacing::Px(16))).children([
-                self.card(0, Gradient::linear()
-                    .angle(self.angle as f32)
+                this.card(0, Gradient::linear()
+                    .angle(this.angle as f32)
                     .stop(0.0, Color::Rgb(255, 94, 98))
                     .stop(1.0, Color::Rgb(255, 195, 113))),
-                self.card(1, Gradient::radial()
-                    .radius(self.radius as f32)
+                this.card(1, Gradient::radial()
+                    .radius(this.radius as f32)
                     .colors([Color::Rgba(255, 255, 255, 230), Color::Rgb(60, 120, 255)])),
-                self.card(2, Gradient::conic()
-                    .from_angle(self.start as f32)
+                this.card(2, Gradient::conic()
+                    .from_angle(this.start as f32)
                     .colors([Color::RED, Color::Rgb(255, 220, 0), Color::Rgb(0, 200, 90),
                         Color::Rgb(0, 140, 255), Color::RED])),
             ]).boxed(),
@@ -156,21 +146,21 @@ impl State<GradientExample> for GradientExampleState {
                             BorderRadius::from(16).notype(),
                             LightEdge::new().width(10.0).notype(),
                         ])
-                        .child(self.artworks[0].clone())
+                        .child(this.artworks[0].clone())
                         .boxed(),
                     ForegroundDecorationBox::new()
                         .decoration(vec![
                             BorderRadius::from(16).notype(),
                             LightEdge::new().width(10.0).notype(),
                         ])
-                        .child(self.artworks[1].clone())
+                        .child(this.artworks[1].clone())
                         .boxed(),
                 ]))
                 .boxed(),
             note("Through: a decoration shown only where the child has coverage, so a rainbow becomes rainbow text."),
             MaskedDecorationBox::new()
                 .decoration(Gradient::rainbow())
-                .child(self.caption.clone())
+                .child(this.caption.clone())
                 .boxed(),
             note("Glass text: a backdrop filter masked by text blurs and brightens what is behind only inside the glyphs."),
             DecorationBox::new()
@@ -184,7 +174,7 @@ impl State<GradientExample> for GradientExampleState {
                 .child(Container::new().padding(LayoutSpacing::all(Spacing::Px(24)))
                     .child(MaskedDecorationBox::new()
                         .decoration(BackdropFilter::new().blur_radius(10.0).brightness(1.8))
-                        .child(self.glass_caption.clone())))
+                        .child(this.glass_caption.clone())))
                 .boxed(),
         ])
     }

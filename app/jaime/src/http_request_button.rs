@@ -116,29 +116,16 @@ pub fn http_request_button_example() -> impl Widget {
 
 struct HttpRequestButtonState {
     request: Request,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for HttpRequestButton {
-    type State = HttpRequestButtonState;
-
-    fn create_state(self) -> Self::State {
-        HttpRequestButtonState {
-            request: Request::Idle,
-            updater: StateUpdater::new(),
-        }
-    }
 }
 
 impl State<HttpRequestButton> for HttpRequestButtonState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: HttpRequestButton) -> Self {
+        HttpRequestButtonState {
+            request: Request::Idle,
+        }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
 
         Container::new()
@@ -154,7 +141,7 @@ impl State<HttpRequestButton> for HttpRequestButtonState {
                             .padding(LayoutSpacing::all(12))
                             .box_child(
                                 Button::new()
-                                    .on_press_async(request_callback(self.updater))
+                                    .on_press_async(request_callback(this.updater()))
                                     .box_child(
                                         Text::new("Fetch example.com")
                                             .text_align(TextAlign::MidCenter)
@@ -168,7 +155,7 @@ impl State<HttpRequestButton> for HttpRequestButtonState {
                         SizedBox::new()
                             .height(16)
                             .boxed(),
-                        Text::new(status_label(&self.request))
+                        Text::new(status_label(&this.request))
                             .text_style(TextStyle::new().color(theme.on_background_color))
                             .boxed(),
                     ]),

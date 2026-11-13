@@ -50,8 +50,8 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventResult, EventTreeRole,
-    LayoutElement, PointerKey, Rebuildable, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, VisitorElement, Widget,
+    LayoutElement, PointerKey, Rebuildable, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    VisitorElement, Widget,
 };
 
 use crate::target::{DragTargetState, HasChild, TargetChild, clear_hover, enter_hover};
@@ -181,7 +181,7 @@ fn matches_extensions(extensions: Option<&[String]>, path: &Path) -> bool {
 
 impl Widget for DropZone<HasChild> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::from_widget(self, ctx, "DropZone", None)
+        StatefulElement::from_widget::<Self, DropZoneLiveState>(self, ctx, "DropZone", None)
     }
 
     fn debug_name(&self) -> &'static str {
@@ -199,28 +199,18 @@ pub struct DropZoneLiveState {
     /// The paths of the drag being received, filled as the platform reports
     /// them and drained by the first queued mutation to run.
     pending: Rc<RefCell<Vec<PathBuf>>>,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for DropZone<HasChild> {
-    type State = DropZoneLiveState;
-
-    fn create_state(self) -> Self::State {
-        DropZoneLiveState {
-            id: crate::target::next_target_id(),
-            hover: DragTargetState::default(),
-            extensions: self.extensions.clone(),
-            on_drop: self.on_drop.clone(),
-            child: self.child.clone(),
-            pending: Rc::new(RefCell::new(Vec::new())),
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<DropZone<HasChild>> for DropZoneLiveState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: DropZone<HasChild>) -> Self {
+        DropZoneLiveState {
+            id: crate::target::next_target_id(),
+            hover: DragTargetState::default(),
+            extensions: widget.extensions.clone(),
+            on_drop: widget.on_drop.clone(),
+            child: widget.child.clone(),
+            pending: Rc::new(RefCell::new(Vec::new())),
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -229,20 +219,19 @@ impl State<DropZone<HasChild>> for DropZoneLiveState {
         self.child = new.child;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let content = self
-            .child
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let content = this.child
             .as_ref()
-            .map(|build| build(self.hover))
+            .map(|build| build(this.hover))
             .unwrap_or_else(|| Widget::boxed(aimer_container::ZeroSizedBox));
 
         DropZoneGate {
             child: content,
             logic: Rc::new(ZoneLogic {
-                id: self.id,
-                extensions: self.extensions.clone(),
-                pending: self.pending.clone(),
-                updater: self.updater,
+                id: this.id,
+                extensions: this.extensions.clone(),
+                pending: this.pending.clone(),
+                updater: this.updater(),
             }),
         }
     }

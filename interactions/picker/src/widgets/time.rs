@@ -13,7 +13,7 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventResult, FocusNode, LayoutElement, PointerKey,
-    Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    Rebuildable, State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget,
 };
 
 use crate::{PICKER_FIELD_HEIGHT, PICKER_FOOTER_HEIGHT, PickerOutcome, TimeOfDay, TimePicker};
@@ -149,12 +149,10 @@ impl TimePickerViewState {
     }
 }
 
-impl StatefulWidget for TimePickerView {
-    type State = TimePickerViewState;
-
-    fn create_state(self) -> Self::State {
+impl State<TimePickerView> for TimePickerViewState {
+    fn create(widget: TimePickerView) -> Self {
         let runtime = Rc::new(TimePickerRuntime {
-            picker: RefCell::new(self.picker.clone()),
+            picker: RefCell::new(widget.picker.clone()),
             focus_node: FocusNode::new(),
             focused: Cell::new(false),
             active_column: Cell::new(0),
@@ -164,14 +162,10 @@ impl StatefulWidget for TimePickerView {
             overlay_active: Cell::new(false),
         });
         TimePickerViewState {
-            model: self,
+            model: widget,
             runtime,
         }
     }
-}
-
-impl State<TimePickerView> for TimePickerViewState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
         if self.model.picker != new.model.picker {
@@ -180,13 +174,13 @@ impl State<TimePickerView> for TimePickerViewState {
         self.model = new.model;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         TimePickerSurface {
-            runtime: Rc::clone(&self.runtime),
-            width: self.model.width,
-            height: self.model.height,
-            use_24_hours: self.model.use_24_hours,
-            on_selection: self.model.on_selection.clone(),
+            runtime: Rc::clone(&this.runtime),
+            width: this.model.width,
+            height: this.model.height,
+            use_24_hours: this.model.use_24_hours,
+            on_selection: this.model.on_selection.clone(),
             tokens: theme::tokens(ctx),
             popup: false,
         }
@@ -195,7 +189,7 @@ impl State<TimePickerView> for TimePickerViewState {
 
 impl Widget for TimePickerView {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "TimePickerView", None)
+        StatefulElement::new_with_name::<Self, TimePickerViewState>(self, ctx, "TimePickerView", None)
             .0
             .boxed()
     }

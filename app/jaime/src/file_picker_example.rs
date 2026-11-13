@@ -94,7 +94,6 @@ impl FilePickerExample {
 struct FilePickerExampleState {
     log: Vec<String>,
     busy: bool,
-    updater: StateUpdater<Self>,
 }
 
 impl FilePickerExampleState {
@@ -103,18 +102,6 @@ impl FilePickerExampleState {
             self.log.remove(0);
         }
         self.log.push(line);
-    }
-}
-
-impl StatefulWidget for FilePickerExample {
-    type State = FilePickerExampleState;
-
-    fn create_state(self) -> Self::State {
-        FilePickerExampleState {
-            log: vec!["Press a button to open the system picker.".to_owned()],
-            busy: false,
-            updater: StateUpdater::new(),
-        }
     }
 }
 
@@ -207,14 +194,14 @@ fn hex_prefix(bytes: &[u8]) -> String {
 }
 
 impl State<FilePickerExample> for FilePickerExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: FilePickerExample) -> Self {
+        FilePickerExampleState {
+            log: vec!["Press a button to open the system picker.".to_owned()],
+            busy: false,
+        }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
         let operations = [
             Operation::OneFile,
@@ -260,14 +247,14 @@ impl State<FilePickerExample> for FilePickerExampleState {
                                         action(
                                             operation.title(),
                                             &theme,
-                                            self.busy,
-                                            operation_callback(operation, self.updater),
+                                            this.busy,
+                                            operation_callback(operation, this.updater()),
                                         )
                                     }))
                                     .boxed(),
                                 Column::new()
                                     .children(
-                                        self.log
+                                        this.log
                                             .iter()
                                             .map(|line| {
                                                 Text::new(line.clone())
@@ -347,7 +334,7 @@ mod tests {
 
     #[test]
     fn the_log_keeps_only_the_most_recent_lines() {
-        let mut state = FilePickerExample::new().create_state();
+        let mut state = FilePickerExample::new().create_state::<FilePickerExampleState>();
 
         for n in 0..MAX_LOG_LINES + 5 {
             state.push(format!("line {n}"));

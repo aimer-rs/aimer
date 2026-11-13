@@ -24,25 +24,19 @@ struct Root {
     updater: Rc<RefCell<Option<StateUpdater<RootState>>>>,
 }
 
-impl StatefulWidget for Root {
-    type State = RootState;
-
-    fn create_state(self) -> RootState {
+impl State<Root> for RootState {
+    fn create(widget: Root) -> Self {
         RootState {
             target: 0.0,
-            values: self.values,
-            updater: self.updater,
+            values: widget.values,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Root> for RootState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let values = self.values.clone();
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        let values = this.values.clone();
         let rows: Vec<aimer_widget::AnyWidget> = (0..30u8)
             .map(|i| {
                 SizedBox::new()
@@ -54,7 +48,7 @@ impl State<Root> for RootState {
             .collect();
         Column::new().children(vec![
             ImplicitAnimatedBuilder::new(
-                self.target,
+                this.target,
                 Duration::from_millis(300),
                 curves::LINEAR,
                 move |value: &f32| {
@@ -73,7 +67,7 @@ impl State<Root> for RootState {
 
 impl Widget for Root {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ImplicitRoot", None)
+        StatefulElement::new_with_name::<Self, RootState>(self, ctx, "ImplicitRoot", None)
             .0
             .boxed()
     }

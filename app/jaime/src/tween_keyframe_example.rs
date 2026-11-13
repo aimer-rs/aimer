@@ -9,7 +9,7 @@ use aimer::style::{
     BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextStyle, Theme, ThemeData,
 };
 use aimer::{
-    BuildContext, Column, Container, Dimension, SizedBox, State, StateUpdater, StatefulWidget,
+    BuildContext, Column, Container, Dimension, SizedBox, State, StateView, StateUpdater, StatefulWidget,
     Text, Widget, ZeroSizedBox,
 };
 
@@ -64,6 +64,7 @@ pub fn tween_keyframe_example() -> impl Widget {
 }
 
 #[derive(StatefulWidget)]
+#[state(TweenKeyframeState)]
 struct TweenKeyframeExample;
 
 struct TweenKeyframeState {
@@ -74,10 +75,8 @@ struct TweenKeyframeState {
     timeline: KeyframeTimeline,
 }
 
-impl StatefulWidget for TweenKeyframeExample {
-    type State = TweenKeyframeState;
-
-    fn create_state(self) -> Self::State {
+impl State<TweenKeyframeExample> for TweenKeyframeState {
+    fn create(widget: TweenKeyframeExample) -> Self {
         let fade = fade_track();
         let width = width_track();
         let timeline = KeyframeTimeline::new(Duration::ZERO)
@@ -97,12 +96,8 @@ impl StatefulWidget for TweenKeyframeExample {
         state.timeline.forward_from_first_tick();
         state
     }
-}
 
-impl State<TweenKeyframeExample> for TweenKeyframeState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
         let accent = theme.primary_color;
         let heading = move |text: &'static str| {
@@ -125,7 +120,7 @@ impl State<TweenKeyframeExample> for TweenKeyframeState {
                 .boxed()
         };
 
-        let tween = AnimatedBuilder::tween(self.tween.clone(), move |width| {
+        let tween = AnimatedBuilder::tween(this.tween.clone(), move |width| {
             Container::new()
                 .width(Dimension::Px(width))
                 .height(Dimension::Px(BAR_HEIGHT))
@@ -133,7 +128,7 @@ impl State<TweenKeyframeExample> for TweenKeyframeState {
                 .child(ZeroSizedBox)
         });
 
-        let stretch = AnimatedBuilder::keyframes(self.stretch.clone(), move |(width, height)| {
+        let stretch = AnimatedBuilder::keyframes(this.stretch.clone(), move |(width, height)| {
             Container::new()
                 .width(Dimension::Px(width))
                 .height(Dimension::Px(height))
@@ -141,8 +136,8 @@ impl State<TweenKeyframeExample> for TweenKeyframeState {
                 .child(ZeroSizedBox)
         });
 
-        let (fade, width) = (self.fade.clone(), self.width.clone());
-        let timeline = AnimatedBuilder::timeline(self.timeline.clone(), move |frame| {
+        let (fade, width) = (this.fade.clone(), this.width.clone());
+        let timeline = AnimatedBuilder::timeline(this.timeline.clone(), move |frame| {
             Container::new()
                 .width(Dimension::Px(frame.sample(&width)))
                 .height(Dimension::Px(BAR_HEIGHT))
@@ -152,9 +147,9 @@ impl State<TweenKeyframeExample> for TweenKeyframeState {
 
         let replay = {
             let this = (
-                self.tween.clone(),
-                self.stretch.clone(),
-                self.timeline.clone(),
+                this.tween.clone(),
+                this.stretch.clone(),
+                this.timeline.clone(),
             );
             Button::new()
                 .on_press(move || {

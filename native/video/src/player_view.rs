@@ -8,7 +8,7 @@ use aimer_modal::{Modal, ModalHandle};
 use aimer_space::{Align, Alignment, Stack};
 use aimer_style::{BoxDecoration, LayoutSpacing};
 use aimer_widget::base::{BuildContext, Color, WindowHandle};
-use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, State, StateView, StateUpdater, StatefulElement, Widget};
 
 use crate::controls::BAR_HEIGHT;
 use crate::{CaptionStyle, CaptionTrack, Captions, Chapters, Video, VideoControls, VideoFit, VideoPlayer};
@@ -194,38 +194,28 @@ impl Session {
 pub struct VideoPlayerViewState {
     config: VideoPlayerView,
     session: Rc<Session>,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for VideoPlayerView {
-    type State = VideoPlayerViewState;
-
-    fn create_state(self) -> VideoPlayerViewState {
-        let session = self.session.clone().unwrap_or_else(Session::new);
-        VideoPlayerViewState {
-            config: self,
-            session,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<VideoPlayerView> for VideoPlayerViewState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: VideoPlayerView) -> Self {
+        let session = widget.session.clone().unwrap_or_else(Session::new);
+        VideoPlayerViewState {
+            config: widget,
+            session,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
         self.config = new.config;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let config = &self.config;
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let config = &this.config;
         let mut layers = Stack::new();
         if let Some(player) = config.player.clone() {
             layers = layers.add_child(Video::new().player(player.clone()).fit(config.fit));
 
-            let captions_on = self.session.captions_on.get();
+            let captions_on = this.session.captions_on.get();
             if let Some(track) = config.captions.clone()
                 && captions_on
             {
@@ -252,8 +242,8 @@ impl State<VideoPlayerView> for VideoPlayerViewState {
                 .shared_chapters(config.chapters.clone())
                 .accent(config.accent);
             if config.captions.is_some() {
-                let session = self.session.clone();
-                let updater = self.updater;
+                let session = this.session.clone();
+                let updater = this.updater();
                 controls = controls.captions_button(captions_on, move |on| {
                     session.captions_on.set(on);
                     updater.set_state(|_| {});
@@ -261,7 +251,7 @@ impl State<VideoPlayerView> for VideoPlayerViewState {
             }
             if config.fullscreen_button {
                 let in_fullscreen = config.session.is_some();
-                let session = self.session.clone();
+                let session = this.session.clone();
                 let view = config.clone();
                 let window = ctx.window().clone();
                 controls = controls.fullscreen_button(in_fullscreen, move |enter| {
@@ -284,7 +274,7 @@ impl State<VideoPlayerView> for VideoPlayerViewState {
 
 impl Widget for VideoPlayerView {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "VideoPlayerView", None).0.boxed()
+        StatefulElement::new_with_name::<Self, VideoPlayerViewState>(self, ctx, "VideoPlayerView", None).0.boxed()
     }
 
     fn debug_name(&self) -> &'static str {

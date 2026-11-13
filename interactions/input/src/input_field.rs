@@ -484,8 +484,8 @@ use aimer_style::{BoxDecoration, LayoutSpacing, TextAlign, TextStyle};
 use aimer_venus::{ScopeId, TaskScope, Venus};
 use aimer_widget::base::{BuildContext, Color, Colors};
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, FocusBehavior, FocusNode, Focusable, Key, State,
-    StateUpdater, StatefulElement, StatefulWidget, Widget,
+    AnyElement, AnyWidget, ChildBuilder, FocusBehavior, FocusNode, Focusable, Key, State, StateView,
+    StateUpdater, StatefulElement, Widget,
 };
 
 use crate::TextEditingController;
@@ -628,14 +628,6 @@ pub struct TextField {
     widget_key: Option<Key>,
 }
 
-impl StatefulWidget for TextField {
-    type State = TextFieldState;
-
-    fn create_state(self) -> Self::State {
-        self.create_state_with_config(self.config())
-    }
-}
-
 impl Widget for TextField {
     fn key(&self) -> Option<Key> {
         self.widget_key.clone()
@@ -643,7 +635,7 @@ impl Widget for TextField {
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let __key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "TextField", __key)
+        StatefulElement::new_with_name::<Self, TextFieldState>(self, ctx, "TextField", __key)
             .0
             .boxed()
     }
@@ -668,7 +660,6 @@ pub struct TextFieldState {
     caret_scope: RefCell<Option<TaskScope>>,
     focus_node: FocusNode,
     provided_focus_node: bool,
-    updater: StateUpdater<Self>,
     /// What the chrome around the field is built from, when it has chrome.
     visual: Rc<VisualFlags>,
 }
@@ -679,12 +670,6 @@ impl TextFieldState {
     #[inline]
     pub(crate) fn config(&self) -> &RawFieldConfig {
         &self.config
-    }
-
-    /// Attaches the updater supplied by the stateful element.
-    #[inline]
-    pub(crate) fn init(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
     }
 
     /// Replaces widget configuration while retaining mounted editing state.
@@ -826,19 +811,16 @@ impl TextFieldState {
 }
 
 impl State<TextField> for TextFieldState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.init(updater);
+    fn create(widget: TextField) -> Self {
+        widget.create_state_with_config(widget.config())
     }
 
     fn adopt_config_from(&mut self, new: Self) {
         self.adopt(new);
     }
 
-    fn build(&self, _: &BuildContext) -> impl Widget {
-        self.build_field()
+    fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+        this.build_field()
     }
 }
 
@@ -973,7 +955,6 @@ impl TextField {
             caret_scope: RefCell::new(None),
             focus_node: self.focus_node.clone().unwrap_or_default(),
             provided_focus_node: self.focus_node.is_some(),
-            updater: StateUpdater::empty(),
         }
     }
 
@@ -1303,6 +1284,7 @@ impl Default for TextField {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use std::cell::Cell;
     use std::rc::Rc;
     use std::time::Duration;
@@ -1333,7 +1315,7 @@ mod tests {
             .hint("Message")
             .max_length(Some(7))
             .read_only(true)
-            .create_state();
+            .create_state::<TextFieldState>();
 
         assert_eq!(&*state.config.hint, "Message");
         assert_eq!(state.config.max_length, Some(7));
@@ -1345,7 +1327,7 @@ mod tests {
     fn text_field_is_always_single_line_and_number_is_only_an_input_hint() {
         let state = TextField::new()
             .input_type(InputType::Number)
-            .create_state();
+            .create_state::<TextFieldState>();
 
         assert_eq!(state.config.input_type, InputType::Number);
         assert_eq!(state.config.min_lines, Some(1));
@@ -1355,7 +1337,7 @@ mod tests {
 
     #[test]
     fn created_state_starts_with_a_visible_caret() {
-        let state = TextField::new().create_state();
+        let state = TextField::new().create_state::<TextFieldState>();
 
         assert!(state.caret().is_visible());
         assert_eq!(state.caret().period(), CaretBlink::DEFAULT_PERIOD);
@@ -1365,7 +1347,7 @@ mod tests {
     fn a_custom_caret_builder_is_retained_in_field_configuration() {
         let state = TextField::new()
             .caret(|context| DefaultCaret::new(context, Colors::default()))
-            .create_state();
+            .create_state::<TextFieldState>();
 
         assert!(state.config.caret_builder.is_some());
     }
@@ -1375,7 +1357,7 @@ mod tests {
         let state = TextField::new()
             .caret(|context| DefaultCaret::new(context, Colors::default()))
             .builtin_caret()
-            .create_state();
+            .create_state::<TextFieldState>();
 
         assert!(state.config.caret_builder.is_none());
     }
@@ -1389,7 +1371,7 @@ mod tests {
                 seen.set(seen.get() + 1);
                 DefaultCaret::new(context, Colors::default())
             })
-            .create_state();
+            .create_state::<TextFieldState>();
         let context = dummy_build_context(200.0, 40.0);
 
         let _first = Widget::to_element(state.focusable_field(), &context);
@@ -1400,13 +1382,13 @@ mod tests {
 
     #[test]
     fn adopting_a_configuration_keeps_the_caret_phase() {
-        let mut state = TextField::new().hint("before").create_state();
+        let mut state = TextField::new().hint("before").create_state::<TextFieldState>();
         let start = AnimInstant::now();
         state.caret().tick(start);
         state.caret().tick(start + HALF);
         assert!(!state.caret().is_visible());
 
-        let rebuilt = TextField::new().hint("after").create_state();
+        let rebuilt = TextField::new().hint("after").create_state::<TextFieldState>();
         State::<TextField>::adopt_config_from(&mut state, rebuilt);
 
         assert_eq!(&*state.config.hint, "after");
@@ -1420,11 +1402,11 @@ mod tests {
 
     #[test]
     fn adopting_a_configuration_does_not_restart_the_blink() {
-        let mut state = TextField::new().create_state();
+        let mut state = TextField::new().create_state::<TextFieldState>();
         let start = AnimInstant::now();
         state.caret().tick(start);
 
-        State::<TextField>::adopt_config_from(&mut state, TextField::new().create_state());
+        State::<TextField>::adopt_config_from(&mut state, TextField::new().create_state::<TextFieldState>());
 
         assert!(state.caret().tick(start + HALF));
         assert!(!state.caret().is_visible());
@@ -1619,7 +1601,7 @@ mod focus_tests {
             });
         let build_context = dummy_build_context(FIELD_WIDTH, FIELD_HEIGHT);
         let (element, updater) =
-            StatefulElement::new_with_name(widget, &build_context, "TextField", None);
+            StatefulElement::new_with_name::<TextField, TextFieldState>(widget, &build_context, "TextField", None);
         let element = element.boxed();
         element.update(&build_context);
         let mut dispatcher = EventDispatcher::new();

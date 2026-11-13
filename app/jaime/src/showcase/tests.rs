@@ -455,7 +455,7 @@ fn report_cached_bounds_against_the_render_tree() {
 
 #[test]
 fn the_default_selection_is_the_first_registered_example() {
-    let state = ExampleShowcase::new().create_state();
+    let state = ExampleShowcase::new().create_state::<ExampleShowcaseState>();
 
     assert_eq!(state.selection.read().selected, EXAMPLES[0]);
 }

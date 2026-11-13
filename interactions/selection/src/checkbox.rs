@@ -2,8 +2,7 @@ use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, State, StateUpdater, StatefulElement, StatefulWidget,
-    Widget,
+    AnyElement, AnyWidget, ChildBuilder, State, StateView, StateUpdater, StatefulElement, Widget,
 };
 
 use crate::binary::{Binary, ChangeCallback, VisualBuilder};
@@ -171,27 +170,24 @@ impl Checkbox {
     }
 }
 
-type CheckboxState = Binary<CheckboxValue, CheckboxValue>;
-
-impl StatefulWidget for Checkbox {
-    type State = CheckboxState;
-
-    fn create_state(self) -> Self::State {
-        Binary::new(
-            self.value,
-            Mark::Box {
-                check: self.value.glyph(),
-            },
-            Some(self.value.toggled()),
-            self.on_change,
-            self.common,
-            self.builder,
-        )
-    }
-}
+#[doc(hidden)]
+pub type CheckboxState = Binary<CheckboxValue, CheckboxValue>;
 
 impl State<Checkbox> for CheckboxState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn create(widget: Checkbox) -> Self {
+        Binary::new(
+            widget.value,
+            Mark::Box {
+                check: widget.value.glyph(),
+            },
+            Some(widget.value.toggled()),
+            widget.on_change,
+            widget.common,
+            widget.builder,
+        )
+    }
+
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.init(updater);
     }
 
@@ -199,14 +195,14 @@ impl State<Checkbox> for CheckboxState {
         self.adopt(new);
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.render(ctx)
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.render(ctx)
     }
 }
 
 impl Widget for Checkbox {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Checkbox", None)
+        StatefulElement::new_with_name::<Self, CheckboxState>(self, ctx, "Checkbox", None)
             .0
             .boxed()
     }

@@ -17,7 +17,7 @@ use aimer_svg::{StaticSvg, Svg, SvgStyle};
 use aimer_text::Text;
 use aimer_time::Instant;
 use aimer_widget::base::{BuildContext, Color};
-use aimer_widget::{AnyElement, AnyWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, AnyWidget, State, StateView, StateUpdater, StatefulElement, Widget};
 
 use crate::controls_state::ControlsVisibility;
 use crate::frame_watch::FrameWatch;
@@ -148,57 +148,54 @@ impl VideoControls {
 }
 
 pub struct VideoControlsState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     config: VideoControls,
     visibility: Rc<Cell<ControlsVisibility>>,
     /// Whether the last build showed the controls.
     shown: Rc<Cell<bool>>,
     /// Where the seek bar is being dragged to, in seconds.
     scrub: Rc<Cell<Option<f64>>>,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for VideoControls {
-    type State = VideoControlsState;
-
-    fn create_state(self) -> VideoControlsState {
-        VideoControlsState {
-            config: self,
-            visibility: Rc::new(Cell::new(ControlsVisibility::default())),
-            shown: Rc::new(Cell::new(false)),
-            scrub: Rc::new(Cell::new(None)),
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<VideoControls> for VideoControlsState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
+    }
+
+    fn create(widget: VideoControls) -> Self {
+        VideoControlsState {
+            updater: StateUpdater::empty(),
+            config: widget,
+            visibility: Rc::new(Cell::new(ControlsVisibility::default())),
+            shown: Rc::new(Cell::new(false)),
+            scrub: Rc::new(Cell::new(None)),
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
         self.config = new.config;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let mut layers = Stack::new();
-        let Some(player) = self.config.player.clone() else {
+        let Some(player) = this.config.player.clone() else {
             return layers;
         };
-        let updater = self.updater;
+        let updater = this.updater();
         // Whether the player is active, from its own state: no platform call,
         // so a paused video costs nothing even while this rebuilds.
         let playing = player.wants_frames();
         let now = Instant::now();
-        let visibility = self.visibility.get();
-        let visible = visibility.visible(now, playing) || self.scrub.get().is_some();
-        self.shown.set(visible);
+        let visibility = this.visibility.get();
+        let visible = visibility.visible(now, playing) || this.scrub.get().is_some();
+        this.shown.set(visible);
 
         // The picture: a tap toggles the controls on a touch screen, and
         // plays or pauses with a mouse.
         let tap_area = {
             let player = player.clone();
-            let visibility = self.visibility.clone();
+            let visibility = this.visibility.clone();
             GestureDetector::new()
                 .on_tap(move || {
                     let mut state = visibility.get();
@@ -223,9 +220,9 @@ impl State<VideoControls> for VideoControlsState {
         // once more when they should hide.
         let watch = {
             let player = player.clone();
-            let visibility = self.visibility.clone();
-            let shown = self.shown.clone();
-            let scrub = self.scrub.clone();
+            let visibility = this.visibility.clone();
+            let shown = this.shown.clone();
+            let scrub = this.scrub.clone();
             FrameWatch::new(move || {
                 let playing = player.wants_frames();
                 let now = Instant::now();
@@ -246,19 +243,19 @@ impl State<VideoControls> for VideoControlsState {
                     .left(0)
                     .right(0)
                     .bottom(0)
-                    .child(self.bottom_bar(&player, width)),
+                    .child(this.bottom_bar(&player, width)),
             );
             if visibility.is_touch() {
                 layers = layers.add_child(
                     Align::new()
                         .alignment(Alignment::MidCenter)
-                        .child(self.center_button(&player)),
+                        .child(this.center_button(&player)),
                 );
             }
         }
 
-        let visibility = self.visibility.clone();
-        let shown = self.shown.clone();
+        let visibility = this.visibility.clone();
+        let shown = this.shown.clone();
         Stack::new().add_child(MouseRegion::new()
             .on_pointer_activity(move |source| {
                 let mut state = visibility.get();
@@ -500,7 +497,7 @@ pub(crate) fn format_time(time: Duration) -> String {
 
 impl Widget for VideoControls {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "VideoControls", None).0.boxed()
+        StatefulElement::new_with_name::<Self, VideoControlsState>(self, ctx, "VideoControls", None).0.boxed()
     }
 
     fn debug_name(&self) -> &'static str {

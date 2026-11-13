@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::ext::IdentExt;
 use syn::{Data, DeriveInput, Fields, parse2};
 
 /// Emits the item together with the `Widget` impl that hands it to a
@@ -10,11 +11,14 @@ use syn::{Data, DeriveInput, Fields, parse2};
 /// compiler reports the syntax error on the user's own tokens rather than on
 /// tokens this macro invented.
 pub fn generate_stateful_widget_impl(input: TokenStream) -> TokenStream {
-    let item = match parse2::<DeriveInput>(input.clone()) {
+    let mut item = match parse2::<DeriveInput>(input.clone()) {
         Ok(item) => item,
         Err(_) => return input,
     };
     let widget_impl = stateful_widget_impl(&item);
+    // An attribute macro has no helper attributes: `#[state(..)]` would reach the
+    // compiler as an unknown attribute, so it is consumed here.
+    item.attrs.retain(|attr| !attr.path().is_ident("state"));
 
     quote! {
         #item
@@ -33,8 +37,42 @@ pub fn derive_stateful_widget(input: TokenStream) -> TokenStream {
     }
 }
 
+/// The `State` implementation the element creates for this widget: the type
+/// named by `#[state(MyState)]`, or, without the attribute, the widget's name
+/// followed by `State` (see [`default_state_type`]).
+///
+/// A `#[state]` that does not parse as a type is an error rather than a silent
+/// fall back to the default, so a typo is reported where it was written.
+fn state_type(input: &DeriveInput) -> Result<syn::Type, syn::Error> {
+    match input.attrs.iter().find(|attr| attr.path().is_ident("state")) {
+        Some(attr) => attr.parse_args::<syn::Type>(),
+        None => Ok(default_state_type(input)),
+    }
+}
+
+/// `Counter` -> `CounterState`, and `Provider<T, W>` -> `ProviderState<T, W>`.
+///
+/// The widget's own generic arguments (type, lifetime and const) are applied to
+/// the state, so a generic widget pairs with a state that is generic the same
+/// way. The name carries the widget's span: when no such state exists the
+/// compiler's "cannot find type" points at the widget, which is where the
+/// missing state or the `#[state(..)]` override has to be written.
+fn default_state_type(input: &DeriveInput) -> syn::Type {
+    // `r#Type` names the type `Type`; the prefix is not part of the state's name.
+    let name = syn::Ident::new(
+        &format!("{}State", input.ident.unraw()),
+        input.ident.span(),
+    );
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    syn::parse_quote!(#name #ty_generics)
+}
+
 /// Both forms share the generated `Widget` impl.
 fn stateful_widget_impl(input: &DeriveInput) -> TokenStream {
+    let state_ty = match state_type(input) {
+        Ok(state_ty) => state_ty,
+        Err(err) => return err.to_compile_error(),
+    };
     let item_name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -69,7 +107,14 @@ fn stateful_widget_impl(input: &DeriveInput) -> TokenStream {
                 // The key is read before the widget is handed over, because the
                 // element takes it by value and moves its props into the state.
                 let __key = #key_pass;
-                aimer::widget::StatefulElement::from_widget(self, ctx, stringify!(#item_name), __key)
+                // The state is named here, in a body, and never in a signature, so
+                // it can stay private to the module that defines it.
+                aimer::widget::StatefulElement::from_widget::<Self, #state_ty>(
+                    self,
+                    ctx,
+                    stringify!(#item_name),
+                    __key,
+                )
             }
 
             fn debug_name(&self) -> &'static str {
@@ -88,6 +133,7 @@ mod tests {
     #[test]
     fn generated_widget_uses_recoverable_stateful_conversion() {
         let output = generate_stateful_widget_impl(quote! {
+            #[state(PanicBoundaryState)]
             struct PanicBoundaryWidget;
         })
         .to_string();
@@ -102,6 +148,7 @@ mod tests {
     fn the_derive_leaves_the_struct_to_the_compiler() {
         let output = derive_stateful_widget(quote! {
             #[derive(StatefulWidget)]
+            #[state(CounterState)]
             struct CounterWidget {
                 initial_count: i32,
             }
@@ -115,6 +162,7 @@ mod tests {
     #[test]
     fn the_derive_and_the_attribute_wire_the_widget_up_the_same_way() {
         let item = quote! {
+            #[state(CounterState)]
             struct CounterWidget {
                 key: Option<Key>,
             }
@@ -135,6 +183,7 @@ mod tests {
     #[test]
     fn the_derive_supports_an_enum() {
         let output = derive_stateful_widget(quote! {
+            #[state(NotAWidgetState)]
             enum NotAWidget {
                 Nope,
             }
@@ -142,5 +191,149 @@ mod tests {
         .to_string();
 
         assert!(output.contains("impl aimer :: widget :: Widget for NotAWidget"));
+    }
+
+    #[test]
+    fn the_state_is_named_in_the_body_never_in_a_signature() {
+        let output = derive_stateful_widget(quote! {
+            #[state(PrivateState)]
+            struct Counter;
+        })
+        .to_string();
+
+        assert!(output.contains("from_widget :: < Self , PrivateState >"));
+        // Only `to_element`'s body mentions it, so a private state does not leak.
+        assert_eq!(output.matches("PrivateState").count(), 1);
+    }
+
+    #[test]
+    fn a_generic_widget_names_a_generic_state() {
+        let output = derive_stateful_widget(quote! {
+            #[state(ProviderState<T, W>)]
+            struct Provider<T, W> {
+                value: T,
+                child: W,
+            }
+        })
+        .to_string();
+
+        assert!(output.contains("from_widget :: < Self , ProviderState < T , W > >"));
+    }
+
+    #[test]
+    fn the_attribute_form_consumes_the_helper_attribute() {
+        let output = generate_stateful_widget_impl(quote! {
+            #[state(CounterState)]
+            struct Counter;
+        })
+        .to_string();
+
+        // Re-emitted item: `#[state(..)]` would be an unknown attribute on it.
+        let (item, _) = output.split_once("impl aimer").expect("emits the Widget impl");
+        assert!(!item.contains("# [state"), "{item}");
+    }
+
+    #[test]
+    fn without_a_state_attribute_the_state_is_the_struct_name_plus_state() {
+        let output = derive_stateful_widget(quote! {
+            struct Counter;
+        })
+        .to_string();
+
+        assert!(output.contains("from_widget :: < Self , CounterState >"), "{output}");
+        assert!(!output.contains("compile_error"), "{output}");
+    }
+
+    #[test]
+    fn the_attribute_form_defaults_the_state_the_same_way() {
+        let output = generate_stateful_widget_impl(quote! {
+            struct Counter;
+        })
+        .to_string();
+
+        assert!(output.contains("from_widget :: < Self , CounterState >"), "{output}");
+    }
+
+    #[test]
+    fn an_explicit_state_attribute_overrides_the_default() {
+        let output = derive_stateful_widget(quote! {
+            #[state(Elsewhere)]
+            struct Counter;
+        })
+        .to_string();
+
+        assert!(output.contains("from_widget :: < Self , Elsewhere >"), "{output}");
+        assert!(!output.contains("CounterState"), "{output}");
+    }
+
+    #[test]
+    fn the_default_state_of_a_generic_widget_takes_the_same_arguments() {
+        let output = derive_stateful_widget(quote! {
+            struct Provider<T, W> {
+                value: T,
+                child: W,
+            }
+        })
+        .to_string();
+
+        assert!(
+            output.contains("from_widget :: < Self , ProviderState < T , W > >"),
+            "{output}"
+        );
+    }
+
+    #[test]
+    fn the_default_state_carries_lifetimes_and_const_arguments() {
+        let output = derive_stateful_widget(quote! {
+            struct Slice<'a, const N: usize> {
+                items: &'a [u8; N],
+            }
+        })
+        .to_string();
+
+        assert!(
+            output.contains("from_widget :: < Self , SliceState < 'a , N > >"),
+            "{output}"
+        );
+    }
+
+    #[test]
+    fn the_default_state_of_an_enum_and_a_tuple_struct_follows_the_item_name() {
+        let enum_output = derive_stateful_widget(quote! {
+            enum Choice {
+                Yes,
+                No,
+            }
+        })
+        .to_string();
+        let tuple_output = derive_stateful_widget(quote! {
+            struct Pair(i32, i32);
+        })
+        .to_string();
+
+        assert!(enum_output.contains("from_widget :: < Self , ChoiceState >"), "{enum_output}");
+        assert!(tuple_output.contains("from_widget :: < Self , PairState >"), "{tuple_output}");
+    }
+
+    #[test]
+    fn a_raw_identifier_does_not_leak_into_the_default_name() {
+        let output = derive_stateful_widget(quote! {
+            struct r#Match;
+        })
+        .to_string();
+
+        assert!(output.contains("from_widget :: < Self , MatchState >"), "{output}");
+    }
+
+    #[test]
+    fn a_state_attribute_without_a_type_is_still_a_compile_error() {
+        let output = derive_stateful_widget(quote! {
+            #[state]
+            struct Counter;
+        })
+        .to_string();
+
+        assert!(output.contains("compile_error"), "{output}");
+        assert!(!output.contains("impl aimer"), "{output}");
     }
 }

@@ -21,8 +21,8 @@ use aimer_time::Instant;
 use aimer::input::button::Button;
 use aimer::quiver::winit::dpi::PhysicalSize;
 use aimer::{
-    AnyElement, BuildContext, Column, ResolvedSize, SizedBox, State, StateUpdater, StatefulElement,
-    StatefulWidget, Vec2d, Widget,
+    AnyElement, BuildContext, Column, ResolvedSize, SizedBox, State, StateView, StateUpdater, StatefulElement,
+    Vec2d, Widget,
 };
 use aimer_canvas::{FrameCanvas, InnerCanvas};
 use aimer_events::window::{restore_thread_redraw_requester, set_thread_redraw_requester};
@@ -120,37 +120,27 @@ struct ProfileWidget {
 struct ProfileState {
     value: usize,
     callback_count: usize,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for ProfileWidget {
-    type State = ProfileState;
-
-    fn create_state(self) -> Self::State {
-        ProfileState {
-            value: 0,
-            callback_count: self.callback_count,
-            updater: StateUpdater::new(),
-        }
-    }
 }
 
 impl Widget for ProfileWidget {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "StateUpdaterProfile", None)
+        StatefulElement::new_with_name::<Self, ProfileState>(self, ctx, "StateUpdaterProfile", None)
             .0
             .boxed()
     }
 }
 
 impl State<ProfileWidget> for ProfileState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: ProfileWidget) -> Self {
+        ProfileState {
+            value: 0,
+            callback_count: widget.callback_count,
+        }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater;
-        Column::new().children((0..self.callback_count).map(move |index| {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater();
+        Column::new().children((0..this.callback_count).map(move |index| {
             let updater = updater;
             Button::new()
                 .on_press(move || {
@@ -172,7 +162,7 @@ fn make_element(
     StateUpdater<ProfileState>,
 ) {
     let context = context(runtime);
-    let (element, updater) = StatefulElement::new_with_name(
+    let (element, updater) = StatefulElement::new_with_name::<ProfileWidget, ProfileState>(
         ProfileWidget { callback_count },
         &context,
         "StateUpdaterProfile",
@@ -261,7 +251,7 @@ fn measure_construction(runtime: &tokio::runtime::Runtime) {
         let context = context(runtime);
         let start = Instant::now();
         for _ in 0..CONSTRUCTIONS_PER_ROUND {
-            let (element, updater) = StatefulElement::new_with_name(
+            let (element, updater) = StatefulElement::new_with_name::<ProfileWidget, ProfileState>(
                 ProfileWidget {
                     callback_count: CALLBACK_COUNT,
                 },

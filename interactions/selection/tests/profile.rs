@@ -4,10 +4,12 @@
 
 mod support;
 
+use aimer_widget::BuildElement;
+use aimer_widget::CreateState;
 use aimer_time::Instant;
 
-use aimer_selection::{Checkbox, ChoiceOption, RadioGroup, Select};
-use aimer_widget::{Drawable, LayoutElement, State, StatefulWidget, Widget};
+use aimer_selection::{Checkbox, CheckboxState, ChoiceOption, RadioGroup, Select};
+use aimer_widget::{Drawable, LayoutElement, State, Widget};
 use support::context_with_height;
 
 fn options(count: usize) -> Vec<ChoiceOption<usize>> {
@@ -36,10 +38,10 @@ async fn profile_choice_controls() {
     let ctx = context_with_height(4000.0);
 
     let iterations = 2000;
-    let state = Checkbox::new().label("Accept").create_state();
+    let state = Checkbox::new().label("Accept").create_state::<CheckboxState>();
     let started = Instant::now();
     for _ in 0..iterations {
-        std::hint::black_box(state.build(&ctx).to_element(&ctx));
+        std::hint::black_box(state.build_element(&ctx));
     }
     report("checkbox rebuild", iterations, started);
 

@@ -26,8 +26,8 @@ use aimer_style::{LayoutSpacing, Spacing, TextStyle, ThemeTokens, apply_state_la
 use aimer_text::Text;
 use aimer_widget::base::{BuildContext, Vec2d};
 use aimer_widget::{
-    AnyElement, AnyWidget, FocusBehavior, FocusNode, Focusable, State, StateUpdater,
-    StatefulElement, StatefulWidget, Widget,
+    AnyElement, AnyWidget, FocusBehavior, FocusNode, Focusable, State, StateView, StateUpdater,
+    StatefulElement, Widget,
 };
 
 use crate::binary::ChangeCallback;
@@ -426,20 +426,16 @@ impl<T: 'static> Drop for PanelState<T> {
     }
 }
 
-impl<T: Clone + PartialEq + 'static> StatefulWidget for PopupPanel<T> {
-    type State = PanelState<T>;
-
-    fn create_state(self) -> Self::State {
+impl<T: Clone + PartialEq + 'static> State<PopupPanel<T>> for PanelState<T> {
+    fn create(widget: PopupPanel<T>) -> Self {
         PanelState {
-            model: self.model,
+            model: widget.model,
             node: FocusNode::new(),
             mounted: false,
         }
     }
-}
 
-impl<T: Clone + PartialEq + 'static> State<PopupPanel<T>> for PanelState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.mounted = true;
         *self.model.panel_refresh.borrow_mut() = Some(Rc::new(move || {
             let _ = updater.try_set_state(|_| {});
@@ -450,8 +446,8 @@ impl<T: Clone + PartialEq + 'static> State<PopupPanel<T>> for PanelState<T> {
         self.model = Rc::clone(&new.model);
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let model = &self.model;
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let model = &this.model;
         let tokens = tokens(ctx);
         let row_height = tokens.density.target_size(ROW_HEIGHT);
         let len = model.len();
@@ -505,7 +501,7 @@ impl<T: Clone + PartialEq + 'static> State<PopupPanel<T>> for PanelState<T> {
             children.push(status_text(&tokens, &text, status_height));
         } else {
             panel_height += row_height * rows as f32;
-            children.push(self.list(&tokens, row_height, rows));
+            children.push(this.list(&tokens, row_height, rows));
         }
 
         let body = Container::new()
@@ -522,7 +518,7 @@ impl<T: Clone + PartialEq + 'static> State<PopupPanel<T>> for PanelState<T> {
                     .children(children),
             );
         Focusable::new()
-            .node(self.node.clone())
+            .node(this.node.clone())
             .behavior(FocusBehavior::Auto)
             .child(body)
     }
@@ -664,7 +660,7 @@ fn default_row<T>(tokens: &ThemeTokens, row_height: f32, state: OptionState<'_, 
 
 impl<T: Clone + PartialEq + 'static> Widget for PopupPanel<T> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "SelectionPopup", None)
+        StatefulElement::new_with_name::<Self, PanelState<T>>(self, ctx, "SelectionPopup", None)
             .0
             .boxed()
     }
@@ -676,6 +672,8 @@ impl<T: Clone + PartialEq + 'static> Widget for PopupPanel<T> {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::BuildElement;
+    use aimer_widget::CreateState;
     use std::cell::{Cell, RefCell};
 
     use aimer_attribute::BoxConstraint;
@@ -886,9 +884,9 @@ mod tests {
         let state = PopupPanel {
             model: Rc::clone(&model),
         }
-        .create_state();
+        .create_state::<PanelState<_>>();
 
-        let element = state.build(&ctx).to_element(&ctx);
+        let element = state.build_element(&ctx);
         // A windowed list has no rows until its first frame.
         for _ in 0..2 {
             let _ = element.layout(&ctx);
@@ -910,9 +908,9 @@ mod tests {
         let state = PopupPanel {
             model: Rc::clone(&model),
         }
-        .create_state();
+        .create_state::<PanelState<_>>();
 
-        let size = state.build(&ctx).to_element(&ctx).layout(&ctx);
+        let size = state.build_element(&ctx).layout(&ctx);
 
         let row = ThemeTokens::light().density.target_size(ROW_HEIGHT);
         assert!(
@@ -931,15 +929,15 @@ mod tests {
         let state = PopupPanel {
             model: Rc::clone(&model),
         }
-        .create_state();
-        let status_only = state.build(&ctx).to_element(&ctx).layout(&ctx).height;
+        .create_state::<PanelState<_>>();
+        let status_only = state.build_element(&ctx).layout(&ctx).height;
 
         model.set_search(Some(Search {
             controller: TextEditingController::new(),
             on_input: Rc::new(|_| {}),
             placeholder: Rc::from("Search"),
         }));
-        let with_search = state.build(&ctx).to_element(&ctx).layout(&ctx).height;
+        let with_search = state.build_element(&ctx).layout(&ctx).height;
 
         let tokens = ThemeTokens::light();
         assert!((status_only - tokens.density.target_size(STATUS_HEIGHT)).abs() < 1.0);
@@ -961,13 +959,13 @@ mod tests {
         let state = PopupPanel {
             model: Rc::clone(&model),
         }
-        .create_state();
-        let _ = state.build(&ctx).to_element(&ctx).layout(&ctx);
+        .create_state::<PanelState<_>>();
+        let _ = state.build_element(&ctx).layout(&ctx);
         assert_eq!(built.get(), 0);
 
         model.set_loading(false);
         model.set_visible(Visible::Subset(Vec::new()));
-        let _ = state.build(&ctx).to_element(&ctx).layout(&ctx);
+        let _ = state.build_element(&ctx).layout(&ctx);
         assert_eq!(built.get(), 0);
     }
 
@@ -992,8 +990,8 @@ mod tests {
         let state = PopupPanel {
             model: Rc::clone(&model),
         }
-        .create_state();
-        let element = state.build(&ctx).to_element(&ctx);
+        .create_state::<PanelState<_>>();
+        let element = state.build_element(&ctx);
         for _ in 0..2 {
             let _ = element.layout(&ctx);
             element.update(&ctx);
@@ -1052,8 +1050,8 @@ mod tests {
         let state = PopupPanel {
             model: Rc::clone(&model),
         }
-        .create_state();
-        let element = state.build(&ctx).to_element(&ctx);
+        .create_state::<PanelState<_>>();
+        let element = state.build_element(&ctx);
         for _ in 0..2 {
             let _ = element.layout(&ctx);
             element.update(&ctx);
@@ -1109,8 +1107,8 @@ mod tests {
             let state = PopupPanel {
                 model: Rc::clone(&model),
             }
-            .create_state();
-            let element = state.build(&ctx).to_element(&ctx);
+            .create_state::<PanelState<_>>();
+            let element = state.build_element(&ctx);
             for _ in 0..2 {
                 std::hint::black_box(element.layout(&ctx));
                 element.update(&ctx);

@@ -67,7 +67,7 @@ mod tests {
     use aimer_widget_core::base::{BuildContext, WindowHandle};
     use aimer_widget_core::widget::stateless::StatelessElement;
     use crate::{AsyncSnapshot, AsyncSnapshotError, FutureSnapshotExt};
-    use aimer_widget_core::{AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget};
+    use aimer_widget_core::{AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget};
 
     struct Leaf;
 
@@ -384,20 +384,20 @@ mod tests {
         seen: Rc<RefCell<Vec<&'static str>>>,
     }
 
-    impl StatefulWidget for Fetching {
-        type State = FetchingState;
-
-        fn create_state(self) -> Self::State {
-            FetchingState { seen: self.seen }
+    impl Widget for Fetching {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, FetchingState>(self, ctx, "Fetching", None)
         }
     }
 
     impl State<Fetching> for FetchingState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: Fetching) -> Self {
+            FetchingState { seen: widget.seen }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             let task = async { Ok::<u32, &'static str>(1) }.watch("fetch");
-            self.seen.borrow_mut().push(label(&task.read()));
+            this.seen.borrow_mut().push(label(&task.read()));
             LeafWidget
         }
     }
@@ -407,7 +407,7 @@ mod tests {
         let (venus, ctx) = context();
         let seen = Rc::new(RefCell::new(Vec::new()));
         let (element, _updater) =
-            StatefulElement::new_with_name(Fetching { seen: seen.clone() }, &ctx, "Fetching", None);
+            StatefulElement::new_with_name::<Fetching, FetchingState>(Fetching { seen: seen.clone() }, &ctx, "Fetching", None);
         assert_eq!(*seen.borrow(), ["waiting"]);
         assert!(!element.is_dirty());
 

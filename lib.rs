@@ -189,13 +189,13 @@ pub use aimer_shortcut as shortcut;
 pub use aimer_venus as venus;
 pub use aimer_venus::{TaskScope, Venus, yield_if_over_budget, yield_now};
 pub use aimer_widget::base::BuildContext;
-pub use aimer_widget::{self, Key, State, StatefulWidget, StatelessWidget, Widget, *};
+pub use aimer_widget::{self, Key, State, StateView, StatelessWidget, Widget, *};
 
 pub use aimer_clipboard as native;
 
 pub mod widget {
     pub use aimer_widget::base::BuildContext;
-    pub use aimer_widget::{State, StatefulWidget, StatelessWidget, Widget, *};
+    pub use aimer_widget::{State, StateView, StatelessWidget, Widget, *};
 }
 
 pub use aimer_animation as animation;
@@ -2213,7 +2213,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         use aimer::style::LayoutSpacing;
         use aimer::{
             AimerApp, AnyElement, BuildContext, Container, Direction, Resizable, ResolvedSize,
-            SizedBox, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
+            SizedBox, State, StateView, StateUpdater, StatefulElement, StatefulWidget, Widget,
         };
 
         /// The side bar itself: an animated border that grows a stroke while the
@@ -2229,46 +2229,33 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             resizable: bool,
             presses: Rc<Cell<u32>>,
             resizes: Rc<RefCell<Vec<ResolvedSize>>>,
-            updater: StateUpdater<Self>,
         }
 
         impl Widget for SideBarLike {
             fn to_element(self, ctx: &BuildContext) -> AnyElement {
                 let key = Widget::key(&self);
-                StatefulElement::new_with_name(self, ctx, "SideBarLike", key)
+                StatefulElement::new_with_name::<Self, SideBarLikeState>(self, ctx, "SideBarLike", key)
                     .0
                     .boxed()
             }
         }
 
-        impl StatefulWidget for SideBarLike {
-            type State = SideBarLikeState;
-
-            fn create_state(self) -> Self::State {
+        impl State<SideBarLike> for SideBarLikeState {
+            fn create(widget: SideBarLike) -> Self {
                 SideBarLikeState {
                     resizable: false,
-                    presses: self.presses,
-                    resizes: self.resizes,
-                    updater: StateUpdater::new(),
+                    presses: widget.presses,
+                    resizes: widget.resizes,
                 }
             }
-        }
 
-        impl State<SideBarLike> for SideBarLikeState {
-            fn init_state(&mut self, updater: StateUpdater<Self>)
-            where
-                Self: Sized,
-            {
-                self.updater = updater;
-            }
-
-            fn build(&self, _ctx: &BuildContext) -> impl Widget {
-                let zone_updater = self.updater;
-                let presses = self.presses.clone();
-                let resizes = self.resizes.clone();
+            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+                let zone_updater = this.updater();
+                let presses = this.presses.clone();
+                let resizes = this.resizes.clone();
 
                 ImplicitAnimatedBuilder::new(
-                    if self.resizable { 1.0 } else { 0.0 },
+                    if this.resizable { 1.0 } else { 0.0 },
                     // Long enough that every event below lands mid-animation.
                     Duration::from_secs(30),
                     curves::EASE_IN_OUT,
@@ -2409,7 +2396,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         use aimer::quiver::winit::window::Theme as SystemTheme;
         use aimer::style::{AnimatedTheme, Theme, ThemeData, ThemeMode};
         use aimer::{
-            AimerApp, AnyElement, BuildContext, Color, Element, SizedBox, State, StateUpdater,
+            AimerApp, AnyElement, BuildContext, Color, Element, SizedBox, State, StateView, StateUpdater,
             StatefulElement, StatefulWidget, StatelessElement, Widget,
         };
 
@@ -2475,33 +2462,29 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             probe: Probe,
         }
 
-        impl StatefulWidget for ThemeSwitch {
-            type State = ThemeSwitchState;
-
-            fn create_state(self) -> Self::State {
+        impl State<ThemeSwitch> for ThemeSwitchState {
+            fn create(widget: ThemeSwitch) -> Self {
                 ThemeSwitchState {
-                    mode: self.initial,
-                    probe: self.probe.clone(),
+                    mode: widget.initial,
+                    probe: widget.probe.clone(),
                 }
             }
-        }
 
-        impl State<ThemeSwitch> for ThemeSwitchState {
-            fn init_state(&mut self, updater: StateUpdater<Self>) {
+            fn on_mount(&mut self, updater: StateUpdater<Self>) {
                 MODE.replace(Some(updater));
             }
 
-            fn build(&self, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 AnimatedTheme::new()
-                    .mode(self.mode)
+                    .mode(this.mode)
                     .duration(TRANSITION)
-                    .child(self.probe.clone())
+                    .child(this.probe.clone())
             }
         }
 
         impl Widget for ThemeSwitch {
             fn to_element(self, ctx: &BuildContext) -> AnyElement {
-                StatefulElement::new_with_name(self, ctx, "ThemeSwitch", None)
+                StatefulElement::new_with_name::<Self, ThemeSwitchState>(self, ctx, "ThemeSwitch", None)
                     .0
                     .boxed()
             }
@@ -2866,7 +2849,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         use aimer::{
             AimerApp, AnyElement, AnyWidget, AsyncBuilder, AsyncSnapshot, BuildContext, Column,
             Container, Drawable, Element, EventElement, Expanded, LayoutElement, Rebuildable,
-            ScrollAxis, Scrollable, SizedBox, State, StateUpdater, StatefulElement, StatefulWidget,
+            ScrollAxis, Scrollable, SizedBox, State, StateView, StateUpdater, StatefulElement, StatefulWidget,
             StatelessElement, VisitorElement, Widget,
         };
 
@@ -2960,22 +2943,18 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             dark: bool,
         }
 
-        impl StatefulWidget for AppShell {
-            type State = AppShellState;
-
-            fn create_state(self) -> Self::State {
+        impl State<AppShell> for AppShellState {
+            fn create(widget: AppShell) -> Self {
                 AppShellState { dark: false }
             }
-        }
 
-        impl State<AppShell> for AppShellState {
-            fn init_state(&mut self, updater: StateUpdater<Self>) {
+            fn on_mount(&mut self, updater: StateUpdater<Self>) {
                 THEME.replace(Some(updater));
             }
 
-            fn build(&self, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 AnimatedTheme::new()
-                    .data(if self.dark {
+                    .data(if this.dark {
                         ThemeData::dark()
                     } else {
                         ThemeData::light()
@@ -2988,7 +2967,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
         impl Widget for AppShell {
             fn to_element(self, ctx: &BuildContext) -> AnyElement {
-                StatefulElement::new_with_name(self, ctx, "AppShell", None)
+                StatefulElement::new_with_name::<Self, AppShellState>(self, ctx, "AppShell", None)
                     .0
                     .boxed()
             }
@@ -3354,7 +3333,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         use aimer::{
             AimerApp, AnyElement, AnyWidget, BuildContext, Column, Container, Drawable, Element,
             EventElement, Expanded, Key, LayoutElement, Rebuildable, ScrollAxis, Scrollable,
-            SizedBox, State, StateUpdater, StatefulElement, StatefulWidget, StatelessElement,
+            SizedBox, State, StateView, StateUpdater, StatefulElement, StatefulWidget, StatelessElement,
             VisitorElement, Widget,
         };
 
@@ -3435,22 +3414,18 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             dark: bool,
         }
 
-        impl StatefulWidget for AppShell {
-            type State = AppShellState;
-
-            fn create_state(self) -> Self::State {
+        impl State<AppShell> for AppShellState {
+            fn create(widget: AppShell) -> Self {
                 AppShellState { dark: false }
             }
-        }
 
-        impl State<AppShell> for AppShellState {
-            fn init_state(&mut self, updater: StateUpdater<Self>) {
+            fn on_mount(&mut self, updater: StateUpdater<Self>) {
                 THEME.replace(Some(updater));
             }
 
-            fn build(&self, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 AnimatedTheme::new()
-                    .data(if self.dark {
+                    .data(if this.dark {
                         ThemeData::dark()
                     } else {
                         ThemeData::light()
@@ -3463,7 +3438,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
         impl Widget for AppShell {
             fn to_element(self, ctx: &BuildContext) -> AnyElement {
-                StatefulElement::new_with_name(self, ctx, "AppShell", None)
+                StatefulElement::new_with_name::<Self, AppShellState>(self, ctx, "AppShell", None)
                     .0
                     .boxed()
             }
@@ -3518,18 +3493,14 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
         struct HomePageState;
 
-        impl StatefulWidget for HomePage {
-            type State = HomePageState;
-
-            fn create_state(self) -> Self::State {
+        impl State<HomePage> for HomePageState {
+            fn create(widget: HomePage) -> Self {
                 HomePageState
             }
-        }
 
-        impl State<HomePage> for HomePageState {
-            fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+            fn on_mount(&mut self, _updater: StateUpdater<Self>) {}
 
-            fn build(&self, ctx: &BuildContext) -> impl Widget {
+            fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
                 let theme = ThemeData::of(ctx);
                 Container::new().color(theme.background_color).child(
                     Scrollable::new().axis(ScrollAxis::Vertical).child(
@@ -3548,7 +3519,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
         impl Widget for HomePage {
             fn to_element(self, ctx: &BuildContext) -> AnyElement {
-                StatefulElement::new_with_name(self, ctx, "HomePage", None)
+                StatefulElement::new_with_name::<Self, HomePageState>(self, ctx, "HomePage", None)
                     .0
                     .boxed()
             }
@@ -3568,31 +3539,21 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
         struct SectionState {
             current_index: usize,
-            state: StateUpdater<Self>,
-        }
-
-        impl StatefulWidget for SelectionSection {
-            type State = SectionState;
-
-            fn create_state(self) -> Self::State {
-                SectionState {
-                    current_index: 0,
-                    state: StateUpdater::new(),
-                }
-            }
         }
 
         impl State<SelectionSection> for SectionState {
-            fn init_state(&mut self, updater: StateUpdater<Self>) {
-                self.state = updater;
+            fn create(widget: SelectionSection) -> Self {
+                SectionState {
+                    current_index: 0,
+                }
             }
 
-            fn build(&self, ctx: &BuildContext) -> impl Widget {
+            fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
                 let theme = ThemeData::of(ctx);
-                let index = self.current_index;
+                let index = this.current_index;
                 // The real section hands this same clone to its buttons' callback, so a
                 // test drives exactly the updater a tap would.
-                SELECTION.replace(Some(self.state));
+                SELECTION.replace(Some(this.updater()));
                 Container::new().color(theme.background_color).child(
                     Column::new().children([
                         Container::new()
@@ -3620,7 +3581,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn to_element(self, ctx: &BuildContext) -> AnyElement {
                 let __key = Widget::key(&self);
-                StatefulElement::new_with_name(self, ctx, "SelectionSection", __key)
+                StatefulElement::new_with_name::<Self, SectionState>(self, ctx, "SelectionSection", __key)
                     .0
                     .boxed()
             }
@@ -3928,27 +3889,25 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         }
 
         #[widget(Stateful)]
+        #[state(TupleAttributeStatefulState)]
         struct TupleAttributeStateful(i32);
 
         struct TupleAttributeStatefulState(i32);
 
-        impl StatefulWidget for TupleAttributeStateful {
-            type State = TupleAttributeStatefulState;
-
-            fn create_state(self) -> Self::State {
-                TupleAttributeStatefulState(self.0)
-            }
-        }
-
         impl State<TupleAttributeStateful> for TupleAttributeStatefulState {
-            fn init_state(&mut self, _: StateUpdater<Self>) {}
+            fn create(widget: TupleAttributeStateful) -> Self {
+                TupleAttributeStatefulState(widget.0)
+            }
 
-            fn build(&self, _: &BuildContext) -> impl Widget {
-                Text::new(self.0.to_string())
+            fn on_mount(&mut self, _: StateUpdater<Self>) {}
+
+            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+                Text::new(this.0.to_string())
             }
         }
 
         #[widget(Stateful)]
+        #[state(EnumAttributeStatefulState)]
         enum EnumAttributeStateful {
             Count(i32),
             Empty,
@@ -3956,22 +3915,18 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
         struct EnumAttributeStatefulState(i32);
 
-        impl StatefulWidget for EnumAttributeStateful {
-            type State = EnumAttributeStatefulState;
-
-            fn create_state(self) -> Self::State {
-                EnumAttributeStatefulState(match self {
-                    Self::Count(count) => count,
-                    Self::Empty => 0,
+        impl State<EnumAttributeStateful> for EnumAttributeStatefulState {
+            fn create(widget: EnumAttributeStateful) -> Self {
+                EnumAttributeStatefulState(match widget {
+                    EnumAttributeStateful::Count(count) => count,
+                    EnumAttributeStateful::Empty => 0,
                 })
             }
-        }
 
-        impl State<EnumAttributeStateful> for EnumAttributeStatefulState {
-            fn init_state(&mut self, _: StateUpdater<Self>) {}
+            fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(&self, _: &BuildContext) -> impl Widget {
-                Text::new(self.0.to_string())
+            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+                Text::new(this.0.to_string())
             }
         }
 
@@ -3987,8 +3942,8 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         fn stateful_attribute_supports_tuple_structs_and_enums() {
             assert_widget::<TupleAttributeStateful>();
             assert_widget::<EnumAttributeStateful>();
-            assert_eq!(TupleAttributeStateful(4).create_state().0, 4);
-            assert_eq!(EnumAttributeStateful::Count(9).create_state().0, 9);
+            assert_eq!(TupleAttributeStateful(4).create_state::<TupleAttributeStatefulState>().0, 4);
+            assert_eq!(EnumAttributeStateful::Count(9).create_state::<EnumAttributeStatefulState>().0, 9);
         }
     }
 
@@ -4025,6 +3980,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         }
 
         #[derive(StatefulWidget)]
+        #[state(CounterState)]
         struct Counter {
             initial_count: i32,
         }
@@ -4032,21 +3988,17 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         struct CounterState {
             count: i32,
         }
-        impl StatefulWidget for Counter {
-            type State = CounterState;
-
-            fn create_state(self) -> CounterState {
+        impl State<Counter> for CounterState {
+            fn create(widget: Counter) -> Self {
                 CounterState {
-                    count: self.initial_count,
+                    count: widget.initial_count,
                 }
             }
-        }
 
-        impl State<Counter> for CounterState {
-            fn init_state(&mut self, _: StateUpdater<Self>) {}
+            fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(&self, _: &BuildContext) -> impl Widget {
-                Text::new(format!("{}", self.count))
+            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+                Text::new(format!("{}", this.count))
             }
         }
 
@@ -4075,48 +4027,109 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         }
 
         #[derive(StatefulWidget)]
+        #[state(TupleStatefulState)]
         struct TupleStateful(i32);
 
         struct TupleStatefulState(i32);
-        impl StatefulWidget for TupleStateful {
-            type State = TupleStatefulState;
-
-            fn create_state(self) -> Self::State {
-                TupleStatefulState(self.0)
-            }
-        }
-
         impl State<TupleStateful> for TupleStatefulState {
-            fn init_state(&mut self, _: StateUpdater<Self>) {}
+            fn create(widget: TupleStateful) -> Self {
+                TupleStatefulState(widget.0)
+            }
 
-            fn build(&self, _: &BuildContext) -> impl Widget {
-                Text::new(self.0.to_string())
+            fn on_mount(&mut self, _: StateUpdater<Self>) {}
+
+            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+                Text::new(this.0.to_string())
             }
         }
 
         #[derive(StatefulWidget)]
+        #[state(EnumStatefulState)]
         enum EnumStateful {
             Count(i32),
             Empty,
         }
 
         struct EnumStatefulState(i32);
-        impl StatefulWidget for EnumStateful {
-            type State = EnumStatefulState;
-
-            fn create_state(self) -> Self::State {
-                EnumStatefulState(match self {
-                    Self::Count(count) => count,
-                    Self::Empty => 0,
+        impl State<EnumStateful> for EnumStatefulState {
+            fn create(widget: EnumStateful) -> Self {
+                EnumStatefulState(match widget {
+                    EnumStateful::Count(count) => count,
+                    EnumStateful::Empty => 0,
                 })
+            }
+
+            fn on_mount(&mut self, _: StateUpdater<Self>) {}
+
+            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+                Text::new(this.0.to_string())
             }
         }
 
-        impl State<EnumStateful> for EnumStatefulState {
-            fn init_state(&mut self, _: StateUpdater<Self>) {}
+        // No `#[state(..)]` on these three: the state is the widget's name plus
+        // `State`, with the widget's generic arguments applied.
+        #[derive(StatefulWidget)]
+        struct Greeter {
+            name: String,
+        }
 
-            fn build(&self, _: &BuildContext) -> impl Widget {
-                Text::new(self.0.to_string())
+        struct GreeterState {
+            greeting: String,
+        }
+        impl State<Greeter> for GreeterState {
+            fn create(widget: Greeter) -> Self {
+                GreeterState {
+                    greeting: format!("hello {}", widget.name),
+                }
+            }
+
+            fn on_mount(&mut self, _: StateUpdater<Self>) {}
+
+            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+                Text::new(this.greeting.clone())
+            }
+        }
+
+        #[derive(StatefulWidget)]
+        struct Holder<T: ToString + 'static> {
+            value: T,
+        }
+
+        struct HolderState<T> {
+            shown: String,
+            _marker: std::marker::PhantomData<T>,
+        }
+        impl<T: ToString + 'static> State<Holder<T>> for HolderState<T> {
+            fn create(widget: Holder<T>) -> Self {
+                HolderState {
+                    shown: widget.value.to_string(),
+                    _marker: std::marker::PhantomData,
+                }
+            }
+
+            fn on_mount(&mut self, _: StateUpdater<Self>) {}
+
+            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+                Text::new(this.shown.clone())
+            }
+        }
+
+        #[derive(StatefulWidget)]
+        enum Choice {
+            Yes,
+            No,
+        }
+
+        struct ChoiceState(bool);
+        impl State<Choice> for ChoiceState {
+            fn create(widget: Choice) -> Self {
+                ChoiceState(matches!(widget, Choice::Yes))
+            }
+
+            fn on_mount(&mut self, _: StateUpdater<Self>) {}
+
+            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+                Text::new(if this.0 { "yes" } else { "no" })
             }
         }
 
@@ -4186,7 +4199,38 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             let counter = Counter { initial_count: 7 };
             assert_eq!(Widget::debug_name(&counter), "Counter");
-            assert_eq!(counter.create_state().count, 7);
+            assert_eq!(counter.create_state::<CounterState>().count, 7);
+        }
+
+        #[test]
+        fn the_stateful_derive_defaults_the_state_to_the_name_plus_state() {
+            assert_widget::<Greeter>();
+
+            let greeter = Greeter {
+                name: "aimer".to_string(),
+            };
+            assert_eq!(Widget::debug_name(&greeter), "Greeter");
+            assert_eq!(
+                greeter.create_state::<GreeterState>().greeting,
+                "hello aimer"
+            );
+        }
+
+        #[test]
+        fn the_default_state_of_a_generic_widget_takes_its_arguments() {
+            assert_widget::<Holder<i32>>();
+            assert_widget::<Holder<String>>();
+
+            let shown = Holder { value: 42 }.create_state::<HolderState<i32>>().shown;
+            assert_eq!(shown, "42");
+        }
+
+        #[test]
+        fn the_default_state_of_an_enum_widget_follows_the_enum_name() {
+            assert_widget::<Choice>();
+
+            assert!(Choice::Yes.create_state::<ChoiceState>().0);
+            assert!(!Choice::No.create_state::<ChoiceState>().0);
         }
 
         #[test]
@@ -4201,8 +4245,8 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         fn stateful_derive_supports_tuple_structs_and_enums() {
             assert_widget::<TupleStateful>();
             assert_widget::<EnumStateful>();
-            assert_eq!(TupleStateful(4).create_state().0, 4);
-            assert_eq!(EnumStateful::Count(9).create_state().0, 9);
+            assert_eq!(TupleStateful(4).create_state::<TupleStatefulState>().0, 4);
+            assert_eq!(EnumStateful::Count(9).create_state::<EnumStatefulState>().0, 9);
         }
 
         #[test]

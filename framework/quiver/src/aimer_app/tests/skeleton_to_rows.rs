@@ -98,26 +98,20 @@ struct Shell {
     updater: Rc<RefCell<Option<StateUpdater<ShellState>>>>,
 }
 
-impl StatefulWidget for Shell {
-    type State = ShellState;
-
-    fn create_state(self) -> ShellState {
+impl State<Shell> for ShellState {
+    fn create(widget: Shell) -> Self {
         ShellState {
             loaded: false,
-            updater: self.updater,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Shell> for ShellState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let body = if self.loaded {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        let body = if this.loaded {
             Column::new()
                 .gaps(aimer_style::LayoutSpacing::all(2))
                 .list(0..ROWS)
@@ -143,7 +137,7 @@ impl State<Shell> for ShellState {
 
 impl Widget for Shell {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "SkeletonShell", None)
+        StatefulElement::new_with_name::<Self, ShellState>(self, ctx, "SkeletonShell", None)
             .0
             .boxed()
     }

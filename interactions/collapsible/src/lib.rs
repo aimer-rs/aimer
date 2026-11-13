@@ -14,6 +14,8 @@ pub use widgets::{CollapsibleList, CollapsibleListState, ListBody, ListHeader};
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::BuildElement;
+    use aimer_widget::CreateState;
     use std::cell::Cell;
     use std::rc::Rc;
     use std::time::Duration;
@@ -26,8 +28,8 @@ mod tests {
     use aimer_text::Text;
     use aimer_widget::base::{BuildContext, ResolvedSize, Vec2d, WindowHandle};
     use aimer_widget::{
-        AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,
-        StatefulWidget, VisitorElement, Widget, broadcast_event,
+        AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateView,
+        VisitorElement, Widget, broadcast_event,
     };
 
     fn context() -> BuildContext<'static> {
@@ -98,7 +100,7 @@ mod tests {
             .expanded(false)
             .header(ListHeader::new().child(Text::new("Tags")))
             .body(ListBody::new().child(Text::new("Red")));
-        let mut state = widget.create_state();
+        let mut state = widget.create_state::<crate::widgets::CollapsibleListState<_, _>>();
 
         assert!(!state.is_expanded());
         assert_eq!(state.chevron_progress(), 1.0);
@@ -115,7 +117,7 @@ mod tests {
             .animation_curve(curves::LINEAR)
             .header(ListHeader::new().child(Text::new("Updated tags")))
             .body(ListBody::new().child(Text::new("Updated red")));
-        state.adopt_config_from(replacement.create_state());
+        state.adopt_config_from(replacement.create_state::<crate::widgets::CollapsibleListState<_, _>>());
 
         assert!(state.is_expanded());
         assert_eq!(state.chevron_duration(), Duration::from_millis(900));
@@ -131,7 +133,7 @@ mod tests {
             .animation_curve(curves::EASE_OUT)
             .header(ListHeader::new().child(Text::new("Tags")))
             .body(ListBody::new().child(Text::new("Red")));
-        let state = widget.create_state();
+        let state = widget.create_state::<crate::widgets::CollapsibleListState<_, _>>();
 
         assert_eq!(state.chevron_duration(), Duration::from_millis(420));
         assert_eq!(state.body_duration(), Duration::from_millis(420));
@@ -156,7 +158,7 @@ mod tests {
                 events: events.clone(),
             }))
             .body(ListBody::new().child(Text::new("Body")));
-        let element = widget.create_state().build(&ctx).to_element(&ctx);
+        let element = widget.create_state::<crate::widgets::CollapsibleListState<_, _>>().build_element(&ctx);
 
         let _ = broadcast_event(element.as_ref(), &ElementEvent::FocusGained);
 
@@ -168,7 +170,7 @@ mod tests {
         let widget = CollapsibleList::new()
             .header(ListHeader::new().child(Text::new("Tags")))
             .body(ListBody::new().child(Text::new("Red")));
-        let mut state = widget.create_state();
+        let mut state = widget.create_state::<crate::widgets::CollapsibleListState<_, _>>();
 
         assert!(state.is_expanded());
         assert_eq!(state.body_progress(), 1.0);
@@ -188,15 +190,15 @@ mod tests {
             .body(ListBody::new().child(Probe {
                 builds: builds.clone(),
             }));
-        let mut state = widget.create_state();
+        let mut state = widget.create_state::<crate::widgets::CollapsibleListState<_, _>>();
         let ctx = context();
 
-        let _collapsed = state.build(&ctx).to_element(&ctx);
+        let _collapsed = state.build_element(&ctx);
         assert_eq!(builds.get(), 0);
 
         state.toggle();
-        let _first_expanded = state.build(&ctx).to_element(&ctx);
-        let _second_expanded = state.build(&ctx).to_element(&ctx);
+        let _first_expanded = state.build_element(&ctx);
+        let _second_expanded = state.build_element(&ctx);
 
         assert_eq!(builds.get(), 1);
     }
@@ -207,9 +209,9 @@ mod tests {
             .expanded(false)
             .header(ListHeader::new().child(Text::new("Tags")))
             .body(ListBody::new().child(Text::new("Red")));
-        let state = widget.create_state();
+        let state = widget.create_state::<crate::widgets::CollapsibleListState<_, _>>();
         let ctx = context();
-        let element = state.build(&ctx).to_element(&ctx);
+        let element = state.build_element(&ctx);
         let mut child_count = 0;
 
         element.visit_children(&mut |_| child_count += 1);
@@ -227,7 +229,7 @@ mod tests {
             .header(ListHeader::new().child(Text::new("Tags")))
             .body(ListBody::new().child(Text::new("Red")));
         let ctx = context();
-        let (element, updater) = StatefulElement::new_with_name(widget, &ctx, "TestList", None);
+        let (element, updater) = StatefulElement::new_with_name::<CollapsibleList<_, _>, crate::widgets::CollapsibleListState<_, _>>(widget, &ctx, "TestList", None);
         let root = element.boxed();
 
         let _ = dispatch_focused_event(
@@ -259,7 +261,7 @@ mod tests {
         };
         ctx.box_constraint.max_width = 300.0;
         ctx.box_constraint.max_height = 300.0;
-        let (element, updater) = StatefulElement::new_with_name(widget, &ctx, "TestList", None);
+        let (element, updater) = StatefulElement::new_with_name::<CollapsibleList<_, _>, crate::widgets::CollapsibleListState<_, _>>(widget, &ctx, "TestList", None);
         let root = element.boxed();
         root.layout(&ctx);
         ctx.canvas.begin_frame();

@@ -9,7 +9,7 @@ use aimer_events::element::ElementEvent;
 use aimer_widget::base::*;
 use aimer_widget::{
     AnyElement, ChildBuilder, Drawable, Element, EventElement, EventResult, Key, LayoutElement,
-    Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, StatelessElement,
+    Rebuildable, State, StateView, StateUpdater, StatefulElement, StatelessElement,
     VisitorElement, Widget,
 };
 
@@ -116,29 +116,6 @@ impl<T: Widget + 'static> AnimatedSwitcher<T> {
     }
 }
 
-impl<T: Widget + 'static> StatefulWidget for AnimatedSwitcher<T> {
-    type State = AnimatedSwitcherState<T>;
-
-    fn create_state(self) -> Self::State {
-        let in_controller = AnimationController::new(self.duration, self.curve.clone());
-        in_controller.set_value(1.0);
-        let switch_out_curve = self.switch_out_curve.unwrap_or_else(|| self.curve.clone());
-        AnimatedSwitcherState {
-            current_child: self.child.clone(),
-            old_child: None,
-            old_child_key: None,
-            child_key: self.transition_key.clone().or_else(|| self.child.key()),
-            duration: self.duration,
-            curve: self.curve,
-            switch_out_curve: switch_out_curve.clone(),
-            in_controller,
-            out_controller: AnimationController::new(self.duration, switch_out_curve),
-            updater: StateUpdater::empty(),
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<T: Widget + 'static> Widget for AnimatedSwitcher<T> {
     fn key(&self) -> Option<Key> {
         self.widget_key.clone()
@@ -146,7 +123,7 @@ impl<T: Widget + 'static> Widget for AnimatedSwitcher<T> {
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let __key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "AnimatedSwitcher", __key)
+        StatefulElement::new_with_name::<Self, AnimatedSwitcherState<T>>(self, ctx, "AnimatedSwitcher", __key)
             .0
             .boxed()
     }
@@ -163,13 +140,26 @@ pub struct AnimatedSwitcherState<T: Widget + 'static> {
     switch_out_curve: AnyCurve,
     in_controller: AnimationController,
     out_controller: AnimationController,
-    updater: StateUpdater<Self>,
     marker: PhantomData<T>,
 }
 
 impl<T: Widget + 'static> State<AnimatedSwitcher<T>> for AnimatedSwitcherState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: AnimatedSwitcher<T>) -> Self {
+        let in_controller = AnimationController::new(widget.duration, widget.curve.clone());
+        in_controller.set_value(1.0);
+        let switch_out_curve = widget.switch_out_curve.unwrap_or_else(|| widget.curve.clone());
+        AnimatedSwitcherState {
+            current_child: widget.child.clone(),
+            old_child: None,
+            old_child_key: None,
+            child_key: widget.transition_key.clone().or_else(|| widget.child.key()),
+            duration: widget.duration,
+            curve: widget.curve,
+            switch_out_curve: switch_out_curve.clone(),
+            in_controller,
+            out_controller: AnimationController::new(widget.duration, switch_out_curve),
+            marker: PhantomData,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -196,22 +186,22 @@ impl<T: Widget + 'static> State<AnimatedSwitcher<T>> for AnimatedSwitcherState<T
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         AnimatedSwitcherFrame {
-            current_child: self.current_child.clone(),
-            current_child_key: self.child_key.clone(),
-            old_child: if self.out_controller.is_animating() {
-                self.old_child.clone()
+            current_child: this.current_child.clone(),
+            current_child_key: this.child_key.clone(),
+            old_child: if this.out_controller.is_animating() {
+                this.old_child.clone()
             } else {
                 None
             },
-            old_child_key: if self.out_controller.is_animating() {
-                self.old_child_key.clone()
+            old_child_key: if this.out_controller.is_animating() {
+                this.old_child_key.clone()
             } else {
                 None
             },
-            in_controller: self.in_controller.clone(),
-            out_controller: self.out_controller.clone(),
+            in_controller: this.in_controller.clone(),
+            out_controller: this.out_controller.clone(),
         }
     }
 }
@@ -406,6 +396,7 @@ impl LayoutElement for AnimatedSwitcherElement {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use super::*;
     use crate::primitives::curve::curves;
 
@@ -425,7 +416,7 @@ mod tests {
 
     fn state(key: &'static str) -> AnimatedSwitcherState<TestWidget> {
         AnimatedSwitcher::new(Duration::from_millis(100), curves::LINEAR, TestWidget(key))
-            .create_state()
+            .create_state::<AnimatedSwitcherState<_>>()
     }
 
         #[test]
@@ -500,6 +491,7 @@ mod tests {
     // rather than building another one — which is why these tests count
     // children in the tree instead of counting builds.
     mod reaches_both_children {
+        use aimer_widget::BuildElement;
         use std::cell::Cell;
         use std::rc::Rc;
 
@@ -592,8 +584,8 @@ mod tests {
             let outgoing = Rc::new(Cell::new(0));
             let incoming = Rc::new(Cell::new(0));
 
-            let mut current = switcher("home", &outgoing).create_state();
-            current.adopt_config_from(switcher("docs", &incoming).create_state());
+            let mut current = switcher("home", &outgoing).create_state::<AnimatedSwitcherState<_>>();
+            current.adopt_config_from(switcher("docs", &incoming).create_state::<AnimatedSwitcherState<_>>());
 
             assert!(
                 current.out_controller.is_animating(),
@@ -601,7 +593,7 @@ mod tests {
             );
 
             for frame in 1..=3 {
-                let tree = current.build(&ctx).to_element(&ctx);
+                let tree = current.build_element(&ctx);
 
                 assert_eq!(
                     probe_count(tree.as_ref()),
@@ -628,7 +620,7 @@ mod tests {
                 ErrorWidget::new("home"),
             )
             .child_key("home")
-            .create_state();
+            .create_state::<AnimatedSwitcherState<_>>();
             current.adopt_config_from(
                 AnimatedSwitcher::new(
                     Duration::from_millis(100),
@@ -636,10 +628,10 @@ mod tests {
                     ErrorWidget::new("docs"),
                 )
                 .child_key("docs")
-                .create_state(),
+                .create_state::<AnimatedSwitcherState<_>>(),
             );
 
-            let tree = current.build(&ctx).to_element(&ctx);
+            let tree = current.build_element(&ctx);
             let mut child_keys = Vec::new();
             tree.visit_children(&mut |child| {
                 child_keys.push(child.reconciliation_key().cloned());
@@ -664,8 +656,8 @@ mod tests {
             let incoming = Rc::new(Cell::new(0));
 
             let quick = Duration::from_millis(1);
-            let mut current = switcher_lasting(quick, "home", &outgoing).create_state();
-            current.adopt_config_from(switcher_lasting(quick, "docs", &incoming).create_state());
+            let mut current = switcher_lasting(quick, "home", &outgoing).create_state::<AnimatedSwitcherState<_>>();
+            current.adopt_config_from(switcher_lasting(quick, "docs", &incoming).create_state::<AnimatedSwitcherState<_>>());
 
             // Run the fade to its end: the first tick starts the clock, the
             // second one arrives after the duration has elapsed.
@@ -674,7 +666,7 @@ mod tests {
             current.out_controller.tick(AnimInstant::now());
             assert!(!current.out_controller.is_animating());
 
-            let tree = current.build(&ctx).to_element(&ctx);
+            let tree = current.build_element(&ctx);
 
             assert_eq!(
                 probe_count(tree.as_ref()),
@@ -758,30 +750,29 @@ mod tests {
         struct RouterMockState {
             route: usize,
             drawn: Rc<RefCell<Vec<&'static str>>>,
-            updater: StateUpdater<Self>,
         }
-        impl StatefulWidget for RouterMock {
-            type State = RouterMockState;
-            fn create_state(self) -> Self::State {
+        impl Widget for RouterMock {
+            fn to_element(self, ctx: &BuildContext) -> AnyElement {
+                StatefulElement::from_widget::<Self, RouterMockState>(self, ctx, "RouterMock", None)
+            }
+        }
+
+        impl State<RouterMock> for RouterMockState {
+            fn create(widget: RouterMock) -> Self {
                 RouterMockState {
                     route: 0,
-                    drawn: self.drawn.clone(),
-                    updater: StateUpdater::new(),
+                    drawn: widget.drawn.clone(),
                 }
             }
-        }
-        impl State<RouterMock> for RouterMockState {
-            fn init_state(&mut self, updater: StateUpdater<Self>) {
-                self.updater = updater;
-            }
-            fn build(&self, _ctx: &BuildContext) -> impl Widget {
-                let label = route_label(self.route);
+
+            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+                let label = route_label(this.route);
                 AnimatedSwitcher::new(
                     Duration::from_millis(50),
                     curves::LINEAR,
                     RecordingPage {
                         label,
-                        drawn: self.drawn.clone(),
+                        drawn: this.drawn.clone(),
                     }
                     .boxed(),
                 )
@@ -827,7 +818,7 @@ mod tests {
             let ctx = dummy_build_context();
             let drawn: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
 
-            let (router, updater) = StatefulElement::new_with_name(
+            let (router, updater) = StatefulElement::new_with_name::<RouterMock, RouterMockState>(
                 RouterMock {
                     drawn: drawn.clone(),
                 },

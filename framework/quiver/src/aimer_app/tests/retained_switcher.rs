@@ -56,32 +56,26 @@ struct ImagePageState {
     images: [ReadyImage; 2],
 }
 
-impl StatefulWidget for ImagePage {
-    type State = ImagePageState;
-
-    fn create_state(self) -> Self::State {
+impl State<ImagePage> for ImagePageState {
+    fn create(widget: ImagePage) -> Self {
         ImagePageState {
             selected: 0,
             duration: Duration::from_secs(86_400),
-            updater: self.updater,
-            images: self.images,
+            updater: widget.updater,
+            images: widget.images,
         }
     }
-}
 
-impl State<ImagePage> for ImagePageState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater.set(Some(updater));
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        this.updater.set(Some(this.updater()));
         aimer_container::Container::new().height(80.0).child(
             AnimatedSwitcher::new(
-                self.duration,
+                this.duration,
                 curves::LINEAR,
-                self.images[self.selected].clone(),
+                this.images[this.selected].clone(),
             )
-            .child_key(if self.selected == 0 {
+            .child_key(if this.selected == 0 {
                 "wide"
             } else {
                 "portrait"
@@ -93,7 +87,7 @@ impl State<ImagePage> for ImagePageState {
 
 impl Widget for ImagePage {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ImagePage", None)
+        StatefulElement::new_with_name::<Self, ImagePageState>(self, ctx, "ImagePage", None)
             .0
             .boxed()
     }

@@ -245,31 +245,28 @@ impl CustomMarkdownExample {
 }
 
 pub struct CustomMarkdownExampleState {
-    presses: u32,
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for CustomMarkdownExample {
-    type State = CustomMarkdownExampleState;
-
-    fn create_state(self) -> Self::State {
-        CustomMarkdownExampleState {
-            presses: 0,
-            updater: StateUpdater::empty(),
-        }
-    }
+    presses: u32,
 }
 
 impl State<CustomMarkdownExample> for CustomMarkdownExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &aimer::BuildContext) -> impl Widget {
+    fn create(widget: CustomMarkdownExample) -> Self {
+        CustomMarkdownExampleState {
+            updater: StateUpdater::empty(),
+            presses: 0,
+        }
+    }
+
+    fn build(this: &StateView<Self>, ctx: &aimer::BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
+        let updater = this.updater();
         Column::new().children([
-            Text::new(format!("Button presses: {}", self.presses))
+            Text::new(format!("Button presses: {}", this.presses))
                 .text_style(TextStyle::new().color(app_theme.on_background_color))
                 .boxed(),
             custom_markdown_content_with_press(move || {

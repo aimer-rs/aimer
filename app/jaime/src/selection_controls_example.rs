@@ -16,7 +16,7 @@ use aimer::style::{
 };
 use aimer::{
     AimerApp, AnyWidget, BuildContext, Column, Container, Dimension, Row, ScrollAxis, Scrollable,
-    State, StateUpdater, StatefulWidget, Text, Widget,
+    State, StateView, StateUpdater, StatefulWidget, Text, Widget,
 };
 
 pub use aimer::selection::CheckboxValue;
@@ -97,8 +97,9 @@ impl Default for SelectionControlsExample {
 }
 
 pub struct SelectionControlsExampleState {
-    reset_generation: u64,
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
+    reset_generation: u64,
 }
 
 impl SelectionControlsExampleState {
@@ -110,24 +111,20 @@ impl SelectionControlsExampleState {
     }
 }
 
-impl StatefulWidget for SelectionControlsExample {
-    type State = SelectionControlsExampleState;
-
-    fn create_state(self) -> Self::State {
-        SelectionControlsExampleState::initial()
-    }
-}
-
 impl State<SelectionControlsExample> for SelectionControlsExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let app_theme = ThemeData::copied(ctx);
-        let reset_generation = self.reset_generation;
+    fn create(widget: SelectionControlsExample) -> Self {
+        SelectionControlsExampleState::initial()
+    }
 
-        let reset_updater = self.updater;
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let app_theme = ThemeData::copied(ctx);
+        let reset_generation = this.reset_generation;
+
+        let reset_updater = this.updater();
         let reset = action_button("Reset all", app_theme, move || {
             reset_updater.set_state(|state| {
                 state.reset_generation = state
@@ -207,24 +204,14 @@ impl CheckboxSection {
 struct CheckboxSectionState {
     reset_generation: u64,
     value: CheckboxValue,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for CheckboxSection {
-    type State = CheckboxSectionState;
-
-    fn create_state(self) -> Self::State {
-        CheckboxSectionState {
-            reset_generation: self.reset_generation,
-            value: CheckboxValue::Unchecked,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<CheckboxSection> for CheckboxSectionState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: CheckboxSection) -> Self {
+        CheckboxSectionState {
+            reset_generation: widget.reset_generation,
+            value: CheckboxValue::Unchecked,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -234,12 +221,12 @@ impl State<CheckboxSection> for CheckboxSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let checkbox_updater = self.updater;
+        let checkbox_updater = this.updater();
         let checkbox_theme = app_theme;
         let checkbox = Checkbox::new()
-            .value(self.value)
+            .value(this.value)
             .label("Accept terms")
             .on_change(move |value| {
                 checkbox_updater.set_state(move |state| state.value = value);
@@ -312,7 +299,7 @@ impl State<CheckboxSection> for CheckboxSectionState {
 
         SelectionControlsExample::section(
             "Checkbox",
-            format!("Proposed value: {:?}", self.value),
+            format!("Proposed value: {:?}", this.value),
             Column::new()
                 .gaps(LayoutSpacing::all(Spacing::Px(4)))
                 .children([checkbox.boxed(), disabled_checkbox.boxed()])
@@ -345,24 +332,14 @@ impl SwitchSection {
 struct SwitchSectionState {
     reset_generation: u64,
     value: bool,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for SwitchSection {
-    type State = SwitchSectionState;
-
-    fn create_state(self) -> Self::State {
-        SwitchSectionState {
-            reset_generation: self.reset_generation,
-            value: false,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<SwitchSection> for SwitchSectionState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: SwitchSection) -> Self {
+        SwitchSectionState {
+            reset_generation: widget.reset_generation,
+            value: false,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -372,11 +349,11 @@ impl State<SwitchSection> for SwitchSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
+        let updater = this.updater();
         let switch = Switch::new()
-            .value(self.value)
+            .value(this.value)
             .label("Email notifications")
             .on_change(move |value| {
                 updater.set_state(move |state| state.value = value);
@@ -384,7 +361,7 @@ impl State<SwitchSection> for SwitchSectionState {
 
         SelectionControlsExample::section(
             "Switch",
-            format!("On: {}", self.value),
+            format!("On: {}", this.value),
             switch.boxed(),
             app_theme,
         )
@@ -414,24 +391,14 @@ impl RadioSection {
 struct RadioSectionState {
     reset_generation: u64,
     selected: &'static str,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for RadioSection {
-    type State = RadioSectionState;
-
-    fn create_state(self) -> Self::State {
-        RadioSectionState {
-            reset_generation: self.reset_generation,
-            selected: "basic",
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<RadioSection> for RadioSectionState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: RadioSection) -> Self {
+        RadioSectionState {
+            reset_generation: widget.reset_generation,
+            selected: "basic",
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -441,9 +408,9 @@ impl State<RadioSection> for RadioSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
+        let updater = this.updater();
         let radios = RadioGroup::new()
             .options([
                 ChoiceOption::new("basic", "Basic", "basic"),
@@ -452,14 +419,14 @@ impl State<RadioSection> for RadioSectionState {
                     .disabled(true),
             ])
             .label("Plan")
-            .selected(Some(self.selected))
+            .selected(Some(this.selected))
             .on_change(move |value| {
                 updater.set_state(move |state| state.selected = value);
             });
 
         SelectionControlsExample::section(
             "Radio group",
-            format!("Selected plan: {}", self.selected),
+            format!("Selected plan: {}", this.selected),
             radios.boxed(),
             app_theme,
         )
@@ -489,24 +456,14 @@ impl SelectSection {
 struct SelectSectionState {
     reset_generation: u64,
     selected: Option<&'static str>,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for SelectSection {
-    type State = SelectSectionState;
-
-    fn create_state(self) -> Self::State {
-        SelectSectionState {
-            reset_generation: self.reset_generation,
-            selected: None,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<SelectSection> for SelectSectionState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: SelectSection) -> Self {
+        SelectSectionState {
+            reset_generation: widget.reset_generation,
+            selected: None,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -516,9 +473,9 @@ impl State<SelectSection> for SelectSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
+        let updater = this.updater();
         let select = Select::new()
             .options([
                 ChoiceOption::new("small", "Small", "small"),
@@ -526,7 +483,7 @@ impl State<SelectSection> for SelectSectionState {
                 ChoiceOption::new("large", "Large", "large"),
             ])
             .label("Size")
-            .selected(self.selected)
+            .selected(this.selected)
             .on_change(move |value| {
                 updater.set_state(move |state| state.selected = Some(value));
             });
@@ -535,7 +492,7 @@ impl State<SelectSection> for SelectSectionState {
             "Select",
             format!(
                 "Selected size: {}",
-                self.selected
+                this.selected
                     .unwrap_or("(none yet — click to open)")
             ),
             select.boxed(),
@@ -568,25 +525,15 @@ struct AutocompleteSectionState {
     reset_generation: u64,
     query: String,
     selected: Option<&'static str>,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for AutocompleteSection {
-    type State = AutocompleteSectionState;
-
-    fn create_state(self) -> Self::State {
-        AutocompleteSectionState {
-            reset_generation: self.reset_generation,
-            query: String::new(),
-            selected: None,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<AutocompleteSection> for AutocompleteSectionState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: AutocompleteSection) -> Self {
+        AutocompleteSectionState {
+            reset_generation: widget.reset_generation,
+            query: String::new(),
+            selected: None,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -597,9 +544,9 @@ impl State<AutocompleteSection> for AutocompleteSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
+        let updater = this.updater();
         let autocomplete = Autocomplete::new()
             .options([
                 ChoiceOption::new("apple", "Apple", "apple"),
@@ -609,8 +556,8 @@ impl State<AutocompleteSection> for AutocompleteSectionState {
                 ChoiceOption::new("cherry", "Cherry", "cherry"),
             ])
             .label("Fruit")
-            .query(self.query.clone())
-            .selected(self.selected)
+            .query(this.query.clone())
+            .selected(this.selected)
             .on_change(move |value| {
                 updater.set_state(move |state| state.selected = Some(value));
             })
@@ -620,9 +567,9 @@ impl State<AutocompleteSection> for AutocompleteSectionState {
         let filters = Row::new()
             .gaps(LayoutSpacing::all(Spacing::Px(8)))
             .children([
-                filter_chip("Query: \\\"ap\\\"", &self.updater, "ap", app_theme),
-                filter_chip("Query: \\\"b\\\"", &self.updater, "b", app_theme),
-                filter_chip("Clear query", &self.updater, "", app_theme),
+                filter_chip("Query: \\\"ap\\\"", &this.updater(), "ap", app_theme),
+                filter_chip("Query: \\\"b\\\"", &this.updater(), "b", app_theme),
+                filter_chip("Clear query", &this.updater(), "", app_theme),
             ])
             .boxed();
 
@@ -630,8 +577,8 @@ impl State<AutocompleteSection> for AutocompleteSectionState {
             "Autocomplete",
             format!(
                 "Query: {:?}; selected: {}",
-                self.query,
-                self.selected
+                this.query,
+                this.selected
                     .unwrap_or("(none yet)")
             ),
             Column::new()

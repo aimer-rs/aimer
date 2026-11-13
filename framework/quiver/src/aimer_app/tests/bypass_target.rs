@@ -144,25 +144,19 @@ struct BarScene {
     updater: Rc<RefCell<Option<StateUpdater<BarState>>>>,
 }
 
-impl StatefulWidget for BarScene {
-    type State = BarState;
-
-    fn create_state(self) -> BarState {
+impl State<BarScene> for BarState {
+    fn create(widget: BarScene) -> Self {
         BarState {
             hovered: false,
-            updater: self.updater,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<BarScene> for BarState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater.borrow().expect("initialised");
-        let opacity = if self.hovered { 1.0f32 } else { 0.4 };
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        let updater = this.updater.borrow().expect("initialised");
+        let opacity = if this.hovered { 1.0f32 } else { 0.4 };
         let rows: Vec<aimer_widget::AnyWidget> = (0..6u8)
             .map(|i| {
                 SizedBox::new()
@@ -199,7 +193,7 @@ impl State<BarScene> for BarState {
 
 impl Widget for BarScene {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "BarScene", None)
+        StatefulElement::new_with_name::<Self, BarState>(self, ctx, "BarScene", None)
             .0
             .boxed()
     }

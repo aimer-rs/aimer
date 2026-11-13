@@ -1,3 +1,5 @@
+use aimer_widget::BuildElement;
+use aimer_widget::CreateState;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -6,9 +8,10 @@ use aimer_events::element::ElementEvent;
 use aimer_events::pointer::{PointerButton, PointerInfo};
 use aimer_style::BoxDecoration;
 use aimer_widget::base::{Color, WindowHandle};
+use super::ButtonState;
 use aimer_widget::{
     AnyElement, Drawable, Element, ErrorWidget, EventElement, Key, LayoutElement, Rebuildable,
-    State, StatefulWidget, VisitorElement, Widget, dispatch_event,
+    State, VisitorElement, Widget, dispatch_event,
 };
 
 use super::{BuildContext, Button};
@@ -88,11 +91,11 @@ async fn every_rebuild_reaches_the_same_child() {
         .child(Probe {
             builds: Rc::clone(&builds),
         })
-        .create_state();
+        .create_state::<ButtonState<_>>();
     let ctx = context();
 
-    state.build(&ctx).to_element(&ctx);
-    state.build(&ctx).to_element(&ctx);
+    state.build_element(&ctx);
+    state.build_element(&ctx);
 
     assert_eq!(
         builds.get(),
@@ -108,9 +111,9 @@ async fn button_blocks_events_from_its_child_by_default() {
         .child(EventProbe {
             events: events.clone(),
         })
-        .create_state();
+        .create_state::<ButtonState<_>>();
     let ctx = context();
-    let element = state.build(&ctx).to_element(&ctx);
+    let element = state.build_element(&ctx);
 
     let pointer = PointerInfo::mouse(
         aimer_widget::base::Vec2d { x: 1.0, y: 1.0 },
@@ -183,7 +186,7 @@ fn state_specific_decorations_are_transferred_to_button_state() {
         .press_decoration(press.clone())
         .disable_decoration(disabled.clone())
         .child(aimer_widget::ErrorWidget::new("button"))
-        .create_state();
+        .create_state::<ButtonState<_>>();
 
     assert_eq!(state.decoration, normal);
     assert_eq!(state.hover_decoration, Some(hover));
@@ -203,7 +206,7 @@ fn state_specific_decorations_follow_disabled_pressed_hover_precedence() {
         .press_decoration(press.clone())
         .disable_decoration(disabled.clone())
         .child(aimer_widget::ErrorWidget::new("button"))
-        .create_state();
+        .create_state::<ButtonState<_>>();
 
     state.is_disabled = true;
     state.is_hover.set(true);

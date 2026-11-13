@@ -412,17 +412,6 @@ impl Default for LiveActivityTimerExample {
 /// The retained side of the page. The timer and its activity outlive the page,
 /// so all it keeps is a way to ask for a redraw.
 pub struct LiveActivityTimerExampleState {
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for LiveActivityTimerExample {
-    type State = LiveActivityTimerExampleState;
-
-    fn create_state(self) -> LiveActivityTimerExampleState {
-        LiveActivityTimerExampleState {
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl LiveActivityTimerExampleState {
@@ -487,15 +476,14 @@ impl LiveActivityTimerExampleState {
 }
 
 impl State<LiveActivityTimerExample> for LiveActivityTimerExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
-        PAGE.set(Some(updater));
+    fn create(widget: LiveActivityTimerExample) -> Self {
+        LiveActivityTimerExampleState {
+        }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        PAGE.set(Some(this.updater()));
         let app_theme = ThemeData::copied(ctx);
         let muted = crate::theme::muted_text(&app_theme);
         let body = app_theme.on_background_color;

@@ -40,33 +40,27 @@ impl FileDropShowcase {
 }
 
 pub struct FileDropShowcaseState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     /// The last batch each zone received, and how many batches it has seen.
     images: (Vec<PathBuf>, usize),
     anything: (Vec<PathBuf>, usize),
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for FileDropShowcase {
-    type State = FileDropShowcaseState;
-
-    fn create_state(self) -> Self::State {
-        FileDropShowcaseState {
-            images: (Vec::new(), 0),
-            anything: (Vec::new(), 0),
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<FileDropShowcase> for FileDropShowcaseState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: FileDropShowcase) -> Self {
+        FileDropShowcaseState {
+            updater: StateUpdater::empty(),
+            images: (Vec::new(), 0),
+            anything: (Vec::new(), 0),
+        }
+    }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         Container::new()
@@ -91,8 +85,8 @@ impl State<FileDropShowcase> for FileDropShowcaseState {
                                     .vertical_alignment(BoxAlignment::Start)
                                     .gaps(LayoutSpacing::all(Spacing::Px(16)))
                                     .children([
-                                        Expanded::new().child(self.image_zone(app_theme)),
-                                        Expanded::new().child(self.anything_zone(app_theme)),
+                                        Expanded::new().child(this.image_zone(app_theme)),
+                                        Expanded::new().child(this.anything_zone(app_theme)),
                                     ]),
                             )
                             .boxed(),

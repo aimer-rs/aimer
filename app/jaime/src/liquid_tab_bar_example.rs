@@ -15,7 +15,7 @@ use aimer::indicator::{IndicatorStyle, TabBar, TabItem, indicator_styles};
 use aimer::style::{Color, FontWeight, LayoutSpacing, Spacing, TextStyle};
 use aimer::svg::{Svg, SvgColor, SvgDocument, SvgStyle};
 use aimer::{
-    AimerApp, AnyWidget, BuildContext, Column, State, StateUpdater, StatefulWidget, Text, Widget,
+    AimerApp, AnyWidget, BuildContext, Column, State, StateView, StateUpdater, StatefulWidget, Text, Widget,
 };
 use std::time::Duration;
 
@@ -82,27 +82,24 @@ impl Default for LiquidTabBarExample {
 }
 
 pub struct LiquidTabBarExampleState {
-    selected: usize,
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for LiquidTabBarExample {
-    type State = LiquidTabBarExampleState;
-
-    fn create_state(self) -> Self::State {
-        LiquidTabBarExampleState {
-            selected: 1,
-            updater: StateUpdater::empty(),
-        }
-    }
+    selected: usize,
 }
 
 impl State<LiquidTabBarExample> for LiquidTabBarExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn create(widget: LiquidTabBarExample) -> Self {
+        LiquidTabBarExampleState {
+            updater: StateUpdater::empty(),
+            selected: 1,
+        }
+    }
+
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let app_theme = theme::app_theme();
         Column::new()
             .gaps(LayoutSpacing::all(Spacing::Px(20)))
@@ -119,10 +116,10 @@ impl State<LiquidTabBarExample> for LiquidTabBarExampleState {
                 .wrapped()
                 .boxed(),
                 caption("Liquid glass indicator, bouncy spring", &app_theme),
-                self.bar(indicator_styles::LIQUID_GLASS, motions::BOUNCY),
+                this.bar(indicator_styles::LIQUID_GLASS, motions::BOUNCY),
                 caption("Flat pill indicator, smooth spring", &app_theme),
-                self.bar(indicator_styles::FLAT_PILL, motions::SMOOTH),
-                Text::new(format!("Selected: {}", TITLES[self.selected]))
+                this.bar(indicator_styles::FLAT_PILL, motions::SMOOTH),
+                Text::new(format!("Selected: {}", TITLES[this.selected]))
                     .text_style(
                         TextStyle::new()
                             .font_size(14)

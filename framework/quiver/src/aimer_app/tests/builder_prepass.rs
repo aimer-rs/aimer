@@ -237,37 +237,33 @@ mod moved_state {
         updater: Rc<RefCell<Option<StateUpdater<TaggedState>>>>,
     }
 
-    impl StatefulWidget for Tagged {
-        type State = TaggedState;
-
-        fn create_state(self) -> TaggedState {
+    impl State<Tagged> for TaggedState {
+        fn create(widget: Tagged) -> Self {
             TaggedState {
                 shade: 0,
-                builds: self.builds,
-                updater: self.updater,
+                builds: widget.builds,
+                updater: widget.updater,
             }
         }
-    }
 
-    impl State<Tagged> for TaggedState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
+        fn on_mount(&mut self, updater: StateUpdater<Self>) {
             // Every builder frame creates a fresh state that reconciliation then
             // discards in favour of the live one, which is the first.
             self.updater.borrow_mut().get_or_insert(updater);
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.builds.set(self.builds.get() + 1);
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.builds.set(this.builds.get() + 1);
             SizedBox::new()
                 .width(Dimension::Px(40.0))
                 .height(Dimension::Px(20.0))
-                .color(Color::Rgb(self.shade, 90, 90))
+                .color(Color::Rgb(this.shade, 90, 90))
         }
     }
 
     impl Widget for Tagged {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            StatefulElement::new_with_name(
+            StatefulElement::new_with_name::<Self, TaggedState>(
                 self,
                 ctx,
                 "Tagged",

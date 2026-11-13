@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use aimer_input::TextEditingController;
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, State, StateView, StateUpdater, StatefulElement, Widget};
 
 use crate::binary::ChangeCallback;
 use crate::combo::{Combo, ComboConfig, Filter, QueryCallback, Typeahead, TriggerBuilder};
@@ -233,35 +233,31 @@ impl<T> Autocomplete<T> {
     }
 }
 
-impl<T: Clone + PartialEq + 'static> StatefulWidget for Autocomplete<T> {
-    type State = Combo<T>;
-
-    fn create_state(self) -> Self::State {
-        let initial = self.query.clone().unwrap_or_default();
+impl<T: Clone + PartialEq + 'static> State<Autocomplete<T>> for Combo<T> {
+    fn create(widget: Autocomplete<T>) -> Self {
+        let initial = widget.query.clone().unwrap_or_default();
         Combo::new(ComboConfig {
-            options: self.options,
-            selected: self.selected,
-            on_change: self.on_change,
-            common: self.common,
-            placeholder: self.placeholder,
-            empty_text: self.empty_text,
-            loading: self.loading,
-            trigger: self.trigger,
-            rows: self.rows,
+            options: widget.options,
+            selected: widget.selected,
+            on_change: widget.on_change,
+            common: widget.common,
+            placeholder: widget.placeholder,
+            empty_text: widget.empty_text,
+            loading: widget.loading,
+            trigger: widget.trigger,
+            rows: widget.rows,
             search: Some(Typeahead {
                 controller: TextEditingController::with_text(initial.clone()),
                 query: initial,
-                owner_query: self.query,
-                placeholder: self.search_placeholder,
-                filter: self.filter,
-                on_query_change: self.on_query_change,
+                owner_query: widget.query,
+                placeholder: widget.search_placeholder,
+                filter: widget.filter,
+                on_query_change: widget.on_query_change,
             }),
         })
     }
-}
 
-impl<T: Clone + PartialEq + 'static> State<Autocomplete<T>> for Combo<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.init(updater);
     }
 
@@ -269,14 +265,14 @@ impl<T: Clone + PartialEq + 'static> State<Autocomplete<T>> for Combo<T> {
         self.adopt(new);
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.render(ctx)
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.render(ctx)
     }
 }
 
 impl<T: Clone + PartialEq + 'static> Widget for Autocomplete<T> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Autocomplete", None)
+        StatefulElement::new_with_name::<Self, Combo<T>>(self, ctx, "Autocomplete", None)
             .0
             .boxed()
     }

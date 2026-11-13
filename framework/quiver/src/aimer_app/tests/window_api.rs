@@ -44,16 +44,14 @@ struct ParentState {
     content: u32,
 }
 
-impl StatefulWidget for Parent {
-    type State = ParentState;
-
-    fn create_state(self) -> ParentState {
+impl State<Parent> for ParentState {
+    fn create(widget: Parent) -> Self {
         ParentState {
-            updater: self.updater,
-            closed: self.closed,
-            built: self.built,
-            provide: self.provide,
-            isolated: self.isolated,
+            updater: widget.updater,
+            closed: widget.closed,
+            built: widget.built,
+            provide: widget.provide,
+            isolated: widget.isolated,
             mounted: true,
             open: true,
             title: "First",
@@ -61,23 +59,19 @@ impl StatefulWidget for Parent {
             content: 1,
         }
     }
-}
 
-impl State<Parent> for ParentState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let closed = self.closed.clone();
-        let built = self.built.clone();
-        let content = self.content;
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        let closed = this.closed.clone();
+        let built = this.built.clone();
+        let content = this.content;
         let mut window = Window::new()
-            .title(self.title)
-            .size(self.size.0, self.size.1)
-            .open(self.open)
+            .title(this.title)
+            .size(this.size.0, this.size.1)
+            .open(this.open)
             .on_close(move || closed.set(closed.get() + 1));
-        if self.isolated {
+        if this.isolated {
             window = window.isolated();
         }
         let window = window.builder(move |ctx| {
@@ -85,12 +79,12 @@ impl State<Parent> for ParentState {
             built.borrow_mut().push((content, marker));
             SizedBox::new()
         });
-        let child = if self.mounted {
+        let child = if this.mounted {
             window.to_element(ctx)
         } else {
             SizedBox::new().to_element(ctx)
         };
-        let provided = self.provide;
+        let provided = this.provide;
         ElementPassthrough { child, provided }
     }
 }
@@ -111,7 +105,7 @@ impl Widget for Parent {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let provide = self.provide;
         let build = |ctx: &BuildContext| {
-            StatefulElement::new_with_name(self, ctx, "WindowApiParent", None)
+            StatefulElement::new_with_name::<Self, ParentState>(self, ctx, "WindowApiParent", None)
                 .0
                 .boxed()
         };

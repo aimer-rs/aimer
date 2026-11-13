@@ -24,8 +24,8 @@ use aimer_text::Text;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, ChildBuilder, Drawable, Element, ErrorWidget, EventElement, EventResult,
-    Focusable, LayoutElement, Rebuildable, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, VisitorElement, Widget,
+    Focusable, LayoutElement, Rebuildable, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    VisitorElement, Widget,
 };
 use std::rc::Rc;
 
@@ -372,25 +372,11 @@ pub struct TabBarWidgetState<K> {
     runtime: SelectionRuntime<K>,
     orientation: Orientation,
     on_changed: Option<NavigationCallback<K>>,
-    updater: StateUpdater<Self>,
-}
-
-impl<K: Clone + PartialEq + ToString + 'static> StatefulWidget for TabBarWidget<K> {
-    type State = TabBarWidgetState<K>;
-
-    fn create_state(self) -> Self::State {
-        TabBarWidgetState {
-            runtime: SelectionRuntime::new(self.tabs, self.orientation, self.wrap_navigation),
-            orientation: self.orientation,
-            on_changed: self.on_changed,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl<K: Clone + PartialEq + ToString + 'static> Widget for TabBarWidget<K> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "TabBarWidget", None)
+        StatefulElement::new_with_name::<Self, TabBarWidgetState<K>>(self, ctx, "TabBarWidget", None)
             .0
             .boxed()
     }
@@ -401,11 +387,12 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for TabBarWidget<K> {
 }
 
 impl<K: Clone + PartialEq + ToString + 'static> State<TabBarWidget<K>> for TabBarWidgetState<K> {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: TabBarWidget<K>) -> Self {
+        TabBarWidgetState {
+            runtime: SelectionRuntime::new(widget.tabs, widget.orientation, widget.wrap_navigation),
+            orientation: widget.orientation,
+            on_changed: widget.on_changed,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self)
@@ -417,10 +404,10 @@ impl<K: Clone + PartialEq + ToString + 'static> State<TabBarWidget<K>> for TabBa
         self.on_changed = new.on_changed;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let Some(model) = self.runtime.model.as_ref().ok() else {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let Some(model) = this.runtime.model.as_ref().ok() else {
             return ErrorWidget::new(
-                self.runtime
+                this.runtime
                     .model
                     .as_ref()
                     .err()
@@ -430,7 +417,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<TabBarWidget<K>> for TabBa
             .boxed();
         };
         let handler = {
-            let updater = self.updater;
+            let updater = this.updater();
             Rc::new(move |interaction| {
                 updater.set_state(move |state| {
                     if let Some(index) =
@@ -446,16 +433,16 @@ impl<K: Clone + PartialEq + ToString + 'static> State<TabBarWidget<K>> for TabBa
             })
         };
         let children = build_tab_items(
-            &self.runtime.tabs,
-            0..self.runtime.tabs.len(),
+            &this.runtime.tabs,
+            0..this.runtime.tabs.len(),
             Some(model.selected_index()),
             Some(model.focused_index()),
-            &self.runtime.nodes,
+            &this.runtime.nodes,
             handler,
             "tabs",
             navigation_palette(ctx),
         );
-        build_selection_surface(self.orientation, children)
+        build_selection_surface(this.orientation, children)
     }
 }
 
@@ -559,32 +546,11 @@ pub struct NavigationMenuWidgetState<K> {
     on_changed: Option<NavigationCallback<K>>,
     on_overflow: Option<OverflowCallback<K>>,
     overflow_node: FocusNode,
-    updater: StateUpdater<Self>,
-}
-
-impl<K: Clone + PartialEq + ToString + 'static> StatefulWidget for NavigationMenuWidget<K> {
-    type State = NavigationMenuWidgetState<K>;
-
-    fn create_state(self) -> Self::State {
-        let orientation = match self.surface {
-            NavigationSurface::Drawer | NavigationSurface::Rail => Orientation::Vertical,
-            NavigationSurface::Bottom => Orientation::Horizontal,
-        };
-        NavigationMenuWidgetState {
-            runtime: SelectionRuntime::new(self.items, orientation, true),
-            overflow: self.overflow,
-            item_extent: self.item_extent,
-            on_changed: self.on_changed,
-            on_overflow: self.on_overflow,
-            overflow_node: FocusNode::new(),
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl<K: Clone + PartialEq + ToString + 'static> Widget for NavigationMenuWidget<K> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "NavigationMenuWidget", None)
+        StatefulElement::new_with_name::<Self, NavigationMenuWidgetState<K>>(self, ctx, "NavigationMenuWidget", None)
             .0
             .boxed()
     }
@@ -597,11 +563,19 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for NavigationMenuWidget<
 impl<K: Clone + PartialEq + ToString + 'static> State<NavigationMenuWidget<K>>
     for NavigationMenuWidgetState<K>
 {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: NavigationMenuWidget<K>) -> Self {
+        let orientation = match widget.surface {
+            NavigationSurface::Drawer | NavigationSurface::Rail => Orientation::Vertical,
+            NavigationSurface::Bottom => Orientation::Horizontal,
+        };
+        NavigationMenuWidgetState {
+            runtime: SelectionRuntime::new(widget.items, orientation, true),
+            overflow: widget.overflow,
+            item_extent: widget.item_extent,
+            on_changed: widget.on_changed,
+            on_overflow: widget.on_overflow,
+            overflow_node: FocusNode::new(),
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self)
@@ -615,10 +589,10 @@ impl<K: Clone + PartialEq + ToString + 'static> State<NavigationMenuWidget<K>>
         self.on_overflow = new.on_overflow;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let Some(model) = self.runtime.model.as_ref().ok() else {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let Some(model) = this.runtime.model.as_ref().ok() else {
             return ErrorWidget::new(
-                self.runtime
+                this.runtime
                     .model
                     .as_ref()
                     .err()
@@ -627,7 +601,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<NavigationMenuWidget<K>>
             )
             .boxed();
         };
-        if self.item_extent == 0 {
+        if this.item_extent == 0 {
             return ErrorWidget::new(NavigationError::InvalidItemExtent.to_string()).boxed();
         }
 
@@ -640,21 +614,21 @@ impl<K: Clone + PartialEq + ToString + 'static> State<NavigationMenuWidget<K>>
             Orientation::Vertical => window_extent.height,
         };
         let visible_count =
-            ((extent / self.item_extent as f32).floor() as usize).min(self.runtime.tabs.len());
-        let visible_count = if self.overflow == OverflowPolicy::Menu {
-            if visible_count < self.runtime.tabs.len() {
+            ((extent / this.item_extent as f32).floor() as usize).min(this.runtime.tabs.len());
+        let visible_count = if this.overflow == OverflowPolicy::Menu {
+            if visible_count < this.runtime.tabs.len() {
                 visible_count.saturating_sub(1)
             } else {
                 visible_count
             }
         } else {
-            self.runtime.tabs.len()
+            this.runtime.tabs.len()
         };
         let selected = Some(model.selected_index());
         let focused = Some(model.focused_index());
         let handler = {
-            let updater = self.updater;
-            let overflow_node = self.overflow_node.clone();
+            let updater = this.updater();
+            let overflow_node = this.overflow_node.clone();
             Rc::new(move |interaction| {
                 let overflow_node = overflow_node.clone();
                 updater.set_state(move |state| {
@@ -674,23 +648,23 @@ impl<K: Clone + PartialEq + ToString + 'static> State<NavigationMenuWidget<K>>
             })
         };
         let mut children = build_tab_items(
-            &self.runtime.tabs,
+            &this.runtime.tabs,
             0..visible_count,
             selected,
             focused,
-            &self.runtime.nodes,
+            &this.runtime.nodes,
             handler,
             "menu",
             navigation_palette(ctx),
         );
-        if visible_count < self.runtime.tabs.len() && self.overflow == OverflowPolicy::Menu {
-            let hidden_keys = self.runtime.tabs[visible_count..]
+        if visible_count < this.runtime.tabs.len() && this.overflow == OverflowPolicy::Menu {
+            let hidden_keys = this.runtime.tabs[visible_count..]
                 .iter()
                 .map(|tab| tab.key().clone())
                 .collect::<Vec<_>>();
             let label = format!("› More ({})", hidden_keys.len());
-            let callback = self.on_overflow.clone();
-            let node = self.overflow_node.clone();
+            let callback = this.on_overflow.clone();
+            let node = this.overflow_node.clone();
             let press_keys = hidden_keys.clone();
             let press_callback = callback.clone();
             let button = Button::new()
@@ -782,7 +756,6 @@ pub struct RouteTabBarWidgetState<R: Route> {
     model: std::cell::RefCell<Result<RouteTabBar<R>, NavigationError>>,
     nodes: Vec<FocusNode>,
     on_changed: Option<NavigationCallback<R>>,
-    updater: StateUpdater<Self>,
 }
 
 fn route_tabs_as_tabs<R: Route>(model: &RouteTabBar<R>) -> Vec<Tab<String>> {
@@ -828,24 +801,9 @@ fn apply_route_interaction<R: Route>(
     Some(route)
 }
 
-impl<R: Route> StatefulWidget for RouteTabBarWidget<R> {
-    type State = RouteTabBarWidgetState<R>;
-
-    fn create_state(self) -> Self::State {
-        let nodes = self.tabs.iter().map(|_| FocusNode::new()).collect();
-        let model = RouteTabBar::new(self.tabs);
-        RouteTabBarWidgetState {
-            model: std::cell::RefCell::new(model),
-            nodes,
-            on_changed: self.on_changed,
-            updater: StateUpdater::empty(),
-        }
-    }
-}
-
 impl<R: Route> Widget for RouteTabBarWidget<R> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "RouteTabBarWidget", None)
+        StatefulElement::new_with_name::<Self, RouteTabBarWidgetState<R>>(self, ctx, "RouteTabBarWidget", None)
             .0
             .boxed()
     }
@@ -856,11 +814,14 @@ impl<R: Route> Widget for RouteTabBarWidget<R> {
 }
 
 impl<R: Route> State<RouteTabBarWidget<R>> for RouteTabBarWidgetState<R> {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: RouteTabBarWidget<R>) -> Self {
+        let nodes = widget.tabs.iter().map(|_| FocusNode::new()).collect();
+        let model = RouteTabBar::new(widget.tabs);
+        RouteTabBarWidgetState {
+            model: std::cell::RefCell::new(model),
+            nodes,
+            on_changed: widget.on_changed,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self)
@@ -925,18 +886,18 @@ impl<R: Route> State<RouteTabBarWidget<R>> for RouteTabBarWidgetState<R> {
         self.on_changed = new.on_changed;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let navigator = ctx
             .get_state::<NavigatorController<R>>()
             .map(|controller| controller.as_ref().clone());
         if let Some(navigator) = navigator.as_ref() {
-            if let Ok(mut model) = self.model.try_borrow_mut() {
+            if let Ok(mut model) = this.model.try_borrow_mut() {
                 let _ = model
                     .as_mut()
                     .map(|route_model| route_model.sync_from_navigator(navigator));
             }
         }
-        let model = self.model.borrow();
+        let model = this.model.borrow();
         let Some(model) = model.as_ref().ok() else {
             let message = model
                 .as_ref()
@@ -948,7 +909,7 @@ impl<R: Route> State<RouteTabBarWidget<R>> for RouteTabBarWidgetState<R> {
         };
         let tabs = route_tabs_as_tabs(model);
         let handler = {
-            let updater = self.updater;
+            let updater = this.updater();
             let navigator = navigator.clone();
             Rc::new(move |interaction| {
                 let updater = updater;
@@ -969,7 +930,7 @@ impl<R: Route> State<RouteTabBarWidget<R>> for RouteTabBarWidgetState<R> {
             0..tabs.len(),
             Some(model.selected_index()),
             Some(model.focused_index()),
-            &self.nodes,
+            &this.nodes,
             handler,
             "route-tabs",
             navigation_palette(ctx),
@@ -1172,30 +1133,11 @@ pub struct TabViewWidgetState<K> {
     runtime: TabViewRuntime<K>,
     orientation: Orientation,
     on_changed: Option<NavigationCallback<K>>,
-    updater: StateUpdater<Self>,
-}
-
-impl<K: Clone + PartialEq + ToString + 'static> StatefulWidget for TabViewWidget<K> {
-    type State = TabViewWidgetState<K>;
-
-    fn create_state(self) -> Self::State {
-        TabViewWidgetState {
-            runtime: TabViewRuntime::new(
-                self.tabs,
-                self.pages,
-                self.orientation,
-                self.wrap_navigation,
-            ),
-            orientation: self.orientation,
-            on_changed: self.on_changed,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl<K: Clone + PartialEq + ToString + 'static> Widget for TabViewWidget<K> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "TabViewWidget", None)
+        StatefulElement::new_with_name::<Self, TabViewWidgetState<K>>(self, ctx, "TabViewWidget", None)
             .0
             .boxed()
     }
@@ -1206,11 +1148,17 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for TabViewWidget<K> {
 }
 
 impl<K: Clone + PartialEq + ToString + 'static> State<TabViewWidget<K>> for TabViewWidgetState<K> {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: TabViewWidget<K>) -> Self {
+        TabViewWidgetState {
+            runtime: TabViewRuntime::new(
+                widget.tabs,
+                widget.pages,
+                widget.orientation,
+                widget.wrap_navigation,
+            ),
+            orientation: widget.orientation,
+            on_changed: widget.on_changed,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self)
@@ -1222,10 +1170,10 @@ impl<K: Clone + PartialEq + ToString + 'static> State<TabViewWidget<K>> for TabV
         self.on_changed = new.on_changed;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let Some(model) = self.runtime.model.as_ref().ok() else {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let Some(model) = this.runtime.model.as_ref().ok() else {
             return ErrorWidget::new(
-                self.runtime
+                this.runtime
                     .model
                     .as_ref()
                     .err()
@@ -1235,7 +1183,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<TabViewWidget<K>> for TabV
             .boxed();
         };
         let handler = {
-            let updater = self.updater;
+            let updater = this.updater();
             Rc::new(move |interaction| {
                 updater.set_state(move |state| {
                     if let Some(index) = apply_tab_view_interaction(&mut state.runtime, interaction)
@@ -1252,18 +1200,17 @@ impl<K: Clone + PartialEq + ToString + 'static> State<TabViewWidget<K>> for TabV
             })
         };
         let header = build_tab_items(
-            &self.runtime.tabs,
-            0..self.runtime.tabs.len(),
+            &this.runtime.tabs,
+            0..this.runtime.tabs.len(),
             Some(model.selected_index()),
             Some(model.focused_index()),
-            &self.runtime.nodes,
+            &this.runtime.nodes,
             handler,
             "tab-view",
             navigation_palette(ctx),
         );
-        let header = build_selection_surface(self.orientation, header);
-        let page = self
-            .runtime
+        let header = build_selection_surface(this.orientation, header);
+        let page = this.runtime
             .pages
             .get(model.selected_index())
             .map(|page| page.child.clone().boxed())
@@ -1336,7 +1283,6 @@ pub struct BreadcrumbsWidgetState<K> {
     focus: Result<TabBar<K>, NavigationError>,
     nodes: Vec<FocusNode>,
     on_changed: Option<NavigationCallback<K>>,
-    updater: StateUpdater<Self>,
 }
 
 fn breadcrumb_tabs<K: Clone + PartialEq>(model: &Breadcrumbs<K>) -> Vec<Tab<K>> {
@@ -1387,11 +1333,23 @@ fn apply_breadcrumb_interaction<K: Clone + PartialEq>(
     }
 }
 
-impl<K: Clone + PartialEq + ToString + 'static> StatefulWidget for BreadcrumbsWidget<K> {
-    type State = BreadcrumbsWidgetState<K>;
+impl<K: Clone + PartialEq + ToString + 'static> Widget for BreadcrumbsWidget<K> {
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        StatefulElement::new_with_name::<Self, BreadcrumbsWidgetState<K>>(self, ctx, "BreadcrumbsWidget", None)
+            .0
+            .boxed()
+    }
 
-    fn create_state(self) -> Self::State {
-        let model = Breadcrumbs::new(self.items);
+    fn debug_name(&self) -> &'static str {
+        "BreadcrumbsWidget"
+    }
+}
+
+impl<K: Clone + PartialEq + ToString + 'static> State<BreadcrumbsWidget<K>>
+    for BreadcrumbsWidgetState<K>
+{
+    fn create(widget: BreadcrumbsWidget<K>) -> Self {
+        let model = Breadcrumbs::new(widget.items);
         let (focus, nodes) = match model.as_ref() {
             Ok(model) => (
                 focus_model(
@@ -1407,32 +1365,8 @@ impl<K: Clone + PartialEq + ToString + 'static> StatefulWidget for BreadcrumbsWi
             model,
             focus,
             nodes,
-            on_changed: self.on_changed,
-            updater: StateUpdater::empty(),
+            on_changed: widget.on_changed,
         }
-    }
-}
-
-impl<K: Clone + PartialEq + ToString + 'static> Widget for BreadcrumbsWidget<K> {
-    fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "BreadcrumbsWidget", None)
-            .0
-            .boxed()
-    }
-
-    fn debug_name(&self) -> &'static str {
-        "BreadcrumbsWidget"
-    }
-}
-
-impl<K: Clone + PartialEq + ToString + 'static> State<BreadcrumbsWidget<K>>
-    for BreadcrumbsWidgetState<K>
-{
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
     }
 
     fn adopt_config_from(&mut self, new: Self)
@@ -1501,10 +1435,10 @@ impl<K: Clone + PartialEq + ToString + 'static> State<BreadcrumbsWidget<K>>
         self.on_changed = new.on_changed;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let Some(model) = self.model.as_ref().ok() else {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let Some(model) = this.model.as_ref().ok() else {
             return ErrorWidget::new(
-                self.model
+                this.model
                     .as_ref()
                     .err()
                     .expect("breadcrumb model error should be present")
@@ -1513,13 +1447,12 @@ impl<K: Clone + PartialEq + ToString + 'static> State<BreadcrumbsWidget<K>>
             .boxed();
         };
         let tabs = breadcrumb_tabs(model);
-        let (selected, focused) = self
-            .focus
+        let (selected, focused) = this.focus
             .as_ref()
             .map(|focus| (Some(model.current_index()), Some(focus.focused_index())))
             .unwrap_or((Some(model.current_index()), None));
         let handler = {
-            let updater = self.updater;
+            let updater = this.updater();
             Rc::new(move |interaction| {
                 updater.set_state(move |state| {
                     if let Some(key) = apply_breadcrumb_interaction(state, interaction) {
@@ -1537,7 +1470,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<BreadcrumbsWidget<K>>
                 0..tabs.len(),
                 selected,
                 focused,
-                &self.nodes,
+                &this.nodes,
                 handler,
                 "breadcrumbs",
                 navigation_palette(ctx),
@@ -1610,7 +1543,6 @@ pub struct StepperWidgetState<K> {
     orientation: Orientation,
     nodes: Vec<FocusNode>,
     on_changed: Option<NavigationCallback<K>>,
-    updater: StateUpdater<Self>,
 }
 
 fn step_marker(status: StepStatus) -> &'static str {
@@ -1692,32 +1624,9 @@ fn apply_stepper_interaction<K: Clone + PartialEq>(
     }
 }
 
-impl<K: Clone + PartialEq + ToString + 'static> StatefulWidget for StepperWidget<K> {
-    type State = StepperWidgetState<K>;
-
-    fn create_state(self) -> Self::State {
-        let model = Stepper::new(self.steps);
-        let (focus, nodes) = match model.as_ref() {
-            Ok(model) => (
-                focus_model(step_tabs(model), model.current_index(), self.orientation),
-                model.steps().iter().map(|_| FocusNode::new()).collect(),
-            ),
-            Err(error) => (Err(*error), Vec::new()),
-        };
-        StepperWidgetState {
-            model,
-            focus,
-            orientation: self.orientation,
-            nodes,
-            on_changed: self.on_changed,
-            updater: StateUpdater::empty(),
-        }
-    }
-}
-
 impl<K: Clone + PartialEq + ToString + 'static> Widget for StepperWidget<K> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "StepperWidget", None)
+        StatefulElement::new_with_name::<Self, StepperWidgetState<K>>(self, ctx, "StepperWidget", None)
             .0
             .boxed()
     }
@@ -1728,11 +1637,22 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for StepperWidget<K> {
 }
 
 impl<K: Clone + PartialEq + ToString + 'static> State<StepperWidget<K>> for StepperWidgetState<K> {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: StepperWidget<K>) -> Self {
+        let model = Stepper::new(widget.steps);
+        let (focus, nodes) = match model.as_ref() {
+            Ok(model) => (
+                focus_model(step_tabs(model), model.current_index(), widget.orientation),
+                model.steps().iter().map(|_| FocusNode::new()).collect(),
+            ),
+            Err(error) => (Err(*error), Vec::new()),
+        };
+        StepperWidgetState {
+            model,
+            focus,
+            orientation: widget.orientation,
+            nodes,
+            on_changed: widget.on_changed,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self)
@@ -1801,10 +1721,10 @@ impl<K: Clone + PartialEq + ToString + 'static> State<StepperWidget<K>> for Step
         self.on_changed = new.on_changed;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let Some(model) = self.model.as_ref().ok() else {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let Some(model) = this.model.as_ref().ok() else {
             return ErrorWidget::new(
-                self.model
+                this.model
                     .as_ref()
                     .err()
                     .expect("stepper model error should be present")
@@ -1813,9 +1733,9 @@ impl<K: Clone + PartialEq + ToString + 'static> State<StepperWidget<K>> for Step
             .boxed();
         };
         let tabs = step_tabs(model);
-        let focused = self.focus.as_ref().ok().map(TabBar::focused_index);
+        let focused = this.focus.as_ref().ok().map(TabBar::focused_index);
         let handler = {
-            let updater = self.updater;
+            let updater = this.updater();
             Rc::new(move |interaction| {
                 updater.set_state(move |state| {
                     if let Some(key) = apply_stepper_interaction(state, interaction) {
@@ -1827,13 +1747,13 @@ impl<K: Clone + PartialEq + ToString + 'static> State<StepperWidget<K>> for Step
             })
         };
         build_selection_surface(
-            self.orientation,
+            this.orientation,
             build_tab_items(
                 &tabs,
                 0..tabs.len(),
                 Some(model.current_index()),
                 focused,
-                &self.nodes,
+                &this.nodes,
                 handler,
                 "stepper",
                 navigation_palette(ctx),

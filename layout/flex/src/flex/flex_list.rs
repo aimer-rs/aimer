@@ -431,8 +431,7 @@ mod tests {
 
     use aimer_attribute::size::ResolvedSize;
     use aimer_widget::{
-        Drawable, Key, LayoutElement, State, StateUpdater, StatefulElement, StatefulWidget,
-        VisitorElement, Widget, carry_element_state,
+        Drawable, Key, LayoutElement, State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget, carry_element_state,
     };
 
     use super::*;
@@ -585,7 +584,6 @@ mod tests {
         counter: usize,
         seen: Rc<RefCell<HashMap<u32, usize>>>,
         updaters: Rc<RefCell<HashMap<u32, StateUpdater<RowState>>>>,
-        updater: StateUpdater<RowState>,
     }
 
     struct StatefulRowWidget {
@@ -594,28 +592,25 @@ mod tests {
         updaters: Rc<RefCell<HashMap<u32, StateUpdater<RowState>>>>,
     }
 
-    impl StatefulWidget for StatefulRowWidget {
-        type State = RowState;
-
-        fn create_state(self) -> Self::State {
-            RowState {
-                item: self.item,
-                counter: 0,
-                seen: self.seen.clone(),
-                updaters: self.updaters.clone(),
-                updater: StateUpdater::new(),
-            }
+    impl Widget for StatefulRowWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, RowState>(self, ctx, "StatefulRowWidget", None)
         }
     }
 
     impl State<StatefulRowWidget> for RowState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
+        fn create(widget: StatefulRowWidget) -> Self {
+            RowState {
+                item: widget.item,
+                counter: 0,
+                seen: widget.seen.clone(),
+                updaters: widget.updaters.clone(),
+            }
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.seen.borrow_mut().insert(self.item, self.counter);
-            self.updaters.borrow_mut().insert(self.item, self.updater);
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.seen.borrow_mut().insert(this.item, this.counter);
+            this.updaters.borrow_mut().insert(this.item, this.updater());
             Leaf(ROW_EXTENT)
         }
     }
@@ -629,7 +624,7 @@ mod tests {
 
     impl Widget for StatefulRow {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            let (element, _) = StatefulElement::new_with_name(
+            let (element, _) = StatefulElement::new_with_name::<StatefulRowWidget, RowState>(
                 StatefulRowWidget {
                     item: self.item,
                     seen: self.seen.clone(),

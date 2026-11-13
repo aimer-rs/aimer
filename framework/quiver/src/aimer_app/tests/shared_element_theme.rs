@@ -72,31 +72,25 @@ struct Shell {
     updater: Rc<RefCell<Option<StateUpdater<ShellState>>>>,
 }
 
-impl StatefulWidget for Shell {
-    type State = ShellState;
-
-    fn create_state(self) -> ShellState {
-        ShellState { placement: self.placement, mode: ThemeMode::Dark, built: self.built, updater: self.updater }
-    }
-}
-
 impl State<Shell> for ShellState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
+    fn create(widget: Shell) -> Self {
+        ShellState { placement: widget.placement, mode: ThemeMode::Dark, built: widget.built, updater: widget.updater }
     }
+
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
         AnimatedTheme::new()
             .adaptive(TestTheme { tone: 30 }, TestTheme { tone: 235 })
-            .mode(self.mode)
+            .mode(this.mode)
             .duration(Duration::from_millis(150))
             .curve(curves::EASE_IN_OUT)
-            .child(match self.placement {
-                Placement::Plain => Card { built: self.built.clone() }.boxed(),
+            .child(match this.placement {
+                Placement::Plain => Card { built: this.built.clone() }.boxed(),
                 Placement::ListRow => {
-                    let built = self.built.clone();
+                    let built = this.built.clone();
                     Scrollable::new()
                         .child(
                             Column::new()
@@ -113,7 +107,7 @@ impl State<Shell> for ShellState {
 
 impl Widget for Shell {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "SharedThemeShell", None).0.boxed()
+        StatefulElement::new_with_name::<Self, ShellState>(self, ctx, "SharedThemeShell", None).0.boxed()
     }
 }
 

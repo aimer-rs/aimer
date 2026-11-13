@@ -15,8 +15,8 @@ use aimer_container::SizedBox;
 use aimer_space::Stack;
 use aimer_widget::base::{BuildContext, ResolvedSize};
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, Key, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, Widget,
+    AnyElement, AnyWidget, ChildBuilder, Key, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    Widget,
 };
 
 /// How a page grows out of one tagged item: shared by the router transition and
@@ -309,50 +309,13 @@ impl<W> ContainerTransform<W> {
 
 impl<W: Widget + 'static> Widget for ContainerTransform<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ContainerTransform", None)
+        StatefulElement::new_with_name::<Self, ContainerTransformState<W>>(self, ctx, "ContainerTransform", None)
             .0
             .boxed()
     }
 
     fn debug_name(&self) -> &'static str {
         "ContainerTransform"
-    }
-}
-
-impl<W: Widget + 'static> StatefulWidget for ContainerTransform<W> {
-    type State = ContainerTransformState<W>;
-
-    fn create_state(self) -> Self::State {
-        let controller = AnimationController::new(self.duration, self.curve.clone());
-        let open = self.page.is_some();
-        if open {
-            // Already open when first built: show it, don't animate it in.
-            controller.set_value(1.0);
-        }
-        ContainerTransformState {
-            base: ChildBuilder::from_widget(self.base),
-            page: self
-                .page
-                .map(|(tag, page)| OpenPage { tag, child: ChildBuilder::from_widget(page) }),
-            wanted_open: open,
-            controller,
-            source_radius: self.source_radius,
-            page_radius: self.page_radius,
-            scrim: self.scrim,
-            reveal: self.reveal,
-            staged: self.staged,
-            lift: self.lift,
-            stage_overlap: self.stage_overlap,
-            stage_spans: self.stage_spans,
-            anchor_curve: self.anchor_curve,
-            page_curve: self.page_curve,
-            anchor: None,
-            resolved: None,
-            show_anchor: false,
-            viewport: Rc::new(Cell::new(None)),
-            updater: StateUpdater::empty(),
-            marker: PhantomData,
-        }
     }
 }
 
@@ -383,7 +346,6 @@ pub struct ContainerTransformState<W> {
     /// The area the page fills, as last measured by the page layer, which the
     /// copy's layer (laid out at the item's size) cannot measure for itself.
     viewport: Rc<Cell<Option<ResolvedSize>>>,
-    updater: StateUpdater<Self>,
     marker: PhantomData<fn() -> W>,
 }
 
@@ -461,8 +423,39 @@ impl<W: 'static> StatusListener for MotionListener<W> {
 }
 
 impl<W: Widget + 'static> State<ContainerTransform<W>> for ContainerTransformState<W> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: ContainerTransform<W>) -> Self {
+        let controller = AnimationController::new(widget.duration, widget.curve.clone());
+        let open = widget.page.is_some();
+        if open {
+            // Already open when first built: show it, don't animate it in.
+            controller.set_value(1.0);
+        }
+        ContainerTransformState {
+            base: ChildBuilder::from_widget(widget.base),
+            page: widget
+                .page
+                .map(|(tag, page)| OpenPage { tag, child: ChildBuilder::from_widget(page) }),
+            wanted_open: open,
+            controller,
+            source_radius: widget.source_radius,
+            page_radius: widget.page_radius,
+            scrim: widget.scrim,
+            reveal: widget.reveal,
+            staged: widget.staged,
+            lift: widget.lift,
+            stage_overlap: widget.stage_overlap,
+            stage_spans: widget.stage_spans,
+            anchor_curve: widget.anchor_curve,
+            page_curve: widget.page_curve,
+            anchor: None,
+            resolved: None,
+            show_anchor: false,
+            viewport: Rc::new(Cell::new(None)),
+            marker: PhantomData,
+        }
+    }
+
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.controller
             .add_status_listener(Rc::new(MotionListener { updater }));
     }
@@ -512,20 +505,20 @@ impl<W: Widget + 'static> State<ContainerTransform<W>> for ContainerTransformSta
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let scrim = self.scrim.clamp(0.0, 1.0);
-        let base = AnimatedPaint::new(self.controller.clone(), self.base.clone()).effect(move |progress| {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let scrim = this.scrim.clamp(0.0, 1.0);
+        let base = AnimatedPaint::new(this.controller.clone(), this.base.clone()).effect(move |progress| {
             // The base dims as the page comes up.
             PaintPresentation { opacity: 1.0 - scrim * progress.clamp(0.0, 1.0), ..PaintPresentation::IDENTITY_OPAQUE }
         });
 
         let mut layers: Vec<AnyWidget> = vec![base.boxed()];
-        if let Some(page) = &self.page {
-            let motion = self.motion(page.tag.clone());
-            let viewport = Rc::clone(&self.viewport);
+        if let Some(page) = &this.page {
+            let motion = this.motion(page.tag.clone());
+            let viewport = Rc::clone(&this.viewport);
             let page_motion = motion.clone();
             layers.push(
-                AnimatedPaint::new(self.controller.clone(), page.child.clone())
+                AnimatedPaint::new(this.controller.clone(), page.child.clone())
                     .geometry_effect(move |progress, size, origin| {
                         viewport.set(Some(size));
                         match page_motion.spec(size, origin) {
@@ -537,11 +530,11 @@ impl<W: Widget + 'static> State<ContainerTransform<W>> for ContainerTransformSta
                     .boxed(),
             );
             // The copy of the item goes above everything, while the motion runs.
-            if let (true, Some(anchor)) = (self.show_anchor, &self.anchor) {
-                let viewport = Rc::clone(&self.viewport);
+            if let (true, Some(anchor)) = (this.show_anchor, &this.anchor) {
+                let viewport = Rc::clone(&this.viewport);
                 layers.push(
                     AnimatedPaint::new(
-                        self.controller.clone(),
+                        this.controller.clone(),
                         SizedBox::new()
                             .width(Dimension::Px(anchor.size.width))
                             .height(Dimension::Px(anchor.size.height))
@@ -566,6 +559,7 @@ impl<W: Widget + 'static> State<ContainerTransform<W>> for ContainerTransformSta
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use aimer_widget::ErrorWidget;
 
     use super::*;
@@ -579,7 +573,7 @@ mod tests {
     }
 
     fn state(page: Option<(Key, AnyWidget)>) -> ContainerTransformState<ErrorWidget> {
-        ContainerTransform::new().page(page).child(ErrorWidget::new("base")).create_state()
+        ContainerTransform::new().page(page).child(ErrorWidget::new("base")).create_state::<ContainerTransformState<_>>()
     }
 
     /// What a parent rebuild does: build the new configuration's state and
@@ -672,7 +666,7 @@ mod tests {
             .page_radius(5.0)
             .scrim(0.8)
             .child(ErrorWidget::new("base"))
-            .create_state();
+            .create_state::<ContainerTransformState<_>>();
 
         live.adopt_config_from(next);
 
@@ -688,7 +682,7 @@ mod tests {
             .anchor_curve(curves::EASE_OUT)
             .page_curve(curves::EASE_IN)
             .child(ErrorWidget::new("base"))
-            .create_state();
+            .create_state::<ContainerTransformState<_>>();
 
         live.adopt_config_from(next);
 
@@ -699,7 +693,7 @@ mod tests {
     fn the_element_curves_reach_the_motion() {
         let mut live = state(None);
         live.adopt_config_from(
-            ContainerTransform::new().anchor_curve(curves::EASE_OUT).page_curve(curves::EASE_IN).child(ErrorWidget::new("base")).create_state(),
+            ContainerTransform::new().anchor_curve(curves::EASE_OUT).page_curve(curves::EASE_IN).child(ErrorWidget::new("base")).create_state::<ContainerTransformState<_>>(),
         );
 
         let motion = live.motion(tag("curved"));

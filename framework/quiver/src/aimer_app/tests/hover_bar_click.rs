@@ -35,28 +35,22 @@ struct Screen {
     updater: Rc<RefCell<Option<StateUpdater<ScreenState>>>>,
 }
 
-impl StatefulWidget for Screen {
-    type State = ScreenState;
-
-    fn create_state(self) -> ScreenState {
+impl State<Screen> for ScreenState {
+    fn create(widget: Screen) -> Self {
         ScreenState {
             hovered: false,
-            counters: self.counters,
-            updater: self.updater,
+            counters: widget.counters,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Screen> for ScreenState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        self.counters.builds.set(self.counters.builds.get() + 1);
-        let updater = self.updater.borrow().expect("initialised");
-        let counters = self.counters.clone();
-        let opacity = if self.hovered { 1.0f32 } else { 0.4 };
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        this.counters.builds.set(this.counters.builds.get() + 1);
+        let updater = this.updater.borrow().expect("initialised");
+        let counters = this.counters.clone();
+        let opacity = if this.hovered { 1.0f32 } else { 0.4 };
 
         let bar = MouseRegion::new()
             .on_hover_enter(move || updater.set_state(|state| state.hovered = true))
@@ -120,7 +114,7 @@ impl State<Screen> for ScreenState {
 
 impl Widget for Screen {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "HoverBarScreen", None)
+        StatefulElement::new_with_name::<Self, ScreenState>(self, ctx, "HoverBarScreen", None)
             .0
             .boxed()
     }

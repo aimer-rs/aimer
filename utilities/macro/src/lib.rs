@@ -192,7 +192,7 @@ impl TryFrom<&str> for AttributeKind {
 /// }
 /// ```
 ///
-/// The `impl StatelessWidget`, `impl StatefulWidget` or `impl Router` block you
+/// The `impl StatelessWidget`, `impl State<..>` or `impl Router` block you
 /// already wrote stays as it is.
 ///
 /// # What it did
@@ -202,7 +202,7 @@ impl TryFrom<&str> for AttributeKind {
 /// | Kind | Target | What is generated |
 /// |------|--------|-------------------|
 /// | `Stateless` | struct, tuple struct, enum, or union | `impl Widget` via `StatelessWidget::build` |
-/// | `Stateful` | struct, tuple struct, enum, or union | `impl Widget` via `StatefulElement` |
+/// | `Stateful` | struct, tuple struct, enum, or union | `impl Widget` via `StatefulElement`; the state is `<Name>State`, or the type in `#[state(..)]` |
 /// | `Router` | enum | full router `impl Widget` dispatch |
 /// | `RawWidget` | struct | bare `impl Widget` stub (body uses `unimplemented!`) |
 ///
@@ -313,8 +313,18 @@ pub fn stateless_widget_derive(input: TokenStream) -> TokenStream {
 /// the definition the compiler sees is the one you wrote.
 ///
 /// The generated `to_element` hands the widget to a `StatefulElement`, which
-/// owns the `State` your `StatefulWidget` impl creates and keeps it alive
-/// across rebuilds. Your struct must implement `StatefulWidget`.
+/// creates the widget's state and keeps it alive across rebuilds. That type must
+/// implement `State<Self>`. It is named only inside the body of `to_element`, so
+/// it can stay private to its module.
+///
+/// # Naming the state
+///
+/// By default the state is the widget's name followed by `State`: `Counter`
+/// uses `CounterState`. A generic widget uses a state with the same arguments,
+/// so `Provider<T, W>` uses `ProviderState<T, W>`. Write `#[state(Other)]` to
+/// use a different type; it replaces the default entirely. If the default type
+/// does not exist, the compiler reports "cannot find type" at the widget's
+/// name.
 ///
 /// For named structs, a field named `key` (of type `Option<Key>`) is picked up
 /// automatically and forwarded to the element, giving the state a stable
@@ -325,20 +335,34 @@ pub fn stateless_widget_derive(input: TokenStream) -> TokenStream {
 /// ```rust,ignore
 /// use aimer::*;
 ///
+/// // No attribute: the state is `CounterState`.
 /// #[derive(StatefulWidget)]
 /// pub struct Counter {
 ///     pub initial_count: i32,
 /// }
 ///
-/// impl StatefulWidget for Counter {
-///     type State = CounterState;
+/// struct CounterState {
+///     count: i32,
+/// }
 ///
-///     fn create_state(self) -> CounterState {
-///         CounterState { count: self.initial_count }
+/// impl State<Counter> for CounterState {
+///     fn create(widget: Counter) -> Self {
+///         Self { count: widget.initial_count }
+///     }
+///
+///     fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+///         Text::new(format!("{}", this.count))
 ///     }
 /// }
+///
+/// // A state with another name is named explicitly.
+/// #[derive(StatefulWidget)]
+/// #[state(Tally)]
+/// pub struct Score {
+///     pub points: i32,
+/// }
 /// ```
-#[proc_macro_derive(StatefulWidget)]
+#[proc_macro_derive(StatefulWidget, attributes(state))]
 pub fn stateful_widget_derive(input: TokenStream) -> TokenStream {
     TokenStream::from(StatefulWidgetCodegen::derive(input.into()))
 }

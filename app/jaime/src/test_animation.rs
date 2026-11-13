@@ -8,30 +8,15 @@ use aimer::style::{
 };
 use aimer::{
     AnyWidget, AssetImage, BoxAlignment, BuildContext, Column, Container, Dimension, Row, SizedBox,
-    State, StateUpdater, StatefulWidget, Text, TextButton, Widget,
+    State, StateView, StateUpdater, StatefulWidget, Text, TextButton, Widget,
 };
 
 #[derive(StatefulWidget)]
+#[state(SameLookingSectionState)]
 pub struct TestFadingAnimation;
 
 pub struct SameLookingSectionState {
     current_index: usize,
-    state: StateUpdater<Self>,
-}
-
-impl StatefulWidget for TestFadingAnimation {
-    type State = SameLookingSectionState;
-
-    fn create_state(self) -> Self::State {
-        // The framework preserves the live state across parent rebuilds
-        // (e.g. a window resize) by adopting it during reconciliation, so the
-        // selected tab survives without any manual persistence — this only
-        // needs to provide the initial value.
-        SameLookingSectionState {
-            current_index: 0,
-            state: StateUpdater::new(),
-        }
-    }
 }
 
 const PLATFORMS: &[&str] = &["macOS", "iOS", "Web", "Android"];
@@ -58,14 +43,17 @@ fn platform_image_switcher(index: usize) -> AnimatedSwitcher<AssetImage> {
 }
 
 impl State<TestFadingAnimation> for SameLookingSectionState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.state = updater;
+    fn create(widget: TestFadingAnimation) -> Self {
+        // The framework preserves the live state across parent rebuilds
+        // (e.g. a window resize) by adopting it during reconciliation, so the
+        // selected tab survives without any manual persistence — this only
+        // needs to provide the initial value.
+        SameLookingSectionState {
+            current_index: 0,
+        }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         Container::new()
@@ -92,7 +80,7 @@ impl State<TestFadingAnimation> for SameLookingSectionState {
                             .boxed(),
                         Container::new()
                             .height(if is_mobile(ctx) { 250 } else { 450 })
-                            .child(platform_image_switcher(self.current_index))
+                            .child(platform_image_switcher(this.current_index))
                             .boxed(),
                         SizedBox::new()
                             .height(40)
@@ -101,7 +89,7 @@ impl State<TestFadingAnimation> for SameLookingSectionState {
                             .horizontal_alignment(BoxAlignment::Center)
                             .vertical_alignment(BoxAlignment::Center)
                             .gaps(LayoutSpacing::horizontal(Spacing::Px(8)))
-                            .children(self.build_platform_button_list(app_theme))
+                            .children(this.build_platform_button_list(this.updater(), app_theme))
                             .boxed(),
                         SizedBox::new()
                             .height(40)
@@ -112,13 +100,13 @@ impl State<TestFadingAnimation> for SameLookingSectionState {
 }
 
 impl SameLookingSectionState {
-    fn build_platform_button_list(&self, app_theme: ThemeData) -> Vec<AnyWidget> {
+    fn build_platform_button_list(&self, updater: StateUpdater<Self>, app_theme: ThemeData) -> Vec<AnyWidget> {
         let selected = self.current_index;
         PLATFORMS
             .iter()
             .enumerate()
             .map({
-                let updater = self.state;
+                let updater = updater;
                 move |(i, l)| {
                     let index = i;
                     let is_selected = index == selected;

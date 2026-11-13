@@ -15,8 +15,8 @@ use aimer_decoration::Decoration;
 use aimer_style::BoxDecoration;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, Key, RequiredChild, State, StateUpdater, StatefulElement,
-    Semantics, StatefulWidget, Widget,
+    AnyElement, AnyWidget, ChildBuilder, Key, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    Semantics, Widget,
 };
 
 use crate::callback::VoidCallback;
@@ -384,34 +384,6 @@ impl<W> Button<W> {
     }
 }
 
-impl<W: Widget + 'static> StatefulWidget for Button<W> {
-    type State = ButtonState<W>;
-
-    fn create_state(self) -> Self::State {
-        debug_assert!(self.child.is_some() || self.visual_builder.is_some());
-        ButtonState {
-            is_hover: Rc::new(Cell::new(false)),
-            is_pressed: Rc::new(Cell::new(false)),
-            on_press: self.on_press,
-            on_long_press: self.on_long_press,
-            on_double_press: self.on_double_press,
-            on_right_press: self.on_right_press,
-            decoration: self.decoration,
-            no_decor: self.no_decor,
-            custom_decorations: self.custom_decorations,
-            visual_builder: self.visual_builder,
-            hover_decoration: self.hover_decoration,
-            press_decoration: self.press_decoration,
-            disable_decoration: self.disable_decoration,
-            current_state: Rc::new(Cell::new(PointerState::Outside)),
-            child: self.child.map(ChildBuilder::from_widget)
-                .unwrap_or_else(ChildBuilder::required),
-            is_disabled: self.is_disabled,
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<W: Widget + 'static> Widget for Button<W> {
     fn key(&self) -> Option<Key> {
         self.widget_key.clone()
@@ -419,14 +391,36 @@ impl<W: Widget + 'static> Widget for Button<W> {
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let __key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "Button", __key)
+        StatefulElement::new_with_name::<Self, ButtonState<W>>(self, ctx, "Button", __key)
             .0
             .boxed()
     }
 }
 
 impl<W: Widget + 'static> State<Button<W>> for ButtonState<W> {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+    fn create(widget: Button<W>) -> Self {
+        debug_assert!(widget.child.is_some() || widget.visual_builder.is_some());
+        ButtonState {
+            is_hover: Rc::new(Cell::new(false)),
+            is_pressed: Rc::new(Cell::new(false)),
+            on_press: widget.on_press,
+            on_long_press: widget.on_long_press,
+            on_double_press: widget.on_double_press,
+            on_right_press: widget.on_right_press,
+            decoration: widget.decoration,
+            no_decor: widget.no_decor,
+            custom_decorations: widget.custom_decorations,
+            visual_builder: widget.visual_builder,
+            hover_decoration: widget.hover_decoration,
+            press_decoration: widget.press_decoration,
+            disable_decoration: widget.disable_decoration,
+            current_state: Rc::new(Cell::new(PointerState::Outside)),
+            child: widget.child.map(ChildBuilder::from_widget)
+                .unwrap_or_else(ChildBuilder::required),
+            is_disabled: widget.is_disabled,
+            marker: PhantomData,
+        }
+    }
 
     fn adopt_config_from(&mut self, new: Self) {
         // `is_hover` and `is_pressed` are deliberately not adopted: they describe
@@ -446,18 +440,18 @@ impl<W: Widget + 'static> State<Button<W>> for ButtonState<W> {
         self.child = new.child;
     }
 
-    fn build(&self, _: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
         // A button is composed of a gesture detector, a container and whatever
         // the caller put inside, so none of those elements knows it is a button.
         // This is where that is said, once, for every way the button can be
         // dressed below.
         let mut semantics = Semantics::new()
             .role(Role::Button)
-            .enabled(!self.is_disabled);
-        if self.on_press.is_set() {
-            semantics = semantics.on_activate(self.on_press.clone());
+            .enabled(!this.is_disabled);
+        if this.on_press.is_set() {
+            semantics = semantics.on_activate(this.on_press.clone());
         }
-        semantics.box_child(self.build_content())
+        semantics.box_child(this.build_content())
     }
 }
 

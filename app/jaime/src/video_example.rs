@@ -13,7 +13,7 @@ use aimer::video::{
     CaptionTrack, Chapters, VideoFit, VideoPlayer, VideoPlayerView, VideoSource,
 };
 use aimer::{
-    BuildContext, Column, Container, Row, ScrollAxis, Scrollable, SizedBox, State, StateUpdater,
+    BuildContext, Column, Container, Row, ScrollAxis, Scrollable, SizedBox, State, StateView, StateUpdater,
     StatefulWidget, Text, Widget,
 };
 
@@ -53,17 +53,14 @@ pub struct VideoExampleState {
     /// The bundled clip's sidecar files; `None` where they did not load.
     captions: Option<CaptionTrack>,
     chapters: Chapters,
-    updater: StateUpdater<Self>,
 }
 
 fn bundled_clip() -> VideoSource {
     VideoSource::bundled(Assets::TEST_PATTERN.path())
 }
 
-impl StatefulWidget for VideoExample {
-    type State = VideoExampleState;
-
-    fn create_state(self) -> VideoExampleState {
+impl State<VideoExample> for VideoExampleState {
+    fn create(widget: VideoExample) -> Self {
         let player = VideoPlayer::from_source(bundled_clip());
         player.set_volume(0.6);
         // Embedded, so they load on every platform (the web has no files).
@@ -75,35 +72,28 @@ impl StatefulWidget for VideoExample {
             fit: VideoFit::Contain,
             captions,
             chapters,
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<VideoExample> for VideoExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
+        let updater = this.updater();
 
         let mut view = VideoPlayerView::new()
-            .player(self.player.clone())
-            .fit(self.fit)
+            .player(this.player.clone())
+            .fit(this.fit)
             .width(PLAYER.0)
             .height(PLAYER.1);
         // The sidecar files belong to the bundled clip, not the stream.
-        if !self.streaming {
-            if let Some(captions) = &self.captions {
+        if !this.streaming {
+            if let Some(captions) = &this.captions {
                 view = view.captions(captions.clone());
             }
-            view = view.chapters(self.chapters.clone());
+            view = view.chapters(this.chapters.clone());
         }
 
         let fit = {
-            let label = match self.fit {
+            let label = match this.fit {
                 VideoFit::Contain => "Fit: contain",
                 VideoFit::Cover => "Fit: cover",
                 VideoFit::Fill => "Fit: fill",
@@ -119,8 +109,8 @@ impl State<VideoExample> for VideoExampleState {
             })
         };
         let source = {
-            let player = self.player.clone();
-            let label = if self.streaming { "Source: HLS stream" } else { "Source: bundled clip" };
+            let player = this.player.clone();
+            let label = if this.streaming { "Source: HLS stream" } else { "Source: bundled clip" };
             control_button(label, app_theme, false, move || {
                 let player = player.clone();
                 updater.set_state(move |state| {

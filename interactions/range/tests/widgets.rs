@@ -1,3 +1,4 @@
+use aimer_widget::CreateState;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -6,12 +7,12 @@ use aimer_attribute::size::ResolvedSize;
 use aimer_container::Container;
 use aimer_events::element::{ElementEvent, KeyAction, Modifiers, NamedKey};
 use aimer_events::pointer::{PointerButton, PointerInfo};
-use aimer_range::{RangeSlider, RangeThumb, Slider, SliderThumb, SliderTrail};
+use aimer_range::{RangeSlider, RangeThumb, Slider, SliderThumb, SliderTrail, RangeSliderState, SliderState};
 use aimer_style::{LayoutSpacing, Spacing};
 use aimer_widget::base::{BuildContext, Vec2d, WindowHandle};
 use aimer_widget::{
-    Drawable, ErrorWidget, EventDispatcher, LayoutElement, Rebuildable, State, StatefulElement,
-    StatefulWidget, Widget,
+    Drawable, ErrorWidget, EventDispatcher, LayoutElement, Rebuildable, State, StateView, StatefulElement,
+    Widget,
 };
 
 #[test]
@@ -326,7 +327,7 @@ async fn range_slider_widget_dispatches_the_nearest_thumb_and_keyboard_increment
 #[tokio::test]
 async fn slider_state_retains_runtime_press_while_adopting_a_controlled_value() {
     let ctx = context();
-    let (element, updater) = StatefulElement::new(
+    let (element, updater) = StatefulElement::new::<Slider, SliderState>(
         Slider::new()
             .range(0.0..100.0)
             .step(10.0)
@@ -382,7 +383,7 @@ async fn slider_state_retains_runtime_press_while_adopting_a_controlled_value() 
 #[tokio::test]
 async fn range_slider_state_retains_the_selected_thumb_while_adopting_values() {
     let ctx = context();
-    let (element, updater) = StatefulElement::new(
+    let (element, updater) = StatefulElement::new::<RangeSlider, RangeSliderState>(
         RangeSlider::new()
             .range(0.0..100.0)
             .step(10.0)

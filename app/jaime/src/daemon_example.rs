@@ -211,15 +211,8 @@ impl Default for DaemonExample {
 /// The retained side of the page. The log and the daemon outlive the page, so
 /// all it keeps is a way to ask for a redraw.
 pub struct DaemonExampleState {
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for DaemonExample {
-    type State = DaemonExampleState;
-
-    fn create_state(self) -> DaemonExampleState {
-        DaemonExampleState { updater: StateUpdater::empty() }
-    }
 }
 
 impl DaemonExampleState {
@@ -258,16 +251,20 @@ impl DaemonExampleState {
 }
 
 impl State<DaemonExample> for DaemonExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
-        PAGE.set(Some(updater));
-        ensure_waker();
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: DaemonExample) -> Self {
+        DaemonExampleState { updater: StateUpdater::empty() }
+    }
+
+    fn init_state(&mut self) {
+            ensure_waker();
+        }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        PAGE.set(Some(this.updater()));
         let app_theme = ThemeData::copied(ctx);
         let muted = crate::theme::muted_text(&app_theme);
         let body = app_theme.on_background_color;

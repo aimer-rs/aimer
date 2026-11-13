@@ -49,8 +49,8 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventResult, EventTreeRole,
-    LayoutElement, PointerKey, Rebuildable, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, VisitorElement, Widget,
+    LayoutElement, PointerKey, Rebuildable, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    VisitorElement, Widget,
 };
 
 use crate::DragSession;
@@ -402,7 +402,7 @@ impl<T, C> InsertionList<T, C> {
 
 impl<T: 'static> Widget for InsertionList<T, HasChild> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::from_widget(self, ctx, "InsertionList", None)
+        StatefulElement::from_widget::<Self, InsertionLiveState<T>>(self, ctx, "InsertionList", None)
     }
 
     fn debug_name(&self) -> &'static str {
@@ -422,27 +422,6 @@ pub struct InsertionLiveState<T> {
     indicator: Option<IndicatorBuilder>,
     frame: Option<FrameBuilder>,
     items: Option<ItemsBuilder>,
-    updater: StateUpdater<Self>,
-}
-
-impl<T: 'static> StatefulWidget for InsertionList<T, HasChild> {
-    type State = InsertionLiveState<T>;
-
-    fn create_state(self) -> Self::State {
-        InsertionLiveState {
-            id: next_target_id(),
-            hover: InsertionState::default(),
-            slots: Rc::new(Slots::default()),
-            axis: self.axis,
-            spacing: self.spacing,
-            will_accept: self.will_accept,
-            on_insert: self.on_insert,
-            indicator: self.indicator,
-            frame: self.frame,
-            items: self.items,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl<T> InsertionLiveState<T> {
@@ -507,8 +486,19 @@ impl<T> InsertionLiveState<T> {
 }
 
 impl<T: 'static> State<InsertionList<T, HasChild>> for InsertionLiveState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: InsertionList<T, HasChild>) -> Self {
+        InsertionLiveState {
+            id: next_target_id(),
+            hover: InsertionState::default(),
+            slots: Rc::new(Slots::default()),
+            axis: widget.axis,
+            spacing: widget.spacing,
+            will_accept: widget.will_accept,
+            on_insert: widget.on_insert,
+            indicator: widget.indicator,
+            frame: widget.frame,
+            items: widget.items,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -521,17 +511,16 @@ impl<T: 'static> State<InsertionList<T, HasChild>> for InsertionLiveState<T> {
         self.items = new.items;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let items = self
-            .items
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let items = this.items
             .as_ref()
-            .map(|build| build(self.hover))
+            .map(|build| build(this.hover))
             .unwrap_or_default();
         let count = items.len();
-        self.slots.reset(count);
+        this.slots.reset(count);
 
         // A slot is only marked while it would be accepted.
-        let marked = self.hover.slot.filter(|_| self.hover.will_accept);
+        let marked = this.hover.slot.filter(|_| this.hover.will_accept);
 
         // Every slot always has a filler, so the children keep their positions
         // whether or not a marker is showing: `[slot 0, item 0, slot 1, item 1,
@@ -542,37 +531,37 @@ impl<T: 'static> State<InsertionList<T, HasChild>> for InsertionLiveState<T> {
         // carry the spacing between items.
         let mut children: Vec<AnyWidget> = Vec::with_capacity(count * 2 + 1);
         for (index, item) in items.into_iter().enumerate() {
-            children.push(self.slot_filler(index, count, marked == Some(index)));
+            children.push(this.slot_filler(index, count, marked == Some(index)));
             children.push(
                 SlotProbe {
                     index,
                     child: item,
-                    slots: Rc::clone(&self.slots),
+                    slots: Rc::clone(&this.slots),
                 }
                 .boxed(),
             );
         }
-        children.push(self.slot_filler(count, count, marked == Some(count)));
+        children.push(this.slot_filler(count, count, marked == Some(count)));
 
-        let list = match self.axis {
+        let list = match this.axis {
             ListAxis::Vertical => Column::new().children(children).boxed(),
             ListAxis::Horizontal => Row::new().children(children).boxed(),
         };
 
-        let content = match self.frame.as_ref() {
-            Some(frame) => frame(self.hover, list),
+        let content = match this.frame.as_ref() {
+            Some(frame) => frame(this.hover, list),
             None => list,
         };
 
         InsertionGate {
             child: content,
             logic: Rc::new(InsertionLogic {
-                id: self.id,
-                axis: self.axis,
-                slots: Rc::clone(&self.slots),
-                will_accept: self.will_accept.clone(),
-                on_insert: self.on_insert.clone(),
-                updater: self.updater,
+                id: this.id,
+                axis: this.axis,
+                slots: Rc::clone(&this.slots),
+                will_accept: this.will_accept.clone(),
+                on_insert: this.on_insert.clone(),
+                updater: this.updater(),
             }),
         }
     }

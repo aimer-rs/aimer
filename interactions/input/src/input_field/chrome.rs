@@ -16,8 +16,7 @@ use aimer_decoration::Decoration;
 use aimer_style::BoxDecoration;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, State, StateUpdater, StatefulElement, StatefulWidget,
-    Widget,
+    AnyElement, AnyWidget, ChildBuilder, State, StateView, StateUpdater, StatefulElement, Widget,
 };
 
 /// Builds the chrome of a field from its interaction state.
@@ -191,45 +190,35 @@ struct Visual {
 
 struct VisualState {
     visual: Visual,
-    updater: StateUpdater<Self>,
 }
 
 impl Widget for Visual {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "TextFieldVisual", None)
+        StatefulElement::new_with_name::<Self, VisualState>(self, ctx, "TextFieldVisual", None)
             .0
             .boxed()
     }
 }
 
-impl StatefulWidget for Visual {
-    type State = VisualState;
-
-    fn create_state(self) -> Self::State {
+impl State<Visual> for VisualState {
+    fn create(widget: Visual) -> Self {
         VisualState {
-            visual: self,
-            updater: StateUpdater::empty(),
+            visual: widget,
         }
     }
-}
 
-impl State<Visual> for VisualState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-        self.visual.flags.updater.set(Some(updater));
-    }
 
     fn adopt_config_from(&mut self, new: Self) {
+        // A rebuild builds a candidate state first, and the candidate's `build`
+        // publishes its own updater into the shared flags before it is discarded
+        // in favor of this mounted one. The rebuild that follows this adoption
+        // runs `build` on this state, which publishes the live updater again.
         self.visual = new.visual;
-        // A rebuild builds a candidate state first, and the candidate's
-        // `init_state` takes the shared flags over before it is discarded in
-        // favor of this mounted one. Take them back, or the chrome would never
-        // be told about hover and focus again.
-        self.visual.flags.updater.set(Some(self.updater));
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let visual = &self.visual;
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        this.visual.flags.updater.set(Some(this.updater()));
+        let visual = &this.visual;
         (visual.builder)(TextFieldVisualState {
             is_hovered: visual.enabled && visual.flags.hovered.get(),
             is_focused: visual.enabled && visual.flags.focused.get(),

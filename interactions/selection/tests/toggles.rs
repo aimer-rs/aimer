@@ -3,15 +3,17 @@
 
 mod support;
 
+use aimer_widget::BuildElement;
+use aimer_widget::CreateState;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use aimer_container::SizedBox;
 use aimer_events::element::NamedKey;
 use aimer_flex::Row;
-use aimer_selection::{Checkbox, CheckboxValue, Radio, SemanticRole, Switch};
+use aimer_selection::{Checkbox, CheckboxState, CheckboxValue, Radio, SemanticRole, Switch};
 use aimer_text::Text;
-use aimer_widget::{LayoutElement, State, StatefulWidget, Widget};
+use aimer_widget::{LayoutElement, State, Widget};
 use support::{Driver, context};
 
 fn counter() -> (Rc<Cell<u32>>, Rc<Cell<u32>>) {
@@ -187,13 +189,13 @@ async fn the_builder_receives_the_controlled_value_after_a_rebuild() {
                 observed.borrow_mut().push(visual.value());
                 SizedBox::new().width(24.0).height(24.0)
             })
-            .create_state()
+            .create_state::<CheckboxState>()
     };
     let mut state = make(CheckboxValue::Unchecked);
 
-    state.build(&ctx).to_element(&ctx);
+    state.build_element(&ctx);
     state.adopt_config_from(make(CheckboxValue::Checked));
-    state.build(&ctx).to_element(&ctx);
+    state.build_element(&ctx);
 
     assert_eq!(
         values.borrow().as_slice(),

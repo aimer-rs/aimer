@@ -2,6 +2,7 @@ use std::any::Any;
 use std::cell::{Cell, RefCell, UnsafeCell};
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::panic::Location;
 use std::rc::{Rc, Weak};
 
@@ -70,7 +71,7 @@ unsafe impl Send for SyncRebuildFn {}
 unsafe impl Sync for SyncRebuildFn {}
 
 /// A `Send + Sync` wrapper around the type-erased state cell (`Rc<dyn Any>`,
-/// concretely `Rc<SyncState<W::State>>`). Kept so a reconciling element can
+/// concretely `Rc<SyncState<S>>`). Kept so a reconciling element can
 /// hand its freshly-built state to the live element for a config refresh,
 /// without `StatefulElement` being generic over `W`.
 ///
@@ -86,8 +87,8 @@ unsafe impl Send for SyncStateAny {}
 unsafe impl Sync for SyncStateAny {}
 
 /// Type-erased "adopt the widget configuration from another element's state
-/// into mine" hook. Captures this element's state cell (typed as `W::State`);
-/// downcasts the supplied `&dyn Any` (another element's `SyncState<W::State>`),
+/// into mine" hook. Captures this element's state cell (typed as `S`);
+/// downcasts the supplied `&dyn Any` (another element's `SyncState<S>`),
 /// takes its state, and calls `State::adopt_config_from`. No-op when the
 /// concrete types differ or the source state was already consumed.
 type AdoptConfigCallBack = dyn Fn(&dyn Any);
@@ -376,6 +377,33 @@ impl<S: 'static> StateUpdater<S> {
         }
     }
 
+    /// Returns whether the widget this updater belongs to is still mounted.
+    ///
+    /// `true` from the moment the state exists, including during its first
+    /// build and in [`State::on_mount`], until its element leaves the tree. After
+    /// that, or for an updater that was never filled in, a failed state, or one
+    /// from another element, it is `false`. Ask it before touching the state from
+    /// something that can outlive the element (a timer, a request, a task):
+    ///
+    /// ```rust,ignore
+    /// let updater = this.updater();
+    /// spawn(async move {
+    ///     let data = fetch().await;
+    ///     if updater.mounted() {
+    ///         updater.set_state(move |state| state.data = Some(data));
+    ///     }
+    /// });
+    /// ```
+    ///
+    /// It is the same quiet check as [`has_state`](StateUpdater::has_state) and
+    /// never emits a diagnostic. [`try_set_state`](StateUpdater::try_set_state)
+    /// and [`try_read`](StateUpdater::try_read) do the check and the work in one
+    /// call, so prefer them when there is something to do either way.
+    #[inline]
+    pub fn mounted(&self) -> bool {
+        self.has_state()
+    }
+
     /// Returns whether this updater still resolves to a usable live state.
     ///
     /// This is a quiet check: it returns `false` for an empty, stale,
@@ -622,40 +650,108 @@ impl<S: 'static> StateUpdater<S> {
 
     #[inline]
     fn beautiful_error(&self, loc: &Location) {
-        {
-            const BRACE: &str = "{";
-            error!(
-                "State is not initialized and trying to read or update at {}:{}
-   {}
-   {} impl State<YourStatefulWidget> for YourWidgetState {BRACE}
-   {}
-   {}     fn init_state(&mut self, _updater: StateUpdater<Self>)
-   {}         where
-   {}             Self: Sized,
-   {}         {{
-   {}             self.updater = _updater;
-   {}             {}
-   {}         }}
-   {}
-   {}: call `self.updater = _updater` inside `init_state`
-",
-                loc.file(),
-                loc.line(),
-                "|",
-                "|",
-                "|",
-                "|",
-                "|",
-                "|",
-                "|",
-                "|",
-                "|",
-                "^^^^^^^^^^^^^^^^^^^^^^^^^ add this line to prevent panic",
-                "|",
-                "|",
-                "help",
-            );
-        }
+        error!(
+            "State is not initialized and trying to read or update at {}:{}\n\
+             an empty `StateUpdater` was created by hand (`StateUpdater::empty()`) and never \
+             replaced with one obtained from a `StateView`",
+            loc.file(),
+            loc.line(),
+        );
+    }
+}
+
+/// The view of a state that [`State::build`] receives.
+///
+/// Derefs to the state, so `build` reads its fields directly (`this.count`), and
+/// carries the [`StateUpdater`] that callbacks use to change it. The state no
+/// longer stores that updater itself.
+///
+/// The view borrows the state for the one `build` call. That borrow is the safety
+/// argument: queued mutations only run before a build, never during one, so
+/// nothing can change the state while the view exists, and a closure that
+/// captured the view could not be `'static`. A callback that has to read the
+/// state when it *runs* takes [`StateView::updater`] instead, which is `Copy`
+/// and `'static`.
+pub struct StateView<'a, S: 'static> {
+    // Named so no user state's own field (`state`, `updater`) is shadowed when a
+    // module can see these privately.
+    view_state: &'a S,
+    view_updater: StateUpdater<S>,
+}
+
+impl<'a, S: 'static> StateView<'a, S> {
+    #[inline]
+    fn new(state: &'a S, updater: StateUpdater<S>) -> Self {
+        Self { view_state: state, view_updater: updater }
+    }
+
+    /// The handle callbacks use to change this state later.
+    ///
+    /// `Copy`, so it can be moved into any number of `'static` closures.
+    #[inline]
+    pub fn updater(&self) -> StateUpdater<S> {
+        self.view_updater
+    }
+
+    /// Whether the widget is mounted. Always `true` while it is being built by its
+    /// element; `false` only for a [`detached`](StateView::detached) view. See
+    /// [`StateUpdater::mounted`], which is what a callback that outlives this
+    /// build asks.
+    #[inline]
+    pub fn mounted(&self) -> bool {
+        self.view_updater.mounted()
+    }
+}
+
+impl<'a, S: 'static> StateView<'a, S> {
+    /// A view of a state that is not mounted in an element, for tests that build
+    /// a state directly.
+    ///
+    /// Its updater is empty: reading or changing state through it panics, so use
+    /// it only to read fields and build.
+    #[doc(hidden)]
+    #[inline]
+    pub fn detached(state: &'a S) -> Self {
+        Self::new(state, StateUpdater::empty())
+    }
+}
+
+/// Test support: creates a state from its widget with the state type named, since
+/// a widget no longer says which state it creates.
+///
+/// ```rust,ignore
+/// let state = Focusable::new().child(child()).create_state::<FocusableState<_>>();
+/// ```
+#[doc(hidden)]
+pub trait CreateState: Widget + Sized {
+    #[inline]
+    fn create_state<S: State<Self>>(self) -> S {
+        S::create(self)
+    }
+}
+
+impl<W: Widget> CreateState for W {}
+
+/// Test support: builds a state that is not mounted in an element and converts
+/// the result to an element at once.
+#[doc(hidden)]
+pub trait BuildElement<W: Widget>: State<W> {
+    /// The built widget borrows the view, so it cannot outlive this call: it is
+    /// converted before the view goes away.
+    fn build_element(&self, ctx: &BuildContext) -> AnyElement {
+        let view = StateView::detached(self);
+        Widget::to_element(Self::build(&view, ctx), ctx)
+    }
+}
+
+impl<W: Widget, S: State<W>> BuildElement<W> for S {}
+
+impl<S: 'static> Deref for StateView<'_, S> {
+    type Target = S;
+
+    #[inline]
+    fn deref(&self) -> &S {
+        self.view_state
     }
 }
 
@@ -664,78 +760,51 @@ impl<S: 'static> StateUpdater<S> {
 /// The split is deliberate. The widget is only *configuration*: the immutable
 /// props a parent passes down, rebuilt freely and thrown away. Everything that
 /// must survive a rebuild, a counter, hover or focus flags, scroll offsets,
-/// animation progress, lives in the [`State`](StatefulWidget::State) that
-/// [`create_state`](StatefulWidget::create_state) returns. The element owns that
-/// state and keeps it alive for as long as the widget stays in the tree.
+/// animation progress, lives in a type that implements [`State`] for that
+/// widget. The element owns the state and keeps it alive for as long as the
+/// widget stays in the tree.
 ///
-/// When a parent rebuilds and emits this widget again, the new widget creates a
-/// fresh state, but the framework keeps the *live* one so runtime data is not
-/// lost, and hands the fresh one to [`State::adopt_config_from`] so the live
-/// state picks up the new props. `create_state` can therefore run on every
-/// parent rebuild: keep it cheap and move the props into the state instead of
-/// cloning them.
+/// Put `#[derive(StatefulWidget)]` and `#[state(MyState)]` on the widget struct
+/// and implement [`State`] for `MyState`; that is all a stateful widget needs.
+/// The derive writes the [`Widget`] impl for you. It names the state only inside
+/// the body of `to_element`, never in a signature, so the state type can stay
+/// private to its module. A named struct with a field `key: Option<Key>` has
+/// that key forwarded to the element, which keeps the state attached to the
+/// same widget when siblings are reordered. A widget with nothing to remember
+/// should be a [`StatelessWidget`](crate::StatelessWidget).
 ///
-/// Put `#[derive(StatefulWidget)]` on the struct and implement [`State`] for
-/// the type returned by `create_state`; that is all a stateful widget needs. The
-/// derive writes the [`Widget`] impl for you, so there is no `to_element` to
-/// implement by hand, prefer it over implementing `Widget` directly. A named
-/// struct with a field `key: Option<Key>` has that key forwarded to the
-/// element, which keeps the state attached to the same widget when siblings are
-/// reordered. A widget with nothing to remember should be a
-/// [`StatelessWidget`](crate::StatelessWidget).
+/// When a parent rebuilds and emits this widget again, [`State::create`] runs
+/// for the new widget, but the framework keeps the *live* state so runtime data
+/// is not lost, and hands the fresh one to [`State::adopt_config_from`] so the
+/// live state picks up the new props. `create` can therefore run on every parent
+/// rebuild: keep it cheap and move the props into the state instead of cloning
+/// them.
 ///
-/// # Examples
-///
-/// See [`State`] for a complete widget with a state that changes.
-pub trait StatefulWidget: Sized {
-    /// The state this widget creates, which owns every field that changes.
-    type State: State<Self>;
-
-    /// Returns this widget.
-    ///
-    /// Lets generic code that only knows `W: StatefulWidget` reach the widget
-    /// through a method call.
-    fn widget(&self) -> &Self
-    where
-        Self: Sized,
-    {
-        self
-    }
-
-    /// Consumes this widget and creates the state it configures.
-    ///
-    /// The widget is gone once this returns, its element keeps the state
-    /// instead, so an implementation moves its props into the state rather than
-    /// cloning them.
-    fn create_state(self) -> Self::State;
-}
-
-/// The mutable half of a [`StatefulWidget`]: the data that changes, and the
-/// UI built from it.
+/// This trait is the mutable half of a stateful widget `W`: the data that changes,
+/// and the UI built from it.
 ///
 /// # Lifecycle
 ///
-/// 1. [`StatefulWidget::create_state`] builds the state from the widget.
-/// 2. [`init_state`](State::init_state) runs once, handing the state a
-///    [`StateUpdater`].
+/// 1. [`create`](State::create) builds the state from the widget.
+/// 2. [`init_state`](State::init_state) runs once, before the first build, and
+///    then [`on_mount`](State::on_mount), which receives the updater.
 /// 3. [`build`](State::build) describes the UI, and runs again after every
-///    mutation applied through the updater.
+///    mutation applied through the [`StateUpdater`].
 /// 4. When a parent re-emits the widget, the live state is kept and
-///    [`adopt_config_from`](State::adopt_config_from) copies the new props
-///    into it.
+///    [`adopt_config_from`](State::adopt_config_from) copies the new props into
+///    it.
 ///
 /// # Changing state
 ///
-/// `build` and the other hooks take `&self` or `&mut self` only while the
-/// framework is calling them, so a callback cannot hold the state. It holds
-/// the [`StateUpdater`] instead, store it in `init_state`, and describes the
-/// change as a closure with [`StateUpdater::set_state`]. The closure is queued
-/// and applied on the render thread at the next rebuild, and several calls in
-/// one frame cause a single rebuild. The updater is `Copy` but belongs to the
-/// UI thread: it is neither `Send` nor `Sync`.
+/// `build` receives a [`StateView`]: it derefs to the state for reading, and
+/// [`StateView::updater`] returns the [`StateUpdater`] a callback uses to
+/// describe a change as a closure with [`StateUpdater::set_state`]. The closure
+/// is queued and applied on the render thread at the next rebuild, and several
+/// calls in one frame cause a single rebuild. The updater is `Copy` but belongs
+/// to the UI thread: it is neither `Send` nor `Sync`.
 ///
-/// Calling `set_state` on an updater that `init_state` never stored panics
-/// with an error that points at the missing line.
+/// Never call `set_state` while building: it queues a mutation, which marks the
+/// state dirty again, so the widget would rebuild every frame.
 ///
 /// # Examples
 ///
@@ -743,47 +812,55 @@ pub trait StatefulWidget: Sized {
 /// use aimer::*;
 ///
 /// #[derive(StatefulWidget)]
+/// #[state(CounterState)]
 /// struct Counter {
 ///     start: i32,
 /// }
 ///
+/// // Private: the widget names it only inside the derived `to_element`.
 /// struct CounterState {
-///     updater: StateUpdater<Self>,
 ///     count: i32,
 /// }
 ///
-/// impl StatefulWidget for Counter {
-///     type State = CounterState;
-///
-///     fn create_state(self) -> CounterState {
-///         CounterState {
-///             updater: StateUpdater::empty(),
-///             count: self.start,
-///         }
-///     }
-/// }
-///
 /// impl State<Counter> for CounterState {
-///     fn init_state(&mut self, updater: StateUpdater<Self>) {
-///         self.updater = updater;
+///     fn create(widget: Counter) -> Self {
+///         Self { count: widget.start }
 ///     }
 ///
-///     fn build(&self, _ctx: &BuildContext) -> impl Widget {
+///     fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
 ///         // Hand this to a button's press handler: it rebuilds with `count + 1`.
-///         let updater = self.updater;
+///         let updater = this.updater();
 ///         let _increment = move || updater.set_state(|state| state.count += 1);
-///         Text::new(format!("Count: {}", self.count))
+///         Text::new(format!("Count: {}", this.count))
 ///     }
 /// }
 /// ```
-pub trait State<W: StatefulWidget> {
-    /// Called once after the state is created, providing a [`StateUpdater`]
-    /// handle. Store the updater in your state struct to later call
-    /// `set_state()` from event handlers or callbacks, similar to
-    /// Flutter's `setState`.
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized;
+pub trait State<W: Widget>: Sized + 'static {
+    /// Consumes the widget and creates the state it configures.
+    ///
+    /// The widget is gone once this returns, so an implementation moves its
+    /// props into the state rather than cloning them.
+    fn create(widget: W) -> Self;
+
+    /// Called once, right after [`create`](State::create) and before the first
+    /// build. Mutate `self` directly; there is nothing to queue yet.
+    fn init_state(&mut self) {}
+
+    /// Called once, right after [`init_state`](State::init_state) and before the
+    /// first build, with the [`StateUpdater`] for this state. At that point
+    /// [`StateUpdater::mounted`] is already `true`.
+    ///
+    /// Only for handing the updater to something that outlives this call and has
+    /// to reach back into the state later: a registered back or link handler, a
+    /// subscription, a repaint callback. A state that merely wants to change
+    /// itself from a button press gets its updater from the [`StateView`] in
+    /// [`build`](State::build) and needs neither this hook nor a field.
+    ///
+    /// The updater is `Copy` and `'static`. Prefer
+    /// [`try_set_state`](StateUpdater::try_set_state) and
+    /// [`try_read`](StateUpdater::try_read) in what you register, since it may
+    /// run after the element is gone.
+    fn on_mount(&mut self, _updater: StateUpdater<Self>) {}
 
     /// Called during reconciliation when a parent rebuild produces a freshly
     /// built element for the *same* stateful widget (e.g. a window resize, or a
@@ -794,18 +871,15 @@ pub trait State<W: StatefulWidget> {
     /// built `new` state carries the up-to-date widget *configuration* (the
     /// props passed down from the parent, e.g. a `TextButton`'s `style` /
     /// `hover_style` / `on_press`, or a selected/disabled flag). Move those
-    /// configuration fields out of the freshly-built `new` state into
-    /// `self` so the widget renders with the current configuration while
-    /// retaining its runtime state.
-    fn adopt_config_from(&mut self, _new: Self)
-    where
-        Self: Sized,
-    {
-    }
+    /// configuration fields out of the freshly-built `new` state into `self` so
+    /// the widget renders with the current configuration while retaining its
+    /// runtime state.
+    fn adopt_config_from(&mut self, _new: Self) {}
 
-    /// Override this method to build the widget
-    fn build(&self, ctx: &BuildContext) -> impl Widget;
+    /// Describes the UI for the current state.
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget;
 }
+
 pub type RebuildCallBack = dyn Fn(&BuildContext) -> AnyElement;
 
 struct KeyedStateEntry {
@@ -856,12 +930,19 @@ aimer_tls::thread_local! {
     static KEYED_STATE_SCOPE_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
-struct KeyedStateScope {
+/// Isolates the keyed-state registry while it is alive: elements created inside
+/// the scope can find each other's live state by key, and nothing outside sees it.
+///
+/// The framework enters one for every rebuild. Exposed (hidden) so tests of the
+/// stateful machinery can reproduce that.
+#[doc(hidden)]
+pub struct KeyedStateScope {
     owns_registry: bool,
 }
 
 impl KeyedStateScope {
-    fn enter() -> Self {
+    #[doc(hidden)]
+    pub fn enter() -> Self {
         let owns_registry = KEYED_STATE_SCOPE_DEPTH.with(|depth| {
             let owns_registry = depth.get() == 0;
             if owns_registry {
@@ -939,60 +1020,48 @@ impl StatefulElement {
     /// Converts a stateful widget into an element while containing lifecycle
     /// panics to this widget subtree in unwind-enabled builds.
     #[doc(hidden)]
-    pub fn from_widget<W: StatefulWidget + 'static>(
+    pub fn from_widget<W: Widget + 'static, S: State<W>>(
         widget: W,
         ctx: &BuildContext,
         debug_name: &'static str,
         key: Option<crate::key::Key>,
-    ) -> AnyElement
-    where
-        W::State: 'static,
-    {
+    ) -> AnyElement {
         match recover_operation(debug_name, BuildPhase::KeyedState, || {
-            Self::try_new_with_identity(widget, ctx, debug_name, key)
+            Self::try_new_with_identity::<W, S>(widget, ctx, debug_name, key)
         }) {
             Ok(Ok((element, _updater))) => element.boxed(),
             Ok(Err(diagnostic)) | Err(diagnostic) => diagnostic.into_error_element(),
         }
     }
 
-    /// Create a new StatefulElement from a StatefulWidget.
+    /// Create a new StatefulElement from a stateful widget and its state type.
     /// Returns the element and a StateUpdater that can be used in callbacks.
-    pub fn new_with_name<W: StatefulWidget + 'static>(
+    pub fn new_with_name<W: Widget + 'static, S: State<W>>(
         widget: W,
         ctx: &BuildContext,
         debug_name: &'static str,
         key: Option<crate::key::Key>,
-    ) -> (Self, StateUpdater<W::State>)
-    where
-        W::State: 'static,
-    {
-        Self::try_new_with_identity(widget, ctx, debug_name, key)
+    ) -> (Self, StateUpdater<S>) {
+        Self::try_new_with_identity::<W, S>(widget, ctx, debug_name, key)
             .unwrap_or_else(|diagnostic| panic!("{diagnostic}"))
     }
 
-    pub fn new<W: StatefulWidget + 'static>(
+    pub fn new<W: Widget + 'static, S: State<W>>(
         widget: W,
         ctx: &BuildContext,
-    ) -> (Self, StateUpdater<W::State>)
-    where
-        W::State: 'static,
-    {
-        Self::try_new_with_identity(widget, ctx, "Unknown", None)
+    ) -> (Self, StateUpdater<S>) {
+        Self::try_new_with_identity::<W, S>(widget, ctx, "Unknown", None)
             .unwrap_or_else(|diagnostic| panic!("{diagnostic}"))
     }
 
-    fn try_new_with_identity<W: StatefulWidget + 'static>(
+    fn try_new_with_identity<W: Widget + 'static, S: State<W>>(
         widget: W,
         ctx: &BuildContext,
         debug_name: &'static str,
         key: Option<crate::key::Key>,
-    ) -> Result<(Self, StateUpdater<W::State>), PanicDiagnostic>
-    where
-        W::State: 'static,
-    {
+    ) -> Result<(Self, StateUpdater<S>), PanicDiagnostic> {
         let state = recover_operation(debug_name, BuildPhase::CreateState, || {
-            widget.create_state()
+            S::create(widget)
         })?;
 
         if KeyedStateScope::is_active()
@@ -1050,7 +1119,8 @@ impl StatefulElement {
         let failure = Rc::new(FailureState::default());
         let failed = Rc::new(Cell::new(false));
 
-        // Create the updater and pass it into init_state.
+        // The updater is created before the first build: `build` receives it through
+        // its `StateView`, so the state never has to store it.
         let (state_storage, init_updater) = StateUpdater::with(
             tx.clone(),
             state_cell.clone(),
@@ -1067,7 +1137,8 @@ impl StatefulElement {
                     .expect("State was consumed before initialization")
             };
             recover_operation(debug_name, BuildPhase::InitState, || {
-                s.init_state(init_updater)
+                s.init_state();
+                s.on_mount(init_updater);
             })?;
         }
 
@@ -1108,8 +1179,9 @@ impl StatefulElement {
                         .as_ref()
                         .expect("State has already been consumed during reconciliation")
                 };
+                let view = StateView::new(s, init_updater);
                 let child_widget =
-                    match recover_operation(debug_name, BuildPhase::Build, || s.build(ctx)) {
+                    match recover_operation(debug_name, BuildPhase::Build, || S::build(&view, ctx)) {
                         Ok(widget) => widget,
                         Err(diagnostic) => {
                             return recover_failure(
@@ -1142,9 +1214,10 @@ impl StatefulElement {
                     .as_ref()
                     .expect("State was consumed before the initial build")
             };
+            let view = StateView::new(s, init_updater);
             ctx.with_build_consumer(build_consumer, |ctx| {
                 let child_widget =
-                    recover_operation(debug_name, BuildPhase::Build, || s.build(ctx))?;
+                    recover_operation(debug_name, BuildPhase::Build, || S::build(&view, ctx))?;
                 recover_operation(debug_name, BuildPhase::ToElement, || {
                     Widget::to_element(child_widget, ctx)
                 })
@@ -1153,7 +1226,7 @@ impl StatefulElement {
 
         // Type-erased handle to this element's state, plus a closure that can
         // pull configuration out of *another* element's state (of the same
-        // `W::State` type) into this one. Together these let reconciliation
+        // `S` type) into this one. Together these let reconciliation
         // refresh a preserved live state's widget props without
         // `StatefulElement` being generic over `W`.
         let state_any: Rc<dyn Any> = state_cell.clone();
@@ -1161,7 +1234,7 @@ impl StatefulElement {
         let state_for_config = state_cell.clone();
         let key_for_config = key.clone();
         let adopt_config_fn: Rc<AdoptConfigCallBack> = Rc::new(move |new_any: &dyn Any| {
-            if let Some(new_cell) = new_any.downcast_ref::<SyncState<W::State>>() {
+            if let Some(new_cell) = new_any.downcast_ref::<SyncState<S>>() {
                 // Safety: single-threaded reconciliation; the live state is not
                 // otherwise borrowed while we move the fresh config into it.
                 let old_state = unsafe {
@@ -2063,24 +2136,24 @@ mod tests {
         paints: Rc<Cell<usize>>,
     }
 
-    impl StatefulWidget for PaintCountStateful {
-        type State = PaintCountState;
-
-        fn create_state(self) -> Self::State {
-            PaintCountState {
-                draws: self.draws,
-                paints: self.paints,
-            }
+    impl Widget for PaintCountStateful {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, PaintCountState>(self, ctx, "PaintCountStateful", None)
         }
     }
 
     impl State<PaintCountStateful> for PaintCountState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: PaintCountStateful) -> Self {
+            PaintCountState {
+                draws: widget.draws,
+                paints: widget.paints,
+            }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             PaintCountWidget {
-                draws: self.draws.clone(),
-                paints: self.paints.clone(),
+                draws: this.draws.clone(),
+                paints: this.paints.clone(),
             }
         }
     }
@@ -2116,21 +2189,21 @@ mod tests {
         builds: Rc<Cell<usize>>,
     }
 
-    impl StatefulWidget for DirtyStateWidget {
-        type State = DirtyState;
-
-        fn create_state(self) -> Self::State {
-            DirtyState {
-                builds: self.builds,
-            }
+    impl Widget for DirtyStateWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, DirtyState>(self, ctx, "DirtyStateWidget", None)
         }
     }
 
     impl State<DirtyStateWidget> for DirtyState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: DirtyStateWidget) -> Self {
+            DirtyState {
+                builds: widget.builds,
+            }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.builds.set(self.builds.get() + 1);
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.builds.set(this.builds.get() + 1);
             crate::ErrorWidget::new("state").boxed()
         }
     }
@@ -2151,31 +2224,25 @@ mod tests {
         built_by: Rc<Cell<usize>>,
     }
 
-    impl StatefulWidget for InnerProbe {
-        type State = InnerProbeState;
-
-        fn create_state(self) -> Self::State {
-            let id = self.next_id.get();
-            self.next_id.set(id + 1);
+    impl State<InnerProbe> for InnerProbeState {
+        fn create(widget: InnerProbe) -> Self {
+            let id = widget.next_id.get();
+            widget.next_id.set(id + 1);
             InnerProbeState {
                 id,
-                built_by: self.built_by.clone(),
+                built_by: widget.built_by.clone(),
             }
         }
-    }
 
-    impl State<InnerProbe> for InnerProbeState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.built_by.set(self.id);
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.built_by.set(this.id);
             LeafProbe
         }
     }
 
     impl Widget for InnerProbe {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            StatefulElement::from_widget(self, ctx, "InnerProbe", None)
+            StatefulElement::from_widget::<Self, InnerProbeState>(self, ctx, "InnerProbe", None)
         }
     }
 
@@ -2224,31 +2291,25 @@ mod tests {
         page: ProbePage,
     }
 
-    impl StatefulWidget for KeyedOuter {
-        type State = KeyedOuterState;
-
-        fn create_state(self) -> Self::State {
+    impl State<KeyedOuter> for KeyedOuterState {
+        fn create(widget: KeyedOuter) -> Self {
             KeyedOuterState {
-                page: self.page.clone(),
+                page: widget.page.clone(),
             }
         }
-    }
-
-    impl State<KeyedOuter> for KeyedOuterState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
         fn adopt_config_from(&mut self, new: Self) {
             self.page = new.page;
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.page.clone()
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.page.clone()
         }
     }
 
     impl Widget for KeyedOuter {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            StatefulElement::from_widget(
+            StatefulElement::from_widget::<Self, KeyedOuterState>(
                 self,
                 ctx,
                 "KeyedOuter",
@@ -2273,22 +2334,22 @@ mod tests {
         events: Rc<Cell<usize>>,
     }
 
-    impl StatefulWidget for EventProbeWidget {
-        type State = EventProbeState;
-
-        fn create_state(self) -> Self::State {
-            EventProbeState {
-                events: self.events.clone(),
-            }
+    impl Widget for EventProbeWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, EventProbeState>(self, ctx, "EventProbeWidget", None)
         }
     }
 
     impl State<EventProbeWidget> for EventProbeState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: EventProbeWidget) -> Self {
+            EventProbeState {
+                events: widget.events.clone(),
+            }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             EventProbeChild {
-                events: self.events.clone(),
+                events: this.events.clone(),
             }
         }
     }
@@ -2328,7 +2389,7 @@ mod tests {
     #[test]
     fn stateful_generated_child_receives_each_routed_event_once() {
         let events = Rc::new(Cell::new(0));
-        let element = StatefulElement::from_widget(
+        let element = StatefulElement::from_widget::<EventProbeWidget, EventProbeState>(
             EventProbeWidget {
                 events: events.clone(),
             },
@@ -2405,7 +2466,7 @@ mod tests {
     fn state_updater_rebuilds_only_its_dirty_subtree() {
         let context = dummy_build_context();
         let builds = Rc::new(Cell::new(0));
-        let (stateful, updater) = StatefulElement::new_with_name(
+        let (stateful, updater) = StatefulElement::new_with_name::<DirtyStateWidget, DirtyState>(
             DirtyStateWidget {
                 builds: builds.clone(),
             },
@@ -2509,27 +2570,28 @@ mod tests {
         }
     }
 
-    impl StatefulWidget for LifecycleWidget {
-        type State = LifecycleState;
-
-        fn create_state(self) -> Self::State {
-            if self.phase == PanicPhase::CreateState {
-                panic!("state creation failed");
-            }
-            LifecycleState {
-                phase: self.phase,
-                updater: self.updater.clone(),
-                builds: self.builds.clone(),
-            }
+    impl Widget for LifecycleWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, LifecycleState>(self, ctx, "LifecycleWidget", None)
         }
     }
 
     impl State<LifecycleWidget> for LifecycleState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
+        fn create(widget: LifecycleWidget) -> Self {
+            if widget.phase == PanicPhase::CreateState {
+                panic!("state creation failed");
+            }
+            LifecycleState {
+                phase: widget.phase,
+                updater: widget.updater.clone(),
+                builds: widget.builds.clone(),
+            }
+        }
+
+        fn init_state(&mut self) {
             if self.phase == PanicPhase::InitState {
                 panic!("state initialization failed");
             }
-            self.updater.replace(Some(updater));
         }
 
         fn adopt_config_from(&mut self, new: Self) {
@@ -2539,14 +2601,16 @@ mod tests {
             self.phase = new.phase;
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.builds.set(self.builds.get() + 1);
-            if self.phase == PanicPhase::Build {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            // Tests reach the updater through this slot; the state no longer stores it.
+            this.updater.replace(Some(this.updater()));
+            this.builds.set(this.builds.get() + 1);
+            if this.phase == PanicPhase::Build {
                 panic!("state build failed");
             }
             LifecycleChild {
-                panic_in_to_element: self.phase == PanicPhase::ToElement,
-                panic_in_runtime_adoption: self.phase == PanicPhase::ChildRuntimeAdoption,
+                panic_in_to_element: this.phase == PanicPhase::ToElement,
+                panic_in_runtime_adoption: this.phase == PanicPhase::ChildRuntimeAdoption,
             }
         }
     }
@@ -2561,7 +2625,7 @@ mod tests {
 
     fn assert_initial_phase_recovers(phase: PanicPhase) {
         let context = dummy_build_context();
-        let element = StatefulElement::from_widget(
+        let element = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(phase),
             &context,
             "LifecycleWidget",
@@ -2599,13 +2663,13 @@ mod tests {
     #[test]
     fn child_reconciliation_failure_keeps_the_old_owner_and_rejects_the_candidate() {
         let context = dummy_build_context();
-        let (old, old_updater) = StatefulElement::new_with_name(
+        let (old, old_updater) = StatefulElement::new_with_name::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
             None,
         );
-        let (new, candidate_updater) = StatefulElement::new_with_name(
+        let (new, candidate_updater) = StatefulElement::new_with_name::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::ChildRuntimeAdoption),
             &context,
             "LifecycleWidget",
@@ -2630,7 +2694,7 @@ mod tests {
         let context = dummy_build_context();
         let widget = lifecycle_widget(PanicPhase::None);
         let updater_slot = widget.updater.clone();
-        let element = StatefulElement::from_widget(widget, &context, "LifecycleWidget", None);
+        let element = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(widget, &context, "LifecycleWidget", None);
         let updater = updater_slot.borrow().as_ref().unwrap().clone();
         updater.set_state(|state| state.phase = PanicPhase::ChildRuntimeAdoption);
 
@@ -2652,7 +2716,7 @@ mod tests {
         let updater_slot = widget.updater.clone();
         let mutation_attempts = Rc::new(Cell::new(0));
         let observed_attempts = mutation_attempts.clone();
-        let element = StatefulElement::from_widget(widget, &context, "LifecycleWidget", None);
+        let element = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(widget, &context, "LifecycleWidget", None);
         let updater = updater_slot.borrow().as_ref().unwrap().clone();
         updater.set_state(move |_| {
             observed_attempts.set(observed_attempts.get() + 1);
@@ -2674,7 +2738,7 @@ mod tests {
         let context = dummy_build_context();
         let widget = lifecycle_widget(PanicPhase::None);
         let updater_slot = widget.updater.clone();
-        let element = StatefulElement::from_widget(widget, &context, "LifecycleWidget", None);
+        let element = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(widget, &context, "LifecycleWidget", None);
         let stateful = element
             .option_any()
             .and_then(|value| value.downcast_ref::<StatefulElement>())
@@ -2700,7 +2764,7 @@ mod tests {
         let widget = lifecycle_widget(PanicPhase::None);
         let updater_slot = widget.updater.clone();
         let builds = widget.builds.clone();
-        let element = StatefulElement::from_widget(widget, &context, "LifecycleWidget", None);
+        let element = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(widget, &context, "LifecycleWidget", None);
         updater_slot
             .borrow()
             .as_ref()
@@ -2722,7 +2786,7 @@ mod tests {
         let context = dummy_build_context();
         let _scope = KeyedStateScope::enter();
         let key = crate::Key::Value("panic-recovery-key".to_owned());
-        let live = StatefulElement::from_widget(
+        let live = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -2730,7 +2794,7 @@ mod tests {
         );
         assert_eq!(live.debug_name(), "LifecycleWidget");
 
-        let recovered = StatefulElement::from_widget(
+        let recovered = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::AdoptConfig),
             &context,
             "LifecycleWidget",
@@ -2744,7 +2808,7 @@ mod tests {
         let context = dummy_build_context();
         let _scope = KeyedStateScope::enter();
         let key = crate::Key::Value("consumed-live-state-key".to_owned());
-        let live = StatefulElement::from_widget(
+        let live = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -2764,7 +2828,7 @@ mod tests {
             (&mut *live_state.0.get()).take();
         }
 
-        let recovered = StatefulElement::from_widget(
+        let recovered = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -2781,7 +2845,7 @@ mod tests {
     fn carried_config_panic_becomes_error_child_with_key_hint() {
         let context = dummy_build_context();
         let key = crate::Key::Value("carry-panic-key".to_owned());
-        let old = StatefulElement::from_widget(
+        let old = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -2798,7 +2862,7 @@ mod tests {
             (&mut *old_state.0.get()).take();
         }
 
-        let new = StatefulElement::from_widget(
+        let new = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -2813,13 +2877,13 @@ mod tests {
     #[test]
     fn failed_unkeyed_adoption_keeps_the_old_owner_and_rejects_the_candidate() {
         let context = dummy_build_context();
-        let (old, old_updater) = StatefulElement::new_with_name(
+        let (old, old_updater) = StatefulElement::new_with_name::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
             None,
         );
-        let (new, candidate_updater) = StatefulElement::new_with_name(
+        let (new, candidate_updater) = StatefulElement::new_with_name::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::AdoptConfig),
             &context,
             "LifecycleWidget",
@@ -2839,18 +2903,18 @@ mod tests {
     struct AlphaWidget;
     struct AlphaState;
 
-    impl StatefulWidget for AlphaWidget {
-        type State = AlphaState;
-
-        fn create_state(self) -> Self::State {
-            AlphaState
+    impl Widget for AlphaWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, AlphaState>(self, ctx, "AlphaWidget", None)
         }
     }
 
     impl State<AlphaWidget> for AlphaState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: AlphaWidget) -> Self {
+            AlphaState
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             LeafProbe
         }
     }
@@ -2858,18 +2922,18 @@ mod tests {
     struct BetaWidget;
     struct BetaState;
 
-    impl StatefulWidget for BetaWidget {
-        type State = BetaState;
-
-        fn create_state(self) -> Self::State {
-            BetaState
+    impl Widget for BetaWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, BetaState>(self, ctx, "BetaWidget", None)
         }
     }
 
     impl State<BetaWidget> for BetaState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: BetaWidget) -> Self {
+            BetaState
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             LeafProbe
         }
     }
@@ -2882,9 +2946,9 @@ mod tests {
     fn elements_with_the_same_name_but_another_state_type_keep_their_own_state() {
         let context = dummy_build_context();
         let (old, old_updater) =
-            StatefulElement::new_with_name(AlphaWidget, &context, "Shared", None);
+            StatefulElement::new_with_name::<AlphaWidget, AlphaState>(AlphaWidget, &context, "Shared", None);
         let (new, new_updater) =
-            StatefulElement::new_with_name(BetaWidget, &context, "Shared", None);
+            StatefulElement::new_with_name::<BetaWidget, BetaState>(BetaWidget, &context, "Shared", None);
 
         carry_stateful(&old, &new, &context);
 
@@ -2901,7 +2965,7 @@ mod tests {
     fn failed_state_reconciliation_does_not_report_a_second_internal_panic() {
         let context = dummy_build_context();
         let key = crate::Key::Value("carry-panic-key".to_owned());
-        let old = StatefulElement::from_widget(
+        let old = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -2922,7 +2986,7 @@ mod tests {
             (&mut *old_state.0.get()).take();
         }
 
-        let new = StatefulElement::from_widget(
+        let new = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -2942,7 +3006,7 @@ mod tests {
         let context = dummy_build_context();
         let _scope = KeyedStateScope::enter();
         let key = crate::Key::Value("stale-rebuild-key".to_owned());
-        let live = StatefulElement::from_widget(
+        let live = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -2959,7 +3023,7 @@ mod tests {
             (&mut *live_state.0.get()).take();
         }
 
-        let recovered = StatefulElement::from_widget(
+        let recovered = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "LifecycleWidget",
@@ -3035,7 +3099,7 @@ mod tests {
     fn nested_rebuilds_share_one_keyed_subtree_scan() {
         let context = dummy_build_context();
         let visits = Rc::new(RefCell::new(Vec::new()));
-        let nested = StatefulElement::from_widget(
+        let nested = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "NestedLifecycleWidget",
@@ -3049,7 +3113,7 @@ mod tests {
             *nested_stateful.child.0.get() = traversal_element(2, vec![], &visits);
         }
 
-        let outer = StatefulElement::from_widget(
+        let outer = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "OuterLifecycleWidget",
@@ -3073,7 +3137,7 @@ mod tests {
     fn clean_stateful_rebuild_skips_keyed_subtree_registration() {
         let context = dummy_build_context();
         let visits = Rc::new(RefCell::new(Vec::new()));
-        let outer = StatefulElement::from_widget(
+        let outer = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::None),
             &context,
             "OuterLifecycleWidget",
@@ -3232,20 +3296,20 @@ mod tests {
         value: String,
     }
 
-    impl StatefulWidget for StaleUpdaterWidget {
-        type State = StaleUpdaterState;
-
-        fn create_state(self) -> Self::State {
-            Self::State {
-                value: String::from("live"),
-            }
+    impl Widget for StaleUpdaterWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, StaleUpdaterState>(self, ctx, "StaleUpdaterWidget", None)
         }
     }
 
     impl State<StaleUpdaterWidget> for StaleUpdaterState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: StaleUpdaterWidget) -> Self {
+            Self {
+                value: String::from("live"),
+            }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             LeafProbe
         }
     }
@@ -3253,7 +3317,7 @@ mod tests {
     #[test]
     fn try_operations_reject_a_copied_updater_after_unmount() {
         let context = dummy_build_context();
-        let (element, updater) = StatefulElement::new_with_name(
+        let (element, updater) = StatefulElement::new_with_name::<StaleUpdaterWidget, StaleUpdaterState>(
             StaleUpdaterWidget,
             &context,
             "StaleUpdaterWidget",
@@ -3294,7 +3358,7 @@ mod tests {
     #[test]
     fn delayed_callback_rejects_all_state_operations_after_native_unmount() {
         let context = dummy_build_context();
-        let (element, updater) = StatefulElement::new_with_name(
+        let (element, updater) = StatefulElement::new_with_name::<StaleUpdaterWidget, StaleUpdaterState>(
             StaleUpdaterWidget,
             &context,
             "StaleUpdaterWidget",
@@ -3331,10 +3395,104 @@ mod tests {
         assert!(!mutation_called.get());
     }
 
+    /// Records what `mounted()` said on each build and each `on_mount`.
+    struct MountedProbe {
+        seen: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    struct MountedProbeState {
+        seen: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl Widget for MountedProbe {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, MountedProbeState>(self, ctx, "MountedProbe", None)
+        }
+    }
+
+    impl State<MountedProbe> for MountedProbeState {
+        fn create(widget: MountedProbe) -> Self {
+            Self { seen: widget.seen }
+        }
+
+        fn on_mount(&mut self, updater: StateUpdater<Self>) {
+            self.seen
+                .borrow_mut()
+                .push(if updater.mounted() { "on_mount: mounted" } else { "on_mount: not mounted" });
+        }
+
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.seen
+                .borrow_mut()
+                .push(if this.mounted() { "build: mounted" } else { "build: not mounted" });
+            LeafProbe
+        }
+    }
+
+    #[test]
+    fn an_updater_is_mounted_exactly_while_its_element_lives() {
+        let context = dummy_build_context();
+        let (element, updater) = StatefulElement::new_with_name::<StaleUpdaterWidget, StaleUpdaterState>(
+            StaleUpdaterWidget,
+            &context,
+            "StaleUpdaterWidget",
+            None,
+        );
+        let copied = updater;
+        assert!(updater.mounted());
+        assert!(copied.mounted(), "a copy answers the same");
+
+        drop(element);
+
+        assert!(!updater.mounted(), "the element is gone");
+        assert!(!copied.mounted());
+    }
+
+    #[test]
+    fn a_handle_that_was_never_filled_is_not_mounted() {
+        let updater: StateUpdater<i32> = StateUpdater::empty();
+        assert!(!updater.mounted());
+    }
+
+    #[test]
+    fn mounted_agrees_with_has_state() {
+        let context = dummy_build_context();
+        let (element, updater) = StatefulElement::new_with_name::<StaleUpdaterWidget, StaleUpdaterState>(
+            StaleUpdaterWidget,
+            &context,
+            "StaleUpdaterWidget",
+            None,
+        );
+        assert_eq!(updater.mounted(), updater.has_state());
+        drop(element);
+        assert_eq!(updater.mounted(), updater.has_state());
+    }
+
+    #[test]
+    fn the_view_and_the_hook_see_a_mounted_state_during_the_first_build() {
+        let context = dummy_build_context();
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let _element = StatefulElement::from_widget::<MountedProbe, MountedProbeState>(
+            MountedProbe { seen: seen.clone() },
+            &context,
+            "MountedProbe",
+            None,
+        );
+
+        assert_eq!(*seen.borrow(), ["on_mount: mounted", "build: mounted"]);
+    }
+
+    #[test]
+    fn a_detached_view_is_not_mounted() {
+        let state = MountedProbeState { seen: Rc::default() };
+        let view = StateView::detached(&state);
+        assert!(!view.mounted());
+    }
+
     #[test]
     fn has_state_and_unchecked_updates_require_a_live_updater() {
         let context = dummy_build_context();
-        let (element, updater) = StatefulElement::new_with_name(
+        let (element, updater) = StatefulElement::new_with_name::<StaleUpdaterWidget, StaleUpdaterState>(
             StaleUpdaterWidget,
             &context,
             "StaleUpdaterWidget",
@@ -3362,31 +3520,25 @@ mod tests {
         config: String,
     }
 
-    impl StatefulWidget for OwnedConfigWidget {
-        type State = OwnedConfigState;
-
-        fn create_state(self) -> Self::State {
+    impl State<OwnedConfigWidget> for OwnedConfigState {
+        fn create(widget: OwnedConfigWidget) -> Self {
             OwnedConfigState {
                 config: String::from("new"),
             }
         }
-    }
-
-    impl State<OwnedConfigWidget> for OwnedConfigState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
         fn adopt_config_from(&mut self, new: Self) {
             self.config = new.config;
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             LeafProbe
         }
     }
 
     impl Widget for OwnedConfigWidget {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            StatefulElement::from_widget(self, ctx, "OwnedConfigWidget", None)
+            StatefulElement::from_widget::<Self, OwnedConfigState>(self, ctx, "OwnedConfigWidget", None)
         }
     }
 

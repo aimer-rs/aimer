@@ -191,37 +191,33 @@ struct Parent {
     updater: Rc<RefCell<Option<aimer_widget::StateUpdater<ParentState>>>>,
 }
 
-impl StatefulWidget for Parent {
-    type State = ParentState;
-
-    fn create_state(self) -> ParentState {
+impl State<Parent> for ParentState {
+    fn create(widget: Parent) -> Self {
         ParentState {
             mode: ThemeMode::Light,
-            seen: self.seen,
-            updater: self.updater,
+            seen: widget.seen,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Parent> for ParentState {
-    fn init_state(&mut self, updater: aimer_widget::StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: aimer_widget::StateUpdater<Self>) {
         *self.updater.borrow_mut() = Some(updater);
     }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         AnimatedTheme::new()
             .adaptive(TestTheme::light(), TestTheme::dark())
-            .mode(self.mode)
+            .mode(this.mode)
             .duration(Duration::from_millis(40))
-            .child(Probe { seen: self.seen.clone() })
+            .child(Probe { seen: this.seen.clone() })
     }
 }
 
 impl Widget for Parent {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ThemeControllerParent", None)
+        StatefulElement::new_with_name::<Self, ParentState>(self, ctx, "ThemeControllerParent", None)
             .0
             .boxed()
     }
@@ -316,41 +312,37 @@ impl Widget for Named {
     }
 }
 
-impl StatefulWidget for Swap {
-    type State = SwapState;
-
-    fn create_state(self) -> SwapState {
+impl State<Swap> for SwapState {
+    fn create(widget: Swap) -> Self {
         SwapState {
             custom: true,
-            controller: self.controller,
-            built: self.built,
-            updater: self.updater,
+            controller: widget.controller,
+            built: widget.built,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Swap> for SwapState {
-    fn init_state(&mut self, updater: aimer_widget::StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: aimer_widget::StateUpdater<Self>) {
         *self.updater.borrow_mut() = Some(updater);
     }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let built = self.built.clone();
-        if self.custom {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let built = this.built.clone();
+        if this.custom {
             AnimatedTheme::new()
                 .adaptive(TestTheme::light(), TestTheme::dark())
-                .box_child(Named { name: "custom", built, custom: true, controller: self.controller.clone() })
+                .box_child(Named { name: "custom", built, custom: true, controller: this.controller.clone() })
         } else {
-            AnimatedTheme::new().box_child(Named { name: "builtin", built, custom: false, controller: self.controller.clone() })
+            AnimatedTheme::new().box_child(Named { name: "builtin", built, custom: false, controller: this.controller.clone() })
         }
     }
 }
 
 impl Widget for Swap {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ThemeSwap", None)
+        StatefulElement::new_with_name::<Self, SwapState>(self, ctx, "ThemeSwap", None)
             .0
             .boxed()
     }

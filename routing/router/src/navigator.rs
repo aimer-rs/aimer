@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use aimer_widget::base::{BuildContext, ResolvedSize, Size, Vec2d};
 use aimer_widget::{
-    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,
-    StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateView,
+    StateUpdater, StatefulElement, VisitorElement, Widget,
 };
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -122,9 +122,10 @@ pub struct NavigatorState<R>
 where
     R: Route,
 {
+    /// Handed to registered handlers and read by the state's own methods.
+    updater: StateUpdater<Self>,
     pub initial_route: R,
     pub history: Vec<R>,
-    pub updater: StateUpdater<Self>,
     pub routes: fn(R) -> AnyWidget,
     transition: Option<Rc<dyn NavigationTransition<R>>>,
     pages: RefCell<NavigationPages<R>>,
@@ -278,13 +279,46 @@ impl<R: Route + Router> NavigatorState<R> {
 }
 
 impl<R: Route + Router> State<Navigator<R>> for NavigatorState<R> {
+    fn create(widget: Navigator<R>) -> Self {
+        let mut history = vec![widget.initial_route.clone()];
+        // The link that launched the app arrived before this navigator existed.
+        // It is claimed here, before the state does, so the first build already
+        // shows the linked page instead of the first page for a frame.
+        link::claim_waiting_link(|url| {
+            let Some(route) = route_path(url).and_then(|path| R::parse(&path)) else { return false };
+            if route.format() != widget.initial_route.format() {
+                history.push(route);
+            }
+            true
+        });
+        let shell_link = SwipeLink::detached();
+        NavigatorState::<R> {
+            updater: StateUpdater::empty(),
+            initial_route: widget.initial_route.clone(),
+            history,
+            routes: widget.routes,
+            transition: widget.transition,
+            pages: RefCell::new(NavigationPages::default()),
+            swipe_request: RefCell::new(None),
+            swipe_link: SwipeLink::detached(),
+            swipe_area: widget.swipe_area,
+            swipe_port: SwipePort::new(shell_link.clone()),
+            shell_link,
+            back_guard: None,
+            link_guard: None,
+            action: NavigationAction::Push,
+            #[cfg(target_arch = "wasm32")]
+            browser_position: browser_current_position(),
+        }
+    }
+
     fn adopt_config_from(&mut self, new: Self) {
         self.routes = new.routes;
         self.transition = new.transition;
         self.swipe_area = new.swipe_area;
     }
 
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
         self.swipe_link.install(move || updater.read(|state| state.begin_swipe_back()));
         self.shell_link.install(move || updater.read(|state| state.begin_swipe_back()));
@@ -324,12 +358,11 @@ impl<R: Route + Router> State<Navigator<R>> for NavigatorState<R> {
         }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let controller = navigator_controller(self.updater);
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let controller = navigator_controller(this.updater());
         ctx.insert_state(controller.clone());
 
-        let top = self
-            .history
+        let top = this.history
             .last()
             .expect("History should not be empty")
             .clone();
@@ -343,8 +376,8 @@ impl<R: Route + Router> State<Navigator<R>> for NavigatorState<R> {
             browser_replace_state(&effective.format());
         }
 
-        let swipe = self.swipe_request.borrow_mut().take().and_then(|drive| {
-            let Some(previous) = self.history.len().checked_sub(2).map(|index| self.history[index].clone()) else {
+        let swipe = this.swipe_request.borrow_mut().take().and_then(|drive| {
+            let Some(previous) = this.history.len().checked_sub(2).map(|index| this.history[index].clone()) else {
                 drive.cancel_if_unsettled();
                 return None;
             };
@@ -352,7 +385,7 @@ impl<R: Route + Router> State<Navigator<R>> for NavigatorState<R> {
                 resolve_redirect_chain(previous, |route| route.redirect(ctx), MAX_REDIRECT_HOPS)
             });
             if effective.shell_key().is_some() && effective.shell_key() == previous.shell_key() {
-                if !self.begin_shell_swipe(&previous, &drive, &controller, ctx) {
+                if !this.begin_shell_swipe(&previous, &drive, &controller, ctx) {
                     drive.cancel_if_unsettled();
                 }
                 return None;
@@ -361,17 +394,17 @@ impl<R: Route + Router> State<Navigator<R>> for NavigatorState<R> {
         });
         // One link owns the touch: the navigator's, around the page, or the shell's,
         // around its outlet. Never both, or a touch would be arbitrated twice.
-        let can_swipe = self.can_swipe_back();
-        let anywhere = self.swipe_area == SwipeBackArea::Anywhere;
-        self.swipe_link.set_anywhere(anywhere);
-        self.shell_link.set_anywhere(anywhere);
-        let in_shell = self.shares_shell_with_previous();
-        self.swipe_link.set_enabled(can_swipe && !in_shell);
-        self.shell_link.set_enabled(can_swipe && in_shell);
-        let swipe = Some(SwipeSetup { link: Some(self.swipe_link.clone()), start: swipe });
-        ctx.with_state(self.swipe_port.clone(), |ctx| {
-            ctx.with_state(NavigationRequest(self.action), |ctx| {
-                self.pages.borrow_mut().build(effective, self.action, self.transition.as_deref(), ctx, swipe, self.routes)
+        let can_swipe = this.can_swipe_back();
+        let anywhere = this.swipe_area == SwipeBackArea::Anywhere;
+        this.swipe_link.set_anywhere(anywhere);
+        this.shell_link.set_anywhere(anywhere);
+        let in_shell = this.shares_shell_with_previous();
+        this.swipe_link.set_enabled(can_swipe && !in_shell);
+        this.shell_link.set_enabled(can_swipe && in_shell);
+        let swipe = Some(SwipeSetup { link: Some(this.swipe_link.clone()), start: swipe });
+        ctx.with_state(this.swipe_port.clone(), |ctx| {
+            ctx.with_state(NavigationRequest(this.action), |ctx| {
+                this.pages.borrow_mut().build(effective, this.action, this.transition.as_deref(), ctx, swipe, this.routes)
             })
         })
     }
@@ -708,46 +741,10 @@ impl<R: Route> IntoIterator for NavigatorController<R> {
     }
 }
 
-impl<R: Route + Router> StatefulWidget for Navigator<R> {
-    type State = NavigatorState<R>;
-    fn create_state(self) -> Self::State {
-        let mut history = vec![self.initial_route.clone()];
-        // The link that launched the app arrived before this navigator existed.
-        // It is claimed here, before the state does, so the first build already
-        // shows the linked page instead of the first page for a frame.
-        link::claim_waiting_link(|url| {
-            let Some(route) = route_path(url).and_then(|path| R::parse(&path)) else { return false };
-            if route.format() != self.initial_route.format() {
-                history.push(route);
-            }
-            true
-        });
-        let shell_link = SwipeLink::detached();
-        NavigatorState::<R> {
-            initial_route: self.initial_route.clone(),
-            history,
-            updater: StateUpdater::empty(),
-            routes: self.routes,
-            transition: self.transition,
-            pages: RefCell::new(NavigationPages::default()),
-            swipe_request: RefCell::new(None),
-            swipe_link: SwipeLink::detached(),
-            swipe_area: self.swipe_area,
-            swipe_port: SwipePort::new(shell_link.clone()),
-            shell_link,
-            back_guard: None,
-            link_guard: None,
-            action: NavigationAction::Push,
-            #[cfg(target_arch = "wasm32")]
-            browser_position: browser_current_position(),
-        }
-    }
-}
-
 impl<R: Route + Router> Widget for Navigator<R> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let route_context = RouteChildContext::capture(ctx);
-        let (child, updater) = route_context.with(ctx, |ctx| StatefulElement::new(self, ctx));
+        let (child, updater) = route_context.with(ctx, |ctx| StatefulElement::new::<Self, NavigatorState<R>>(self, ctx));
         NavigatorElement {
             controller: Rc::new(navigator_controller(updater)),
             route_context,

@@ -29,37 +29,27 @@ struct Boxes {
 struct BoxesState {
     node: FocusNode,
     focused: bool,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for Boxes {
-    type State = BoxesState;
-
-    fn create_state(self) -> BoxesState {
-        BoxesState {
-            node: self.node,
-            focused: false,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<Boxes> for BoxesState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: Boxes) -> Self {
+        BoxesState {
+            node: widget.node,
+            focused: false,
+        }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater;
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater();
         Column::new().children([
             Focusable::new()
-                .node(self.node.clone())
+                .node(this.node.clone())
                 .on_focus_change(move |gained| updater.set_state(move |s| s.focused = gained))
                 .box_child(
                     aimer_container::Container::new()
                         .width(aimer_attribute::Dimension::Px(120.0))
                         .height(aimer_attribute::Dimension::Px(60.0))
-                        .box_decoration(decoration(self.focused))
+                        .box_decoration(decoration(this.focused))
                         .box_child(SizedBox::new().width(1.0).height(1.0)),
                 ),
             SizedBox::new().width(100.0).height(100.0).boxed(),
@@ -69,7 +59,7 @@ impl State<Boxes> for BoxesState {
 
 impl Widget for Boxes {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Boxes", None)
+        StatefulElement::new_with_name::<Self, BoxesState>(self, ctx, "Boxes", None)
             .0
             .boxed()
     }

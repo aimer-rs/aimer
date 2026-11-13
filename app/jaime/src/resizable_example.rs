@@ -57,48 +57,42 @@ impl ResizableShowcase {
 }
 
 pub struct ResizableShowcaseState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     size: ResolvedSize,
     zone: Direction,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for ResizableShowcase {
-    type State = ResizableShowcaseState;
+impl State<ResizableShowcase> for ResizableShowcaseState {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
+        self.updater = updater;
+    }
 
-    fn create_state(self) -> Self::State {
+    fn create(widget: ResizableShowcase) -> Self {
         ResizableShowcaseState {
+            updater: StateUpdater::empty(),
             size: ResolvedSize {
                 width: START_WIDTH,
                 height: START_HEIGHT,
             },
             zone: Direction::NONE,
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<ResizableShowcase> for ResizableShowcaseState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         Container::new()
             .color(app_theme.background_color)
             .padding(LayoutSpacing::all(Spacing::Px(32)))
             .child(Column::new().children(vec![
-                self.title(app_theme),
-                self.readout(app_theme),
-                self.zone_readout(app_theme),
+                this.title(app_theme),
+                this.readout(app_theme),
+                this.zone_readout(app_theme),
                 SizedBox::new().height(16).boxed(),
-                self.panel(app_theme),
+                this.panel(app_theme),
                 SizedBox::new().height(24).boxed(),
-                self.width_only_bar(app_theme),
+                this.width_only_bar(app_theme),
             ]))
     }
 }

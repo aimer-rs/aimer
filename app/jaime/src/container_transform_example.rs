@@ -240,30 +240,28 @@ impl StatelessWidget for ContainerTransformExample {
 }
 
 #[derive(StatefulWidget)]
+#[state(StandaloneState)]
 struct StandalonePreview;
 
 struct StandaloneState {
-    selected: Option<u32>,
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for StandalonePreview {
-    type State = StandaloneState;
-
-    fn create_state(self) -> Self::State {
-        StandaloneState { selected: None, updater: StateUpdater::empty() }
-    }
+    selected: Option<u32>,
 }
 
 impl State<StandalonePreview> for StandaloneState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: StandalonePreview) -> Self {
+        StandaloneState { selected: None, updater: StateUpdater::empty() }
+    }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
         let white = theme.on_primary_color;
-        let updater = self.updater;
+        let updater = this.updater();
         let open = move |id: u32| move || updater.set_state(move |state| state.selected = Some(id));
         let close = move || updater.set_state(|state| state.selected = None);
 
@@ -273,7 +271,7 @@ impl State<StandalonePreview> for StandaloneState {
             .curve(curves::LINEAR)
             .anchor_curve(curves::EASE_OUT)
             .page_curve(curves::EASE_IN_OUT)
-            .page(self.selected.map(|id| (standalone_tag(id), album_page(id, close, white))))
+            .page(this.selected.map(|id| (standalone_tag(id), album_page(id, close, white))))
             .child(grid(move |id| tile(id, standalone_tag(id), open(id), white)))
     }
 }

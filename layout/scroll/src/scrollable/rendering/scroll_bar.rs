@@ -13,8 +13,8 @@ use aimer_input::gesture::gesture_detector::GestureDetector;
 use aimer_input::mouse_region::MouseRegion;
 use aimer_widget::base::{BuildContext, Color, Colors};
 use aimer_widget::{
-    AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateUpdater,
-    StatefulElement, StatefulWidget, VisitorElement, Widget,
+    AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateView, StateUpdater,
+    StatefulElement, VisitorElement, Widget,
 };
 
 use crate::ScrollAxis;
@@ -132,46 +132,39 @@ pub struct ScrollBarState {
     runtime: Rc<ScrollBarRuntime>,
 }
 
-impl StatefulWidget for ScrollBar {
-    type State = ScrollBarState;
-
-    fn create_state(self) -> Self::State {
-        ScrollBarState {
-            config: self,
-            runtime: Rc::new(ScrollBarRuntime::default()),
-        }
-    }
-}
-
 impl Widget for ScrollBar {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ScrollBar", None)
+        StatefulElement::new_with_name::<Self, ScrollBarState>(self, ctx, "ScrollBar", None)
             .0
             .boxed()
     }
 }
 
 impl State<ScrollBar> for ScrollBarState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+    fn create(widget: ScrollBar) -> Self {
+        ScrollBarState {
+            config: widget,
+            runtime: Rc::new(ScrollBarRuntime::default()),
+        }
+    }
 
     fn adopt_config_from(&mut self, new: Self) {
         self.config = new.config;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         // The region covers exactly the strip this bar is laid out as, so
         // hovering it means the pointer is over the bar and not merely over
         // the content it floats above. A standalone bar has no scroll state to
         // report to and keeps a private cell.
-        let pointer = self
-            .config
+        let pointer = this.config
             .ctrl
             .as_ref()
             .map(|ctrl| ctrl.bar.pointer.clone())
             .unwrap_or_default();
         // Presses and drags on the strip are recognised by a detector, and what
         // they mean for the bar is decided by the scroll state.
-        let ctrl = self.config.ctrl.clone();
+        let ctrl = this.config.ctrl.clone();
         MouseRegion::new().current_state(pointer).child(
             GestureDetector::new()
                 .on_gesture(move |event: GestureEvent| {
@@ -180,9 +173,9 @@ impl State<ScrollBar> for ScrollBarState {
                     }
                 })
                 .child(RawScrollBar {
-                    config: self.config.clone(),
-                    ctrl: self.config.ctrl.clone(),
-                    runtime: self.runtime.clone(),
+                    config: this.config.clone(),
+                    ctrl: this.config.ctrl.clone(),
+                    runtime: this.runtime.clone(),
                 }),
         )
     }
@@ -934,14 +927,15 @@ fn paint_scrollbar_local_v2(canvas: &Canvas, scale: f32, paint: ScrollBarPaint) 
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use super::*;
 
-    fn accepts_stateful_widget<W: StatefulWidget>() {}
+    fn accepts_stateful_widget<W: Widget>() {}
 
     #[test]
     fn scrollbar_is_a_stateful_widget() {
         accepts_stateful_widget::<ScrollBar>();
-        let _ = ScrollBar::default().create_state();
+        let _ = ScrollBar::default().create_state::<ScrollBarState>();
     }
 
     #[test]

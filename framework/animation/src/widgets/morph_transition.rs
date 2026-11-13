@@ -10,7 +10,7 @@ use aimer_events::element::ElementEvent;
 use aimer_widget::base::*;
 use aimer_widget::{
     AnyElement, ChildBuilder, Drawable, Element, EventElement, EventResult, Key, LayoutElement,
-    Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, StatelessElement,
+    Rebuildable, State, StateView, StateUpdater, StatefulElement, StatelessElement,
     VisitorElement, Widget,
 };
 
@@ -274,25 +274,6 @@ impl<T: Widget> MorphTransition<T> {
     }
 }
 
-impl<T: Widget + 'static> StatefulWidget for MorphTransition<T> {
-    type State = MorphTransitionState<T>;
-
-    fn create_state(self) -> Self::State {
-        MorphTransitionState {
-            child_key: self.transition_key.or_else(|| Widget::key(&self.child)),
-            current_child: self.child,
-            old_child: None,
-            old_child_key: None,
-            duration: self.duration,
-            controller: AnimationController::new(self.duration, self.curve.clone()),
-            curve: self.curve,
-            look: self.look,
-            updater: StateUpdater::empty(),
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<T: Widget + 'static> Widget for MorphTransition<T> {
     fn key(&self) -> Option<Key> {
         self.widget_key.clone()
@@ -300,7 +281,7 @@ impl<T: Widget + 'static> Widget for MorphTransition<T> {
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let __key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "MorphTransition", __key)
+        StatefulElement::new_with_name::<Self, MorphTransitionState<T>>(self, ctx, "MorphTransition", __key)
             .0
             .boxed()
     }
@@ -316,13 +297,22 @@ pub struct MorphTransitionState<T: Widget + 'static> {
     curve: AnyCurve,
     look: MorphLook,
     controller: AnimationController,
-    updater: StateUpdater<Self>,
     marker: PhantomData<T>,
 }
 
 impl<T: Widget + 'static> State<MorphTransition<T>> for MorphTransitionState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: MorphTransition<T>) -> Self {
+        MorphTransitionState {
+            child_key: widget.transition_key.or_else(|| Widget::key(&widget.child)),
+            current_child: widget.child,
+            old_child: None,
+            old_child_key: None,
+            duration: widget.duration,
+            controller: AnimationController::new(widget.duration, widget.curve.clone()),
+            curve: widget.curve,
+            look: widget.look,
+            marker: PhantomData,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -344,23 +334,23 @@ impl<T: Widget + 'static> State<MorphTransition<T>> for MorphTransitionState<T> 
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let morphing = self.controller.is_animating();
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let morphing = this.controller.is_animating();
         MorphTransitionFrame {
-            current_child: self.current_child.clone(),
-            current_child_key: self.child_key.clone(),
+            current_child: this.current_child.clone(),
+            current_child_key: this.child_key.clone(),
             old_child: if morphing {
-                self.old_child.clone()
+                this.old_child.clone()
             } else {
                 None
             },
             old_child_key: if morphing {
-                self.old_child_key.clone()
+                this.old_child_key.clone()
             } else {
                 None
             },
-            look: self.look,
-            controller: self.controller.clone(),
+            look: this.look,
+            controller: this.controller.clone(),
         }
     }
 }
@@ -685,6 +675,7 @@ impl LayoutElement for MorphTransitionElement {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use super::*;
     use crate::primitives::curve::curves;
 
@@ -702,7 +693,7 @@ mod tests {
 
     fn state(key: &'static str) -> MorphTransitionState<TestWidget> {
         MorphTransition::new(Duration::from_millis(100), curves::LINEAR, TestWidget(key))
-            .create_state()
+            .create_state::<MorphTransitionState<_>>()
     }
 
     #[test]
@@ -737,7 +728,7 @@ mod tests {
         )
         .style(MorphStyle::Liquid)
         .amplitude(0.2)
-        .create_state();
+        .create_state::<MorphTransitionState<_>>();
 
         current.adopt_config_from(restyled);
 

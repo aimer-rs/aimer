@@ -144,31 +144,25 @@ struct SwitchState {
     updater: Rc<RefCell<Option<StateUpdater<SwitchState>>>>,
 }
 
-impl StatefulWidget for Switch {
-    type State = SwitchState;
-
-    fn create_state(self) -> SwitchState {
-        SwitchState { on: false, builds: self.builds, updater: self.updater }
-    }
-}
-
 impl State<Switch> for SwitchState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
+    fn create(widget: Switch) -> Self {
+        SwitchState { on: false, builds: widget.builds, updater: widget.updater }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        self.builds.set(self.builds.get() + 1);
+
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        this.builds.set(this.builds.get() + 1);
         SizedBox::new()
             .width(Dimension::Px(40.0))
             .height(Dimension::Px(8.0))
-            .color(if self.on { Color::Rgb(0, 200, 0) } else { Color::Rgb(200, 0, 0) })
+            .color(if this.on { Color::Rgb(0, 200, 0) } else { Color::Rgb(200, 0, 0) })
     }
 }
 
 impl Widget for Switch {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Switch", None).0.boxed()
+        StatefulElement::new_with_name::<Self, SwitchState>(self, ctx, "Switch", None).0.boxed()
     }
 }
 

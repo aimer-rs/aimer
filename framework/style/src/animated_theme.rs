@@ -8,8 +8,8 @@ use aimer_provider::{Provider, ProviderHandle};
 use aimer_widget::base::{BuildContext, ResolvedSize, Size, Vec2d};
 use aimer_widget::{
     AnyElement, AnyWidget, Brightness, ChildBuilder, Drawable, Element, EventElement,
-    EventTreeRole, Key, LayoutElement, Rebuildable, RequiredChild, State, StateUpdater,
-    StatefulElement, StatefulWidget, StatelessElement, VisitorElement, Widget, platform_brightness,
+    EventTreeRole, Key, LayoutElement, Rebuildable, RequiredChild, State, StateView, StateUpdater,
+    StatefulElement, StatelessElement, VisitorElement, Widget, platform_brightness,
 };
 
 use crate::{Theme, ThemeController, ThemeData, ThemeMode, ThemeSelection};
@@ -277,7 +277,7 @@ impl<T: Theme> Widget for ResolvedTheme<T> {
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let __key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "AnimatedTheme", __key)
+        StatefulElement::new_with_name::<Self, AnimatedThemeState<T>>(self, ctx, "AnimatedTheme", __key)
             .0
             .boxed()
     }
@@ -327,25 +327,19 @@ pub struct AnimatedThemeState<T: Theme> {
     handle: ProviderHandle<T>,
 }
 
-impl<T: Theme> StatefulWidget for ResolvedTheme<T> {
-    type State = AnimatedThemeState<T>;
-
-    fn create_state(self) -> Self::State {
+impl<T: Theme> State<ResolvedTheme<T>> for AnimatedThemeState<T> {
+    fn create(widget: ResolvedTheme<T>) -> Self {
         AnimatedThemeState {
-            target: self.data.clone(),
-            current: Rc::new(RefCell::new(self.data.clone())),
-            duration: self.duration,
-            controller: AnimationController::new(self.duration, self.curve.clone()),
-            curve: self.curve,
-            child: self.child.clone(),
-            transition: Rc::new(RefCell::new(ThemeTransition::new(self.data.clone()))),
-            handle: ProviderHandle::new(self.data.clone()),
+            target: widget.data.clone(),
+            current: Rc::new(RefCell::new(widget.data.clone())),
+            duration: widget.duration,
+            controller: AnimationController::new(widget.duration, widget.curve.clone()),
+            curve: widget.curve,
+            child: widget.child.clone(),
+            transition: Rc::new(RefCell::new(ThemeTransition::new(widget.data.clone()))),
+            handle: ProviderHandle::new(widget.data.clone()),
         }
     }
-}
-
-impl<T: Theme> State<ResolvedTheme<T>> for AnimatedThemeState<T> {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
         self.duration = new.duration;
@@ -374,13 +368,13 @@ impl<T: Theme> State<ResolvedTheme<T>> for AnimatedThemeState<T> {
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         AnimatedThemeFrame {
-            current: self.current.clone(),
-            child: self.child.clone(),
-            controller: self.controller.clone(),
-            transition: self.transition.clone(),
-            handle: self.handle.clone(),
+            current: this.current.clone(),
+            child: this.child.clone(),
+            controller: this.controller.clone(),
+            transition: this.transition.clone(),
+            handle: this.handle.clone(),
         }
     }
 }
@@ -417,7 +411,7 @@ impl<T: Theme> Widget for ThemeHost<T> {
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let __key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, std::any::type_name::<Self>(), __key)
+        StatefulElement::new_with_name::<Self, ThemeHostState<T>>(self, ctx, std::any::type_name::<Self>(), __key)
             .0
             .boxed()
     }
@@ -447,25 +441,21 @@ pub struct ThemeHostState<T: Theme> {
     provided: ProviderHandle<ThemeController>,
 }
 
-impl<T: Theme> StatefulWidget for ThemeHost<T> {
-    type State = ThemeHostState<T>;
-
-    fn create_state(self) -> Self::State {
-        let controller = ThemeController::new(self.selection.mode);
+impl<T: Theme> State<ThemeHost<T>> for ThemeHostState<T> {
+    fn create(widget: ThemeHost<T>) -> Self {
+        let controller = ThemeController::new(widget.selection.mode);
         ThemeHostState {
-            configured_mode: self.selection.mode,
-            selection: self.selection,
-            duration: self.duration,
-            curve: self.curve,
-            child: self.child,
+            configured_mode: widget.selection.mode,
+            selection: widget.selection,
+            duration: widget.duration,
+            curve: widget.curve,
+            child: widget.child,
             provided: ProviderHandle::new(controller.clone()),
             controller,
         }
     }
-}
 
-impl<T: Theme> State<ThemeHost<T>> for ThemeHostState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         // A mode change is only a request to build again: `build` reads the
         // mode from the controller, which already holds it.
         self.controller
@@ -483,17 +473,17 @@ impl<T: Theme> State<ThemeHost<T>> for ThemeHostState<T> {
         self.child = new.child;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let mut selection = self.selection.clone();
-        selection.mode = self.controller.mode();
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let mut selection = this.selection.clone();
+        selection.mode = this.controller.mode();
         Provider::new()
-            .handle(self.provided.clone())
+            .handle(this.provided.clone())
             .child(AdaptiveTheme {
                 selection,
-                duration: self.duration,
-                curve: self.curve.clone(),
-                child: self.child.clone(),
-                controller: self.controller.clone(),
+                duration: this.duration,
+                curve: this.curve.clone(),
+                child: this.child.clone(),
+                controller: this.controller.clone(),
             })
     }
 }
@@ -741,6 +731,8 @@ impl<T: Theme> LayoutElement for AnimatedThemeElement<T> {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::BuildElement;
+    use aimer_widget::CreateState;
     use std::cell::Cell;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1057,9 +1049,7 @@ mod tests {
     }
 
     fn frame_of(state: &AnimatedThemeState<ThemeData>, ctx: &BuildContext) {
-        let frame =
-            <AnimatedThemeState<ThemeData> as State<ResolvedTheme<ThemeData>>>::build(state, ctx)
-                .to_element(ctx);
+        let frame = state.build_element(ctx);
         // Drawing is the frame boundary: it ticks the controller, places the
         // retained child again, and rebuilds the marked subtree before paint.
         frame.update(ctx);

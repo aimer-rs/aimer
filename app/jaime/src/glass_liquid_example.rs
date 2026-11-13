@@ -9,7 +9,7 @@ use aimer::shape::{FillStyle, ShapeColor, ShapeFit, ShapePath, ShapePathBuilder}
 use aimer::style::{BoxDecoration, FontWeight, LayoutSpacing, Spacing, TextAlign, TextStyle};
 use aimer::{
     AimerApp, AnyWidget, BoxAlignment, BuildContext, Colors, Column, Container, CustomShape,
-    Dimension, Glass, Liquid, MaterialMotionPolicy, Positioned, Row, Stack, State, StateUpdater,
+    Dimension, Glass, Liquid, MaterialMotionPolicy, Positioned, Row, Stack, State, StateView, StateUpdater,
     StatefulWidget, Text, Widget, ZeroSizedBox,
 };
 
@@ -129,31 +129,28 @@ impl Default for GlassLiquidExample {
 }
 
 pub struct GlassLiquidExampleState {
-    blur_intensity: f32,
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for GlassLiquidExample {
-    type State = GlassLiquidExampleState;
-
-    fn create_state(self) -> Self::State {
-        GlassLiquidExampleState {
-            blur_intensity: INITIAL_BLUR_INTENSITY,
-            updater: StateUpdater::empty(),
-        }
-    }
+    blur_intensity: f32,
 }
 
 impl State<GlassLiquidExample> for GlassLiquidExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn create(widget: GlassLiquidExample) -> Self {
+        GlassLiquidExampleState {
+            updater: StateUpdater::empty(),
+            blur_intensity: INITIAL_BLUR_INTENSITY,
+        }
+    }
+
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let glass = Glass::new()
             .tint(aimer::Color::Rgba(64, 148, 214, 255))
             .opacity(0.78)
-            .blur_intensity(self.blur_intensity)
+            .blur_intensity(this.blur_intensity)
             .saturation(1.15)
             .brightness(1.08)
             .elevation(1.0)
@@ -242,7 +239,7 @@ impl State<GlassLiquidExample> for GlassLiquidExampleState {
                                     .boxed(),
                                 )
                                 .boxed(),
-                            self.blur_control(),
+                            this.blur_control(),
                         ])
                         .boxed(),
                     glass.boxed(),

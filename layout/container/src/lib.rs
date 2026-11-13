@@ -41,7 +41,7 @@ mod tests {
     use aimer_widget::base::BuildContext;
     use aimer_widget::{
         AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, NamedWidget,
-        Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, StatelessElement,
+        Rebuildable, State, StateView, StateUpdater, StatefulElement, StatelessElement,
         VisitorElement, Widget,
     };
 
@@ -108,21 +108,6 @@ mod tests {
         #[allow(dead_code)]
         hovered: bool,
         observers: Rc<Vec<Rc<Cell<i32>>>>,
-        updater: StateUpdater<Self>,
-    }
-
-    impl StatefulWidget for ButtonLike {
-        type State = ButtonLikeState;
-
-        fn create_state(self) -> Self::State {
-            ButtonLikeState {
-                index: self.index,
-                selected: self.selected,
-                hovered: false,
-                observers: self.observers.clone(),
-                updater: StateUpdater::new(),
-            }
-        }
     }
 
     impl Widget for ButtonLike {
@@ -130,13 +115,18 @@ mod tests {
             // Bare stateful with the default "Unknown" name, exactly like
             // `TextButton::to_element`. The surrounding `NamedWidget` then
             // wraps it in a `StatelessElement("ButtonLike")`.
-            StatefulElement::new(self, ctx).0.boxed()
+            StatefulElement::new::<Self, ButtonLikeState>(self, ctx).0.boxed()
         }
     }
 
     impl State<ButtonLike> for ButtonLikeState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
+        fn create(widget: ButtonLike) -> Self {
+            ButtonLikeState {
+                index: widget.index,
+                selected: widget.selected,
+                hovered: false,
+                observers: widget.observers.clone(),
+            }
         }
 
         // Mirrors `ButtonState::adopt_config_from`: refresh the config
@@ -146,8 +136,8 @@ mod tests {
             self.selected = new.selected;
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.observers[self.index].set(if self.selected { 1 } else { 0 });
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.observers[this.index].set(if this.selected { 1 } else { 0 });
             Container::new().height(32).child(crate::ZeroSizedBox)
         }
     }
@@ -176,26 +166,11 @@ mod tests {
         observer: Rc<Cell<usize>>,
         live_updater: Rc<RefCell<Option<StateUpdater<Self>>>>,
         button_observers: Rc<Vec<Rc<Cell<i32>>>>,
-        updater: StateUpdater<Self>,
-    }
-
-    impl StatefulWidget for TabWidget {
-        type State = TabState;
-
-        fn create_state(self) -> Self::State {
-            TabState {
-                index: 0,
-                observer: self.observer.clone(),
-                live_updater: self.live_updater.clone(),
-                button_observers: self.button_observers.clone(),
-                updater: StateUpdater::new(),
-            }
-        }
     }
 
     impl Widget for TabWidget {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            StatefulElement::new_with_name(self, ctx, "TabWidget", None)
+            StatefulElement::new_with_name::<Self, TabState>(self, ctx, "TabWidget", None)
                 .0
                 .boxed()
         }
@@ -206,13 +181,18 @@ mod tests {
     }
 
     impl State<TabWidget> for TabState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
+        fn create(widget: TabWidget) -> Self {
+            TabState {
+                index: 0,
+                observer: widget.observer.clone(),
+                live_updater: widget.live_updater.clone(),
+                button_observers: widget.button_observers.clone(),
+            }
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            self.observer.set(self.index);
-            *self.live_updater.borrow_mut() = Some(self.updater);
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.observer.set(this.index);
+            *this.live_updater.borrow_mut() = Some(this.updater());
             // Content follows the selection (the image in the real app) AND a
             // Row of buttons whose highlight must follow the selection too.
             Column::new().children(vec![
@@ -222,10 +202,10 @@ mod tests {
                     .boxed(),
                 Row::new()
                     .children(vec![
-                        button(0, self.index == 0, self.button_observers.clone()),
-                        button(1, self.index == 1, self.button_observers.clone()),
-                        button(2, self.index == 2, self.button_observers.clone()),
-                        button(3, self.index == 3, self.button_observers.clone()),
+                        button(0, this.index == 0, this.button_observers.clone()),
+                        button(1, this.index == 1, this.button_observers.clone()),
+                        button(2, this.index == 2, this.button_observers.clone()),
+                        button(3, this.index == 3, this.button_observers.clone()),
                     ])
                     .boxed(),
             ])

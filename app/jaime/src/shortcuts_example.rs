@@ -124,23 +124,11 @@ impl Default for ShortcutsExample {
 /// The retained side of the page: the two editors' focus nodes, and which of
 /// them owns the keyboard.
 pub struct ShortcutsExampleState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     editor_a: FocusNode,
     editor_b: FocusNode,
     focused: Option<&'static str>,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for ShortcutsExample {
-    type State = ShortcutsExampleState;
-
-    fn create_state(self) -> ShortcutsExampleState {
-        ShortcutsExampleState {
-            editor_a: FocusNode::new(),
-            editor_b: FocusNode::new(),
-            focused: None,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl ShortcutsExampleState {
@@ -229,19 +217,26 @@ impl ShortcutsExampleState {
 }
 
 impl State<ShortcutsExample> for ShortcutsExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
-        PAGE.set(Some(updater));
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: ShortcutsExample) -> Self {
+        ShortcutsExampleState {
+            updater: StateUpdater::empty(),
+            editor_a: FocusNode::new(),
+            editor_b: FocusNode::new(),
+            focused: None,
+        }
+    }
+
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        PAGE.set(Some(this.updater()));
         let app_theme = ThemeData::copied(ctx);
         let muted = crate::theme::muted_text(&app_theme);
         let body = app_theme.on_background_color;
-        let focused = self.focused.unwrap_or("nothing");
+        let focused = this.focused.unwrap_or("nothing");
 
         let log: Vec<AnyWidget> = LOG.with_borrow(|log| {
             if log.is_empty() {
@@ -279,14 +274,14 @@ impl State<ShortcutsExample> for ShortcutsExampleState {
                                 Row::new()
                                     .gaps(LayoutSpacing::new().right(24))
                                     .children(vec![
-                                        self.editor("Editor A", &self.editor_a),
+                                        this.editor("Editor A", &this.editor_a),
                                         // The scope sits around B alone, so it is
                                         // asked only while B has focus.
                                         Shortcuts::new()
                                             .bind_str("CmdOrCtrl+S", || {
                                                 record("local: save in editor B")
                                             })
-                                            .box_child(self.editor("Editor B", &self.editor_b)),
+                                            .box_child(this.editor("Editor B", &this.editor_b)),
                                     ])
                                     .boxed(),
                                 // Beside the editors, so a press and its effect

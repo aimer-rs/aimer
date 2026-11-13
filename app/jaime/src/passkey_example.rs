@@ -76,7 +76,6 @@ struct PasskeyExampleState {
     username: TextEditingController,
     log: Vec<String>,
     busy: bool,
-    updater: StateUpdater<Self>,
 }
 
 impl PasskeyExampleState {
@@ -85,20 +84,6 @@ impl PasskeyExampleState {
             self.log.remove(0);
         }
         self.log.push(line);
-    }
-}
-
-impl StatefulWidget for PasskeyExample {
-    type State = PasskeyExampleState;
-
-    fn create_state(self) -> Self::State {
-        PasskeyExampleState {
-            server: TextEditingController::with_text(DEFAULT_SERVER),
-            username: TextEditingController::with_text("alice@example.com"),
-            log: vec!["Start the server, then press Check setup.".to_owned()],
-            busy: false,
-            updater: StateUpdater::new(),
-        }
     }
 }
 
@@ -136,18 +121,20 @@ fn operation_callback(
 }
 
 impl State<PasskeyExample> for PasskeyExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: PasskeyExample) -> Self {
+        PasskeyExampleState {
+            server: TextEditingController::with_text(DEFAULT_SERVER),
+            username: TextEditingController::with_text("alice@example.com"),
+            log: vec!["Start the server, then press Check setup.".to_owned()],
+            busy: false,
+        }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
-        let server = self.server.value().text().to_owned();
-        let username = self.username.value().text().to_owned();
-        let press = |operation| operation_callback(operation, server.clone(), username.clone(), self.updater);
+        let server = this.server.value().text().to_owned();
+        let username = this.username.value().text().to_owned();
+        let press = |operation| operation_callback(operation, server.clone(), username.clone(), this.updater());
 
         Scrollable::new()
             .vertical_scroll_bar(None)
@@ -179,19 +166,19 @@ impl State<PasskeyExample> for PasskeyExampleState {
                                         .color(crate::theme::muted_text(&theme)),
                                 )
                                 .boxed(),
-                                field("Server", &self.server, "http://127.0.0.1:8787", &theme),
-                                field("Account name", &self.username, "alice@example.com", &theme),
+                                field("Server", &this.server, "http://127.0.0.1:8787", &theme),
+                                field("Account name", &this.username, "alice@example.com", &theme),
                                 Row::new()
                                     .gaps(LayoutSpacing::all(Spacing::Px(12)))
                                     .children([
-                                        action("Check setup", &theme, self.busy, press(Operation::Check)),
-                                        action("Register passkey", &theme, self.busy, press(Operation::Register)),
-                                        action("Sign in", &theme, self.busy, press(Operation::SignIn)),
+                                        action("Check setup", &theme, this.busy, press(Operation::Check)),
+                                        action("Register passkey", &theme, this.busy, press(Operation::Register)),
+                                        action("Sign in", &theme, this.busy, press(Operation::SignIn)),
                                     ])
                                     .boxed(),
                                 Column::new()
                                     .children(
-                                        self.log
+                                        this.log
                                             .iter()
                                             .map(|line| {
                                                 Text::new(line.clone())
@@ -293,7 +280,7 @@ mod tests {
 
     #[test]
     fn the_log_keeps_only_the_most_recent_lines() {
-        let mut state = PasskeyExample::new().create_state();
+        let mut state = PasskeyExample::new().create_state::<PasskeyExampleState>();
 
         for n in 0..MAX_LOG_LINES + 5 {
             state.push(format!("line {n}"));

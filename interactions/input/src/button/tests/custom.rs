@@ -173,7 +173,7 @@ async fn custom_state_decorations_follow_precedence_and_keep_the_child() {
         .press_decoration(Surface(Color::RED))
         .disable_decoration(Surface(Color::GRAY))
         .child(Probe { builds: builds.clone() });
-    let (root, updater) = aimer_widget::StatefulElement::new_with_name(button, &ctx, "Button", None);
+    let (root, updater) = aimer_widget::StatefulElement::new_with_name::<Button<_>, crate::button::ButtonState<_>>(button, &ctx, "Button", None);
     let root = root.boxed();
     root.update(&ctx);
     let gesture = find_element(root.as_ref(), "GestureDetector").unwrap().id();
@@ -221,7 +221,7 @@ async fn builder_observes_disabled_and_configuration_updates() {
                 ErrorWidget::new("custom button")
             }
         });
-    let (root, updater) = aimer_widget::StatefulElement::new_with_name(button, &ctx, "Button", None);
+    let (root, updater) = aimer_widget::StatefulElement::new_with_name::<Button<_>, crate::button::ButtonState<_>>(button, &ctx, "Button", None);
     let root = root.boxed();
     root.update(&ctx);
     assert_eq!(snapshots.borrow().last(), Some(&(false, false, true)));

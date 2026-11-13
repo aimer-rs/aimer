@@ -4,7 +4,7 @@ use aimer::decoration::{Decoration, LightEdge, MultiDecorationBox};
 use aimer::selection::{Checkbox, CheckboxValue};
 use aimer::style::{BoxDecoration, Color, FontWeight, LayoutSpacing, Spacing, TextStyle};
 use aimer::{
-    AimerApp, BuildContext, ChildBuilder, Column, Container, Row, State, StateUpdater,
+    AimerApp, BuildContext, ChildBuilder, Column, Container, Row, State, StateView, StateUpdater,
     StatefulWidget, Text, Widget,
 };
 
@@ -43,13 +43,10 @@ pub struct MultiDecorationBoxExampleState {
     reverse: bool,
     typed_content: ChildBuilder,
     runtime_content: ChildBuilder,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for MultiDecorationBoxExample {
-    type State = MultiDecorationBoxExampleState;
-
-    fn create_state(self) -> Self::State {
+impl State<MultiDecorationBoxExample> for MultiDecorationBoxExampleState {
+    fn create(widget: MultiDecorationBoxExample) -> Self {
         MultiDecorationBoxExampleState {
             include_edge: true,
             reverse: false,
@@ -61,24 +58,17 @@ impl StatefulWidget for MultiDecorationBoxExample {
                 "Runtime list",
                 "An owned collection of decorations, in the selected order.",
             )),
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<MultiDecorationBoxExample> for MultiDecorationBoxExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater;
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater();
         let mut layers: Vec<Box<dyn Decoration>> = Vec::with_capacity(2);
         layers.push(Box::new(background()));
-        if self.include_edge {
+        if this.include_edge {
             layers.push(Box::new(edge()));
         }
-        if self.reverse {
+        if this.reverse {
             layers.reverse();
         }
         Column::new().gaps(LayoutSpacing::all(Spacing::Px(16))).children([
@@ -87,11 +77,11 @@ impl State<MultiDecorationBoxExample> for MultiDecorationBoxExampleState {
                 .wrapped().boxed(),
             Row::new().gaps(LayoutSpacing::all(Spacing::Px(24))).children([
                 Checkbox::new().label("Include light edge")
-                    .value(if self.include_edge { CheckboxValue::Checked } else { CheckboxValue::Unchecked })
+                    .value(if this.include_edge { CheckboxValue::Checked } else { CheckboxValue::Unchecked })
                     .on_change(move |value| updater.set_state(move |state| state.include_edge = value == CheckboxValue::Checked))
                     .boxed(),
                 Checkbox::new().label("Reverse layer order")
-                    .value(if self.reverse { CheckboxValue::Checked } else { CheckboxValue::Unchecked })
+                    .value(if this.reverse { CheckboxValue::Checked } else { CheckboxValue::Unchecked })
                     .on_change(move |value| updater.set_state(move |state| state.reverse = value == CheckboxValue::Checked))
                     .boxed(),
             ]).boxed(),
@@ -99,8 +89,8 @@ impl State<MultiDecorationBoxExample> for MultiDecorationBoxExampleState {
                 .box_decoration(BoxDecoration::new().background_color(Color::Rgb(9, 16, 30)).border_radius(16))
                 .child(Row::new().gaps(LayoutSpacing::all(Spacing::Px(24))).children([
                     MultiDecorationBox::new().decoration(background()).decoration(edge())
-                        .box_child(self.typed_content.clone()),
-                    MultiDecorationBox::new().decorations(layers).box_child(self.runtime_content.clone()),
+                        .box_child(this.typed_content.clone()),
+                    MultiDecorationBox::new().decorations(layers).box_child(this.runtime_content.clone()),
                 ])).boxed(),
         ])
     }

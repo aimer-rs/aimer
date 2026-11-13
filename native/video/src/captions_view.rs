@@ -7,7 +7,7 @@ use aimer_flex::{BoxAlignment, Column};
 use aimer_style::{BoxDecoration, LayoutSpacing, TextAlign, TextStyle};
 use aimer_text::Text;
 use aimer_widget::base::{BuildContext, Color};
-use aimer_widget::{AnyElement, AnyWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, AnyWidget, State, StateView, StateUpdater, StatefulElement, Widget};
 
 use crate::frame_watch::FrameWatch;
 use crate::{CaptionTrack, VideoPlayer};
@@ -141,25 +141,15 @@ pub struct CaptionsState {
     config: Captions,
     text: Option<String>,
     showing: Showing,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for Captions {
-    type State = CaptionsState;
-
-    fn create_state(self) -> CaptionsState {
-        CaptionsState {
-            config: self,
-            text: None,
-            showing: Rc::new(Cell::new(None)),
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<Captions> for CaptionsState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: Captions) -> Self {
+        CaptionsState {
+            config: widget,
+            text: None,
+            showing: Rc::new(Cell::new(None)),
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -176,12 +166,12 @@ impl State<Captions> for CaptionsState {
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let watch = {
-            let player = self.config.player.clone();
-            let track = self.config.track.clone();
-            let showing = self.showing.clone();
-            let updater = self.updater;
+            let player = this.config.player.clone();
+            let track = this.config.track.clone();
+            let showing = this.showing.clone();
+            let updater = this.updater();
             FrameWatch::new(move || {
                 let (Some(player), Some(track)) = (player.as_ref(), track.as_ref()) else {
                     return false;
@@ -203,8 +193,8 @@ impl State<Captions> for CaptionsState {
             })
         };
         let mut children: Vec<AnyWidget> = vec![watch.boxed()];
-        if let Some(text) = &self.text {
-            children.push(caption_box(text, &self.config.style));
+        if let Some(text) = &this.text {
+            children.push(caption_box(text, &this.config.style));
         }
         Column::new()
             .horizontal_alignment(BoxAlignment::Center)
@@ -228,7 +218,7 @@ fn caption_box(text: &str, style: &CaptionStyle) -> AnyWidget {
 
 impl Widget for Captions {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Captions", None).0.boxed()
+        StatefulElement::new_with_name::<Self, CaptionsState>(self, ctx, "Captions", None).0.boxed()
     }
 
     fn debug_name(&self) -> &'static str {

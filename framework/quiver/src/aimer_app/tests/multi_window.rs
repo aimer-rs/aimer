@@ -70,30 +70,24 @@ struct ProbeState {
     touches: usize,
 }
 
-impl StatefulWidget for ProbeWidget {
-    type State = ProbeState;
-
-    fn create_state(self) -> ProbeState {
+impl State<ProbeWidget> for ProbeState {
+    fn create(widget: ProbeWidget) -> Self {
         ProbeState {
-            probe: self.0,
+            probe: widget.0,
             touches: 0,
         }
     }
-}
 
-impl State<ProbeWidget> for ProbeState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.probe.updater.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.probe.builds.set(self.probe.builds.get() + 1);
-        *self.probe.runtime_during_build.borrow_mut() = Venus::current();
-        if self.probe.watches_metrics {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        *this.probe.updater.borrow_mut() = Some(this.updater());
+        this.probe.builds.set(this.probe.builds.get() + 1);
+        *this.probe.runtime_during_build.borrow_mut() = Venus::current();
+        if this.probe.watches_metrics {
             let _ = ctx.watch_window_metrics();
         }
-        if self.probe.watches_safe_area {
-            self.probe.insets_during_build.set(ctx.watch_safe_area_insets());
+        if this.probe.watches_safe_area {
+            this.probe.insets_during_build.set(ctx.watch_safe_area_insets());
         }
         SizedBox::new()
             .width(Dimension::Px(40.0))
@@ -103,7 +97,7 @@ impl State<ProbeWidget> for ProbeState {
 
 impl Widget for ProbeWidget {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "MultiWindowProbe", None)
+        StatefulElement::new_with_name::<Self, ProbeState>(self, ctx, "MultiWindowProbe", None)
             .0
             .boxed()
     }

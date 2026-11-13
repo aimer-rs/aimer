@@ -17,7 +17,7 @@ use aimer::style::{
     BoxDecoration, Color, FontWeight, LayoutSpacing, Spacing, TextAlign, TextStyle,
 };
 use aimer::{
-    AimerApp, AnyWidget, BuildContext, ChildBuilder, Column, Container, Row, State, StateUpdater,
+    AimerApp, AnyWidget, BuildContext, ChildBuilder, Column, Container, Row, State, StateView, StateUpdater,
     StatefulWidget, Text, Widget,
 };
 
@@ -63,42 +63,32 @@ pub struct ForegroundDecorationExampleState {
     zoom: f64,
     // One position in the tree, so one builder: the card is placed only once.
     card: ChildBuilder,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for ForegroundDecorationExample {
-    type State = ForegroundDecorationExampleState;
-
-    fn create_state(self) -> Self::State {
+impl State<ForegroundDecorationExample> for ForegroundDecorationExampleState {
+    fn create(widget: ForegroundDecorationExample) -> Self {
         ForegroundDecorationExampleState {
             shown: true,
             blur: 3.0,
             zoom: 1.25,
             card: ChildBuilder::from_widget(card()),
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<ForegroundDecorationExample> for ForegroundDecorationExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater;
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater();
         Column::new().gaps(LayoutSpacing::all(Spacing::Px(16))).children([
             note("The card paints first. The foreground decoration paints after it, so the fade darkens the card's text and the rim stays on top of its edge."),
-            toggle_button(self.shown, move || {
+            toggle_button(this.shown, move || {
                 updater.set_state(|state| state.shown = !state.shown)
             }),
             Row::new().gaps(LayoutSpacing::all(Spacing::Px(24))).children([
-                control(format!("Blur: {:.0} px", self.blur), self.blur, 0.0..24.0, 1.0,
+                control(format!("Blur: {:.0} px", this.blur), this.blur, 0.0..24.0, 1.0,
                     move |value| updater.set_state(move |state| state.blur = value)),
-                control(format!("Magnification: {:.2}x", self.zoom), self.zoom, 1.0..2.5, 0.05,
+                control(format!("Magnification: {:.2}x", this.zoom), this.zoom, 1.0..2.5, 0.05,
                     move |value| updater.set_state(move |state| state.zoom = value)),
             ]).boxed(),
-            note(if self.shown {
+            note(if this.shown {
                 "Foreground decoration: shown"
             } else {
                 "Foreground decoration: hidden"
@@ -112,8 +102,8 @@ impl State<ForegroundDecorationExample> for ForegroundDecorationExampleState {
                 )
                 .child(
                     ForegroundDecorationBox::new()
-                        .decoration(self.layers())
-                        .child(self.card.clone()),
+                        .decoration(this.layers())
+                        .child(this.card.clone()),
                 )
                 .boxed(),
         ])

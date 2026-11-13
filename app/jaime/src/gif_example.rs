@@ -12,7 +12,7 @@ use aimer::style::{
 };
 use aimer::{
     AnyWidget, AssetImage, BuildContext, Column, Container, Dimension, GifController, GifLoops,
-    Row, SizedBox, State, StateUpdater, StatefulWidget, Text, Widget,
+    Row, SizedBox, State, StateView, StateUpdater, StatefulWidget, Text, Widget,
 };
 
 use crate::{Assets, theme};
@@ -37,35 +37,22 @@ impl GifExample {
 
 pub struct GifExampleState {
     controller: GifController,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for GifExample {
-    type State = GifExampleState;
-
-    fn create_state(self) -> GifExampleState {
-        GifExampleState {
-            controller: GifController::new(),
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<GifExample> for GifExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
+    fn create(widget: GifExample) -> Self {
+        GifExampleState {
+            controller: GifController::new(),
+        }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
-        let playing = self.controller.is_playing();
+        let updater = this.updater();
+        let playing = this.controller.is_playing();
 
         let toggle = {
-            let controller = self.controller.clone();
+            let controller = this.controller.clone();
             control_button(
                 if playing { "Pause" } else { "Play" },
                 app_theme,
@@ -78,14 +65,14 @@ impl State<GifExample> for GifExampleState {
             )
         };
         let restart = {
-            let controller = self.controller.clone();
+            let controller = this.controller.clone();
             control_button("Restart", app_theme, false, move || {
                 controller.restart();
                 updater.set_state(|_| {});
             })
         };
         let jump = {
-            let controller = self.controller.clone();
+            let controller = this.controller.clone();
             control_button("Jump to frame 10", app_theme, false, move || {
                 controller.seek_to_frame(JUMP_FRAME);
             })
@@ -121,7 +108,7 @@ impl State<GifExample> for GifExampleState {
                         AssetImage::new(Assets::GIPHY)
                             .fit(BoxFit::FitWidth)
                             .gif_loops(GifLoops::Infinite)
-                            .gif_controller(self.controller.clone()),
+                            .gif_controller(this.controller.clone()),
                     )
                     .boxed(),
                 SizedBox::new().height(20).boxed(),

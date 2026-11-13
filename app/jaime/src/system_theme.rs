@@ -27,35 +27,25 @@ impl SystemThemeExample {
 
 pub struct SystemThemeExampleState {
     mode: ThemeMode,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for SystemThemeExample {
-    type State = SystemThemeExampleState;
-
-    fn create_state(self) -> Self::State {
-        SystemThemeExampleState {
-            // The default: whatever the user told the operating system.
-            mode: ThemeMode::System,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<SystemThemeExample> for SystemThemeExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: SystemThemeExample) -> Self {
+        SystemThemeExampleState {
+            // The default: whatever the user told the operating system.
+            mode: ThemeMode::System,
+        }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         // `AnimatedTheme::new()` already carries the built-in light and dark
         // themes; the mode decides which of them is supplied, and whether the
         // platform is consulted at all.
         AnimatedTheme::new()
-            .mode(self.mode)
+            .mode(this.mode)
             .duration(Duration::from_millis(400))
             .curve(curves::EASE_IN_OUT)
-            .child(SystemThemePanel::new(self.mode, self.updater))
+            .child(SystemThemePanel::new(this.mode, this.updater()))
     }
 }
 

@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, State, StateView, StateUpdater, StatefulElement, Widget};
 
 use crate::binary::{Binary, ChangeCallback, VisualBuilder};
 use crate::common::{Common, common_setters};
@@ -102,23 +102,19 @@ impl Switch {
 
 type SwitchState = Binary<bool, bool>;
 
-impl StatefulWidget for Switch {
-    type State = SwitchState;
-
-    fn create_state(self) -> Self::State {
+impl State<Switch> for SwitchState {
+    fn create(widget: Switch) -> Self {
         Binary::new(
-            self.value,
-            Mark::Switch { on: self.value },
-            Some(!self.value),
-            self.on_change,
-            self.common,
-            self.builder,
+            widget.value,
+            Mark::Switch { on: widget.value },
+            Some(!widget.value),
+            widget.on_change,
+            widget.common,
+            widget.builder,
         )
     }
-}
 
-impl State<Switch> for SwitchState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.init(updater);
     }
 
@@ -126,14 +122,14 @@ impl State<Switch> for SwitchState {
         self.adopt(new);
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.render(ctx)
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.render(ctx)
     }
 }
 
 impl Widget for Switch {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Switch", None)
+        StatefulElement::new_with_name::<Self, SwitchState>(self, ctx, "Switch", None)
             .0
             .boxed()
     }

@@ -152,7 +152,7 @@ async fn retained_hover_observes_parent_decoration_and_disabled_updates() {
             builds: Rc::new(Cell::new(0)),
         });
     let (root, updater) =
-        aimer_widget::StatefulElement::new_with_name(button, &ctx, "Button", None);
+        aimer_widget::StatefulElement::new_with_name::<Button<_>, crate::button::ButtonState<_>>(button, &ctx, "Button", None);
     let root = root.boxed();
     root.update(&ctx);
     let mut dispatcher = aimer_widget::EventDispatcher::new();

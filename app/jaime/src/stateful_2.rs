@@ -30,7 +30,6 @@ pub struct MyListState {
     list: Vec<ListItem>,
     input_controller: TextEditingController,
     is_cooldown: bool,
-    updater: StateUpdater<Self>,
 }
 
 impl Drop for ListItem {
@@ -39,27 +38,16 @@ impl Drop for ListItem {
     }
 }
 
-impl StatefulWidget for MyList {
-    type State = MyListState;
-    fn create_state(self) -> Self::State {
+impl State<MyList> for MyListState {
+    fn create(widget: MyList) -> Self {
         MyListState {
             list: vec![],
-            updater: StateUpdater::empty(),
             input_controller: TextEditingController::new(),
             is_cooldown: false,
         }
     }
-}
 
-impl State<MyList> for MyListState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = _updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
 
         Container::new()
@@ -81,7 +69,7 @@ impl State<MyList> for MyListState {
                                             .width(Dimension::Px(50.0))
                                             .margin(LayoutSpacing { left: Spacing::Px(10), ..Default::default() })
                                             .child(
-                                                Text::new(format!("Item {}", self.list.len()))
+                                                Text::new(format!("Item {}", this.list.len()))
                                                     .text_align(TextAlign::MidLeft)
                                                     .text_style(TextStyle::new()
                                                         .font_size(20)
@@ -97,10 +85,10 @@ impl State<MyList> for MyListState {
                                                     .padding(LayoutSpacing::all(Spacing::Px(10)))
                                                     .text_align(TextAlign::MidLeft)
                                                     .text_style(TextStyle::new().font_weight(FontWeight::Bolder))
-                                                    .controller(self.input_controller.clone())
+                                                    .controller(this.input_controller.clone())
                                                     .input_type(InputType::Text)
                                                     .on_changed({
-                                                        let is_cooldown = self.is_cooldown;
+                                                        let is_cooldown = this.is_cooldown;
                                                         AsyncTextFieldCallback(move |item: String| async move {
                                                             if !is_cooldown {
                                                                 console::debug!("Input changed: {}", item);
@@ -161,7 +149,7 @@ impl State<MyList> for MyListState {
                                             .child(
                                                 Button::new()
                                                     .on_press({
-                                                        let updater = self.updater;
+                                                        let updater = this.updater();
                                                          move || {
                                                             println!("Button pressed with text: {}", updater.read_state().input_controller.value().text());
                                                             updater.set_state(|state| {
@@ -204,7 +192,7 @@ impl State<MyList> for MyListState {
                             ).boxed(),
                         Scrollable::new()
                             .child(Column::new()
-                                .children(self.list.iter().map(|item| {
+                                .children(this.list.iter().map(|item| {
                                     Container::new()
                                         .margin(LayoutSpacing { top: Spacing::Px(10), ..Default::default() })
                                         .color(theme.surface_color)
@@ -231,7 +219,7 @@ impl State<MyList> for MyListState {
                                                             Button::new()
                                                                 .on_press({
                                                                     let item_id = item.id.clone();
-                                                                    let updater = self.updater;
+                                                                    let updater = this.updater();
                                                                     move || {
                                                                         let another_item_id = item_id.clone();
                                                                         updater.set_state( move |state| {

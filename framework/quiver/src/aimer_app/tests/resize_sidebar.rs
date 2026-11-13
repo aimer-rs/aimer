@@ -30,30 +30,26 @@ struct Sidebar {
     hovered: Rc<std::cell::Cell<i32>>,
 }
 
-impl StatefulWidget for Sidebar {
-    type State = SidebarState;
-
-    fn create_state(self) -> SidebarState {
+impl State<Sidebar> for SidebarState {
+    fn create(widget: Sidebar) -> Self {
         SidebarState {
             resizable: false,
-            updater: self.updater,
-            hovered: self.hovered,
+            updater: widget.updater,
+            hovered: widget.hovered,
         }
     }
-}
 
-impl State<Sidebar> for SidebarState {
-    fn init_state(&mut self, updater: aimer_widget::StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: aimer_widget::StateUpdater<Self>) {
         *self.updater.borrow_mut() = Some(updater);
     }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let zone_updater = self.updater.borrow().expect("initialised");
-        let hovered = self.hovered.clone();
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let zone_updater = this.updater.borrow().expect("initialised");
+        let hovered = this.hovered.clone();
         ImplicitAnimatedBuilder::new(
-            if self.resizable { 1.0 } else { 0.0 },
+            if this.resizable { 1.0 } else { 0.0 },
             Duration::from_millis(300),
             curves::EASE_IN_OUT,
             move |delta: &f32| {
@@ -122,7 +118,7 @@ impl State<Sidebar> for SidebarState {
 
 impl Widget for Sidebar {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Sidebar", None)
+        StatefulElement::new_with_name::<Self, SidebarState>(self, ctx, "Sidebar", None)
             .0
             .boxed()
     }

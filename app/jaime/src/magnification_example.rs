@@ -12,7 +12,7 @@ use aimer::style::{
 };
 use aimer::{
     AimerApp, AnyWidget, BuildContext, ChildBuilder, Column, Container, Positioned, Row, Stack,
-    State, StateUpdater, StatefulWidget, Text, Widget,
+    State, StateView, StateUpdater, StatefulWidget, Text, Widget,
 };
 
 /// Starts the standalone magnification example.
@@ -50,12 +50,10 @@ pub struct MagnificationExampleState {
     style: Style,
     backdrop: ChildBuilder,
     foreground: ChildBuilder,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for MagnificationExample {
-    type State = MagnificationExampleState;
-    fn create_state(self) -> Self::State {
+impl State<MagnificationExample> for MagnificationExampleState {
+    fn create(widget: MagnificationExample) -> Self {
         MagnificationExampleState {
             zoom: 1.5,
             thickness: 16.0,
@@ -63,20 +61,13 @@ impl StatefulWidget for MagnificationExample {
             style: Style::DEFAULT,
             backdrop: ChildBuilder::from_widget(text_backdrop()),
             foreground: ChildBuilder::from_widget(foreground()),
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<MagnificationExample> for MagnificationExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let zoom_updater = self.updater;
-        let depth_updater = self.updater;
-        let bulge_updater = self.updater;
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let zoom_updater = this.updater();
+        let depth_updater = this.updater();
+        let bulge_updater = this.updater();
         let text_style = TextStyle::new()
             .font_size(15)
             .color(theme::app_theme().on_background_color);
@@ -92,9 +83,9 @@ impl State<MagnificationExample> for MagnificationExampleState {
                 Row::new()
                     .gaps(LayoutSpacing::all(Spacing::Px(16)))
                     .children([
-                        effect_checkbox("Uniform zoom", Style::UNIFORM, self.style, self.updater),
-                        effect_checkbox("Bulge", Style::BULGE, self.style, self.updater),
-                        effect_checkbox("Edge refraction", Style::REFRACTION, self.style, self.updater),
+                        effect_checkbox("Uniform zoom", Style::UNIFORM, this.style, this.updater()),
+                        effect_checkbox("Bulge", Style::BULGE, this.style, this.updater()),
+                        effect_checkbox("Edge refraction", Style::REFRACTION, this.style, this.updater()),
                     ])
                     .boxed(),
                 Row::new()
@@ -102,38 +93,38 @@ impl State<MagnificationExample> for MagnificationExampleState {
                     .children([
                         style_select("Axes", Style::HORIZONTAL | Style::VERTICAL,
                             [("Both axes", Style::NONE), ("Horizontal", Style::HORIZONTAL), ("Vertical", Style::VERTICAL)],
-                            self.style, self.updater),
+                            this.style, this.updater()),
                         style_select("Horizontal anchor", Style::LEFT | Style::RIGHT,
                             [("Center X", Style::NONE), ("Left", Style::LEFT), ("Right", Style::RIGHT)],
-                            self.style, self.updater),
+                            this.style, this.updater()),
                         style_select("Vertical anchor", Style::TOP | Style::BOTTOM,
                             [("Center Y", Style::NONE), ("Top", Style::TOP), ("Bottom", Style::BOTTOM)],
-                            self.style, self.updater),
+                            this.style, this.updater()),
                     ])
                     .boxed(),
-                Text::new(format!("Zoom: {:.1}×", self.zoom)).text_style(text_style).boxed(),
+                Text::new(format!("Zoom: {:.1}×", this.zoom)).text_style(text_style).boxed(),
                 Slider::new()
                     .range(1.0..4.0)
                     .step(0.05)
-                    .value(self.zoom)
+                    .value(this.zoom)
                     .width(320.0)
                     .on_change(move |value| zoom_updater.set_state(move |state| state.zoom = value))
                     .boxed(),
-                Text::new(format!("Thickness: {:.0} px", self.thickness)).text_style(text_style).boxed(),
+                Text::new(format!("Thickness: {:.0} px", this.thickness)).text_style(text_style).boxed(),
                 Slider::new()
                     .range(0.0..64.0)
                     .step(1.0)
-                    .value(self.thickness)
+                    .value(this.thickness)
                     .width(320.0)
                     .on_change(move |value| {
                         depth_updater.set_state(move |state| state.thickness = value)
                     })
                     .boxed(),
-                Text::new(format!("Bulge strength: {:.2}", self.bulge)).text_style(text_style).boxed(),
+                Text::new(format!("Bulge strength: {:.2}", this.bulge)).text_style(text_style).boxed(),
                 Slider::new()
                     .range(0.0..1.0)
                     .step(0.05)
-                    .value(self.bulge)
+                    .value(this.bulge)
                     .width(320.0)
                     .on_change(move |value| {
                         bulge_updater.set_state(move |state| state.bulge = value)
@@ -145,7 +136,7 @@ impl State<MagnificationExample> for MagnificationExampleState {
                     .color(Color::Rgb(218, 237, 247))
                     .child(
                         Stack::new().children([
-                            self.backdrop
+                            this.backdrop
                                 .clone()
                                 .boxed(),
                             Positioned::new()
@@ -156,14 +147,14 @@ impl State<MagnificationExample> for MagnificationExampleState {
                                         .decoration(vec![
                                             BorderRadius::from(16.0).notype(),
                                             Magnification::new()
-                                                .style(self.style)
-                                                .bulge(self.bulge as f32)
-                                                .zoom(self.zoom as f32)
-                                                .thickness(self.thickness as f32)
+                                                .style(this.style)
+                                                .bulge(this.bulge as f32)
+                                                .zoom(this.zoom as f32)
+                                                .thickness(this.thickness as f32)
                                                 .notype(),
                                         ])
                                         .child(
-                                            self.foreground
+                                            this.foreground
                                                 .clone(),
                                         ),
                                 )

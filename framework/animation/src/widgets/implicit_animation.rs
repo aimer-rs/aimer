@@ -9,7 +9,7 @@ use aimer_events::element::ElementEvent;
 use aimer_widget::base::*;
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventResult, Key, LayoutElement, Rebuildable,
-    State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget,
     carry_element_state,
 };
 
@@ -93,26 +93,6 @@ where
     }
 }
 
-impl<T> StatefulWidget for ImplicitAnimatedBuilder<T>
-where
-    T: Animatable + Clone + PartialEq + 'static,
-{
-    type State = ImplicitAnimatedState<T>;
-
-    fn create_state(self) -> Self::State {
-        ImplicitAnimatedState {
-            target: self.value.clone(),
-            current: Rc::new(LocalCell::new(self.value.clone())),
-            duration: self.duration,
-            controller: AnimationController::new(self.duration, self.curve.clone()),
-            curve: self.curve,
-            builder: self.builder.clone(),
-            tween: Rc::new(LocalCell::new(None)),
-            updater: StateUpdater::empty(),
-        }
-    }
-}
-
 impl<T> Widget for ImplicitAnimatedBuilder<T>
 where
     T: Animatable + Clone + PartialEq + 'static,
@@ -123,7 +103,7 @@ where
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let __key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "ImplicitAnimatedBuilder", __key)
+        StatefulElement::new_with_name::<Self, ImplicitAnimatedState<T>>(self, ctx, "ImplicitAnimatedBuilder", __key)
             .0
             .boxed()
     }
@@ -138,15 +118,22 @@ pub struct ImplicitAnimatedState<T: Animatable + Clone + PartialEq + 'static> {
     builder: Rc<ImplicitElementBuilder<T>>,
     controller: AnimationController,
     tween: Rc<LocalCell<Option<Tween<T>>>>,
-    updater: StateUpdater<Self>,
 }
 
 impl<T> State<ImplicitAnimatedBuilder<T>> for ImplicitAnimatedState<T>
 where
     T: Animatable + Clone + PartialEq + 'static,
 {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: ImplicitAnimatedBuilder<T>) -> Self {
+        ImplicitAnimatedState {
+            target: widget.value.clone(),
+            current: Rc::new(LocalCell::new(widget.value.clone())),
+            duration: widget.duration,
+            controller: AnimationController::new(widget.duration, widget.curve.clone()),
+            curve: widget.curve,
+            builder: widget.builder.clone(),
+            tween: Rc::new(LocalCell::new(None)),
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -174,13 +161,13 @@ where
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         ImplicitAnimatedFrame {
-            current: self.current.clone(),
-            target: self.target.clone(),
-            builder: self.builder.clone(),
-            controller: self.controller.clone(),
-            tween: self.tween.clone(),
+            current: this.current.clone(),
+            target: this.target.clone(),
+            builder: this.builder.clone(),
+            controller: this.controller.clone(),
+            tween: this.tween.clone(),
         }
     }
 }
@@ -356,6 +343,7 @@ impl<T: Animatable + Clone + PartialEq + 'static> LayoutElement for ImplicitAnim
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use std::cell::{Cell, RefCell};
 
     use super::*;
@@ -571,8 +559,8 @@ mod tests {
 
     #[test]
     fn changed_target_starts_from_current_value() {
-        let mut state = widget(2.0).create_state();
-        let new_state = widget(10.0).create_state();
+        let mut state = widget(2.0).create_state::<ImplicitAnimatedState<_>>();
+        let new_state = widget(10.0).create_state::<ImplicitAnimatedState<_>>();
 
         state.adopt_config_from(new_state);
 
@@ -586,11 +574,11 @@ mod tests {
 
     #[test]
     fn interrupted_animation_retargets_from_sampled_value() {
-        let mut state = widget(0.0).create_state();
-        state.adopt_config_from(widget(10.0).create_state());
+        let mut state = widget(0.0).create_state::<ImplicitAnimatedState<_>>();
+        state.adopt_config_from(widget(10.0).create_state::<ImplicitAnimatedState<_>>());
         state.controller.set_value(0.5);
 
-        state.adopt_config_from(widget(20.0).create_state());
+        state.adopt_config_from(widget(20.0).create_state::<ImplicitAnimatedState<_>>());
 
         state.tween.with(|tween| {
             let tween = tween.as_ref().unwrap();
@@ -601,9 +589,9 @@ mod tests {
 
     #[test]
     fn unchanged_target_does_not_restart_animation() {
-        let mut state = widget(3.0).create_state();
+        let mut state = widget(3.0).create_state::<ImplicitAnimatedState<_>>();
 
-        state.adopt_config_from(widget(3.0).create_state());
+        state.adopt_config_from(widget(3.0).create_state::<ImplicitAnimatedState<_>>());
 
         assert!(state.tween.with(Option::is_none));
         assert!(!state.controller.is_animating());

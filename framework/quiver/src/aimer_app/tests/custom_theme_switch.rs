@@ -149,36 +149,30 @@ struct Shell {
     updater: Rc<RefCell<Option<StateUpdater<ShellState>>>>,
 }
 
-impl StatefulWidget for Shell {
-    type State = ShellState;
-
-    fn create_state(self) -> ShellState {
+impl State<Shell> for ShellState {
+    fn create(widget: Shell) -> Self {
         ShellState {
-            split: self.split,
+            split: widget.split,
             mode: ThemeMode::Dark,
-            seen: self.seen,
-            updater: self.updater,
+            seen: widget.seen,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Shell> for ShellState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
         AnimatedTheme::new()
             .adaptive(TestTheme::light(), TestTheme::dark())
-            .mode(self.mode)
+            .mode(this.mode)
             .duration(Duration::from_millis(150))
             .curve(curves::EASE_IN_OUT)
             .child(Row::new().children(vec![
                 SizedBox::new()
-                    .width(if self.split { Dimension::Px(80.0) } else { Dimension::Px(150.0) })
-                    .child(Scrollable::new().child(Section { seen: self.seen.clone() }))
+                    .width(if this.split { Dimension::Px(80.0) } else { Dimension::Px(150.0) })
+                    .child(Scrollable::new().child(Section { seen: this.seen.clone() }))
                     .boxed(),
                 SizedBox::new().width(Dimension::Px(70.0)).height(Dimension::Px(400.0)).boxed(),
             ]))
@@ -187,7 +181,7 @@ impl State<Shell> for ShellState {
 
 impl Widget for Shell {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "CustomThemeShell", None)
+        StatefulElement::new_with_name::<Self, ShellState>(self, ctx, "CustomThemeShell", None)
             .0
             .boxed()
     }

@@ -222,30 +222,24 @@ struct RebuildingState {
     handle: Rc<Cell<Option<StateUpdater<RebuildingState>>>>,
 }
 
-impl StatefulWidget for Rebuilding {
-    type State = RebuildingState;
-
-    fn create_state(self) -> RebuildingState {
+impl State<Rebuilding> for RebuildingState {
+    fn create(widget: Rebuilding) -> Self {
         RebuildingState {
-            seen: self.seen,
-            handle: self.updater,
+            seen: widget.seen,
+            handle: widget.updater,
         }
     }
-}
 
-impl State<Rebuilding> for RebuildingState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.handle.set(Some(updater));
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        TextField::new().builder(recording(&self.seen))
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        this.handle.set(Some(this.updater()));
+        TextField::new().builder(recording(&this.seen))
     }
 }
 
 impl Widget for Rebuilding {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Rebuilding", None)
+        StatefulElement::new_with_name::<Self, RebuildingState>(self, ctx, "Rebuilding", None)
             .0
             .boxed()
     }

@@ -128,20 +128,24 @@ fn hover_feedback(change: HoverChange, will_accept: bool) {
 }
 
 pub struct DragBoardState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     /// Every card, in board order: a column shows its own cards in this order.
     cards: Vec<Card>,
     next_card_id: u32,
     last_refused: Option<&'static str>,
     /// One per column, shared with the closures that build it.
     hovers: Rc<[HoverTracker; COLUMNS.len()]>,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for DragBoard {
-    type State = DragBoardState;
+impl State<DragBoard> for DragBoardState {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
+        self.updater = updater;
+    }
 
-    fn create_state(self) -> Self::State {
+    fn create(widget: DragBoard) -> Self {
         DragBoardState {
+            updater: StateUpdater::empty(),
             cards: vec![
                 Card {
                     id: CardId(1),
@@ -171,20 +175,10 @@ impl StatefulWidget for DragBoard {
             next_card_id: FIRST_NEW_CARD_ID,
             last_refused: None,
             hovers: Rc::default(),
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<DragBoard> for DragBoardState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         Container::new()
@@ -196,7 +190,7 @@ impl State<DragBoard> for DragBoardState {
                     .children(vec![
                         heading("Drag and drop: move a card between columns", app_theme),
                         subheading(
-                            match self.last_refused {
+                            match this.last_refused {
                                 Some(title) => {
                                     format!("\u{201c}{title}\u{201d} was not placed")
                                 }
@@ -219,7 +213,7 @@ impl State<DragBoard> for DragBoardState {
                                     .gaps(LayoutSpacing::all(Spacing::Px(16)))
                                     .children(
                                         (0..COLUMNS.len())
-                                            .map(|index| self.column(index, app_theme))
+                                            .map(|index| this.column(index, app_theme))
                                             .collect::<Vec<AnyWidget>>(),
                                     ),
                             )
@@ -536,7 +530,7 @@ mod tests {
 
     /// The board's starting cards: Todo holds 1 and 2, Doing holds 3 and 4.
     fn board() -> DragBoardState {
-        DragBoard::new().create_state()
+        DragBoard::new().create_state::<DragBoardState>()
     }
 
     /// The ids in `column`, top to bottom.

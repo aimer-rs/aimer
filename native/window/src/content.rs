@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
+    AnyElement, AnyWidget, State, StateView, StateUpdater, StatefulElement, Widget,
 };
 
 /// Builds the content of a window.
@@ -60,29 +60,23 @@ struct LiveRootState {
     content: Rc<WindowContent>,
 }
 
-impl StatefulWidget for LiveRoot {
-    type State = LiveRootState;
-
-    fn create_state(self) -> LiveRootState {
-        LiveRootState { content: self.0 }
-    }
-}
-
 impl State<LiveRoot> for LiveRootState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.content.refresh.set(Some(updater));
+    fn create(widget: LiveRoot) -> Self {
+        LiveRootState { content: widget.0 }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.content.refresh.set(Some(this.updater()));
         // Cloned out first: the content may build something that replaces it.
-        let builder = self.content.current();
+        let builder = this.content.current();
         builder(ctx)
     }
 }
 
 impl Widget for LiveRoot {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "WindowContent", None)
+        StatefulElement::new_with_name::<Self, LiveRootState>(self, ctx, "WindowContent", None)
             .0
             .boxed()
     }

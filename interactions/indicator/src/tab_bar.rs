@@ -13,7 +13,7 @@ use aimer_style::{FontWeight, LayoutSpacing, TextStyle};
 use aimer_text::Text;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
-    AnyElement, AnyWidget, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
+    AnyElement, AnyWidget, State, StateView, StateUpdater, StatefulElement, Widget,
 };
 
 mod chrome;
@@ -549,39 +549,33 @@ impl TabBarState {
     }
 }
 
-impl StatefulWidget for TabBar {
-    type State = TabBarState;
-
-    fn create_state(self) -> Self::State {
-        let selection = self.clamped_selection();
-        let controller = self.controller.unwrap_or_else(|| {
+impl State<TabBar> for TabBarState {
+    fn create(widget: TabBar) -> Self {
+        let selection = widget.clamped_selection();
+        let controller = widget.controller.unwrap_or_else(|| {
             IndicatorController::new(selection.unwrap_or(0) as f32)
-                .motion(self.motion)
-                .lift_motion(self.lift_motion)
-                .reduced_motion(self.reduced_motion)
+                .motion(widget.motion)
+                .lift_motion(widget.lift_motion)
+                .reduced_motion(widget.reduced_motion)
         });
         if selection.is_none() {
             controller.set_hidden(true);
         }
         TabBarState {
-            orientation: self.orientation,
-            items: self.items,
+            orientation: widget.orientation,
+            items: widget.items,
             selection,
-            bar_color: self.bar_color,
-            inactive_color: self.inactive_color,
-            selected_color: self.selected_color,
-            bar_shadow: self.bar_shadow,
-            chrome: self.chrome,
-            on_select: self.on_select,
-            item_size: self.item_size,
-            style: self.style,
+            bar_color: widget.bar_color,
+            inactive_color: widget.inactive_color,
+            selected_color: widget.selected_color,
+            bar_shadow: widget.bar_shadow,
+            chrome: widget.chrome,
+            on_select: widget.on_select,
+            item_size: widget.item_size,
+            style: widget.style,
             controller,
         }
     }
-}
-
-impl State<TabBar> for TabBarState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
         self.orientation = new.orientation;
@@ -613,39 +607,37 @@ impl State<TabBar> for TabBarState {
         }
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let items: Vec<AnyWidget> = self
-            .items
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let items: Vec<AnyWidget> = this.items
             .iter()
             .enumerate()
-            .map(|(index, item)| self.item(index, item))
+            .map(|(index, item)| this.item(index, item))
             .collect();
-        let size = self.bar_extent(ctx.scale);
-        let items = match self.orientation {
+        let size = this.bar_extent(ctx.scale);
+        let items = match this.orientation {
             Orientation::Horizontal => Row::new().children(items).boxed(),
             Orientation::Vertical => Column::new().children(items).boxed(),
         };
-        let content = self
-            .indicator()
-            .controller(self.controller.clone())
-            .track(self.track())
-            .style(self.style.clone())
+        let content = this.indicator()
+            .controller(this.controller.clone())
+            .track(this.track())
+            .style(this.style.clone())
             .box_child(items);
 
-        let bar = match &self.chrome.decoration {
-            Some(decoration) => self.chrome.frame(decoration.clone(), size, content),
+        let bar = match &this.chrome.decoration {
+            Some(decoration) => this.chrome.frame(decoration.clone(), size, content),
             None => {
                 let mut decoration = BoxDecoration::new()
-                    .background_color(self.bar_color)
+                    .background_color(this.bar_color)
                     // A pill is rounded to its narrow side, whichever way it runs.
                     .border_radius(size.width.min(size.height) * 0.5);
-                if let Some(shadow) = self.bar_shadow {
+                if let Some(shadow) = this.bar_shadow {
                     decoration = decoration.add_shadow(shadow);
                 }
-                self.chrome.frame(decoration, size, content)
+                this.chrome.frame(decoration, size, content)
             }
         };
-        match self.chrome.alignment {
+        match this.chrome.alignment {
             Some(alignment) => Align::new().alignment(alignment).box_child(bar),
             None => bar,
         }
@@ -658,12 +650,13 @@ impl Widget for TabBar {
     }
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "TabBar", None).0.boxed()
+        StatefulElement::new_with_name::<Self, TabBarState>(self, ctx, "TabBar", None).0.boxed()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use aimer_animation::AnimInstant;
 
     use super::*;
@@ -679,7 +672,7 @@ mod tests {
 
     #[test]
     fn the_fade_duration_sets_the_lift_of_the_bars_own_controller() {
-        let state = three().fade_duration(Duration::from_millis(100)).create_state();
+        let state = three().fade_duration(Duration::from_millis(100)).create_state::<TabBarState>();
         state.controller.set_pressed(true);
         let start = AnimInstant::now();
         state.controller.tick(start);
@@ -707,10 +700,10 @@ mod tests {
 
     #[test]
     fn a_bar_with_nothing_selected_starts_with_its_indicator_hidden() {
-        let state = three().selection(None).create_state();
+        let state = three().selection(None).create_state::<TabBarState>();
         assert_eq!(state.selection, None);
         assert!(state.controller.is_hidden());
-        let shown = three().selected(1).create_state();
+        let shown = three().selected(1).create_state::<TabBarState>();
         assert!(!shown.controller.is_hidden());
         assert_eq!(shown.controller.target(), 1.0);
     }
@@ -721,7 +714,7 @@ mod tests {
             .selected(1)
             .selected_color(GREEN)
             .inactive_color(RED)
-            .create_state();
+            .create_state::<TabBarState>();
         let item = TabItem::new();
         assert_eq!(state.tint(1, &item), GREEN);
         assert_eq!(state.tint(0, &item), RED);
@@ -730,14 +723,14 @@ mod tests {
 
     #[test]
     fn an_items_own_selected_color_wins_over_the_bars() {
-        let state = three().selected(0).selected_color(GREEN).create_state();
+        let state = three().selected(0).selected_color(GREEN).create_state::<TabBarState>();
         assert_eq!(state.tint(0, &TabItem::new().selected_color(BLUE)), BLUE);
         assert_eq!(state.tint(0, &TabItem::new()), GREEN);
     }
 
     #[test]
     fn with_nothing_selected_no_item_is_tinted_as_selected() {
-        let state = three().selection(None).selected_color(GREEN).inactive_color(RED).create_state();
+        let state = three().selection(None).selected_color(GREEN).inactive_color(RED).create_state::<TabBarState>();
         for index in 0..3 {
             assert_eq!(state.tint(index, &TabItem::new()), RED);
         }
@@ -745,7 +738,7 @@ mod tests {
 
     #[test]
     fn the_default_colors_are_unchanged_when_none_are_set() {
-        let state = three().selected(0).create_state();
+        let state = three().selected(0).create_state::<TabBarState>();
         assert_eq!(state.tint(0, &TabItem::new()), ACTIVE);
         assert_eq!(state.tint(1, &TabItem::new()), INACTIVE);
         assert_eq!(state.bar_color, BAR_FILL);
@@ -754,9 +747,9 @@ mod tests {
 
     #[test]
     fn the_bars_colors_and_shadow_are_adopted_when_the_caller_changes_them() {
-        let mut state = three().selected(0).create_state();
+        let mut state = three().selected(0).create_state::<TabBarState>();
         let shadow = BoxShadow::new().blur(12.0);
-        let next = three().selected(0).bar_color(BLUE).bar_shadow(shadow).create_state();
+        let next = three().selected(0).bar_color(BLUE).bar_shadow(shadow).create_state::<TabBarState>();
         state.adopt_config_from(next);
         assert_eq!(state.bar_color, BLUE);
         assert_eq!(state.bar_shadow, Some(shadow));
@@ -764,12 +757,12 @@ mod tests {
 
     #[test]
     fn leaving_the_selection_hides_the_indicator_and_returning_fades_it_in_on_the_item() {
-        let mut state = three().selected(0).create_state();
-        state.adopt_config_from(three().selection(None).create_state());
+        let mut state = three().selected(0).create_state::<TabBarState>();
+        state.adopt_config_from(three().selection(None).create_state::<TabBarState>());
         assert!(state.controller.is_hidden());
         assert_eq!(state.selection, None);
 
-        state.adopt_config_from(three().selected(2).create_state());
+        state.adopt_config_from(three().selected(2).create_state::<TabBarState>());
         assert!(!state.controller.is_hidden());
         // It did not slide across from where it was left.
         assert_eq!(state.controller.position(), 2.0);
@@ -777,7 +770,7 @@ mod tests {
     }
 
     fn extent(bar: TabBar) -> (f32, f32) {
-        let size = bar.create_state().bar_extent(1.0);
+        let size = bar.create_state::<TabBarState>().bar_extent(1.0);
         (size.width, size.height)
     }
 
@@ -822,14 +815,14 @@ mod tests {
 
     #[test]
     fn the_container_settings_are_adopted_when_the_caller_changes_them() {
-        let mut state = three().create_state();
+        let mut state = three().create_state::<TabBarState>();
         assert!(state.chrome.decoration.is_none());
         let next = three()
             .bar_decoration(Inset)
             .bar_margin(LayoutSpacing::all(9))
             .bar_alignment(Alignment::BotRight)
             .clip_content(false)
-            .create_state();
+            .create_state::<TabBarState>();
         state.adopt_config_from(next);
         assert!(state.chrome.decoration.is_some());
         assert_eq!(state.chrome.margin, LayoutSpacing::all(9));
@@ -841,29 +834,29 @@ mod tests {
     fn a_vertical_bar_stacks_its_items_and_slides_along_the_column() {
         let bar = three().vertical();
         assert_eq!(extent(three().vertical()), (96.0 + 12.0, 56.0 * 3.0 + 12.0));
-        let state = bar.create_state();
+        let state = bar.create_state::<TabBarState>();
         assert_eq!(state.orientation, Orientation::Vertical);
         assert_eq!(state.track().origin(2.0), (0.0, 112.0));
         assert_eq!(state.track(), tracks::column(3, 96.0, 56.0));
         // The default is unchanged.
-        let state = three().create_state();
+        let state = three().create_state::<TabBarState>();
         assert_eq!(state.orientation, Orientation::Horizontal);
         assert_eq!(state.track().origin(2.0), (192.0, 0.0));
     }
 
     #[test]
     fn the_orientation_is_adopted_when_the_caller_changes_it() {
-        let mut state = three().create_state();
-        state.adopt_config_from(three().orientation(Orientation::Vertical).create_state());
+        let mut state = three().create_state::<TabBarState>();
+        state.adopt_config_from(three().orientation(Orientation::Vertical).create_state::<TabBarState>());
         assert!(state.orientation.is_vertical());
-        state.adopt_config_from(three().create_state());
+        state.adopt_config_from(three().create_state::<TabBarState>());
         assert!(!state.orientation.is_vertical());
     }
 
     #[test]
     fn a_new_selection_while_shown_slides_the_indicator() {
-        let mut state = three().selected(0).create_state();
-        state.adopt_config_from(three().selected(2).create_state());
+        let mut state = three().selected(0).create_state::<TabBarState>();
+        state.adopt_config_from(three().selected(2).create_state::<TabBarState>());
         assert_eq!(state.controller.target(), 2.0);
         assert_eq!(state.controller.position(), 0.0);
     }

@@ -22,7 +22,7 @@ use aimer::{
     AimerApp, BoxAlignment, Color, Column, Container, Dimension, HeadlessOptions, SizedBox, Svg,
     SvgDocument, Text, Widget,
 };
-use aimer::{AnyElement, BuildContext, State, StateUpdater, StatefulElement, StatefulWidget};
+use aimer::{AnyElement, BuildContext, State, StateView, StateUpdater, StatefulElement};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -116,27 +116,21 @@ struct StatePageState {
     handle: Rc<RefCell<Option<StateUpdater<StatePageState>>>>,
 }
 
-impl StatefulWidget for StatePage {
-    type State = StatePageState;
-
-    fn create_state(self) -> StatePageState {
+impl State<StatePage> for StatePageState {
+    fn create(widget: StatePage) -> Self {
         StatePageState {
             count: 0,
-            handle: self.handle,
+            handle: widget.handle,
         }
     }
-}
 
-impl State<StatePage> for StatePageState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.handle.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.handle.borrow_mut() = Some(this.updater());
         SizedBox::new()
             .width(Dimension::Px(96.0))
             .height(Dimension::Px(96.0))
-            .color(Color::Rgb((self.count % 256) as u8, 40, 40))
+            .color(Color::Rgb((this.count % 256) as u8, 40, 40))
     }
 }
 
@@ -161,7 +155,7 @@ fn state_page(handle: Rc<RefCell<Option<StateUpdater<StatePageState>>>>) -> impl
 
 impl Widget for StatePage {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "StatePage", None)
+        StatefulElement::new_with_name::<Self, StatePageState>(self, ctx, "StatePage", None)
             .0
             .boxed()
     }

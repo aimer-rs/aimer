@@ -7,7 +7,7 @@ use aimer_input::mouse_region::MouseRegion;
 use aimer_style::{LayoutSpacing, Spacing};
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, FocusNode, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
+    AnyElement, AnyWidget, FocusNode, State, StateView, StateUpdater, StatefulElement, Widget,
 };
 
 use crate::binary::ChangeCallback;
@@ -150,6 +150,8 @@ impl<T> RadioGroup<T> {
 
 /// Retained state of a radio group.
 pub struct Group<T: 'static> {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     options: Options<T>,
     selected: Option<T>,
     common: Common,
@@ -161,7 +163,6 @@ pub struct Group<T: 'static> {
     focused: Option<usize>,
     /// The option under the pointer, shared with the row handlers.
     hovered: Rc<Cell<Option<usize>>>,
-    updater: StateUpdater<Self>,
 }
 
 impl<T: Clone + PartialEq + 'static> Group<T> {
@@ -366,22 +367,18 @@ impl<T: Clone + PartialEq + 'static> Controlled for Group<T> {
     fn on_tap(&mut self) {}
 }
 
-impl<T: Clone + PartialEq + 'static> StatefulWidget for RadioGroup<T> {
-    type State = Group<T>;
-
-    fn create_state(self) -> Self::State {
+impl<T: Clone + PartialEq + 'static> State<RadioGroup<T>> for Group<T> {
+    fn create(widget: RadioGroup<T>) -> Self {
         Group::new(
-            self.options,
-            self.selected,
-            self.common,
-            self.on_change,
-            self.rows,
+            widget.options,
+            widget.selected,
+            widget.common,
+            widget.on_change,
+            widget.rows,
         )
     }
-}
 
-impl<T: Clone + PartialEq + 'static> State<RadioGroup<T>> for Group<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.init(updater);
     }
 
@@ -389,14 +386,14 @@ impl<T: Clone + PartialEq + 'static> State<RadioGroup<T>> for Group<T> {
         self.adopt(new);
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.render(ctx)
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.render(ctx)
     }
 }
 
 impl<T: Clone + PartialEq + 'static> Widget for RadioGroup<T> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "RadioGroup", None)
+        StatefulElement::new_with_name::<Self, Group<T>>(self, ctx, "RadioGroup", None)
             .0
             .boxed()
     }

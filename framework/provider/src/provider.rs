@@ -2,8 +2,8 @@ use aimer_rubick::ShareRef;
 use aimer_widget::base::{BuildConsumer, BuildContext, ResolvedSize, Size, Vec2d, WindowHandle};
 use aimer_widget::{
     AnyElement, AnyWidget, ChildBuilder, Drawable, Element, EventElement, EventTreeRole,
-    LayoutElement, Rebuildable, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, VisitorElement, Widget,
+    LayoutElement, Rebuildable, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    VisitorElement, Widget,
 };
 use std::any::type_name;
 use std::cell::{Cell, RefCell};
@@ -521,12 +521,10 @@ pub struct ProviderState<T, W> {
     marker: PhantomData<W>,
 }
 
-impl<T: 'static, W: Widget + 'static> StatefulWidget for Provider<T, W> {
-    type State = ProviderState<T, W>;
-
-    fn create_state(self) -> Self::State {
-        let handle = self.handle.clone().unwrap_or_else(|| {
-            let create = self.create.as_ref().unwrap_or_else(|| {
+impl<T: 'static, W: Widget + 'static> State<Provider<T, W>> for ProviderState<T, W> {
+    fn create(widget: Provider<T, W>) -> Self {
+        let handle = widget.handle.clone().unwrap_or_else(|| {
+            let create = widget.create.as_ref().unwrap_or_else(|| {
                 panic!(
                     "Provider::<{}>::create or handle must be called before child",
                     type_name::<T>()
@@ -536,30 +534,26 @@ impl<T: 'static, W: Widget + 'static> StatefulWidget for Provider<T, W> {
         });
         ProviderState {
             handle,
-            child: self.child.clone(),
+            child: widget.child.clone(),
             marker: PhantomData,
         }
     }
-}
-
-impl<T: 'static, W: Widget + 'static> State<Provider<T, W>> for ProviderState<T, W> {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
         self.child = new.child;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         ProviderScope {
-            handle: self.handle.clone(),
-            child: self.child.clone(),
+            handle: this.handle.clone(),
+            child: this.child.clone(),
         }
     }
 }
 
 impl<T: 'static, W: Widget + 'static> Widget for Provider<T, W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, type_name::<Provider<T>>(), None)
+        StatefulElement::new_with_name::<Self, ProviderState<T, W>>(self, ctx, type_name::<Provider<T>>(), None)
             .0
             .boxed()
     }
@@ -777,18 +771,17 @@ pub struct StoreState<T, A, W> {
     marker: PhantomData<W>,
 }
 
-impl<T: Clone + 'static, A: 'static, W: Widget + 'static> StatefulWidget
-    for StoreProvider<T, A, W>
+impl<T: Clone + 'static, A: 'static, W: Widget + 'static> State<StoreProvider<T, A, W>>
+    for StoreState<T, A, W>
 {
-    type State = StoreState<T, A, W>;
-    fn create_state(self) -> Self::State {
-        let create = self.create.as_ref().unwrap_or_else(|| {
+    fn create(widget: StoreProvider<T, A, W>) -> Self {
+        let create = widget.create.as_ref().unwrap_or_else(|| {
             panic!(
                 "StoreProvider::<{}>::create must be called before child",
                 type_name::<T>()
             )
         });
-        let reducer = self.reducer.as_ref().unwrap_or_else(|| {
+        let reducer = widget.reducer.as_ref().unwrap_or_else(|| {
             panic!(
                 "StoreProvider::<{}>::reducer must be called before child",
                 type_name::<T>()
@@ -797,32 +790,27 @@ impl<T: Clone + 'static, A: 'static, W: Widget + 'static> StatefulWidget
         StoreState {
             handle: ProviderHandle::new(create()),
             reducer: reducer.clone(),
-            child: self.child.clone(),
+            child: widget.child.clone(),
             marker: PhantomData,
         }
     }
-}
 
-impl<T: Clone + 'static, A: 'static, W: Widget + 'static> State<StoreProvider<T, A, W>>
-    for StoreState<T, A, W>
-{
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
     fn adopt_config_from(&mut self, new: Self) {
         self.reducer = new.reducer;
         self.child = new.child;
     }
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         StoreScope {
-            handle: self.handle.clone(),
-            reducer: self.reducer.clone(),
-            child: self.child.clone(),
+            handle: this.handle.clone(),
+            reducer: this.reducer.clone(),
+            child: this.child.clone(),
         }
     }
 }
 
 impl<T: Clone + 'static, A: 'static, W: Widget + 'static> Widget for StoreProvider<T, A, W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, type_name::<StoreProvider<T, A>>(), None)
+        StatefulElement::new_with_name::<Self, StoreState<T, A, W>>(self, ctx, type_name::<StoreProvider<T, A>>(), None)
             .0
             .boxed()
     }
@@ -965,6 +953,8 @@ impl<T: 'static, A: 'static> Rebuildable for StoreElement<T, A> {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::BuildElement;
+    use aimer_widget::CreateState;
     use std::cell::{Cell, RefCell};
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::rc::Rc;
@@ -972,8 +962,8 @@ mod tests {
     use aimer_utils::PanicSite;
     use aimer_widget::base::{BuildConsumer, BuildContext, WindowHandle};
     use aimer_widget::{
-        Drawable, Element, EventElement, EventTreeRole, LayoutElement, Rebuildable, State,
-        StateUpdater, StatefulElement, StatefulWidget, StatelessElement, VisitorElement, Widget,
+        Drawable, Element, EventElement, EventTreeRole, LayoutElement, Rebuildable, State, StateView,
+        StateUpdater, StatefulElement, StatelessElement, VisitorElement, Widget,
     };
 
     use super::*;
@@ -1160,36 +1150,30 @@ mod tests {
         handle: Rc<RefCell<Option<ProviderHandle<Counter>>>>,
     }
 
-    impl StatefulWidget for WatchingWidget {
-        type State = WatchingState;
-
-        fn create_state(self) -> Self::State {
+    impl State<WatchingWidget> for WatchingState {
+        fn create(widget: WatchingWidget) -> Self {
             WatchingState {
-                builds: self.builds.clone(),
-                handle: self.handle.clone(),
-                select_count: self.select_count,
+                builds: widget.builds.clone(),
+                handle: widget.handle.clone(),
+                select_count: widget.select_count,
             }
         }
-    }
 
-    impl State<WatchingWidget> for WatchingState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-        fn build(&self, context: &BuildContext) -> impl Widget {
-            self.builds.set(self.builds.get() + 1);
-            if self.select_count {
+        fn build(this: &StateView<Self>, context: &BuildContext) -> impl Widget {
+            this.builds.set(this.builds.get() + 1);
+            if this.select_count {
                 ProviderContext::select::<Counter, usize>(context, |counter| counter.count);
             } else {
                 ProviderContext::watch::<Counter>(context);
             }
-            *self.handle.borrow_mut() = Some(ProviderHandle::of(context));
+            *this.handle.borrow_mut() = Some(ProviderHandle::of(context));
             LeafWidget
         }
     }
 
     impl Widget for WatchingWidget {
         fn to_element(self, context: &BuildContext) -> AnyElement {
-            StatefulElement::new_with_name(self, context, "WatchingWidget", None)
+            StatefulElement::new_with_name::<Self, WatchingState>(self, context, "WatchingWidget", None)
                 .0
                 .boxed()
         }
@@ -1199,18 +1183,12 @@ mod tests {
 
     struct KeyedProviderConsumerState;
 
-    impl StatefulWidget for KeyedProviderConsumer {
-        type State = KeyedProviderConsumerState;
-
-        fn create_state(self) -> Self::State {
+    impl State<KeyedProviderConsumer> for KeyedProviderConsumerState {
+        fn create(widget: KeyedProviderConsumer) -> Self {
             KeyedProviderConsumerState
         }
-    }
 
-    impl State<KeyedProviderConsumer> for KeyedProviderConsumerState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-        fn build(&self, context: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, context: &BuildContext) -> impl Widget {
             let _ = ProviderContext::read::<Counter>(context);
             LeafWidget
         }
@@ -1218,7 +1196,7 @@ mod tests {
 
     impl Widget for KeyedProviderConsumer {
         fn to_element(self, context: &BuildContext) -> AnyElement {
-            StatefulElement::new_with_name(
+            StatefulElement::new_with_name::<Self, KeyedProviderConsumerState>(
                 self,
                 context,
                 "KeyedProviderConsumer",
@@ -1229,32 +1207,26 @@ mod tests {
         }
     }
 
-    impl StatefulWidget for MultiSelectorWidget {
-        type State = MultiSelectorState;
-
-        fn create_state(self) -> Self::State {
+    impl State<MultiSelectorWidget> for MultiSelectorState {
+        fn create(widget: MultiSelectorWidget) -> Self {
             MultiSelectorState {
-                builds: self.builds.clone(),
-                handle: self.handle.clone(),
+                builds: widget.builds.clone(),
+                handle: widget.handle.clone(),
             }
         }
-    }
 
-    impl State<MultiSelectorWidget> for MultiSelectorState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-        fn build(&self, context: &BuildContext) -> impl Widget {
-            self.builds.set(self.builds.get() + 1);
+        fn build(this: &StateView<Self>, context: &BuildContext) -> impl Widget {
+            this.builds.set(this.builds.get() + 1);
             ProviderContext::select::<Counter, usize>(context, |counter| counter.count);
             ProviderContext::select::<Counter, &'static str>(context, |counter| counter.label);
-            *self.handle.borrow_mut() = Some(ProviderHandle::of(context));
+            *this.handle.borrow_mut() = Some(ProviderHandle::of(context));
             LeafWidget
         }
     }
 
     impl Widget for MultiSelectorWidget {
         fn to_element(self, context: &BuildContext) -> AnyElement {
-            StatefulElement::new_with_name(self, context, "MultiSelectorWidget", None)
+            StatefulElement::new_with_name::<Self, MultiSelectorState>(self, context, "MultiSelectorWidget", None)
                 .0
                 .boxed()
         }
@@ -1601,11 +1573,11 @@ mod tests {
                 observed: observed.clone(),
             });
         let context = context();
-        let state = provider.create_state();
+        let state = provider.create_state::<ProviderState<_, _>>();
 
-        let _first = state.build(&context).to_element(&context);
+        let _first = state.build_element(&context);
         handle.update(|counter| counter.count = 4);
-        let second = state.build(&context).to_element(&context);
+        let second = state.build_element(&context);
         second.rebuild_if_dirty(&context);
 
         assert_eq!(
@@ -1657,7 +1629,7 @@ mod tests {
                 observed: Rc::new(RefCell::new(Vec::new())),
             });
 
-        let state = provider.create_state();
+        let state = provider.create_state::<ProviderState<_, _>>();
 
         assert_eq!(
             Widget::key(&state.child),

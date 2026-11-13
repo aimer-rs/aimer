@@ -120,27 +120,17 @@ pub fn custom_animated_theme_example() -> impl Widget {
 /// theme owns it, and the panel below changes it through the controller.
 struct CustomAnimatedThemeExampleState {
     palette: usize,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for CustomAnimatedThemeExample {
-    type State = CustomAnimatedThemeExampleState;
-
-    fn create_state(self) -> Self::State {
-        CustomAnimatedThemeExampleState {
-            palette: 0,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl State<CustomAnimatedThemeExample> for CustomAnimatedThemeExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: CustomAnimatedThemeExample) -> Self {
+        CustomAnimatedThemeExampleState {
+            palette: 0,
+        }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let palette = &PALETTES[self.palette];
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let palette = &PALETTES[this.palette];
         AnimatedTheme::new()
             .adaptive(palette.light, palette.dark)
             // Starts light; repeating this on every rebuild is not a new
@@ -148,7 +138,7 @@ impl State<CustomAnimatedThemeExample> for CustomAnimatedThemeExampleState {
             .mode(ThemeMode::Light)
             .duration(Duration::from_millis(500))
             .curve(curves::EASE_IN_OUT)
-            .child(CustomThemedPanel::new(self.palette, self.updater))
+            .child(CustomThemedPanel::new(this.palette, this.updater()))
     }
 }
 

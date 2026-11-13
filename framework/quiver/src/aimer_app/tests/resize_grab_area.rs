@@ -184,28 +184,24 @@ struct ZoneScreen {
     updater: Rc<RefCell<Option<aimer_widget::StateUpdater<ZoneState>>>>,
 }
 
-impl StatefulWidget for ZoneScreen {
-    type State = ZoneState;
-
-    fn create_state(self) -> ZoneState {
+impl State<ZoneScreen> for ZoneState {
+    fn create(widget: ZoneScreen) -> Self {
         ZoneState {
             active: false,
-            log: self.log,
-            updater: self.updater,
+            log: widget.log,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<ZoneScreen> for ZoneState {
-    fn init_state(&mut self, updater: aimer_widget::StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: aimer_widget::StateUpdater<Self>) {
         *self.updater.borrow_mut() = Some(updater);
     }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        self.log.borrow_mut().push(self.active);
-        let updater = self.updater.borrow().expect("initialised");
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        this.log.borrow_mut().push(this.active);
+        let updater = this.updater.borrow().expect("initialised");
         Row::new().children(vec![
             Resizable::new()
                 .height(f32::MAX)
@@ -236,7 +232,7 @@ impl State<ZoneScreen> for ZoneState {
 
 impl Widget for ZoneScreen {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ZoneScreen", None)
+        StatefulElement::new_with_name::<Self, ZoneState>(self, ctx, "ZoneScreen", None)
             .0
             .boxed()
     }
@@ -519,31 +515,27 @@ struct ClickPanel {
     updater: Rc<RefCell<Option<aimer_widget::StateUpdater<ClickState>>>>,
 }
 
-impl StatefulWidget for ClickPanel {
-    type State = ClickState;
-
-    fn create_state(self) -> ClickState {
+impl State<ClickPanel> for ClickState {
+    fn create(widget: ClickPanel) -> Self {
         ClickState {
             selected: 0,
-            hovered: self.hovered,
-            updater: self.updater,
+            hovered: widget.hovered,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<ClickPanel> for ClickState {
-    fn init_state(&mut self, updater: aimer_widget::StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: aimer_widget::StateUpdater<Self>) {
         *self.updater.borrow_mut() = Some(updater);
     }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater.borrow().expect("initialised");
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater.borrow().expect("initialised");
         let rows: Vec<aimer_widget::AnyWidget> = (0..6)
             .map(|index| {
-                let (enter, exit) = (self.hovered.clone(), self.hovered.clone());
-                let selected = self.selected == index;
+                let (enter, exit) = (this.hovered.clone(), this.hovered.clone());
+                let selected = this.selected == index;
                 // A row like a category button: a hover region around a gesture
                 // detector whose tap changes the screen's state.
                 aimer_input::mouse_region::MouseRegion::new()
@@ -581,7 +573,7 @@ impl State<ClickPanel> for ClickState {
 
 impl Widget for ClickPanel {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ClickPanel", None)
+        StatefulElement::new_with_name::<Self, ClickState>(self, ctx, "ClickPanel", None)
             .0
             .boxed()
     }

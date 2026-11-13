@@ -13,7 +13,7 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventResult, FocusNode, LayoutElement, Rebuildable,
-    State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget,
 };
 
 use super::widget_helpers::{color_sliders, format_rgba};
@@ -135,12 +135,10 @@ impl ColorPickerViewState {
     }
 }
 
-impl StatefulWidget for ColorPickerView {
-    type State = ColorPickerViewState;
-
-    fn create_state(self) -> Self::State {
+impl State<ColorPickerView> for ColorPickerViewState {
+    fn create(widget: ColorPickerView) -> Self {
         let runtime = Rc::new(ColorPickerRuntime {
-            picker: RefCell::new(self.picker.clone()),
+            picker: RefCell::new(widget.picker.clone()),
             focus_node: FocusNode::new(),
             focused: Cell::new(false),
             channel: Cell::new(ColorChannel::Hue),
@@ -149,16 +147,11 @@ impl StatefulWidget for ColorPickerView {
             overlay_active: Cell::new(false),
         });
         ColorPickerViewState {
-            model: self,
+            model: widget,
             runtime,
         }
     }
-}
 
-impl State<ColorPickerView> for ColorPickerViewState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.runtime.updater.borrow_mut() = Some(updater);
-    }
 
     fn adopt_config_from(&mut self, new: Self) {
         if self.model.picker != new.model.picker {
@@ -167,12 +160,13 @@ impl State<ColorPickerView> for ColorPickerViewState {
         self.model = new.model;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        *this.runtime.updater.borrow_mut() = Some(this.updater());
         ColorPickerSurface {
-            runtime: Rc::clone(&self.runtime),
-            width: self.model.width,
-            height: self.model.height,
-            on_selection: self.model.on_selection.clone(),
+            runtime: Rc::clone(&this.runtime),
+            width: this.model.width,
+            height: this.model.height,
+            on_selection: this.model.on_selection.clone(),
             tokens: theme::tokens(ctx),
             popup: false,
         }
@@ -181,7 +175,7 @@ impl State<ColorPickerView> for ColorPickerViewState {
 
 impl Widget for ColorPickerView {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ColorPickerView", None)
+        StatefulElement::new_with_name::<Self, ColorPickerViewState>(self, ctx, "ColorPickerView", None)
             .0
             .boxed()
     }

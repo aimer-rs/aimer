@@ -21,8 +21,8 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventResult, EventTreeRole,
-    LayoutElement, PointerKey, Rebuildable, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, VisitorElement, Widget,
+    LayoutElement, PointerKey, Rebuildable, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    VisitorElement, Widget,
 };
 
 use crate::DragSession;
@@ -204,7 +204,7 @@ impl<T, C> DragTarget<T, C> {
 
 impl<T: 'static> Widget for DragTarget<T, HasChild> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::from_widget(self, ctx, "DragTarget", None)
+        StatefulElement::from_widget::<Self, DragTargetLiveState<T>>(self, ctx, "DragTarget", None)
     }
 
     fn debug_name(&self) -> &'static str {
@@ -219,27 +219,17 @@ pub struct DragTargetLiveState<T> {
     will_accept: Option<AcceptPredicate<T>>,
     on_accept: Option<AcceptHandler<T>>,
     child: Option<TargetChild>,
-    updater: StateUpdater<Self>,
-}
-
-impl<T: 'static> StatefulWidget for DragTarget<T, HasChild> {
-    type State = DragTargetLiveState<T>;
-
-    fn create_state(self) -> Self::State {
-        DragTargetLiveState {
-            id: next_target_id(),
-            hover: DragTargetState::default(),
-            will_accept: self.will_accept.clone(),
-            on_accept: self.on_accept.clone(),
-            child: self.child.clone(),
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl<T: 'static> State<DragTarget<T, HasChild>> for DragTargetLiveState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: DragTarget<T, HasChild>) -> Self {
+        DragTargetLiveState {
+            id: next_target_id(),
+            hover: DragTargetState::default(),
+            will_accept: widget.will_accept.clone(),
+            on_accept: widget.on_accept.clone(),
+            child: widget.child.clone(),
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -248,20 +238,19 @@ impl<T: 'static> State<DragTarget<T, HasChild>> for DragTargetLiveState<T> {
         self.child = new.child;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let content = self
-            .child
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let content = this.child
             .as_ref()
-            .map(|build| build(self.hover))
+            .map(|build| build(this.hover))
             .unwrap_or_else(|| Widget::boxed(aimer_container::ZeroSizedBox));
 
         TargetGate {
             child: content,
             logic: Rc::new(TargetLogic {
-                id: self.id,
-                will_accept: self.will_accept.clone(),
-                on_accept: self.on_accept.clone(),
-                updater: self.updater,
+                id: this.id,
+                will_accept: this.will_accept.clone(),
+                on_accept: this.on_accept.clone(),
+                updater: this.updater(),
             }),
         }
     }

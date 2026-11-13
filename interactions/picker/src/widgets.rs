@@ -16,7 +16,7 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventResult, FocusNode, LayoutElement, PointerKey,
-    Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    Rebuildable, State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget,
 };
 
 use super::{
@@ -196,19 +196,14 @@ impl CalendarViewState {
         self.runtime.calendar.borrow().semantics()
     }
 }
-impl StatefulWidget for CalendarView {
-    type State = CalendarViewState;
-
-    fn create_state(self) -> Self::State {
-        let runtime = Rc::new(CalendarRuntime::new(self.calendar.clone()));
+impl State<CalendarView> for CalendarViewState {
+    fn create(widget: CalendarView) -> Self {
+        let runtime = Rc::new(CalendarRuntime::new(widget.calendar.clone()));
         CalendarViewState {
-            model: self,
+            model: widget,
             runtime,
         }
     }
-}
-impl State<CalendarView> for CalendarViewState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
         if self.model.calendar != new.model.calendar {
@@ -217,19 +212,19 @@ impl State<CalendarView> for CalendarViewState {
         self.model = new.model;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         CalendarSurface {
-            runtime: Rc::clone(&self.runtime),
-            width: self.model.width,
-            height: self.model.height,
-            on_selection: self.model.on_selection.clone(),
+            runtime: Rc::clone(&this.runtime),
+            width: this.model.width,
+            height: this.model.height,
+            on_selection: this.model.on_selection.clone(),
             tokens: theme::tokens(ctx),
         }
     }
 }
 impl Widget for CalendarView {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "CalendarView", None)
+        StatefulElement::new_with_name::<Self, CalendarViewState>(self, ctx, "CalendarView", None)
             .0
             .boxed()
     }
@@ -591,25 +586,20 @@ impl DatePickerViewState {
         self.runtime.picker.borrow().semantics()
     }
 }
-impl StatefulWidget for DatePickerView {
-    type State = DatePickerViewState;
-
-    fn create_state(self) -> Self::State {
+impl State<DatePickerView> for DatePickerViewState {
+    fn create(widget: DatePickerView) -> Self {
         let runtime = Rc::new(DatePickerRuntime {
-            picker: RefCell::new(self.picker.clone()),
+            picker: RefCell::new(widget.picker.clone()),
             focus_node: FocusNode::new(),
             focused: Cell::new(false),
             anchor: AnchorHandle::new(),
             overlay_active: Cell::new(false),
         });
         DatePickerViewState {
-            model: self,
+            model: widget,
             runtime,
         }
     }
-}
-impl State<DatePickerView> for DatePickerViewState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
         if self.model.picker != new.model.picker {
@@ -618,12 +608,12 @@ impl State<DatePickerView> for DatePickerViewState {
         self.model = new.model;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         DatePickerSurface {
-            runtime: Rc::clone(&self.runtime),
-            width: self.model.width,
-            height: self.model.height,
-            on_selection: self.model.on_selection.clone(),
+            runtime: Rc::clone(&this.runtime),
+            width: this.model.width,
+            height: this.model.height,
+            on_selection: this.model.on_selection.clone(),
             tokens: theme::tokens(ctx),
             popup: false,
         }
@@ -631,7 +621,7 @@ impl State<DatePickerView> for DatePickerViewState {
 }
 impl Widget for DatePickerView {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "DatePickerView", None)
+        StatefulElement::new_with_name::<Self, DatePickerViewState>(self, ctx, "DatePickerView", None)
             .0
             .boxed()
     }
@@ -1128,12 +1118,10 @@ impl DateTimePickerViewState {
         self.runtime.picker.borrow().semantics()
     }
 }
-impl StatefulWidget for DateTimePickerView {
-    type State = DateTimePickerViewState;
-
-    fn create_state(self) -> Self::State {
+impl State<DateTimePickerView> for DateTimePickerViewState {
+    fn create(widget: DateTimePickerView) -> Self {
         let runtime = Rc::new(DateTimePickerRuntime {
-            picker: RefCell::new(self.picker.clone()),
+            picker: RefCell::new(widget.picker.clone()),
             focus_node: FocusNode::new(),
             focused: Cell::new(false),
             field: Cell::new(DateTimeField::Date),
@@ -1143,13 +1131,10 @@ impl StatefulWidget for DateTimePickerView {
             overlay_active: Cell::new(false),
         });
         DateTimePickerViewState {
-            model: self,
+            model: widget,
             runtime,
         }
     }
-}
-impl State<DateTimePickerView> for DateTimePickerViewState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
         if self.model.picker != new.model.picker {
@@ -1158,13 +1143,13 @@ impl State<DateTimePickerView> for DateTimePickerViewState {
         self.model = new.model;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         DateTimePickerSurface {
-            runtime: Rc::clone(&self.runtime),
-            width: self.model.width,
-            height: self.model.height,
-            use_24_hours: self.model.use_24_hours,
-            on_selection: self.model.on_selection.clone(),
+            runtime: Rc::clone(&this.runtime),
+            width: this.model.width,
+            height: this.model.height,
+            use_24_hours: this.model.use_24_hours,
+            on_selection: this.model.on_selection.clone(),
             tokens: theme::tokens(ctx),
             popup: false,
         }
@@ -1172,7 +1157,7 @@ impl State<DateTimePickerView> for DateTimePickerViewState {
 }
 impl Widget for DateTimePickerView {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "DateTimePickerView", None)
+        StatefulElement::new_with_name::<Self, DateTimePickerViewState>(self, ctx, "DateTimePickerView", None)
             .0
             .boxed()
     }

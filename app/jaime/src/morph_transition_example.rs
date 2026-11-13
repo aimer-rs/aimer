@@ -7,7 +7,7 @@ use aimer::style::{
 };
 use aimer::{
     AnyWidget, BuildContext, Color, Column, Container, Dimension, Liquid, Positioned, Row,
-    SizedBox, Stack, State, StateUpdater, StatefulWidget, Text, Widget,
+    SizedBox, Stack, State, StateView, StateUpdater, StatefulWidget, Text, Widget,
 };
 
 use crate::theme;
@@ -114,26 +114,15 @@ pub fn morph_transition_example() -> impl Widget {
 }
 
 #[derive(StatefulWidget)]
+#[state(MorphTransitionState)]
 struct MorphTransitionExample;
 
 struct MorphTransitionState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     card: usize,
     style: usize,
     header: usize,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for MorphTransitionExample {
-    type State = MorphTransitionState;
-
-    fn create_state(self) -> Self::State {
-        MorphTransitionState {
-            card: 0,
-            style: 0,
-            header: 0,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 /// The content handed to `MorphTransition`: the card paints its own color, so
@@ -369,13 +358,22 @@ impl MorphTransitionState {
 }
 
 impl State<MorphTransitionExample> for MorphTransitionState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: MorphTransitionExample) -> Self {
+        MorphTransitionState {
+            updater: StateUpdater::empty(),
+            card: 0,
+            style: 0,
+            header: 0,
+        }
+    }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
-        let card = &CARDS[self.card];
+        let card = &CARDS[this.card];
 
         // The child key is what starts a morph: it changes with the card, so
         // every switch keeps the outgoing card and blends it into the new one.
@@ -387,11 +385,11 @@ impl State<MorphTransitionExample> for MorphTransitionState {
             curves::LINEAR,
             card_content(card),
         )
-        .style(STYLES[self.style].0)
+        .style(STYLES[this.style].0)
         .direction(1.0, 0.0)
         .child_key(card.key);
 
-        let header = &HEADERS[self.header];
+        let header = &HEADERS[this.header];
 
         let heading = |text: &'static str| {
             Text::new(text)
@@ -431,30 +429,30 @@ impl State<MorphTransitionExample> for MorphTransitionState {
                 SizedBox::new().height(16).boxed(),
                 heading("Card"),
                 SizedBox::new().height(6).boxed(),
-                self.choices(
+                this.choices(
                     &theme,
                     CARDS.iter().map(|card| card.title),
-                    self.card,
+                    this.card,
                     |state, index| state.card = index,
                 )
                 .boxed(),
                 SizedBox::new().height(14).boxed(),
                 heading("Style"),
                 SizedBox::new().height(6).boxed(),
-                self.choices(
+                this.choices(
                     &theme,
                     STYLES.iter().map(|(_, label)| *label),
-                    self.style,
+                    this.style,
                     |state, index| state.style = index,
                 )
                 .boxed(),
                 SizedBox::new().height(14).boxed(),
                 heading("Header"),
                 SizedBox::new().height(6).boxed(),
-                self.choices(
+                this.choices(
                     &theme,
                     HEADERS.iter().map(|header| header.label),
-                    self.header,
+                    this.header,
                     |state, index| state.header = index,
                 )
                 .boxed(),

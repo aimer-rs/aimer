@@ -29,8 +29,8 @@ use aimer_macro::key;
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, Element, Key, RequiredChild, State, StateUpdater,
-    StatefulElement, StatefulWidget, Widget,
+    AnyElement, AnyWidget, ChildBuilder, Element, Key, RequiredChild, State, StateView, StateUpdater,
+    StatefulElement, Widget,
 };
 use controller::ScrollState;
 pub use controller::{DragMode, ScrollController};
@@ -386,40 +386,34 @@ pub struct ScrollableState<W: Widget + 'static> {
     marker: PhantomData<W>,
 }
 
-impl<W: Widget + 'static> StatefulWidget for Scrollable<W> {
-    type State = ScrollableState<W>;
-
-    fn create_state(self) -> Self::State {
-        ScrollableState {
-            key_scroll_strength: self.key_scroll_strength,
-            child: self.child.clone(),
-            scroll_behavior: self.scroll_behavior,
-            axis: self.axis,
-            scroll_bar_placement: self.scroll_bar_placement,
-            vertical_scroll_bar: self.vertical_scroll_bar.clone(),
-            horizontal_scroll_bar: self.horizontal_scroll_bar.clone(),
-            key: self.key.clone(),
-            remember_scroll_offset: self.remember_scroll_offset,
-            controller: self.controller.clone(),
-            web_overscroll: self.web_overscroll,
-            reverse: self.reverse,
-            scroll_state: RefCell::new(None),
-            refresh_scroll_state: Cell::new(false),
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<W: Widget + 'static> Widget for Scrollable<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Scrollable", None)
+        StatefulElement::new_with_name::<Self, ScrollableState<W>>(self, ctx, "Scrollable", None)
             .0
             .boxed()
     }
 }
 
 impl<W: Widget + 'static> State<Scrollable<W>> for ScrollableState<W> {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+    fn create(widget: Scrollable<W>) -> Self {
+        ScrollableState {
+            key_scroll_strength: widget.key_scroll_strength,
+            child: widget.child.clone(),
+            scroll_behavior: widget.scroll_behavior,
+            axis: widget.axis,
+            scroll_bar_placement: widget.scroll_bar_placement,
+            vertical_scroll_bar: widget.vertical_scroll_bar.clone(),
+            horizontal_scroll_bar: widget.horizontal_scroll_bar.clone(),
+            key: widget.key.clone(),
+            remember_scroll_offset: widget.remember_scroll_offset,
+            controller: widget.controller.clone(),
+            web_overscroll: widget.web_overscroll,
+            reverse: widget.reverse,
+            scroll_state: RefCell::new(None),
+            refresh_scroll_state: Cell::new(false),
+            marker: PhantomData,
+        }
+    }
 
     fn adopt_config_from(&mut self, new: Self) {
         let controller_changed = match (&self.controller, &new.controller) {
@@ -458,14 +452,14 @@ impl<W: Widget + 'static> State<Scrollable<W>> for ScrollableState<W> {
     }
 
     #[inline]
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let ctrl = self.live_scroll_state(ctx);
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let ctrl = this.live_scroll_state(ctx);
 
         ScrollableFrame {
-            child: self.child.clone(),
+            child: this.child.clone(),
             ctrl,
-            vertical_scroll_bar: self.vertical_scroll_bar.clone(),
-            horizontal_scroll_bar: self.horizontal_scroll_bar.clone(),
+            vertical_scroll_bar: this.vertical_scroll_bar.clone(),
+            horizontal_scroll_bar: this.horizontal_scroll_bar.clone(),
         }
     }
 }
@@ -755,6 +749,9 @@ impl Widget for ScrollableFrame {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::BuildElement;
+    use aimer_widget::CreateState;
+    use super::ScrollableState;
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -767,7 +764,7 @@ mod tests {
     use aimer_attribute::position::Vec2d;
     use aimer_attribute::size::ResolvedSize;
     use aimer_widget::base::WindowHandle;
-    use aimer_widget::{AnyElement, ErrorWidget, Key, State, StatefulWidget, Widget};
+    use aimer_widget::{AnyElement, ErrorWidget, Key, State, StateView, Widget};
 
     #[test]
     fn i_want_to_know_size_of_it() {
@@ -777,7 +774,7 @@ mod tests {
         eprintln!("Size of ScrollState: {}", size_of::<ScrollState>());
     }
 
-    fn assert_stateful_widget<W: StatefulWidget>() {}
+    fn assert_stateful_widget<W: Widget>() {}
 
     #[test]
     fn a_bounded_parent_uses_its_maximum_extent() {
@@ -818,7 +815,7 @@ mod tests {
         let state = Scrollable::new()
             .scroll_bar_placement(ScrollBarPlacement::Inline)
             .child(ErrorWidget::new("content"))
-            .create_state();
+            .create_state::<ScrollableState<_>>();
 
         assert_eq!(state.scroll_bar_placement, ScrollBarPlacement::Inline);
     }
@@ -841,8 +838,8 @@ mod tests {
             .vertical_scroll_bar(None)
             .horizontal_scroll_bar(None)
             .child(ErrorWidget::new("content"))
-            .create_state();
-        let element = state.build(&ctx).to_element(&ctx);
+            .create_state::<ScrollableState<_>>();
+        let element = state.build_element(&ctx);
 
         assert_eq!(
             element.computed_size(&ctx),
@@ -868,9 +865,7 @@ mod tests {
             .child(ConstraintProbe {
                 max_width: floating_width.clone(),
             })
-            .create_state()
-            .build(&ctx)
-            .to_element(&ctx);
+            .create_state::<ScrollableState<_>>().build_element(&ctx);
         assert_eq!(floating_width.get(), 320.0);
 
         let inline_width = Rc::new(Cell::new(0.0));
@@ -879,9 +874,7 @@ mod tests {
             .child(ConstraintProbe {
                 max_width: inline_width.clone(),
             })
-            .create_state()
-            .build(&ctx)
-            .to_element(&ctx);
+            .create_state::<ScrollableState<_>>().build_element(&ctx);
         assert_eq!(inline_width.get(), 308.0);
     }
 
@@ -942,11 +935,11 @@ mod tests {
             .child(Probe {
                 builds: Rc::clone(&builds),
             })
-            .create_state();
+            .create_state::<ScrollableState<_>>();
         let ctx = context();
 
-        state.build(&ctx).to_element(&ctx);
-        state.build(&ctx).to_element(&ctx);
+        state.build_element(&ctx);
+        state.build_element(&ctx);
 
         assert_eq!(
             builds.get(),
@@ -1012,9 +1005,9 @@ mod tests {
         let next = Scrollable::new()
             .web_overscroll(OverscrollSources::ALL)
             .child(ErrorWidget::new("next"));
-        let mut state = current.create_state();
+        let mut state = current.create_state::<ScrollableState<_>>();
 
-        state.adopt_config_from(next.create_state());
+        state.adopt_config_from(next.create_state::<ScrollableState<_>>());
 
         assert_eq!(state.web_overscroll, OverscrollSources::ALL);
         assert!(state.refresh_scroll_state.get());
@@ -1033,8 +1026,8 @@ mod tests {
             .scroll_bar_placement(ScrollBarPlacement::Inline)
             .vertical_scroll_bar(None)
             .child(ErrorWidget::new("next"));
-        let mut state = current.create_state();
-        let next_state = next.create_state();
+        let mut state = current.create_state::<ScrollableState<_>>();
+        let next_state = next.create_state::<ScrollableState<_>>();
 
         state.adopt_config_from(next_state);
 
@@ -1054,8 +1047,8 @@ mod tests {
         let next = Scrollable::new()
             .key("equivalent")
             .child(ErrorWidget::new("next"));
-        let mut state = current.create_state();
-        let next_state = next.create_state();
+        let mut state = current.create_state::<ScrollableState<_>>();
+        let next_state = next.create_state::<ScrollableState<_>>();
 
         state.adopt_config_from(next_state);
 
@@ -1073,8 +1066,8 @@ mod tests {
         let mut state = Scrollable::new()
             .key("list-a")
             .child(ErrorWidget::new("a"))
-            .create_state();
-        state.build(&ctx).to_element(&ctx);
+            .create_state::<ScrollableState<_>>();
+        state.build_element(&ctx);
         state
             .scroll_state
             .borrow()
@@ -1091,9 +1084,9 @@ mod tests {
             Scrollable::new()
                 .key("list-b")
                 .child(ErrorWidget::new("b"))
-                .create_state(),
+                .create_state::<ScrollableState<_>>(),
         );
-        state.build(&ctx).to_element(&ctx);
+        state.build_element(&ctx);
 
         let engine = state.scroll_state.borrow();
         let engine = engine.as_ref().unwrap();
@@ -1111,11 +1104,11 @@ mod tests {
     #[tokio::test]
     async fn a_default_scrollable_does_not_restore_an_old_offset_after_teardown() {
         let ctx = context();
-        let first = default_scrollable().create_state();
+        let first = default_scrollable().create_state::<ScrollableState<_>>();
         scroll_storage::save_offset(&first.key, Vec2d { x: 0.0, y: -48.0 });
 
-        let recreated = default_scrollable().create_state();
-        recreated.build(&ctx).to_element(&ctx);
+        let recreated = default_scrollable().create_state::<ScrollableState<_>>();
+        recreated.build_element(&ctx);
 
         let engine = recreated.scroll_state.borrow();
         assert_eq!(
@@ -1148,8 +1141,8 @@ mod tests {
                 ..ScrollBehavior::default()
             })
             .child(ErrorWidget::new("content"))
-            .create_state();
-        state.build(&ctx).to_element(&ctx);
+            .create_state::<ScrollableState<_>>();
+        state.build_element(&ctx);
 
         let engine = state.scroll_state.borrow();
         let engine = engine.as_ref().unwrap();
@@ -1162,8 +1155,8 @@ mod tests {
         let ctx = context();
         scroll_storage::save_offset(&Key::Value("chat".into()), Vec2d { x: 0.0, y: 120.0 });
 
-        let state = keyed_reverse_scrollable("chat").create_state();
-        state.build(&ctx).to_element(&ctx);
+        let state = keyed_reverse_scrollable("chat").create_state::<ScrollableState<_>>();
+        state.build_element(&ctx);
 
         let engine = state.scroll_state.borrow();
         assert_eq!(
@@ -1182,9 +1175,9 @@ mod tests {
             .reverse(true)
             .controller(controller.clone())
             .child(ErrorWidget::new("content"))
-            .create_state();
+            .create_state::<ScrollableState<_>>();
 
-        state.build(&ctx).to_element(&ctx);
+        state.build_element(&ctx);
 
         assert_eq!(controller.offset().y, 60.0);
     }
@@ -1192,12 +1185,12 @@ mod tests {
     #[tokio::test]
     async fn toggling_reverse_rebuilds_the_engine() {
         let ctx = context();
-        let mut state = default_scrollable().create_state();
-        state.build(&ctx).to_element(&ctx);
+        let mut state = default_scrollable().create_state::<ScrollableState<_>>();
+        state.build_element(&ctx);
         assert!(!state.refresh_scroll_state.get());
 
-        state.adopt_config_from(reverse_scrollable().create_state());
-        state.build(&ctx).to_element(&ctx);
+        state.adopt_config_from(reverse_scrollable().create_state::<ScrollableState<_>>());
+        state.build_element(&ctx);
 
         let engine = state.scroll_state.borrow();
         assert!(engine.as_ref().unwrap().reverse);

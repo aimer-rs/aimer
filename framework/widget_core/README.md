@@ -4,7 +4,7 @@ The widget layer of the Aimer framework: how a description of a UI becomes an
 element tree and stays in sync with it.
 
 - `Widget`, `AnyWidget` and the builder idiom (`RequiredChild`).
-- `StatelessWidget` and `StatefulWidget`, with `State` and `StateUpdater`.
+- `StatelessWidget`, and stateful widgets (`#[derive(StatefulWidget)]` with `#[state(..)]` plus a `State` impl), with `StateView` and `StateUpdater`.
 - `ChildBuilder`, retained children and `BuildContextRetain::retain`.
 - Panic recovery that turns a failing build into an error widget, and the
   `ErrorWidget` / `OverflowIndicator` diagnostics.

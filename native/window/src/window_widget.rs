@@ -4,7 +4,7 @@ use std::rc::Rc;
 use aimer_container::ZeroSizedBox;
 use aimer_widget::base::BuildContext;
 use aimer_widget::components::context::InheritedStates;
-use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, State, StateView, StateUpdater, StatefulElement, Widget};
 
 use crate::content::WindowContent;
 use crate::new_window::{ContentBuilder, RequiredBuilder, inherited_from};
@@ -41,33 +41,33 @@ use crate::{WindowAttr, WindowId};
 ///
 /// ```no_run
 /// use aimer_container::SizedBox;
-/// use aimer_widget::{State, StateUpdater, StatefulWidget, Widget, base::BuildContext};
+/// use aimer_widget::{AnyElement, State, StateView, StatefulElement, Widget, base::BuildContext};
 /// use aimer_window::Window;
 ///
 /// struct Page;
+///
+/// impl Widget for Page {
+///     fn to_element(self, ctx: &BuildContext) -> AnyElement {
+///         // The state is named here, in a body, so it can stay private.
+///         StatefulElement::from_widget::<Self, PageState>(self, ctx, "Page", None)
+///     }
+/// }
+///
 /// struct PageState {
-///     updater: Option<StateUpdater<PageState>>,
 ///     settings_open: bool,
 /// }
 ///
-/// impl StatefulWidget for Page {
-///     type State = PageState;
-///     fn create_state(self) -> PageState {
-///         PageState { updater: None, settings_open: true }
-///     }
-/// }
-///
 /// impl State<Page> for PageState {
-///     fn init_state(&mut self, updater: StateUpdater<Self>) {
-///         self.updater = Some(updater);
+///     fn create(_widget: Page) -> Self {
+///         PageState { settings_open: true }
 ///     }
 ///
-///     fn build(&self, _ctx: &BuildContext) -> impl Widget {
-///         let updater = self.updater.expect("set before the first build");
+///     fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+///         let updater = this.updater();
 ///         Window::new()
 ///             .title("Settings")
 ///             .size(480, 320)
-///             .open(self.settings_open)
+///             .open(this.settings_open)
 ///             .on_close(move || updater.set_state(|page| page.settings_open = false))
 ///             .builder(|_ctx| SizedBox::new())
 ///     }
@@ -169,7 +169,7 @@ impl Default for Window {
 
 impl Widget for Window<ContentBuilder> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(WindowHost(self), ctx, "Window", None)
+        StatefulElement::new_with_name::<WindowHost, WindowHostState>(WindowHost(self), ctx, "Window", None)
             .0
             .boxed()
     }
@@ -209,17 +209,21 @@ struct WindowHostState {
     inherit: bool,
 }
 
-impl StatefulWidget for WindowHost {
-    type State = WindowHostState;
+impl Widget for WindowHost {
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        StatefulElement::from_widget::<Self, WindowHostState>(self, ctx, "WindowHost", None)
+    }
+}
 
-    fn create_state(self) -> WindowHostState {
+impl State<WindowHost> for WindowHostState {
+    fn create(widget: WindowHost) -> Self {
         let Window {
             attr,
             open,
             inherit,
             on_close,
             builder,
-        } = self.0;
+        } = widget.0;
         WindowHostState {
             inner: Rc::new(Inner {
                 attr: RefCell::new(attr),
@@ -233,10 +237,6 @@ impl StatefulWidget for WindowHost {
             inherit,
         }
     }
-}
-
-impl State<WindowHost> for WindowHostState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
 
     fn adopt_config_from(&mut self, new: Self) {
         new.inner.superseded.set(true);
@@ -259,12 +259,12 @@ impl State<WindowHost> for WindowHostState {
         self.inherit = new.inherit;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        if self.inner.needs_sync() {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        if this.inner.needs_sync() {
             // Only what has to be acted on is captured, and it is acted on after
             // this build: see `Inner::superseded`.
-            let inherited = (self.inherit && self.inner.open.get()).then(|| inherited_from(ctx));
-            let inner = self.inner.clone();
+            let inherited = (this.inherit && this.inner.open.get()).then(|| inherited_from(ctx));
+            let inner = this.inner.clone();
             match Venus::current() {
                 Some(venus) => {
                     venus.spawn(async move { inner.sync(inherited) });

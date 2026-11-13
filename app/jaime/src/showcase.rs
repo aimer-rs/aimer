@@ -204,22 +204,12 @@ impl ExampleShowcaseState {
     }
 }
 
-impl StatefulWidget for ExampleShowcase {
-    type State = ExampleShowcaseState;
-
-    fn create_state(self) -> Self::State {
-        ExampleShowcaseState::with_selected(self.selected.unwrap_or(EXAMPLES[0]))
-    }
-}
-
 impl State<ExampleShowcase> for ExampleShowcaseState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn create(widget: ExampleShowcase) -> Self {
+        ExampleShowcaseState::with_selected(widget.selected.unwrap_or(EXAMPLES[0]))
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         #[cfg(test)]
         SHELL_BUILDS.with(|builds| builds.set(builds.get() + 1));
         let app_theme = ThemeData::copied(ctx);
@@ -234,7 +224,7 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
 
         let shell = Provider::new()
             .handle(
-                self.selection
+                this.selection
                     .clone(),
             )
             .child(

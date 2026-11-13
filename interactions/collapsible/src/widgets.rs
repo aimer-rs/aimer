@@ -14,8 +14,8 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::{BuildContext, ResolvedSize, Vec2d};
 use aimer_widget::{
     AnyElement, AnyWidget, ChildBuilder, Drawable, Element, EventElement, EventResult,
-    EventTreeRole, LayoutElement, Rebuildable, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, VisitorElement, Widget,
+    EventTreeRole, LayoutElement, Rebuildable, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    VisitorElement, Widget,
 };
 
 use crate::key_relay::KeyRelay;
@@ -632,7 +632,6 @@ pub struct CollapsibleListState<H: Widget + 'static, B: Widget + 'static> {
     body_controller: AnimationController,
     header: ChildBuilder,
     body: ChildBuilder,
-    updater: StateUpdater<Self>,
     marker: PhantomData<(H, B)>,
 }
 
@@ -687,37 +686,9 @@ impl<H: Widget + 'static, B: Widget + 'static> CollapsibleListState<H, B> {
     }
 }
 
-impl<H: Widget + 'static, B: Widget + 'static> StatefulWidget for CollapsibleList<H, B> {
-    type State = CollapsibleListState<H, B>;
-
-    fn create_state(self) -> Self::State {
-        let chevron_controller = AnimationController::new(self.duration, self.curve.clone());
-        if !self.expanded {
-            chevron_controller.set_value(1.0);
-        }
-        let body_controller = AnimationController::new(self.duration, self.curve.clone());
-        if self.expanded {
-            body_controller.set_value(1.0);
-        }
-
-        CollapsibleListState {
-            expanded: self.expanded,
-            body_mounted: self.expanded,
-            duration: self.duration,
-            curve: self.curve,
-            chevron_controller,
-            body_controller,
-            header: ChildBuilder::from_widget(self.header),
-            body: ChildBuilder::from_widget(self.body),
-            updater: StateUpdater::empty(),
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<H: Widget + 'static, B: Widget + 'static> Widget for CollapsibleList<H, B> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "CollapsibleList", None)
+        StatefulElement::new_with_name::<Self, CollapsibleListState<H, B>>(self, ctx, "CollapsibleList", None)
             .0
             .boxed()
     }
@@ -730,8 +701,27 @@ impl<H: Widget + 'static, B: Widget + 'static> Widget for CollapsibleList<H, B> 
 impl<H: Widget + 'static, B: Widget + 'static> State<CollapsibleList<H, B>>
     for CollapsibleListState<H, B>
 {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
+    fn create(widget: CollapsibleList<H, B>) -> Self {
+        let chevron_controller = AnimationController::new(widget.duration, widget.curve.clone());
+        if !widget.expanded {
+            chevron_controller.set_value(1.0);
+        }
+        let body_controller = AnimationController::new(widget.duration, widget.curve.clone());
+        if widget.expanded {
+            body_controller.set_value(1.0);
+        }
+
+        CollapsibleListState {
+            expanded: widget.expanded,
+            body_mounted: widget.expanded,
+            duration: widget.duration,
+            curve: widget.curve,
+            chevron_controller,
+            body_controller,
+            header: ChildBuilder::from_widget(widget.header),
+            body: ChildBuilder::from_widget(widget.body),
+            marker: PhantomData,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -747,17 +737,17 @@ impl<H: Widget + 'static, B: Widget + 'static> State<CollapsibleList<H, B>>
         self.body = new.body;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ctx.try_copied().unwrap_or(ThemeData::default());
-        let updater = self.updater;
+        let updater = this.updater();
         let header = Container::new()
             .padding(list_edge_padding())
             .child(
                 Row::new()
                     .vertical_alignment(BoxAlignment::Center)
                     .children([
-                        Expanded::new().child(self.header.clone()).boxed(),
-                        chevron(theme, self.chevron_controller.clone()),
+                        Expanded::new().child(this.header.clone()).boxed(),
+                        chevron(theme, this.chevron_controller.clone()),
                     ]),
             )
             .boxed();
@@ -775,15 +765,15 @@ impl<H: Widget + 'static, B: Widget + 'static> State<CollapsibleList<H, B>>
             .child(header);
         let header = aimer_widget::Focusable::new().child(header).boxed();
 
-        let mut children = Vec::with_capacity(if self.body_mounted { 2 } else { 1 });
+        let mut children = Vec::with_capacity(if this.body_mounted { 2 } else { 1 });
         children.push(header);
-        if self.body_mounted {
+        if this.body_mounted {
             children.push(
                 AnimatedCollapse::new(
-                    self.body_controller.clone(),
+                    this.body_controller.clone(),
                     Container::new()
                         .padding(list_edge_padding())
-                        .child(self.body.clone()),
+                        .child(this.body.clone()),
                 )
                 .boxed(),
             );

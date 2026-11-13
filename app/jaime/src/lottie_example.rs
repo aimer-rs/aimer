@@ -13,7 +13,7 @@ use aimer::style::{
     TextStyle, Theme, ThemeData,
 };
 use aimer::{
-    AnyWidget, BuildContext, Column, Container, Dimension, Row, SizedBox, State, StateUpdater,
+    AnyWidget, BuildContext, Column, Container, Dimension, Row, SizedBox, State, StateView, StateUpdater,
     StatefulWidget, Text, Widget,
 };
 
@@ -90,31 +90,25 @@ impl LottieExample {
 }
 
 pub struct LottieExampleState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     playing: bool,
     slow: bool,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for LottieExample {
-    type State = LottieExampleState;
-
-    fn create_state(self) -> LottieExampleState {
-        LottieExampleState { playing: true, slow: false, updater: StateUpdater::empty() }
-    }
 }
 
 impl State<LottieExample> for LottieExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: LottieExample) -> Self {
+        LottieExampleState { playing: true, slow: false, updater: StateUpdater::empty() }
+    }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
-        let (playing, slow) = (self.playing, self.slow);
+        let updater = this.updater();
+        let (playing, slow) = (this.playing, this.slow);
 
         let toggle = control_button(if playing { "Pause" } else { "Play" }, app_theme, true, move || {
             updater.set_state(|state| state.playing = !state.playing);

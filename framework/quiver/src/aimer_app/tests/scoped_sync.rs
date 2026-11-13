@@ -26,24 +26,20 @@ struct BoxState {
     nested: bool,
 }
 
-impl StatefulWidget for StatefulBox {
-    type State = BoxState;
-
-    fn create_state(self) -> BoxState {
+impl State<StatefulBox> for BoxState {
+    fn create(widget: StatefulBox) -> Self {
         BoxState {
             mode: 0,
-            updaters: self.updaters,
-            nested: self.nested,
+            updaters: widget.updaters,
+            nested: widget.nested,
         }
     }
-}
 
-impl State<StatefulBox> for BoxState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updaters.borrow_mut().push(updater);
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let swatch = |width: f32, shade: u8| {
             SizedBox::new()
                 .width(Dimension::Px(width))
@@ -51,7 +47,7 @@ impl State<StatefulBox> for BoxState {
                 .color(Color::Rgb(shade, 90, 90))
                 .boxed()
         };
-        match self.mode {
+        match this.mode {
             // The same shape with different paint.
             0 => swatch(40.0, 20),
             1 => swatch(40.0, 200),
@@ -70,8 +66,8 @@ impl State<StatefulBox> for BoxState {
                 .children(vec![swatch(40.0, 220), swatch(40.0, 60)])
                 .boxed(),
             // A stateful element inside the stateful element.
-            _ if self.nested => StatefulBox {
-                updaters: self.updaters.clone(),
+            _ if this.nested => StatefulBox {
+                updaters: this.updaters.clone(),
                 nested: false,
             }
             .boxed(),
@@ -82,7 +78,7 @@ impl State<StatefulBox> for BoxState {
 
 impl Widget for StatefulBox {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ScopedBox", None)
+        StatefulElement::new_with_name::<Self, BoxState>(self, ctx, "ScopedBox", None)
             .0
             .boxed()
     }
@@ -305,29 +301,23 @@ struct PressableState {
     handle: Rc<RefCell<Option<StateUpdater<PressableState>>>>,
 }
 
-impl StatefulWidget for PressableBox {
-    type State = PressableState;
-
-    fn create_state(self) -> PressableState {
+impl State<PressableBox> for PressableState {
+    fn create(widget: PressableBox) -> Self {
         PressableState {
             shade: 0,
-            presses: self.presses,
-            handle: self.handle,
+            presses: widget.presses,
+            handle: widget.handle,
         }
     }
-}
 
-impl State<PressableBox> for PressableState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.handle.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let presses = self.presses.clone();
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.handle.borrow_mut() = Some(this.updater());
+        let presses = this.presses.clone();
         aimer_input::button::Button::new()
             .on_press(move || presses.set(presses.get() + 1))
             .decoration(
-                aimer_style::BoxDecoration::new().background_color(Color::Rgb(self.shade, 80, 80)),
+                aimer_style::BoxDecoration::new().background_color(Color::Rgb(this.shade, 80, 80)),
             )
             .child(
                 SizedBox::new()
@@ -339,7 +329,7 @@ impl State<PressableBox> for PressableState {
 
 impl Widget for PressableBox {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "PressableBox", None)
+        StatefulElement::new_with_name::<Self, PressableState>(self, ctx, "PressableBox", None)
             .0
             .boxed()
     }

@@ -118,23 +118,11 @@ impl Default for FocusNodeExample {
 /// The retained side of the example: the two focus targets, and which of them
 /// last reported that it owns the keyboard.
 pub struct FocusNodeExampleState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     first: FocusNode,
     second: FocusNode,
     focused: Option<FocusBox>,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for FocusNodeExample {
-    type State = FocusNodeExampleState;
-
-    fn create_state(self) -> FocusNodeExampleState {
-        FocusNodeExampleState {
-            first: FocusNode::new(),
-            second: FocusNode::new(),
-            focused: None,
-            updater: StateUpdater::empty(),
-        }
-    }
 }
 
 impl FocusNodeExampleState {
@@ -227,16 +215,22 @@ impl FocusNodeExampleState {
 }
 
 impl State<FocusNodeExample> for FocusNodeExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: FocusNodeExample) -> Self {
+        FocusNodeExampleState {
+            updater: StateUpdater::empty(),
+            first: FocusNode::new(),
+            second: FocusNode::new(),
+            focused: None,
+        }
+    }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let owner = match self.focused {
+        let owner = match this.focused {
             Some(which) => which.label(),
             None => "nothing",
         };
@@ -266,8 +260,8 @@ impl State<FocusNodeExample> for FocusNodeExampleState {
                         Row::new()
                             .gaps(LayoutSpacing::new().right(24))
                             .children([
-                                self.focus_box(FocusBox::First),
-                                self.focus_box(FocusBox::Second),
+                                this.focus_box(FocusBox::First),
+                                this.focus_box(FocusBox::Second),
                             ])
                             .boxed(),
                         Text::new(format!("Focused: {owner}"))
@@ -280,17 +274,17 @@ impl State<FocusNodeExample> for FocusNodeExampleState {
                         Row::new()
                             .gaps(LayoutSpacing::new().right(12))
                             .children([
-                                self.focus_button(
+                                this.focus_button(
                                     "Focus first",
-                                    Some(self.first.clone()),
+                                    Some(this.first.clone()),
                                     app_theme,
                                 ),
-                                self.focus_button(
+                                this.focus_button(
                                     "Focus second",
-                                    Some(self.second.clone()),
+                                    Some(this.second.clone()),
                                     app_theme,
                                 ),
-                                self.focus_button("Clear focus", None, app_theme),
+                                this.focus_button("Clear focus", None, app_theme),
                             ])
                             .boxed(),
                     ]),
@@ -387,42 +381,29 @@ mod tests {
         second: FocusNode,
         builds: Rc<Cell<usize>>,
         focused: Option<FocusBox>,
-        updater: StateUpdater<Self>,
-    }
-
-    impl StatefulWidget for RebuildingBoxes {
-        type State = RebuildingBoxesState;
-
-        fn create_state(self) -> RebuildingBoxesState {
-            RebuildingBoxesState {
-                first: self.first,
-                second: self.second,
-                builds: self.builds,
-                focused: None,
-                updater: StateUpdater::empty(),
-            }
-        }
     }
 
     impl State<RebuildingBoxes> for RebuildingBoxesState {
-        fn init_state(&mut self, updater: StateUpdater<Self>)
-        where
-            Self: Sized,
-        {
-            self.updater = updater;
+        fn create(widget: RebuildingBoxes) -> Self {
+            RebuildingBoxesState {
+                first: widget.first,
+                second: widget.second,
+                builds: widget.builds,
+                focused: None,
+            }
         }
 
-        fn build(&self, _: &BuildContext) -> impl Widget {
-            self.builds
-                .set(self.builds.get() + 1);
+        fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            this.builds
+                .set(this.builds.get() + 1);
             let reporter = |which: FocusBox, updater: StateUpdater<Self>| {
                 move |gained: bool| {
                     updater.set_state(move |state| state.focused = gained.then_some(which));
                 }
             };
             page(
-                test_box(&self.first, reporter(FocusBox::First, self.updater)),
-                test_box(&self.second, reporter(FocusBox::Second, self.updater)),
+                test_box(&this.first, reporter(FocusBox::First, this.updater())),
+                test_box(&this.second, reporter(FocusBox::Second, this.updater())),
             )
         }
     }

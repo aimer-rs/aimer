@@ -203,15 +203,8 @@ impl Default for NotificationExample {
 /// The retained side of the page. The log and the connection outlive the page,
 /// so all it keeps is a way to ask for a redraw.
 pub struct NotificationExampleState {
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for NotificationExample {
-    type State = NotificationExampleState;
-
-    fn create_state(self) -> NotificationExampleState {
-        NotificationExampleState { updater: StateUpdater::empty() }
-    }
 }
 
 impl NotificationExampleState {
@@ -254,15 +247,17 @@ impl NotificationExampleState {
 }
 
 impl State<NotificationExample> for NotificationExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
-        PAGE.set(Some(updater));
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: NotificationExample) -> Self {
+        NotificationExampleState { updater: StateUpdater::empty() }
+    }
+
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        PAGE.set(Some(this.updater()));
         let app_theme = ThemeData::copied(ctx);
         let muted = crate::theme::muted_text(&app_theme);
         let body = app_theme.on_background_color;

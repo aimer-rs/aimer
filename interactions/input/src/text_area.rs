@@ -5,7 +5,7 @@ use aimer_decoration::Decoration;
 use aimer_style::{LayoutSpacing, TextAlign, TextStyle};
 use aimer_widget::base::{BuildContext, Color, Colors};
 use aimer_widget::{
-    AnyElement, FocusNode, Key, State, StateUpdater, StatefulElement, StatefulWidget, Widget,
+    AnyElement, FocusNode, Key, State, StateView, StateUpdater, StatefulElement, Widget,
 };
 
 use crate::TextEditingController;
@@ -357,22 +357,9 @@ impl Default for TextArea {
     }
 }
 
-impl StatefulWidget for TextArea {
-    type State = TextFieldState;
-
-    #[inline]
-    fn create_state(self) -> Self::State {
-        self.field.create_state_with_config(self.config())
-    }
-}
-
 impl State<TextArea> for TextFieldState {
-    #[inline]
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.init(updater);
+    fn create(widget: TextArea) -> Self {
+        widget.field.create_state_with_config(widget.config())
     }
 
     #[inline]
@@ -381,8 +368,8 @@ impl State<TextArea> for TextFieldState {
     }
 
     #[inline]
-    fn build(&self, _: &BuildContext) -> impl Widget {
-        self.build_field()
+    fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+        this.build_field()
     }
 }
 
@@ -395,7 +382,7 @@ impl Widget for TextArea {
     #[inline]
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let __key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "TextArea", __key)
+        StatefulElement::new_with_name::<Self, TextFieldState>(self, ctx, "TextArea", __key)
             .0
             .boxed()
     }
@@ -403,11 +390,12 @@ impl Widget for TextArea {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use aimer_attribute::Vec2d;
     use aimer_events::element::ElementEvent;
     use aimer_events::pointer::{PointerButton, PointerInfo};
     use aimer_style::{BoxDecoration, LayoutSpacing, TextAlign, TextStyle};
-    use aimer_widget::StatefulWidget;
+    use crate::input_field::TextFieldState;
     use aimer_widget::base::{Color, Colors};
     use aimer_widget::{AnyElement, Drawable, EventDispatcher, FocusNode, Key, Widget};
 
@@ -417,7 +405,7 @@ mod tests {
 
     #[test]
     fn default_text_area_is_unbounded_multiline_without_expansion() {
-        let state = TextArea::new().create_state();
+        let state = TextArea::new().create_state::<TextFieldState>();
         let config = state.config();
 
         assert_eq!(config.input_type, InputType::Text);
@@ -432,7 +420,7 @@ mod tests {
             .min_lines(6)
             .max_lines(2)
             .expand(true)
-            .create_state();
+            .create_state::<TextFieldState>();
         let config = state.config();
 
         assert_eq!(config.min_lines, Some(6));
@@ -444,7 +432,7 @@ mod tests {
     fn a_custom_caret_builder_reaches_the_created_state() {
         let state = TextArea::new()
             .caret(|context| DefaultCaret::new(context, Colors::default()))
-            .create_state();
+            .create_state::<TextFieldState>();
 
         assert!(state.config().caret_builder.is_some());
     }
@@ -479,7 +467,7 @@ mod tests {
             .key("notes");
 
         let key = Widget::key(&area);
-        let state = area.create_state();
+        let state = area.create_state::<TextFieldState>();
         let config = state.config();
         assert_eq!(config.controller.value().text(), "first\nsecond");
         assert_eq!(&*config.prompt, "Prompt");

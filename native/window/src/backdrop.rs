@@ -5,8 +5,8 @@ use std::sync::{Arc, Weak};
 use aimer_platform::window_backdrop::set_window_material;
 use aimer_widget::base::{BuildContext, WindowHandle};
 use aimer_widget::{
-    AnyElement, AnyWidget, ChildBuilder, RequiredChild, State, StateUpdater, StatefulElement,
-    StatefulWidget, Widget,
+    AnyElement, AnyWidget, ChildBuilder, RequiredChild, State, StateView, StateUpdater, StatefulElement,
+    Widget,
 };
 
 use crate::WindowMaterial;
@@ -169,24 +169,9 @@ impl<W: Widget + 'static> WindowBackdropState<W> {
     }
 }
 
-impl<W: Widget + 'static> StatefulWidget for WindowBackdrop<W> {
-    type State = WindowBackdropState<W>;
-
-    fn create_state(self) -> Self::State {
-        WindowBackdropState {
-            material: self.material,
-            enabled: self.enabled,
-            child: self.child,
-            window: RefCell::new(None),
-            applied: Cell::new(None),
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<W: Widget + 'static> Widget for WindowBackdrop<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "WindowBackdrop", None)
+        StatefulElement::new_with_name::<Self, WindowBackdropState<W>>(self, ctx, "WindowBackdrop", None)
             .0
             .boxed()
     }
@@ -197,10 +182,15 @@ impl<W: Widget + 'static> Widget for WindowBackdrop<W> {
 }
 
 impl<W: Widget + 'static> State<WindowBackdrop<W>> for WindowBackdropState<W> {
-    fn init_state(&mut self, _updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn create(widget: WindowBackdrop<W>) -> Self {
+        WindowBackdropState {
+            material: widget.material,
+            enabled: widget.enabled,
+            child: widget.child,
+            window: RefCell::new(None),
+            applied: Cell::new(None),
+            marker: PhantomData,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -211,9 +201,9 @@ impl<W: Widget + 'static> State<WindowBackdrop<W>> for WindowBackdropState<W> {
         self.child = new.child.clone();
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.sync(&ctx.window());
-        self.child.clone()
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.sync(&ctx.window());
+        this.child.clone()
     }
 }
 
@@ -232,13 +222,14 @@ impl<W: Widget + 'static> Drop for WindowBackdropState<W> {
 
 #[cfg(test)]
 mod tests {
+    use aimer_widget::CreateState;
     use aimer_container::SizedBox;
 
     use super::*;
 
     #[test]
     fn a_backdrop_is_enabled_and_sidebar_by_default() {
-        let state = WindowBackdrop::new().child(SizedBox::new()).create_state();
+        let state = WindowBackdrop::new().child(SizedBox::new()).create_state::<WindowBackdropState<_>>();
 
         assert_eq!(state.material, WindowMaterial::Sidebar);
         assert!(state.enabled);
@@ -251,7 +242,7 @@ mod tests {
             .material(WindowMaterial::Hud)
             .enabled(false)
             .child(SizedBox::new())
-            .create_state();
+            .create_state::<WindowBackdropState<_>>();
 
         assert_eq!(state.material, WindowMaterial::Hud);
         assert!(!state.enabled);
@@ -259,7 +250,7 @@ mod tests {
 
     #[test]
     fn a_headless_window_is_left_alone() {
-        let state = WindowBackdrop::new().child(SizedBox::new()).create_state();
+        let state = WindowBackdrop::new().child(SizedBox::new()).create_state::<WindowBackdropState<_>>();
         let window = WindowHandle::headless(winit::dpi::PhysicalSize::new(800, 600), 1.0);
 
         state.sync(&window);

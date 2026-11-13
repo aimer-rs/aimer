@@ -21,7 +21,7 @@ use aimer_widget_core::components::element::carry_child_state;
 use aimer_widget_core::widget::stateful::SyncChild;
 use aimer_widget_core::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, Key, LayoutElement, Rebuildable,
-    RequiredChild, State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    RequiredChild, State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget,
 };
 
 /// The current state of an asynchronous operation.
@@ -279,28 +279,6 @@ pub struct AsyncBuilderState<K, F, B, T, E> {
     runtime: Rc<AsyncRuntime<T, E>>,
 }
 
-impl<K, F, Fut, B, T, E> StatefulWidget
-    for AsyncBuilder<K, FutureFactory<F, T, E>, SnapshotBuilder<B, T, E>>
-where
-    K: Clone + Eq + 'static,
-    F: Fn() -> Fut + 'static,
-    Fut: Future<Output = Result<T, E>> + 'static,
-    B: Fn(&AsyncSnapshot<T, E>) -> AnyWidget + 'static,
-    T: 'static,
-    E: 'static,
-{
-    type State = AsyncBuilderState<K, F, B, T, E>;
-
-    fn create_state(self) -> Self::State {
-        AsyncBuilderState {
-            request_key: self.request_key,
-            future_factory: self.future_factory.factory,
-            snapshot_builder: self.snapshot_builder.builder,
-            runtime: Rc::new(AsyncRuntime::new()),
-        }
-    }
-}
-
 impl<K, F, Fut, B, T, E> State<AsyncBuilder<K, FutureFactory<F, T, E>, SnapshotBuilder<B, T, E>>>
     for AsyncBuilderState<K, F, B, T, E>
 where
@@ -311,7 +289,14 @@ where
     T: 'static,
     E: 'static,
 {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+    fn create(widget: AsyncBuilder<K, FutureFactory<F, T, E>, SnapshotBuilder<B, T, E>>) -> Self {
+        AsyncBuilderState {
+            request_key: widget.request_key,
+            future_factory: widget.future_factory.factory,
+            snapshot_builder: widget.snapshot_builder.builder,
+            runtime: Rc::new(AsyncRuntime::new()),
+        }
+    }
 
     fn adopt_config_from(&mut self, new: Self) {
         self.future_factory = new.future_factory;
@@ -322,11 +307,11 @@ where
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         AsyncFrame {
-            future_factory: self.future_factory.clone(),
-            snapshot_builder: self.snapshot_builder.clone(),
-            runtime: self.runtime.clone(),
+            future_factory: this.future_factory.clone(),
+            snapshot_builder: this.snapshot_builder.clone(),
+            runtime: this.runtime.clone(),
             marker: PhantomData::<fn() -> Fut>,
         }
     }
@@ -348,7 +333,7 @@ where
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "AsyncBuilder", key)
+        StatefulElement::new_with_name::<Self, AsyncBuilderState<K, F, B, T, E>>(self, ctx, "AsyncBuilder", key)
             .0
             .boxed()
     }

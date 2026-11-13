@@ -16,6 +16,7 @@ pub fn start_counter() {
 // creating a widget with state
 #[allow(non_snake_case)]
 #[derive(StatefulWidget)]
+#[state(CounterState)]
 pub struct CounterWidget {
     pub initial_count: i32,
 }
@@ -30,35 +31,22 @@ pub struct CounterState {
     count: i32,
     on_loading: bool,
     shared: Arc<u32>,
-    updater: StateUpdater<Self>,
 }
 
-// implement the StatefulWidget trait for CounterWidget
-impl StatefulWidget for CounterWidget {
-    type State = CounterState;
-
-    fn create_state(self) -> CounterState {
+// implement the State trait for CounterState
+impl State<CounterWidget> for CounterState {
+    fn create(widget: CounterWidget) -> Self {
         CounterState {
-            count: self.initial_count,
-            updater: StateUpdater::empty(),
+            count: widget.initial_count,
             on_loading: false,
             shared: Arc::new(0),
         }
     }
-}
-// implement the State trait for CounterState
-impl State<CounterWidget> for CounterState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
-        self.updater = _updater
-    }
 
     // build the widget with state
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        // debug!("self.count: {}", self.count);
-        let updater = self.updater;
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        // debug!("this.count: {}", this.count);
+        let updater = this.updater();
         let theme = ThemeData::copied(ctx);
         Container::new()
             .color(theme.background_color)
@@ -82,7 +70,7 @@ impl State<CounterWidget> for CounterState {
                         SizedBox::new()
                             .height(50)
                             .boxed(),
-                        Text::new(format!("Clicked: {}", self.count,))
+                        Text::new(format!("Clicked: {}", this.count,))
                             .text_style(
                                 TextStyle::new()
                                     .font_size(25)
@@ -92,13 +80,13 @@ impl State<CounterWidget> for CounterState {
                         SizedBox::new()
                             .height(50)
                             .boxed(),
-                        self.click_button("Increase", theme, move || {
+                        this.click_button("Increase", theme, move || {
                             updater.set_state(|state| state.count += 1)
                         }),
                         SizedBox::new()
                             .height(20)
                             .boxed(),
-                        self.click_button("Decrease", theme, move || {
+                        this.click_button("Decrease", theme, move || {
                             updater.set_state(|state| state.count -= 1)
                         }),
                     ]),

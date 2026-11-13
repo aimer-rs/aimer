@@ -139,30 +139,30 @@ struct CounterState {
     taps: usize,
 }
 
-impl StatefulWidget for Counter {
-    type State = CounterState;
-
-    fn create_state(self) -> Self::State {
-        CounterState {
-            counts: self.counts,
-            leaves: self.leaves,
-            taps: 0,
-        }
+impl Widget for Counter {
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        StatefulElement::from_widget::<Self, CounterState>(self, ctx, "Counter", None)
     }
 }
 
 impl State<Counter> for CounterState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+    fn create(widget: Counter) -> Self {
+        CounterState {
+            counts: widget.counts,
+            leaves: widget.leaves,
+            taps: 0,
+        }
+    }
 
     /// Deliberately ignores `taps`: none of the leaves depend on the state that
     /// `set_state` mutates below.
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        self.counts.builds.set(self.counts.builds.get() + 1);
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        this.counts.builds.set(this.counts.builds.get() + 1);
         Group {
-            children: (0..self.leaves)
+            children: (0..this.leaves)
                 .map(|_| {
                     CountedLeaf {
-                        counts: self.counts.clone(),
+                        counts: this.counts.clone(),
                     }
                     .boxed()
                 })
@@ -175,7 +175,7 @@ impl State<Counter> for CounterState {
 fn set_state_rebuilds_and_replaces_the_whole_child_subtree() {
     let context = dummy_build_context();
     let counts = Rc::new(Counts::default());
-    let (element, updater) = StatefulElement::new_with_name(
+    let (element, updater) = StatefulElement::new_with_name::<Counter, CounterState>(
         Counter {
             counts: counts.clone(),
             leaves: LEAVES,
@@ -218,7 +218,7 @@ fn set_state_rebuilds_and_replaces_the_whole_child_subtree() {
 fn set_state_calls_between_frames_coalesce_into_one_rebuild() {
     let context = dummy_build_context();
     let counts = Rc::new(Counts::default());
-    let (element, updater) = StatefulElement::new_with_name(
+    let (element, updater) = StatefulElement::new_with_name::<Counter, CounterState>(
         Counter {
             counts: counts.clone(),
             leaves: LEAVES,
@@ -261,30 +261,26 @@ struct NestedState {
     value: usize,
 }
 
-impl StatefulWidget for Nested {
-    type State = NestedState;
-
-    fn create_state(self) -> Self::State {
-        self.counts
+impl State<Nested> for NestedState {
+    fn create(widget: Nested) -> Self {
+        widget.counts
             .create_states
-            .set(self.counts.create_states.get() + 1);
+            .set(widget.counts.create_states.get() + 1);
         NestedState {
-            counts: self.counts,
-            updater: self.updater,
+            counts: widget.counts,
+            updater: widget.updater,
             value: 0,
         }
     }
-}
 
-impl State<Nested> for NestedState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.counts.init_states.set(self.counts.init_states.get() + 1);
-        *self.updater.borrow_mut() = Some(updater);
-    }
+    fn init_state(&mut self) {
+            self.counts.init_states.set(self.counts.init_states.get() + 1);
+        }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        self.counts.builds.set(self.counts.builds.get() + 1);
-        self.counts.last_built_value.set(self.value);
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        this.counts.builds.set(this.counts.builds.get() + 1);
+        this.counts.last_built_value.set(this.value);
         CountedLeaf {
             counts: Rc::new(Counts::default()),
         }
@@ -293,7 +289,7 @@ impl State<Nested> for NestedState {
 
 impl Widget for Nested {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::from_widget(self, ctx, "Nested", None)
+        StatefulElement::from_widget::<Self, NestedState>(self, ctx, "Nested", None)
     }
 }
 
@@ -308,28 +304,28 @@ struct NestingParentState {
     taps: usize,
 }
 
-impl StatefulWidget for NestingParent {
-    type State = NestingParentState;
-
-    fn create_state(self) -> Self::State {
-        NestingParentState {
-            nested: self.nested,
-            updater: self.updater,
-            taps: 0,
-        }
+impl Widget for NestingParent {
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        StatefulElement::from_widget::<Self, NestingParentState>(self, ctx, "NestingParent", None)
     }
 }
 
 impl State<NestingParent> for NestingParentState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+    fn create(widget: NestingParent) -> Self {
+        NestingParentState {
+            nested: widget.nested,
+            updater: widget.updater,
+            taps: 0,
+        }
+    }
 
     /// The nested child does not depend on `taps`.
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         Group {
             children: vec![
                 Nested {
-                    counts: self.nested.clone(),
-                    updater: self.updater.clone(),
+                    counts: this.nested.clone(),
+                    updater: this.updater.clone(),
                 }
                 .boxed(),
             ],
@@ -346,7 +342,7 @@ fn a_nested_stateful_child_keeps_its_state_but_builds_again_when_the_parent_upda
     let context = dummy_build_context();
     let nested = Rc::new(NestedCounts::default());
     let updater: NestedUpdater = Rc::default();
-    let (element, parent) = StatefulElement::new_with_name(
+    let (element, parent) = StatefulElement::new_with_name::<NestingParent, NestingParentState>(
         NestingParent {
             nested: nested.clone(),
             updater: updater.clone(),
@@ -411,7 +407,7 @@ mod rebuild_scope_profile {
     fn set_state_cost(size: usize) -> (Duration, Duration) {
         let context = dummy_build_context();
         let counts = Rc::new(Counts::default());
-        let (element, updater) = StatefulElement::new_with_name(
+        let (element, updater) = StatefulElement::new_with_name::<Counter, CounterState>(
             Counter {
                 counts,
                 leaves: size,
@@ -448,29 +444,23 @@ mod rebuild_scope_profile {
         taps: usize,
     }
 
-    impl StatefulWidget for Inner {
-        type State = InnerState;
-
-        fn create_state(self) -> Self::State {
+    impl State<Inner> for InnerState {
+        fn create(widget: Inner) -> Self {
             InnerState {
-                counts: self.counts,
-                updater: self.updater,
+                counts: widget.counts,
+                updater: widget.updater,
                 taps: 0,
             }
         }
-    }
 
-    impl State<Inner> for InnerState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            *self.updater.borrow_mut() = Some(updater);
-        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
             Group {
                 children: (0..LEAVES)
                     .map(|_| {
                         CountedLeaf {
-                            counts: self.counts.clone(),
+                            counts: this.counts.clone(),
                         }
                         .boxed()
                     })
@@ -481,7 +471,7 @@ mod rebuild_scope_profile {
 
     impl Widget for Inner {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            StatefulElement::from_widget(self, ctx, "Inner", None)
+            StatefulElement::from_widget::<Self, InnerState>(self, ctx, "Inner", None)
         }
     }
 
@@ -501,35 +491,35 @@ mod rebuild_scope_profile {
         size: usize,
     }
 
-    impl StatefulWidget for Outer {
-        type State = OuterState;
-
-        fn create_state(self) -> Self::State {
-            OuterState {
-                counts: self.counts,
-                inner_counts: self.inner_counts,
-                updater: self.updater,
-                size: self.size,
-            }
+    impl Widget for Outer {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, OuterState>(self, ctx, "Outer", None)
         }
     }
 
     impl State<Outer> for OuterState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+        fn create(widget: Outer) -> Self {
+            OuterState {
+                counts: widget.counts,
+                inner_counts: widget.inner_counts,
+                updater: widget.updater,
+                size: widget.size,
+            }
+        }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            let mut children: Vec<AnyWidget> = (0..self.size)
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            let mut children: Vec<AnyWidget> = (0..this.size)
                 .map(|_| {
                     CountedLeaf {
-                        counts: self.counts.clone(),
+                        counts: this.counts.clone(),
                     }
                     .boxed()
                 })
                 .collect();
             children.push(
                 Inner {
-                    counts: self.inner_counts.clone(),
-                    updater: self.updater.clone(),
+                    counts: this.inner_counts.clone(),
+                    updater: this.updater.clone(),
                 }
                 .boxed(),
             );
@@ -544,7 +534,7 @@ mod rebuild_scope_profile {
         let outer_counts = Rc::new(Counts::default());
         let inner_counts = Rc::new(Counts::default());
         let updater = Rc::new(RefCell::new(None));
-        let (element, _) = StatefulElement::new_with_name(
+        let (element, _) = StatefulElement::new_with_name::<Outer, OuterState>(
             Outer {
                 counts: outer_counts.clone(),
                 inner_counts: inner_counts.clone(),

@@ -81,27 +81,21 @@ struct Root {
     updater: Rc<RefCell<Option<StateUpdater<RootState>>>>,
 }
 
-impl StatefulWidget for Root {
-    type State = RootState;
-
-    fn create_state(self) -> RootState {
+impl State<Root> for RootState {
+    fn create(widget: Root) -> Self {
         RootState {
             mode: ThemeMode::Light,
-            seen: self.seen,
-            updater: self.updater,
+            seen: widget.seen,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Root> for RootState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let seen = self.seen.clone();
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
+        let seen = this.seen.clone();
         AnimatedTheme::new()
-            .mode(self.mode)
+            .mode(this.mode)
             .duration(Duration::from_millis(120))
             .curve(curves::EASE_IN_OUT)
             .child(Sidebar { seen })
@@ -110,7 +104,7 @@ impl State<Root> for RootState {
 
 impl Widget for Root {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ThemeRoot", None)
+        StatefulElement::new_with_name::<Self, RootState>(self, ctx, "ThemeRoot", None)
             .0
             .boxed()
     }
@@ -388,34 +382,28 @@ struct StatefulSidebar {
     updater: Rc<RefCell<Option<StateUpdater<StatefulSidebarState>>>>,
 }
 
-impl StatefulWidget for StatefulSidebar {
-    type State = StatefulSidebarState;
-
-    fn create_state(self) -> StatefulSidebarState {
+impl State<StatefulSidebar> for StatefulSidebarState {
+    fn create(widget: StatefulSidebar) -> Self {
         StatefulSidebarState {
             resizable: false,
-            zone_log: self.zone_log,
-            seen: self.seen,
-            updater: self.updater,
+            zone_log: widget.zone_log,
+            seen: widget.seen,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<StatefulSidebar> for StatefulSidebarState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
         let theme = ThemeData::of(ctx);
-        let seen = self.seen.clone();
-        self.zone_log.borrow_mut().push(self.resizable);
-        let zone_updater = self.updater.borrow().expect("initialised");
+        let seen = this.seen.clone();
+        this.zone_log.borrow_mut().push(this.resizable);
+        let zone_updater = this.updater.borrow().expect("initialised");
         let background = theme.background_color;
         ImplicitAnimatedBuilder::new(
-            if self.resizable { 1.0f32 } else { 0.0 },
+            if this.resizable { 1.0f32 } else { 0.0 },
             Duration::from_millis(120),
             curves::EASE_IN_OUT,
             move |delta| {
@@ -495,7 +483,7 @@ impl State<StatefulSidebar> for StatefulSidebarState {
 
 impl Widget for StatefulSidebar {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "StatefulSidebar", None)
+        StatefulElement::new_with_name::<Self, StatefulSidebarState>(self, ctx, "StatefulSidebar", None)
             .0
             .boxed()
     }
@@ -514,36 +502,30 @@ struct Shell {
     updater: Rc<RefCell<Option<StateUpdater<ShellState>>>>,
 }
 
-impl StatefulWidget for Shell {
-    type State = ShellState;
-
-    fn create_state(self) -> ShellState {
+impl State<Shell> for ShellState {
+    fn create(widget: Shell) -> Self {
         ShellState {
             mode: ThemeMode::Light,
-            zone_log: self.zone_log,
-            seen: self.seen,
-            updater: self.updater,
+            zone_log: widget.zone_log,
+            seen: widget.seen,
+            updater: widget.updater,
         }
     }
-}
 
-impl State<Shell> for ShellState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.updater.borrow_mut() = Some(updater);
-    }
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.updater.borrow_mut() = Some(this.updater());
         AnimatedTheme::new()
-            .mode(self.mode)
+            .mode(this.mode)
             .duration(Duration::from_millis(120))
             .curve(curves::EASE_IN_OUT)
             .child(
                 Row::new().children(vec![
                     StatefulSidebar {
-                        seen: self.seen.clone(),
-                        zone_log: self.zone_log.clone(),
+                        seen: this.seen.clone(),
+                        zone_log: this.zone_log.clone(),
                         updater: Rc::new(RefCell::new(None)),
                     }
                     .boxed(),
@@ -572,7 +554,7 @@ impl State<Shell> for ShellState {
 
 impl Widget for Shell {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ThemeShell", None)
+        StatefulElement::new_with_name::<Self, ShellState>(self, ctx, "ThemeShell", None)
             .0
             .boxed()
     }

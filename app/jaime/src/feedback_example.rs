@@ -19,7 +19,7 @@ use aimer::style::{
 };
 use aimer::{
     AimerApp, AnyWidget, BuildContext, Column, Container, Dimension, Row, ScrollAxis, Scrollable,
-    State, StateUpdater, StatefulWidget, Text, Widget,
+    State, StateView, StateUpdater, StatefulWidget, Text, Widget,
 };
 
 /// Builds the feedback showcase without starting an application.
@@ -54,6 +54,8 @@ impl Default for FeedbackExample {
 
 /// Retained state for [`FeedbackExample`].
 pub struct FeedbackExampleState {
+    /// Kept for the helper methods that call back into the state.
+    updater: StateUpdater<Self>,
     progress_value: f32,
     motion_policy: MotionPolicy,
     spinner: Spinner,
@@ -64,7 +66,6 @@ pub struct FeedbackExampleState {
     announcer: DemoAnnouncer,
     last_toast_event: ToastQueueEvent,
     last_tooltip_event: TooltipEvent,
-    updater: StateUpdater<Self>,
 }
 
 impl FeedbackExampleState {
@@ -205,31 +206,27 @@ impl FeedbackExampleState {
     }
 }
 
-impl StatefulWidget for FeedbackExample {
-    type State = FeedbackExampleState;
-
-    fn create_state(self) -> Self::State {
-        FeedbackExampleState::initial()
-    }
-}
-
 impl State<FeedbackExample> for FeedbackExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: FeedbackExample) -> Self {
+        FeedbackExampleState::initial()
+    }
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let mut progress = ProgressIndicator::determinate(self.progress_value)
+        let mut progress = ProgressIndicator::determinate(this.progress_value)
             .expect("the showcase progress value is always bounded");
-        progress.set_motion_policy(self.motion_policy);
+        progress.set_motion_policy(this.motion_policy);
         let progress = progress
             .width(420.0)
             .height(10.0)
             .track_color(recessed_surface(&app_theme))
             .progress_color(app_theme.primary_color);
         let mut indeterminate = ProgressIndicator::indeterminate();
-        indeterminate.set_motion_policy(self.motion_policy);
+        indeterminate.set_motion_policy(this.motion_policy);
         let indeterminate = indeterminate
             .width(420.0)
             .height(10.0)
@@ -239,22 +236,21 @@ impl State<FeedbackExample> for FeedbackExampleState {
                     .primary_color
                     .with_alpha(0.62),
             );
-        let spinner = self
-            .spinner
+        let spinner = this.spinner
             .size(32.0)
             .color(app_theme.primary_color);
 
-        let progress_updater = self.updater;
+        let progress_updater = this.updater();
         let advance_progress = action_button("+10%", app_theme, true, move || {
             progress_updater.set_state(|state| state.advance_progress())
         });
-        let reset_updater = self.updater;
+        let reset_updater = this.updater();
         let reset_progress = action_button("Reset", app_theme, false, move || {
             reset_updater.set_state(|state| state.reset_progress())
         });
-        let motion_updater = self.updater;
+        let motion_updater = this.updater();
         let toggle_motion = action_button(
-            if self.motion_policy == MotionPolicy::Reduced {
+            if this.motion_policy == MotionPolicy::Reduced {
                 "Enable motion"
             } else {
                 "Reduce motion"
@@ -263,69 +259,67 @@ impl State<FeedbackExample> for FeedbackExampleState {
             false,
             move || motion_updater.set_state(|state| state.toggle_motion()),
         );
-        let spinner_updater = self.updater;
+        let spinner_updater = this.updater();
         let advance_spinner = action_button("Advance 250ms", app_theme, false, move || {
             spinner_updater.set_state(|state| state.advance_spinner())
         });
 
-        let queue_updater = self.updater;
+        let queue_updater = this.updater();
         let queue_toast = action_button("Queue toast", app_theme, true, move || {
             queue_updater.set_state(|state| state.queue_toast())
         });
-        let advance_toast_updater = self.updater;
+        let advance_toast_updater = this.updater();
         let advance_toast = action_button("Advance 4s", app_theme, false, move || {
             advance_toast_updater.set_state(|state| state.advance_toast_clock())
         });
-        let dismiss_updater = self.updater;
+        let dismiss_updater = this.updater();
         let dismiss_toast = action_button("Dismiss", app_theme, false, move || {
             dismiss_updater.set_state(|state| state.dismiss_toast())
         });
-        let action_updater = self.updater;
+        let action_updater = this.updater();
         let undo_toast = action_button("Undo action", app_theme, false, move || {
             action_updater.set_state(|state| state.activate_toast_action())
         });
 
-        let show_updater = self.updater;
+        let show_updater = this.updater();
         let show_tooltip = action_button("Show tooltip", app_theme, true, move || {
             show_updater.set_state(|state| state.show_tooltip())
         });
-        let hide_updater = self.updater;
+        let hide_updater = this.updater();
         let hide_tooltip = action_button("Hide tooltip", app_theme, false, move || {
             hide_updater.set_state(|state| state.hide_tooltip())
         });
 
-        let toast_summary = match self.queue.active() {
+        let toast_summary = match this.queue.active() {
             Some(toast) => format!(
                 "Visible: {} · pending: {} · remaining: {:?}",
                 toast.message(),
-                self.queue
+                this.queue
                     .pending_len(),
-                self.queue
+                this.queue
                     .remaining()
             ),
             None => format!(
                 "No toast visible · pending: {}",
-                self.queue
+                this.queue
                     .pending_len()
             ),
         };
         let tooltip_summary = format!(
             "{} · last event: {:?} · overlays hosted: {}",
-            if self
-                .tooltip
+            if this.tooltip
                 .is_visible()
             {
                 "Visible"
             } else {
                 "Hidden"
             },
-            self.last_tooltip_event,
-            self.host
+            this.last_tooltip_event,
+            this.host
                 .overlays
                 .len()
         );
-        let announcement_summary = self
-            .announcer
+        let announcement_summary = this.announcer
             .last
             .as_deref()
             .map_or_else(
@@ -378,7 +372,7 @@ impl State<FeedbackExample> for FeedbackExampleState {
                                                         .children([
                                                             Text::new(format!(
                                                                 "Determinate · {:.0}%",
-                                                                self.progress_value * 100.0
+                                                                this.progress_value * 100.0
                                                             ))
                                                             .text_style(
                                                                 TextStyle::new()
@@ -403,8 +397,8 @@ impl State<FeedbackExample> for FeedbackExampleState {
                                                             spinner.boxed(),
                                                             Text::new(format!(
                                                                 "Phase {:.2} · {:?}",
-                                                                self.spinner.phase(),
-                                                                self.motion_policy
+                                                                this.spinner.phase(),
+                                                                this.motion_policy
                                                             ))
                                                             .text_style(
                                                                 TextStyle::new()
@@ -440,7 +434,7 @@ impl State<FeedbackExample> for FeedbackExampleState {
                                                         .gaps(LayoutSpacing::all(Spacing::Px(8)))
                                                         .children([
                                                             status_banner(
-                                                                self.queue.active().map_or(
+                                                                this.queue.active().map_or(
                                                                     StatusKind::Info,
                                                                     |toast| toast_status_kind(toast.kind_value()),
                                                                 ),
@@ -449,7 +443,7 @@ impl State<FeedbackExample> for FeedbackExampleState {
                                                             ),
                                                             Text::new(format!(
                                                                 "Last transition: {:?}",
-                                                                self.last_toast_event
+                                                                this.last_toast_event
                                                             ))
                                                             .wrapped()
                                                             .text_style(

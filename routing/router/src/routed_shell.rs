@@ -3,8 +3,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, AnyWidget, ChildBuilder, State, StateUpdater,
-    StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, AnyWidget, ChildBuilder, State, StateView, StateUpdater,
+    StatefulElement, Widget};
 
 use crate::outlet::OutletChildBuilder;
 use crate::shell_swipe::{OutletSwipe, ShellPeek, SwipePort};
@@ -119,18 +119,7 @@ impl<R: Route + Router> Widget for RoutedShell<R> {
             return aimer_container::SizedBox::new().to_element(ctx);
         }
         let key = ctx.get_state::<RouteBoundary>().map(|boundary| boundary.0.clone());
-        StatefulElement::new_with_name(self, ctx, "RoutedShell", key).0.boxed()
-    }
-}
-
-impl<R: Route + Router> StatefulWidget for RoutedShell<R> {
-    type State = RoutedShellState<R>;
-    fn create_state(self) -> Self::State {
-        RoutedShellState {
-            frame: ChildBuilder::from_widget(self.frame), builder: self.builder,
-            route: self.route, transition: self.transition, outlet: Rc::new(RefCell::new(RouteOutlet::default())),
-            handle: None,
-        }
+        StatefulElement::new_with_name::<Self, RoutedShellState<R>>(self, ctx, "RoutedShell", key).0.boxed()
     }
 }
 
@@ -146,7 +135,15 @@ pub struct RoutedShellState<R: Route + Router> {
 }
 
 impl<R: Route + Router> State<RoutedShell<R>> for RoutedShellState<R> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn create(widget: RoutedShell<R>) -> Self {
+        RoutedShellState {
+            frame: ChildBuilder::from_widget(widget.frame), builder: widget.builder,
+            route: widget.route, transition: widget.transition, outlet: Rc::new(RefCell::new(RouteOutlet::default())),
+            handle: None,
+        }
+    }
+
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.handle = Some(Rc::new(OutletHandle { outlet: self.outlet.clone(), updater }));
     }
     fn adopt_config_from(&mut self, new: Self) {
@@ -154,21 +151,21 @@ impl<R: Route + Router> State<RoutedShell<R>> for RoutedShellState<R> {
         self.route = new.route;
         self.transition = new.transition;
     }
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        let route = self.route.clone();
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        let route = this.route.clone();
         let path = route.format();
-        let builder = self.builder.clone();
-        if let (Some(port), Some(handle)) = (ctx.get_state::<SwipePort>(), &self.handle) {
+        let builder = this.builder.clone();
+        if let (Some(port), Some(handle)) = (ctx.get_state::<SwipePort>(), &this.handle) {
             port.attach(handle);
             // The outlet's host owns the touch, so a drag that begins on the
             // frame around it is not a swipe.
-            self.outlet.borrow_mut().swipe_link = Some(port.link());
+            this.outlet.borrow_mut().swipe_link = Some(port.link());
         }
         let action = ctx.get_state::<NavigationRequest>().map(|request| request.0).unwrap_or(NavigationAction::History);
-        self.outlet.borrow_mut().configure(route, action, self.transition.clone(), Rc::new(move |route, ctx| {
+        this.outlet.borrow_mut().configure(route, action, this.transition.clone(), Rc::new(move |route, ctx| {
             if route.format() == path { builder(ctx) } else { Router::build(&route, ctx) }
         }));
-        let builder = route_outlet_builder(&self.outlet);
-        Shell::new(self.frame.clone(), move |ctx| builder(ctx))
+        let builder = route_outlet_builder(&this.outlet);
+        Shell::new(this.frame.clone(), move |ctx| builder(ctx))
     }
 }

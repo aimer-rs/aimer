@@ -13,8 +13,8 @@ use aimer_widget::InteractionBounds;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{
     AnyElement, ChildBuilder, Drawable, Element, EventElement, EventResult, EventTreeRole,
-    FocusNode, LayoutElement, PointerKey, Rebuildable, State, StateUpdater, StatefulElement,
-    StatefulWidget, VisitorElement, Widget,
+    FocusNode, LayoutElement, PointerKey, Rebuildable, State, StateView, StateUpdater, StatefulElement,
+    VisitorElement, Widget,
 };
 
 use super::visuals::{SliderTrack, SliderVisualState};
@@ -245,21 +245,17 @@ impl<T: RangeValue> SliderState<T> {
     }
 }
 
-impl<T: RangeValue> StatefulWidget for Slider<T> {
-    type State = SliderState<T>;
-
-    fn create_state(self) -> Self::State {
-        let current = self.current_value();
+impl<T: RangeValue> State<Slider<T>> for SliderState<T> {
+    fn create(widget: Slider<T>) -> Self {
+        let current = widget.current_value();
         SliderState {
-            model: self,
+            model: widget,
             runtime: Rc::new(SliderRuntime::new(current)),
             visual_revision: 0,
         }
     }
-}
 
-impl<T: RangeValue> State<Slider<T>> for SliderState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.runtime.updater.set(updater);
     }
 
@@ -289,26 +285,23 @@ impl<T: RangeValue> State<Slider<T>> for SliderState<T> {
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let visual_state = SliderVisualState {
-            disabled: self.model.is_disabled(),
-            pressed: self.runtime.pressed.get(),
-            focused: self.runtime.focused.get(),
+            disabled: this.model.is_disabled(),
+            pressed: this.runtime.pressed.get(),
+            focused: this.runtime.focused.get(),
         };
-        let default_visuals = self.runtime.default_visuals(visual_state);
+        let default_visuals = this.runtime.default_visuals(visual_state);
         SliderSurface {
-            model: self.model.clone(),
-            runtime: Rc::clone(&self.runtime),
-            track: self
-                .model
+            model: this.model.clone(),
+            runtime: Rc::clone(&this.runtime),
+            track: this.model
                 .track_child()
                 .unwrap_or_else(|| default_visuals.0),
-            trail: self
-                .model
+            trail: this.model
                 .trail_child()
                 .unwrap_or_else(|| default_visuals.1),
-            thumb: self
-                .model
+            thumb: this.model
                 .thumb_child()
                 .unwrap_or_else(|| default_visuals.2),
         }
@@ -317,7 +310,7 @@ impl<T: RangeValue> State<Slider<T>> for SliderState<T> {
 
 impl<T: RangeValue> Widget for Slider<T> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Slider", None)
+        StatefulElement::new_with_name::<Self, SliderState<T>>(self, ctx, "Slider", None)
             .0
             .boxed()
     }
@@ -954,22 +947,18 @@ impl<T: RangeValue> RangeSliderState<T> {
     }
 }
 
-impl<T: RangeValue> StatefulWidget for RangeSlider<T> {
-    type State = RangeSliderState<T>;
-
-    fn create_state(self) -> Self::State {
-        let lower = self.lower();
-        let upper = self.upper();
+impl<T: RangeValue> State<RangeSlider<T>> for RangeSliderState<T> {
+    fn create(widget: RangeSlider<T>) -> Self {
+        let lower = widget.lower();
+        let upper = widget.upper();
         RangeSliderState {
-            model: self,
+            model: widget,
             runtime: Rc::new(RangeSliderRuntime::new(lower, upper)),
             visual_revision: 0,
         }
     }
-}
 
-impl<T: RangeValue> State<RangeSlider<T>> for RangeSliderState<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.runtime.updater.set(updater);
     }
 
@@ -1011,30 +1000,26 @@ impl<T: RangeValue> State<RangeSlider<T>> for RangeSliderState<T> {
         }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let visual_state = SliderVisualState {
-            disabled: self.model.is_disabled(),
-            pressed: self.runtime.pressed.get(),
-            focused: self.runtime.focused.get(),
+            disabled: this.model.is_disabled(),
+            pressed: this.runtime.pressed.get(),
+            focused: this.runtime.focused.get(),
         };
-        let default_visuals = self.runtime.default_visuals(visual_state);
+        let default_visuals = this.runtime.default_visuals(visual_state);
         RangeSliderSurface {
-            model: self.model.clone(),
-            runtime: Rc::clone(&self.runtime),
-            track: self
-                .model
+            model: this.model.clone(),
+            runtime: Rc::clone(&this.runtime),
+            track: this.model
                 .track_child()
                 .unwrap_or_else(|| default_visuals.0),
-            trail: self
-                .model
+            trail: this.model
                 .trail_child()
                 .unwrap_or_else(|| default_visuals.1),
-            lower_thumb: self
-                .model
+            lower_thumb: this.model
                 .lower_thumb_child()
                 .unwrap_or_else(|| default_visuals.2),
-            upper_thumb: self
-                .model
+            upper_thumb: this.model
                 .upper_thumb_child()
                 .unwrap_or_else(|| default_visuals.3),
         }
@@ -1043,7 +1028,7 @@ impl<T: RangeValue> State<RangeSlider<T>> for RangeSliderState<T> {
 
 impl<T: RangeValue> Widget for RangeSlider<T> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "RangeSlider", None)
+        StatefulElement::new_with_name::<Self, RangeSliderState<T>>(self, ctx, "RangeSlider", None)
             .0
             .boxed()
     }

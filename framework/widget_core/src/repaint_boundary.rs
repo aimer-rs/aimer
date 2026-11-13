@@ -20,7 +20,7 @@ use crate::components::layout_element::LayoutElement;
 use crate::components::rebuildable::Rebuildable;
 use crate::components::visitor_element::VisitorElement;
 use crate::widget::child_builder::ChildBuilder;
-use crate::widget::stateful::{State, StateUpdater, StatefulElement, StatefulWidget};
+use crate::widget::stateful::{State, StateView, StateUpdater, StatefulElement};
 use crate::{AnyElement, AnyWidget, Drawable, RequiredChild, Widget};
 
 /// Marks one subtree as a priority candidate for retained compositor paint.
@@ -91,20 +91,9 @@ impl<W> RepaintBoundary<W> {
     }
 }
 
-impl<W: Widget + 'static> StatefulWidget for RepaintBoundary<W> {
-    type State = RepaintBoundaryState<W>;
-
-    fn create_state(self) -> Self::State {
-        RepaintBoundaryState {
-            child: self.child,
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<W: Widget + 'static> Widget for RepaintBoundary<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "RepaintBoundary", None)
+        StatefulElement::new_with_name::<Self, RepaintBoundaryState<W>>(self, ctx, "RepaintBoundary", None)
             .0
             .boxed()
     }
@@ -122,15 +111,20 @@ pub struct RepaintBoundaryState<W: Widget + 'static> {
 }
 
 impl<W: Widget + 'static> State<RepaintBoundary<W>> for RepaintBoundaryState<W> {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+    fn create(widget: RepaintBoundary<W>) -> Self {
+        RepaintBoundaryState {
+            child: widget.child,
+            marker: PhantomData,
+        }
+    }
 
     fn adopt_config_from(&mut self, new: Self) {
         self.child = new.child;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         RepaintBoundaryTarget {
-            child: self.child.clone().to_element(ctx),
+            child: this.child.clone().to_element(ctx),
         }
     }
 }

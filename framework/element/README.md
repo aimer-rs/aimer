@@ -14,6 +14,6 @@ knowing what a widget is.
 - Per-frame bookkeeping: paint damage, invalidation batches, frame statistics,
   window metrics, safe-area insets and platform brightness.
 
-Widgets (`Widget`, `StatelessWidget`, `StatefulWidget`, `ChildBuilder`) live in
+Widgets (`Widget`, `StatelessWidget`, `State`, `ChildBuilder`) live in
 `aimer_widget_core`; most applications use these types through `aimer_widget`,
 which re-exports every layer.

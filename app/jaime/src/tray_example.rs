@@ -226,15 +226,8 @@ impl Default for TrayExample {
 /// The retained side of the page. The log and the tray outlive the page, so
 /// all it keeps is a way to ask for a redraw.
 pub struct TrayExampleState {
+    /// Kept for the helper methods that call back into the state.
     updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for TrayExample {
-    type State = TrayExampleState;
-
-    fn create_state(self) -> TrayExampleState {
-        TrayExampleState { updater: StateUpdater::empty() }
-    }
 }
 
 impl TrayExampleState {
@@ -273,15 +266,17 @@ impl TrayExampleState {
 }
 
 impl State<TrayExample> for TrayExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
-        PAGE.set(Some(updater));
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn create(widget: TrayExample) -> Self {
+        TrayExampleState { updater: StateUpdater::empty() }
+    }
+
+
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        PAGE.set(Some(this.updater()));
         let app_theme = ThemeData::copied(ctx);
         let muted = crate::theme::muted_text(&app_theme);
         let body = app_theme.on_background_color;

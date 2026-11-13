@@ -7,8 +7,8 @@ use aimer_canvas::Canvas;
 use aimer_cupid::draw_cmd::Rect;
 use aimer_widget::base::{BuildContext, Color};
 use aimer_widget::{
-    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,
-    StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateView,
+    StateUpdater, StatefulElement, VisitorElement, Widget,
 };
 
 /// The local logical rectangle occupied by a caret.
@@ -226,7 +226,7 @@ struct DefaultCaretWidget {
 
 impl Widget for DefaultCaretWidget {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "DefaultCaret", None)
+        StatefulElement::new_with_name::<Self, DefaultCaretState>(self, ctx, "DefaultCaret", None)
             .0
             .boxed()
     }
@@ -239,27 +239,20 @@ impl Widget for DefaultCaretWidget {
 struct DefaultCaretState {
     context: CaretContext,
     color: Rc<Cell<Color>>,
-    updater: StateUpdater<Self>,
     revision: u64,
 }
 
-impl StatefulWidget for DefaultCaretWidget {
-    type State = DefaultCaretState;
-
-    fn create_state(self) -> Self::State {
+impl State<DefaultCaretWidget> for DefaultCaretState {
+    fn create(widget: DefaultCaretWidget) -> Self {
         DefaultCaretState {
-            context: self.context,
-            color: self.color,
-            updater: StateUpdater::empty(),
+            context: widget.context,
+            color: widget.color,
             revision: 0,
         }
     }
-}
 
-impl State<DefaultCaretWidget> for DefaultCaretState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-        let updater = self.updater;
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
+        let updater = updater;
         // The context outlives this state: the field that owns it keeps
         // publishing geometry while the caret element is replaced or torn down
         // (a page switch, or a frame's chrome rebuilt from scratch). A repaint
@@ -277,11 +270,11 @@ impl State<DefaultCaretWidget> for DefaultCaretState {
         self.color = new.color;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let _revision = self.revision;
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let _revision = this.revision;
         DefaultCaretPaint {
-            context: self.context.clone(),
-            color: Rc::clone(&self.color),
+            context: this.context.clone(),
+            color: Rc::clone(&this.color),
         }
     }
 }

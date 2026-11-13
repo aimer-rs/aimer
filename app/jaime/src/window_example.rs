@@ -102,22 +102,16 @@ pub struct WindowShowcaseState {
     menu: Rc<Cell<Option<WindowId>>>,
 }
 
-impl StatefulWidget for WindowShowcase {
-    type State = WindowShowcaseState;
-
-    fn create_state(self) -> Self::State {
+impl State<WindowShowcase> for WindowShowcaseState {
+    fn create(widget: WindowShowcase) -> Self {
         WindowShowcaseState {
             menu: Rc::new(Cell::new(None)),
         }
     }
-}
 
-impl State<WindowShowcase> for WindowShowcaseState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let menu = self.menu.clone();
+        let menu = this.menu.clone();
 
         Container::new()
             .color(app_theme.background_color)
@@ -189,6 +183,7 @@ impl Playback {
 /// twice: choosing a track or pressing play in the player changes what the bar
 /// shows, and the other way round.
 #[derive(StatefulWidget)]
+#[state(MusicMenuState)]
 struct MusicMainMenu {}
 
 impl MusicMainMenu {
@@ -202,33 +197,23 @@ impl MusicMainMenu {
 struct MusicMenuState {
     player_open: bool,
     playback: Playback,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for MusicMainMenu {
-    type State = MusicMenuState;
-
-    fn create_state(self) -> Self::State {
+impl State<MusicMainMenu> for MusicMenuState {
+    fn create(widget: MusicMainMenu) -> Self {
         MusicMenuState {
             player_open: false,
             playback: Playback {
                 track: 0,
                 playing: true,
             },
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<MusicMainMenu> for MusicMenuState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
-        let updater = self.updater;
-        let playback = self.playback;
+        let updater = this.updater();
+        let playback = this.playback;
 
         Container::new()
             .color(app_theme.background_color)
@@ -248,7 +233,7 @@ impl State<MusicMainMenu> for MusicMenuState {
                                 .inner_size(400, 660)
                                 .min_inner_size(340, 520),
                         )
-                        .open(self.player_open)
+                        .open(this.player_open)
                         .on_close(move || updater.set_state(|state| state.player_open = false))
                         .builder(move |_ctx| {
                             crate::theme::provide(MusicPlayer { playback, updater })

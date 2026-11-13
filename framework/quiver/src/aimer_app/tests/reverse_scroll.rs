@@ -204,29 +204,23 @@ struct RebuildingState {
     poke: Rc<RefCell<Option<StateUpdater<RebuildingState>>>>,
 }
 
-impl StatefulWidget for Rebuilding {
-    type State = RebuildingState;
-
-    fn create_state(self) -> RebuildingState {
+impl State<Rebuilding> for RebuildingState {
+    fn create(widget: Rebuilding) -> Self {
         RebuildingState {
-            count: self.count,
-            reverse: self.reverse,
-            controller: self.controller,
+            count: widget.count,
+            reverse: widget.reverse,
+            controller: widget.controller,
             generation: 0,
-            tapped: self.tapped,
-            poke: self.poke,
+            tapped: widget.tapped,
+            poke: widget.poke,
         }
     }
-}
 
-impl State<Rebuilding> for RebuildingState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        *self.poke.borrow_mut() = Some(updater);
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let tapped = self.tapped.clone();
-        let rows = Column::new().list(0..self.count).builder(move |&index| {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        *this.poke.borrow_mut() = Some(this.updater());
+        let tapped = this.tapped.clone();
+        let rows = Column::new().list(0..this.count).builder(move |&index| {
             let tapped = tapped.clone();
             GestureDetector::new()
                 .behavior(GestureDetectorBehavior::BlockChild)
@@ -234,15 +228,15 @@ impl State<Rebuilding> for RebuildingState {
                 .child(SizedBox::new().width(Dimension::Px(200.0)).height(Dimension::Px(60.0)))
         });
         let scrollable = Scrollable::new()
-            .reverse(self.reverse)
+            .reverse(this.reverse)
             .vertical_scroll_bar(None)
             .horizontal_scroll_bar(None);
-        let scrollable = match &self.controller {
+        let scrollable = match &this.controller {
             Some(controller) => scrollable.controller(controller.clone()),
             None => scrollable,
         };
         // `generation` changes nothing visible; it only makes this a new build.
-        let _ = self.generation;
+        let _ = this.generation;
         SizedBox::new()
             .width(Dimension::Px(200.0))
             .height(Dimension::Px(VIEWPORT))
@@ -252,7 +246,7 @@ impl State<Rebuilding> for RebuildingState {
 
 impl Widget for Rebuilding {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Rebuilding", None)
+        StatefulElement::new_with_name::<Self, RebuildingState>(self, ctx, "Rebuilding", None)
             .0
             .boxed()
     }

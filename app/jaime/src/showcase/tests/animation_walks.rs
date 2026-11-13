@@ -16,9 +16,7 @@ struct Page(ExampleId);
 impl Widget for Page {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let state = ExampleShowcaseState::with_selected(self.0);
-        state
-            .build(ctx)
-            .to_element(ctx)
+        state.build_element(ctx)
     }
 }
 

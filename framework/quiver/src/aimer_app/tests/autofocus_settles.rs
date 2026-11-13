@@ -102,31 +102,21 @@ mod focus_ring {
     struct FocusProbeState {
         focused: bool,
         values: Rc<RefCell<Vec<f32>>>,
-        updater: StateUpdater<Self>,
-    }
-
-    impl StatefulWidget for FocusProbe {
-        type State = FocusProbeState;
-
-        fn create_state(self) -> FocusProbeState {
-            FocusProbeState {
-                focused: false,
-                values: self.values,
-                updater: StateUpdater::new(),
-            }
-        }
     }
 
     impl State<FocusProbe> for FocusProbeState {
-        fn init_state(&mut self, updater: StateUpdater<Self>) {
-            self.updater = updater;
+        fn create(widget: FocusProbe) -> Self {
+            FocusProbeState {
+                focused: false,
+                values: widget.values,
+            }
         }
 
-        fn build(&self, _ctx: &BuildContext) -> impl Widget {
-            let values = self.values.clone();
-            let updater = self.updater.clone();
+        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            let values = this.values.clone();
+            let updater = this.updater().clone();
             ImplicitAnimatedBuilder::new(
-                if self.focused { 1.0 } else { 0.0 },
+                if this.focused { 1.0 } else { 0.0 },
                 Duration::from_millis(280),
                 curves::LINEAR,
                 move |focus: &f32| {
@@ -142,7 +132,7 @@ mod focus_ring {
 
     impl Widget for FocusProbe {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            StatefulElement::new_with_name(self, ctx, "FocusProbe", None)
+            StatefulElement::new_with_name::<Self, FocusProbeState>(self, ctx, "FocusProbe", None)
                 .0
                 .boxed()
         }

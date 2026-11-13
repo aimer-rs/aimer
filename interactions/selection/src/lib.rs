@@ -34,6 +34,8 @@ mod visual;
 
 pub use autocomplete::Autocomplete;
 pub use checkbox::{Checkbox, CheckboxValue};
+#[doc(hidden)]
+pub use checkbox::CheckboxState;
 pub use option::{ChoiceOption, OptionError};
 pub use radio::Radio;
 pub use radio_group::RadioGroup;

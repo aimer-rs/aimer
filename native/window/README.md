@@ -47,35 +47,33 @@ while `open` stays `true`, and opens again after `open` has been `false`.
 
 ```no_run
 use aimer_container::SizedBox;
-use aimer_widget::{State, StateUpdater, StatefulWidget, Widget, base::BuildContext};
+use aimer_widget::{AnyElement, State, StateView, StatefulElement, Widget, base::BuildContext};
 use aimer_window::Window;
 
 struct Page;
 
+impl Widget for Page {
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        // The state is named here, in a body, so it can stay private.
+        StatefulElement::from_widget::<Self, PageState>(self, ctx, "Page", None)
+    }
+}
+
 struct PageState {
-    updater: Option<StateUpdater<PageState>>,
     settings_open: bool,
 }
 
-impl StatefulWidget for Page {
-    type State = PageState;
-
-    fn create_state(self) -> PageState {
-        PageState { updater: None, settings_open: true }
-    }
-}
-
 impl State<Page> for PageState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = Some(updater);
+    fn create(_widget: Page) -> Self {
+        PageState { settings_open: true }
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater.expect("set before the first build");
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater();
         Window::new()
             .title("Settings")
             .size(480, 320)
-            .open(self.settings_open)
+            .open(this.settings_open)
             .on_close(move || updater.set_state(|page| page.settings_open = false))
             .builder(|_ctx| SizedBox::new())
     }

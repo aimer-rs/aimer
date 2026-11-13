@@ -23,7 +23,7 @@ use aimer_widget_core::components::rebuildable::Rebuildable;
 use aimer_widget_core::components::visitor_element::VisitorElement;
 use aimer_widget_core::key::Key;
 use aimer_widget_core::widget::child_builder::ChildBuilder;
-use aimer_widget_core::widget::stateful::{State, StateUpdater, StatefulElement, StatefulWidget};
+use aimer_widget_core::widget::stateful::{State, StateView, StateUpdater, StatefulElement};
 use aimer_widget_core::{AnyElement, AnyWidget, RequiredChild, Widget};
 
 /// Makes its child a keyboard focus target.
@@ -259,24 +259,6 @@ pub struct FocusableState<W: Widget + 'static> {
     marker: PhantomData<W>,
 }
 
-impl<W: Widget + 'static> StatefulWidget for Focusable<W> {
-    type State = FocusableState<W>;
-
-    fn create_state(self) -> Self::State {
-        FocusableState {
-            supplied: self.node.is_some(),
-            node: self.node.unwrap_or_default(),
-            on_focus: self.on_focus,
-            on_focus_lost: self.on_focus_lost,
-            on_focus_change: self.on_focus_change,
-            behavior: self.behavior,
-            gate: self.gate,
-            child: self.child,
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<W: Widget + 'static> Widget for Focusable<W> {
     fn key(&self) -> Option<Key> {
         self.widget_key.clone()
@@ -284,7 +266,7 @@ impl<W: Widget + 'static> Widget for Focusable<W> {
 
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let key = Widget::key(&self);
-        StatefulElement::new_with_name(self, ctx, "Focusable", key)
+        StatefulElement::new_with_name::<Self, FocusableState<W>>(self, ctx, "Focusable", key)
             .0
             .boxed()
     }
@@ -295,10 +277,18 @@ impl<W: Widget + 'static> Widget for Focusable<W> {
 }
 
 impl<W: Widget + 'static> State<Focusable<W>> for FocusableState<W> {
-    fn init_state(&mut self, _updater: StateUpdater<Self>)
-    where
-        Self: Sized,
-    {
+    fn create(widget: Focusable<W>) -> Self {
+        FocusableState {
+            supplied: widget.node.is_some(),
+            node: widget.node.unwrap_or_default(),
+            on_focus: widget.on_focus,
+            on_focus_lost: widget.on_focus_lost,
+            on_focus_change: widget.on_focus_change,
+            behavior: widget.behavior,
+            gate: widget.gate,
+            child: widget.child,
+            marker: PhantomData,
+        }
     }
 
     fn adopt_config_from(&mut self, new: Self) {
@@ -316,15 +306,15 @@ impl<W: Widget + 'static> State<Focusable<W>> for FocusableState<W> {
         self.child = new.child;
     }
 
-    fn build(&self, _: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
         FocusTarget {
-            node: self.node.clone(),
-            on_focus: self.on_focus.clone(),
-            on_focus_lost: self.on_focus_lost.clone(),
-            on_focus_change: self.on_focus_change.clone(),
-            behavior: self.behavior,
-            gate: self.gate.clone(),
-            child: self.child.clone(),
+            node: this.node.clone(),
+            on_focus: this.on_focus.clone(),
+            on_focus_lost: this.on_focus_lost.clone(),
+            on_focus_change: this.on_focus_change.clone(),
+            behavior: this.behavior,
+            gate: this.gate.clone(),
+            child: this.child.clone(),
         }
     }
 }
@@ -655,6 +645,9 @@ impl VisitorElement for RawFocusable {
 
 #[cfg(test)]
 mod tests {
+    use crate::aimer_widget::widget::stateful::BuildElement;
+    use super::FocusableState;
+    use crate::aimer_widget::widget::stateful::CreateState;
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
@@ -669,8 +662,8 @@ mod tests {
     use aimer_widget_core::components::element::EventDispatcher;
     use aimer_widget_core::components::event_element::EventResult;
     use aimer_widget_core::{
-        AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State,
-        StatefulWidget, VisitorElement, Widget,
+        AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, State, StateView,
+        VisitorElement, Widget,
     };
 
     /// How far the test child extends from the origin.
@@ -1062,10 +1055,10 @@ mod tests {
     #[tokio::test]
     async fn the_same_target_survives_a_rebuild() {
         let ctx = context();
-        let state = Focusable::new().child(child()).create_state();
+        let state = Focusable::new().child(child()).create_state::<FocusableState<_>>();
 
-        let first = state.build(&ctx).to_element(&ctx);
-        let second = state.build(&ctx).to_element(&ctx);
+        let first = state.build_element(&ctx);
+        let second = state.build_element(&ctx);
 
         let (Some(first), Some(second)) = (first.focus_node(), second.focus_node()) else {
             panic!("a focusable region must offer a node");
@@ -1084,12 +1077,12 @@ mod tests {
     /// the replacement's configuration is adopted as usual.
     #[tokio::test]
     async fn a_replaced_region_keeps_its_target_and_takes_the_new_configuration() {
-        let mut live = Focusable::new().child(child()).create_state();
+        let mut live = Focusable::new().child(child()).create_state::<FocusableState<_>>();
         let node = live.node.clone();
         let replacement = Focusable::new()
             .behavior(FocusBehavior::Ignore)
             .child(child())
-            .create_state();
+            .create_state::<FocusableState<_>>();
 
         live.adopt_config_from(replacement);
 
@@ -1104,12 +1097,12 @@ mod tests {
     /// replacement carrying one is obeyed.
     #[tokio::test]
     async fn a_replaced_region_adopts_a_node_it_was_given() {
-        let mut live = Focusable::new().child(child()).create_state();
+        let mut live = Focusable::new().child(child()).create_state::<FocusableState<_>>();
         let node = FocusNode::new();
         let replacement = Focusable::new()
             .node(node.clone())
             .child(child())
-            .create_state();
+            .create_state::<FocusableState<_>>();
 
         live.adopt_config_from(replacement);
 
@@ -1127,10 +1120,10 @@ mod tests {
             .child(Boxed {
                 builds: Rc::clone(&builds),
             })
-            .create_state();
+            .create_state::<FocusableState<_>>();
 
-        state.build(&ctx).to_element(&ctx);
-        state.build(&ctx).to_element(&ctx);
+        state.build_element(&ctx);
+        state.build_element(&ctx);
 
         assert_eq!(builds.get(), 1, "the child must be retained, not rebuilt");
     }
@@ -1141,9 +1134,7 @@ mod tests {
         let ctx = context();
         let element = Focusable::new()
             .child(child())
-            .create_state()
-            .build(&ctx)
-            .to_element(&ctx);
+            .create_state::<FocusableState<_>>().build_element(&ctx);
 
         assert_eq!(
             element.pos_start_end(),
@@ -1179,9 +1170,7 @@ mod tests {
                 move |focused| changes.set(Some(focused))
             })
             .child(child())
-            .create_state()
-            .build(&ctx)
-            .to_element(&ctx);
+            .create_state::<FocusableState<_>>().build_element(&ctx);
 
         let gain = element.on_event(&ElementEvent::FocusGained);
         assert_eq!(
@@ -1310,9 +1299,7 @@ mod tests {
                 seen: Rc::new(RefCell::new(Vec::new())),
                 layouts: Rc::clone(&layouts),
             })
-            .create_state()
-            .build(&ctx)
-            .to_element(&ctx);
+            .create_state::<FocusableState<_>>().build_element(&ctx);
 
         element.layout(&ctx);
 

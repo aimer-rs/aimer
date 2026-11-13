@@ -4,7 +4,7 @@ use std::rc::Rc;
 use aimer_widget::base::{BuildContext, ResolvedSize, Size, Vec2d};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement,
-    Rebuildable, State, StateUpdater, StatefulElement, StatefulWidget, VisitorElement, Widget,
+    Rebuildable, State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget,
 };
 
 use aimer_events::back::{self, BackGesture, BackGuard, BackHandler};
@@ -276,9 +276,10 @@ impl<R: Route> StatefulShell<R> {
 }
 
 pub struct StatefulShellState<R: Route> {
+    /// Handed to registered handlers and read by the state's own methods.
+    updater: StateUpdater<Self>,
     pub branches: Vec<Vec<R>>,
     pub active: usize,
-    pub updater: StateUpdater<Self>,
     pub frame: fn(&BuildContext) -> AnyWidget,
     pub routes: fn(R) -> AnyWidget,
     transition: Option<Rc<dyn NavigationTransition<R>>>,
@@ -348,23 +349,44 @@ impl<R: Route> BackHandler for StatefulShellBack<R> {
 }
 
 impl<R: Route> State<StatefulShell<R>> for StatefulShellState<R> {
+    fn create(widget: StatefulShell<R>) -> Self {
+        let swipe_link = SwipeLink::detached();
+        let outlet = Rc::new(RefCell::new(RouteOutlet::default()));
+        outlet.borrow_mut().swipe_link = Some(swipe_link.clone());
+        StatefulShellState::<R> {
+            updater: StateUpdater::empty(),
+            branches: widget.branches.clone(),
+            active: widget.active,
+            frame: widget.frame,
+            routes: widget.routes,
+            transition: widget.transition,
+            retained_frame: RefCell::new(None),
+            outlet,
+            action: NavigationAction::Push,
+            swipe_area: widget.swipe_area,
+            swipe_request: RefCell::new(None),
+            swipe_link,
+            back_guard: None,
+        }
+    }
+
     fn adopt_config_from(&mut self, new: Self) {
         self.routes = new.routes;
         self.transition = new.transition;
         self.swipe_area = new.swipe_area;
     }
 
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.updater = updater;
         self.swipe_link.install(move || updater.read(|state| state.begin_swipe_back()));
         self.back_guard = Some(back::register(StatefulShellBack { updater }));
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
         // Inject the imperative controller for descendants.
         ctx.insert_state(StatefulShellController::<R> {
             go_branch_fn: {
-                let updater = self.updater;
+                let updater = this.updater();
                 Rc::new(move |index: usize| {
                     updater.set_state(move |state| {
                         if index < state.branches.len() && index != state.active {
@@ -375,7 +397,7 @@ impl<R: Route> State<StatefulShell<R>> for StatefulShellState<R> {
                 })
             },
             push_in_branch_fn: {
-                let updater = self.updater;
+                let updater = this.updater();
                 Rc::new(move |index: usize, route: R| {
                     updater.set_state(move |state| {
                         branch_push(&mut state.branches, index, route);
@@ -384,7 +406,7 @@ impl<R: Route> State<StatefulShell<R>> for StatefulShellState<R> {
                 })
             },
             pop_in_branch_fn: {
-                let updater = self.updater;
+                let updater = this.updater();
                 Rc::new(move |index: usize| {
                     updater.set_state(move |state| {
                         branch_pop(&mut state.branches, index);
@@ -393,44 +415,44 @@ impl<R: Route> State<StatefulShell<R>> for StatefulShellState<R> {
                 })
             },
             active_branch_fn: {
-                let updater = self.updater;
+                let updater = this.updater();
                 Rc::new(move || updater.read(|state| state.active))
             },
             branch_len_fn: {
-                let updater = self.updater;
+                let updater = this.updater();
                 Rc::new(move |index: usize| updater.read(|state| state.branches.get(index).map(|b| b.len()).unwrap_or(0)))
             },
             begin_swipe_back_fn: {
-                let updater = self.updater;
+                let updater = this.updater();
                 Rc::new(move || updater.read(|state| state.begin_swipe_back()))
             },
         });
 
         // Feed only the active branch's top route into the `Outlet`.
-        let top = active_top(&self.branches, self.active).expect("StatefulShell branch stack must not be empty");
-        let routes = self.routes;
-        self.outlet.borrow_mut().configure(top, self.action, self.transition.clone(),
+        let top = active_top(&this.branches, this.active).expect("StatefulShell branch stack must not be empty");
+        let routes = this.routes;
+        this.outlet.borrow_mut().configure(top, this.action, this.transition.clone(),
             Rc::new(move |route, _| routes(route)));
         // A swipe back to the page beneath the active branch's top, if one was
         // asked for and there still is one.
-        self.swipe_link.set_enabled(self.can_swipe_back());
-        self.swipe_link.set_anywhere(self.swipe_area == SwipeBackArea::Anywhere);
-        if let Some(drive) = self.swipe_request.borrow_mut().take() {
-            match self.branches.get(self.active).and_then(|branch| branch.len().checked_sub(2).map(|index| branch[index].clone())) {
-                Some(previous) => self.outlet.borrow_mut().swipe = Some((previous, drive)),
+        this.swipe_link.set_enabled(this.can_swipe_back());
+        this.swipe_link.set_anywhere(this.swipe_area == SwipeBackArea::Anywhere);
+        if let Some(drive) = this.swipe_request.borrow_mut().take() {
+            match this.branches.get(this.active).and_then(|branch| branch.len().checked_sub(2).map(|index| branch[index].clone())) {
+                Some(previous) => this.outlet.borrow_mut().swipe = Some((previous, drive)),
                 None => drive.cancel_if_unsettled(),
             }
         }
-        let child_builder = route_outlet_builder(&self.outlet);
+        let child_builder = route_outlet_builder(&this.outlet);
 
         // Reflect the active branch's top route in the browser address bar.
         #[cfg(target_arch = "wasm32")]
-        if let Some(route) = active_top(&self.branches, self.active) {
+        if let Some(route) = active_top(&this.branches, this.active) {
             crate::navigator::browser_replace_state(&route.format());
         }
 
-        let frame = self.retained_frame.borrow_mut().get_or_insert_with(||
-            aimer_widget::ChildBuilder::from_widget((self.frame)(ctx))).clone();
+        let frame = this.retained_frame.borrow_mut().get_or_insert_with(||
+            aimer_widget::ChildBuilder::from_widget((this.frame)(ctx))).clone();
         Shell::new(frame, move |ctx| child_builder(ctx))
     }
 }
@@ -506,33 +528,9 @@ impl<R: 'static> StatefulShellController<R> {
     }
 }
 
-impl<R: Route> StatefulWidget for StatefulShell<R> {
-    type State = StatefulShellState<R>;
-    fn create_state(self) -> Self::State {
-        let swipe_link = SwipeLink::detached();
-        let outlet = Rc::new(RefCell::new(RouteOutlet::default()));
-        outlet.borrow_mut().swipe_link = Some(swipe_link.clone());
-        StatefulShellState::<R> {
-            branches: self.branches.clone(),
-            active: self.active,
-            updater: StateUpdater::empty(),
-            frame: self.frame,
-            routes: self.routes,
-            transition: self.transition,
-            retained_frame: RefCell::new(None),
-            outlet,
-            action: NavigationAction::Push,
-            swipe_area: self.swipe_area,
-            swipe_request: RefCell::new(None),
-            swipe_link,
-            back_guard: None,
-        }
-    }
-}
-
 impl<R: Route> Widget for StatefulShell<R> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        let (el, _) = StatefulElement::new(self, ctx);
+        let (el, _) = StatefulElement::new::<Self, StatefulShellState<R>>(self, ctx);
         el.boxed()
     }
 }

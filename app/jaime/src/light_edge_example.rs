@@ -4,7 +4,7 @@ use aimer::decoration::{BorderRadius, Decoration, DecorationBox, LightEdge};
 use aimer::range::Slider;
 use aimer::style::{BoxDecoration, Color, FontWeight, LayoutSpacing, Spacing, TextStyle};
 use aimer::{
-    AimerApp, AnyWidget, BuildContext, ChildBuilder, Column, Container, Row, State, StateUpdater,
+    AimerApp, AnyWidget, BuildContext, ChildBuilder, Column, Container, Row, State, StateView, StateUpdater,
     StatefulWidget, Text, Widget,
 };
 
@@ -46,13 +46,10 @@ pub struct LightEdgeExampleState {
     reflection: f64,
     plain_content: ChildBuilder,
     lit_content: ChildBuilder,
-    updater: StateUpdater<Self>,
 }
 
-impl StatefulWidget for LightEdgeExample {
-    type State = LightEdgeExampleState;
-
-    fn create_state(self) -> Self::State {
+impl State<LightEdgeExample> for LightEdgeExampleState {
+    fn create(widget: LightEdgeExample) -> Self {
         LightEdgeExampleState {
             angle: 225.0,
             width: 3.0,
@@ -67,40 +64,33 @@ impl StatefulWidget for LightEdgeExample {
                 "Light edge",
                 "Turn the light and watch the rim follow the corners.",
             )),
-            updater: StateUpdater::empty(),
         }
     }
-}
 
-impl State<LightEdgeExample> for LightEdgeExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let updater = self.updater;
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        let updater = this.updater();
         Column::new().gaps(LayoutSpacing::all(Spacing::Px(16))).children([
             Text::new("Turn the light to move the highlight around the surface. Compare it with the unlit card beside it.")
                 .text_style(TextStyle::new().font_size(15).color(theme::app_theme().on_background_color))
                 .wrapped().boxed(),
             Row::new().gaps(LayoutSpacing::all(Spacing::Px(24))).children([
-                control(format!("Light direction: {:.0}°", self.angle), self.angle, 0.0..360.0, 5.0,
+                control(format!("Light direction: {:.0}°", this.angle), this.angle, 0.0..360.0, 5.0,
                     move |value| updater.set_state(move |state| state.angle = value)),
-                control(format!("Blend width: {:.1} px", self.width), self.width, 0.0..16.0, 0.5,
+                control(format!("Blend width: {:.1} px", this.width), this.width, 0.0..16.0, 0.5,
                     move |value| updater.set_state(move |state| state.width = value)),
             ]).boxed(),
             Row::new().gaps(LayoutSpacing::all(Spacing::Px(24))).children([
-                control(format!("Highlight strength: {:.2}", self.strength), self.strength, 0.0..1.0, 0.05,
+                control(format!("Highlight strength: {:.2}", this.strength), this.strength, 0.0..1.0, 0.05,
                     move |value| updater.set_state(move |state| state.strength = value)),
-                control(format!("Corner radius: {:.0} px", self.radius), self.radius, 0.0..80.0, 1.0,
+                control(format!("Corner radius: {:.0} px", this.radius), this.radius, 0.0..80.0, 1.0,
                     move |value| updater.set_state(move |state| state.radius = value)),
             ]).boxed(),
-            control(format!("Reflection strength: {:.2}", self.reflection), self.reflection, 0.0..1.0, 0.05,
+            control(format!("Reflection strength: {:.2}", this.reflection), this.reflection, 0.0..1.0, 0.05,
                 move |value| updater.set_state(move |state| state.reflection = value)),
             Container::new().padding(LayoutSpacing::all(Spacing::Px(24)))
                 .box_decoration(BoxDecoration::new().background_color(Color::Rgb(9, 16, 30)).border_radius(16))
                 .child(Row::new().gaps(LayoutSpacing::all(Spacing::Px(24)))
-                    .children([self.panel(false), self.panel(true)]))
+                    .children([this.panel(false), this.panel(true)]))
                 .boxed(),
         ])
     }

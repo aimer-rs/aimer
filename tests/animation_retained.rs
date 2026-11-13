@@ -19,8 +19,7 @@ use aimer::canvas::Canvas;
 use aimer_cupid::utilities::{Color as V2Color, Rect};
 use aimer::{
     AimerApp, AnyElement, BuildContext, Color, Drawable, Element, EventElement, LayoutElement,
-    Rebuildable, ResolvedSize, Size, State, StateUpdater, StatefulElement, StatefulWidget,
-    VisitorElement, Widget,
+    Rebuildable, ResolvedSize, Size, State, StateView, StateUpdater, StatefulElement, VisitorElement, Widget,
 };
 
 /// Renders `frames` direct frames, checking after each one that nothing in the
@@ -115,23 +114,17 @@ struct PageState {
     showing_second: bool,
 }
 
-impl StatefulWidget for Page {
-    type State = PageState;
-
-    fn create_state(self) -> Self::State {
+impl State<Page> for PageState {
+    fn create(widget: Page) -> Self {
         PageState {
             showing_second: false,
         }
     }
-}
 
-impl State<Page> for PageState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        PAGE.replace(Some(updater));
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let (key, color) = if self.showing_second {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        PAGE.replace(Some(this.updater()));
+        let (key, color) = if this.showing_second {
             ("second", Color::Rgb(0, 0, 255))
         } else {
             ("first", Color::Rgb(255, 0, 0))
@@ -143,7 +136,7 @@ impl State<Page> for PageState {
 
 impl Widget for Page {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Page", None)
+        StatefulElement::new_with_name::<Self, PageState>(self, ctx, "Page", None)
             .0
             .boxed()
     }
@@ -179,22 +172,16 @@ struct ImplicitPageState {
     target: f32,
 }
 
-impl StatefulWidget for ImplicitPage {
-    type State = ImplicitPageState;
-
-    fn create_state(self) -> Self::State {
+impl State<ImplicitPage> for ImplicitPageState {
+    fn create(widget: ImplicitPage) -> Self {
         ImplicitPageState { target: 0.0 }
     }
-}
 
-impl State<ImplicitPage> for ImplicitPageState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        IMPLICIT.replace(Some(updater));
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        IMPLICIT.replace(Some(this.updater()));
         ImplicitAnimatedBuilder::new(
-            self.target,
+            this.target,
             Duration::from_millis(400),
             curves::LINEAR,
             |value: &f32| Swatch {
@@ -206,7 +193,7 @@ impl State<ImplicitPage> for ImplicitPageState {
 
 impl Widget for ImplicitPage {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ImplicitPage", None)
+        StatefulElement::new_with_name::<Self, ImplicitPageState>(self, ctx, "ImplicitPage", None)
             .0
             .boxed()
     }
@@ -261,23 +248,17 @@ struct MorphPageState {
     showing_second: bool,
 }
 
-impl StatefulWidget for MorphPage {
-    type State = MorphPageState;
-
-    fn create_state(self) -> Self::State {
+impl State<MorphPage> for MorphPageState {
+    fn create(widget: MorphPage) -> Self {
         MorphPageState {
             showing_second: false,
         }
     }
-}
 
-impl State<MorphPage> for MorphPageState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        MORPH.replace(Some(updater));
-    }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        let (key, color) = if self.showing_second {
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        MORPH.replace(Some(this.updater()));
+        let (key, color) = if this.showing_second {
             ("second", Color::Rgb(0, 0, 255))
         } else {
             ("first", Color::Rgb(255, 0, 0))
@@ -289,7 +270,7 @@ impl State<MorphPage> for MorphPageState {
 
 impl Widget for MorphPage {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "MorphPage", None)
+        StatefulElement::new_with_name::<Self, MorphPageState>(self, ctx, "MorphPage", None)
             .0
             .boxed()
     }

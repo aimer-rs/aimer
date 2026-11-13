@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, State, StateUpdater, StatefulElement, StatefulWidget, Widget};
+use aimer_widget::{AnyElement, State, StateView, StateUpdater, StatefulElement, Widget};
 
 use crate::binary::ChangeCallback;
 use crate::combo::{Combo, ComboConfig, TriggerBuilder};
@@ -163,27 +163,23 @@ impl<T> Select<T> {
     }
 }
 
-impl<T: Clone + PartialEq + 'static> StatefulWidget for Select<T> {
-    type State = Combo<T>;
-
-    fn create_state(self) -> Self::State {
+impl<T: Clone + PartialEq + 'static> State<Select<T>> for Combo<T> {
+    fn create(widget: Select<T>) -> Self {
         Combo::new(ComboConfig {
-            options: self.options,
-            selected: self.selected,
-            on_change: self.on_change,
-            common: self.common,
-            placeholder: self.placeholder,
+            options: widget.options,
+            selected: widget.selected,
+            on_change: widget.on_change,
+            common: widget.common,
+            placeholder: widget.placeholder,
             empty_text: None,
             loading: false,
-            trigger: self.trigger,
-            rows: self.rows,
+            trigger: widget.trigger,
+            rows: widget.rows,
             search: None,
         })
     }
-}
 
-impl<T: Clone + PartialEq + 'static> State<Select<T>> for Combo<T> {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
+    fn on_mount(&mut self, updater: StateUpdater<Self>) {
         self.init(updater);
     }
 
@@ -191,14 +187,14 @@ impl<T: Clone + PartialEq + 'static> State<Select<T>> for Combo<T> {
         self.adopt(new);
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.render(ctx)
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.render(ctx)
     }
 }
 
 impl<T: Clone + PartialEq + 'static> Widget for Select<T> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "Select", None)
+        StatefulElement::new_with_name::<Self, Combo<T>>(self, ctx, "Select", None)
             .0
             .boxed()
     }

@@ -31,7 +31,8 @@ pub use crate::widget::child_builder::ChildBuilder;
 pub use crate::widget::retain::BuildContextRetain;
 #[doc(hidden)]
 pub use crate::widget::stateful::{
-    State, StateReadGuard, StateUpdater, StatefulElement, StatefulWidget,
+    BuildElement, CreateState, KeyedStateScope, State, StateReadGuard, StateUpdater, StateView,
+    StatefulElement,
 };
 pub use crate::widget::stateless::{NamedWidget, StatelessElement, StatelessWidget};
 pub use crate::widget::{AnyWidget, DynWidget, Widget};

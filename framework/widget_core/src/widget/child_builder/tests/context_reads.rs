@@ -7,7 +7,7 @@
 //! inherited context; a build that read none cannot differ from last time.
 
 use super::*;
-use crate::{State, StateUpdater, StatefulElement, StatefulWidget, StatelessElement};
+use crate::{State, StateView, StateUpdater, StatefulElement, StatelessElement};
 
 /// An inherited value the host publishes and a subject may read.
 struct Published(u32);
@@ -25,26 +25,20 @@ struct SubjectState {
     reads_context: bool,
 }
 
-impl StatefulWidget for Subject {
-    type State = SubjectState;
-
-    fn create_state(self) -> Self::State {
+impl State<Subject> for SubjectState {
+    fn create(widget: Subject) -> Self {
         SubjectState {
-            builds: self.builds,
-            seen: self.seen,
-            reads_context: self.reads_context,
+            builds: widget.builds,
+            seen: widget.seen,
+            reads_context: widget.reads_context,
         }
     }
-}
 
-impl State<Subject> for SubjectState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.builds.set(self.builds.get() + 1);
-        if self.reads_context {
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.builds.set(this.builds.get() + 1);
+        if this.reads_context {
             if let Some(published) = ctx.get_state::<Published>() {
-                self.seen.set(published.0);
+                this.seen.set(published.0);
             }
         }
         ErrorWidget::new("subject")
@@ -53,7 +47,7 @@ impl State<Subject> for SubjectState {
 
 impl Widget for Subject {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::from_widget(self, ctx, "Subject", None)
+        StatefulElement::from_widget::<Self, SubjectState>(self, ctx, "Subject", None)
     }
 }
 
@@ -67,27 +61,27 @@ struct HostState {
     version: u32,
 }
 
-impl StatefulWidget for Host {
-    type State = HostState;
-
-    fn create_state(self) -> Self::State {
-        HostState {
-            child: self.child,
-            version: 0,
-        }
+impl Widget for Host {
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        StatefulElement::from_widget::<Self, HostState>(self, ctx, "Host", None)
     }
 }
 
 impl State<Host> for HostState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+    fn create(widget: Host) -> Self {
+        HostState {
+            child: widget.child,
+            version: 0,
+        }
+    }
 
     fn adopt_config_from(&mut self, new: Self) {
         self.child = new.child;
     }
 
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        ctx.insert_state(Published(self.version));
-        self.child.clone()
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        ctx.insert_state(Published(this.version));
+        this.child.clone()
     }
 }
 
@@ -156,7 +150,7 @@ fn scene(reads_context: bool) -> Scene {
         reads_context,
     });
     let (element, host) =
-        StatefulElement::new_with_name(Host { child }, &ctx, "Host", None);
+        StatefulElement::new_with_name::<Host, HostState>(Host { child }, &ctx, "Host", None);
     Scene {
         ctx,
         element,
@@ -271,7 +265,7 @@ async fn reconciling_two_placements_of_one_retained_child_does_not_walk_it() {
             })
             .collect(),
     });
-    let (element, host) = StatefulElement::new_with_name(Host { child }, &ctx, "Host", None);
+    let (element, host) = StatefulElement::new_with_name::<Host, HostState>(Host { child }, &ctx, "Host", None);
     let before = touches.get();
 
     host.set_state(|state| state.version += 1);
@@ -313,7 +307,7 @@ mod context_reads_profile {
             })
             .collect();
         let child = ChildBuilder::from_widget(Row { subjects });
-        let (element, host) = StatefulElement::new_with_name(Host { child }, &ctx, "Host", None);
+        let (element, host) = StatefulElement::new_with_name::<Host, HostState>(Host { child }, &ctx, "Host", None);
         let iterations = (100_000 / size.max(1)).clamp(20, 1_000);
         let before = builds.get();
         let mut samples = Vec::with_capacity(iterations);
@@ -344,7 +338,7 @@ mod context_reads_profile {
             .collect();
         let child = ChildBuilder::from_widget(Row { subjects });
         let probe = child.clone();
-        let (element, host) = StatefulElement::new_with_name(Host { child }, &ctx, "Host", None);
+        let (element, host) = StatefulElement::new_with_name::<Host, HostState>(Host { child }, &ctx, "Host", None);
         let iterations = (100_000 / size.max(1)).clamp(20, 1_000);
         let (mut mark, mut update, mut clean) = (Vec::new(), Vec::new(), Vec::new());
         for _ in 0..iterations {
@@ -404,7 +398,7 @@ async fn only_the_leaf_that_read_context_is_rebuilt_in_a_mixed_subtree() {
             .boxed(),
         ],
     });
-    let (element, host) = StatefulElement::new_with_name(Host { child }, &ctx, "Host", None);
+    let (element, host) = StatefulElement::new_with_name::<Host, HostState>(Host { child }, &ctx, "Host", None);
 
     host.set_state(|state| state.version = 7);
     element.rebuild_if_dirty(&ctx);
@@ -422,7 +416,7 @@ async fn a_stateless_child_is_still_rebuilt_by_its_parents_update() {
     let builds = Rc::new(Cell::new(0));
     let counted = builds.clone();
     let child = ChildBuilder::from_widget(ClosureChild { builds: counted });
-    let (element, host) = StatefulElement::new_with_name(Host { child }, &ctx, "Host", None);
+    let (element, host) = StatefulElement::new_with_name::<Host, HostState>(Host { child }, &ctx, "Host", None);
     assert_eq!(builds.get(), 1);
 
     host.set_state(|state| state.version += 1);
@@ -464,7 +458,7 @@ struct Other(Subject);
 
 impl Widget for Other {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::from_widget(self.0, ctx, "Other", None)
+        StatefulElement::from_widget::<Subject, SubjectState>(self.0, ctx, "Other", None)
     }
 }
 
@@ -478,7 +472,7 @@ async fn content_placed_while_adopting_live_state_is_rebuilt() {
         reads_context: false,
     };
     let (old_builds, new_builds) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
-    let (old, _old_updater) = StatefulElement::new_with_name(
+    let (old, _old_updater) = StatefulElement::new_with_name::<Host, HostState>(
         Host {
             child: ChildBuilder::from_widget(subject(&old_builds)),
         },
@@ -486,7 +480,7 @@ async fn content_placed_while_adopting_live_state_is_rebuilt() {
         "Host",
         None,
     );
-    let new = StatefulElement::from_widget(
+    let new = StatefulElement::from_widget::<Host, HostState>(
         Host {
             child: ChildBuilder::from_widget(Other(subject(&new_builds))),
         },

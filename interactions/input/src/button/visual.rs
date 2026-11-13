@@ -31,33 +31,27 @@ pub(super) struct VisualState(Visual);
 
 impl Widget for Visual {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::new_with_name(self, ctx, "ButtonVisual", None).0.boxed()
-    }
-}
-
-impl StatefulWidget for Visual {
-    type State = VisualState;
-
-    fn create_state(self) -> Self::State {
-        VisualState(self)
+        StatefulElement::new_with_name::<Self, VisualState>(self, ctx, "ButtonVisual", None).0.boxed()
     }
 }
 
 impl State<Visual> for VisualState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.0.updater.set(Some(updater));
+    fn create(widget: Visual) -> Self {
+        VisualState(widget)
     }
+
 
     fn adopt_config_from(&mut self, new: Self) {
         new.0.updater.set(self.0.updater.get());
         self.0 = new.0;
     }
 
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        (self.0.builder)(ButtonVisualState {
-            is_hovered: !self.0.disabled && self.0.hover.get(),
-            is_pressed: !self.0.disabled && self.0.pressed.get(),
-            is_disabled: self.0.disabled,
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        this.0.updater.set(Some(this.updater()));
+        (this.0.builder)(ButtonVisualState {
+            is_hovered: !this.0.disabled && this.0.hover.get(),
+            is_pressed: !this.0.disabled && this.0.pressed.get(),
+            is_disabled: this.0.disabled,
         })
     }
 }

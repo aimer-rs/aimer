@@ -9,7 +9,7 @@ use std::cell::RefCell;
 
 use super::*;
 use crate::BuildContextRetain;
-use crate::{State, StateUpdater, StatefulElement, StatefulWidget};
+use crate::{State, StateView, StateUpdater, StatefulElement};
 
 /// A stateful leaf that counts how often it is built.
 struct Leaf {
@@ -24,31 +24,25 @@ struct LeafState {
     log: Rc<RefCell<Vec<&'static str>>>,
 }
 
-impl StatefulWidget for Leaf {
-    type State = LeafState;
-
-    fn create_state(self) -> Self::State {
+impl State<Leaf> for LeafState {
+    fn create(widget: Leaf) -> Self {
         LeafState {
-            label: self.label,
-            builds: self.builds,
-            log: self.log,
+            label: widget.label,
+            builds: widget.builds,
+            log: widget.log,
         }
     }
-}
 
-impl State<Leaf> for LeafState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-    fn build(&self, _ctx: &BuildContext) -> impl Widget {
-        self.builds.set(self.builds.get() + 1);
-        self.log.borrow_mut().push(self.label);
+    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        this.builds.set(this.builds.get() + 1);
+        this.log.borrow_mut().push(this.label);
         ErrorWidget::new("leaf")
     }
 }
 
 impl Widget for Leaf {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::from_widget(self, ctx, "Leaf", None)
+        StatefulElement::from_widget::<Self, LeafState>(self, ctx, "Leaf", None)
     }
 }
 
@@ -69,35 +63,28 @@ struct OwnerState {
     builds: Rc<Cell<usize>>,
 }
 
-impl StatefulWidget for Owner {
-    type State = OwnerState;
-
-    fn create_state(self) -> Self::State {
+impl State<Owner> for OwnerState {
+    fn create(widget: Owner) -> Self {
         OwnerState {
-            keys: self.keys,
-            leaf_builds: self.leaf_builds,
-            log: self.log,
-            declared: self.declared,
-            builds: self.builds,
+            keys: widget.keys,
+            leaf_builds: widget.leaf_builds,
+            log: widget.log,
+            declared: widget.declared,
+            builds: widget.builds,
         }
     }
-}
 
-impl State<Owner> for OwnerState {
-    fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-    fn build(&self, ctx: &BuildContext) -> impl Widget {
-        self.builds.set(self.builds.get() + 1);
-        let leaves = self
-            .keys
+    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        this.builds.set(this.builds.get() + 1);
+        let leaves = this.keys
             .iter()
             .map(|key| {
                 ctx.retain(*key, || {
-                    self.declared.set(self.declared.get() + 1);
+                    this.declared.set(this.declared.get() + 1);
                     Leaf {
                         label: *key,
-                        builds: self.leaf_builds.clone(),
-                        log: self.log.clone(),
+                        builds: this.leaf_builds.clone(),
+                        log: this.log.clone(),
                     }
                 })
                 .boxed()
@@ -109,7 +96,7 @@ impl State<Owner> for OwnerState {
 
 impl Widget for Owner {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        StatefulElement::from_widget(self, ctx, "Owner", None)
+        StatefulElement::from_widget::<Self, OwnerState>(self, ctx, "Owner", None)
     }
 }
 
@@ -175,7 +162,7 @@ fn fixture(keys: &[&'static str]) -> Fixture {
     let log = Rc::new(RefCell::new(Vec::new()));
     let declared = Rc::new(Cell::new(0));
     let builds = Rc::new(Cell::new(0));
-    let (element, owner) = StatefulElement::new_with_name(
+    let (element, owner) = StatefulElement::new_with_name::<Owner, OwnerState>(
         Owner {
             keys: keys.to_vec(),
             leaf_builds: leaf_builds.clone(),
@@ -376,36 +363,30 @@ mod retain_slots_profile {
         log: Rc<RefCell<Vec<&'static str>>>,
     }
 
-    impl StatefulWidget for Wide {
-        type State = WideState;
-
-        fn create_state(self) -> Self::State {
+    impl State<Wide> for WideState {
+        fn create(widget: Wide) -> Self {
             WideState {
-                size: self.size,
-                retained: self.retained,
-                leaf_builds: self.leaf_builds,
-                log: self.log,
+                size: widget.size,
+                retained: widget.retained,
+                leaf_builds: widget.leaf_builds,
+                log: widget.log,
             }
         }
-    }
 
-    impl State<Wide> for WideState {
-        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
-
-        fn build(&self, ctx: &BuildContext) -> impl Widget {
+        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
             let body = || Column {
-                leaves: (0..self.size)
+                leaves: (0..this.size)
                     .map(|_| {
                         Leaf {
                             label: "leaf",
-                            builds: self.leaf_builds.clone(),
+                            builds: this.leaf_builds.clone(),
                             log: Rc::new(RefCell::new(Vec::new())),
                         }
                         .boxed()
                     })
                     .collect(),
             };
-            if self.retained {
+            if this.retained {
                 ctx.retain("body", body).boxed()
             } else {
                 body().boxed()
@@ -415,14 +396,14 @@ mod retain_slots_profile {
 
     impl Widget for Wide {
         fn to_element(self, ctx: &BuildContext) -> AnyElement {
-            StatefulElement::from_widget(self, ctx, "Wide", None)
+            StatefulElement::from_widget::<Self, WideState>(self, ctx, "Wide", None)
         }
     }
 
     fn update_cost(size: usize, retained: bool) -> (Duration, usize) {
         let ctx = context();
         let leaf_builds = Rc::new(Cell::new(0));
-        let (element, owner) = StatefulElement::new_with_name(
+        let (element, owner) = StatefulElement::new_with_name::<Wide, WideState>(
             Wide {
                 size,
                 retained,
