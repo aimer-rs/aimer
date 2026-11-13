@@ -1415,6 +1415,17 @@ impl StatefulElement {
         if Rc::ptr_eq(self_state, old_state) {
             return;
         }
+        // A name and a key say which element a state *was*, not what it holds.
+        // Generic widgets share one name across their type parameters (every
+        // `Provider<T, W>` is "Provider"), so a replaced subtree can pair an
+        // element with one whose state is another type entirely. Taking over
+        // that rebuild closure would make this element build from a state that
+        // is not its own — here, with the old provider's handle under the new
+        // subtree — so a state of another kind stays where it is, as the
+        // configuration hook below already assumes.
+        if Any::type_id(&**self_state) != Any::type_id(&**old_state) {
+            return;
+        }
         // Safety: called only from `update_from_widget` during single-threaded
         // reconciliation, before the new element is visible to any other code.
         unsafe {
@@ -2823,6 +2834,67 @@ mod tests {
 
         assert!(old_updater.read(|state| state.phase) == PanicPhase::None);
         assert_eq!(old_updater.try_read(|_| ()), None);
+    }
+
+    struct AlphaWidget;
+    struct AlphaState;
+
+    impl StatefulWidget for AlphaWidget {
+        type State = AlphaState;
+
+        fn create_state(self) -> Self::State {
+            AlphaState
+        }
+    }
+
+    impl State<AlphaWidget> for AlphaState {
+        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+
+        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+            LeafProbe
+        }
+    }
+
+    struct BetaWidget;
+    struct BetaState;
+
+    impl StatefulWidget for BetaWidget {
+        type State = BetaState;
+
+        fn create_state(self) -> Self::State {
+            BetaState
+        }
+    }
+
+    impl State<BetaWidget> for BetaState {
+        fn init_state(&mut self, _updater: StateUpdater<Self>) {}
+
+        fn build(&self, _ctx: &BuildContext) -> impl Widget {
+            LeafProbe
+        }
+    }
+
+    /// A shared name and key say which element a state *was*, not what it holds.
+    /// Generic widgets reuse one name for every type parameter, so a replaced
+    /// subtree pairs elements whose states are different types; neither may take
+    /// the other's state.
+    #[test]
+    fn elements_with_the_same_name_but_another_state_type_keep_their_own_state() {
+        let context = dummy_build_context();
+        let (old, old_updater) =
+            StatefulElement::new_with_name(AlphaWidget, &context, "Shared", None);
+        let (new, new_updater) =
+            StatefulElement::new_with_name(BetaWidget, &context, "Shared", None);
+
+        carry_stateful(&old, &new, &context);
+
+        assert_eq!(new_updater.try_read(|_: &BetaState| ()), Some(()));
+        assert_eq!(old_updater.try_read(|_: &AlphaState| ()), Some(()));
+        // Still its own element after the walk: a later pairing would not
+        // mistake it for the other widget either.
+        new.rebuild_if_dirty(&context);
+        old.rebuild_if_dirty(&context);
+        assert_eq!(new_updater.try_read(|_: &BetaState| ()), Some(()));
     }
 
     #[test]

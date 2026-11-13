@@ -410,6 +410,32 @@ impl Widget for AnyWidget {
     }
 }
 
+/// The widget of an expression that never produces a value.
+///
+/// This is what lets `todo!()`, `unimplemented!()`, `panic!()` and any other
+/// diverging expression stand in for a widget. In edition 2024 a function body
+/// that only diverges is inferred to return `!`, so without this impl a stubbed
+/// `-> impl Widget` does not compile while the screen is still being written.
+///
+/// No value of type `!` exists, so [`Widget::to_element`] can never run.
+///
+/// # Examples
+///
+/// ```
+/// use aimer_widget_core::Widget;
+///
+/// fn settings_page() -> impl Widget {
+///     todo!("the settings page")
+/// }
+/// # let _ = settings_page;
+/// ```
+impl Widget for ! {
+    #[inline]
+    fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -420,6 +446,41 @@ mod tests {
 
     /// Payload bytes an [`AnyWidget`] holds without allocating.
     const WIDGET_CAPACITY: usize = AnyWidget::INLINE_CAPACITY;
+
+    // The functions below are never called: what is checked is that they
+    // compile. In edition 2024 a body that is only `todo!()` is inferred as
+    // `!`, which has to be a `Widget` for `-> impl Widget` to accept it.
+
+    #[allow(dead_code)]
+    fn stub_with_todo() -> impl Widget {
+        todo!()
+    }
+
+    #[allow(dead_code)]
+    fn stub_with_unimplemented() -> impl Widget {
+        unimplemented!("a placeholder while the screen is being written")
+    }
+
+    #[allow(dead_code)]
+    fn stub_with_panic() -> impl Widget {
+        panic!("not reachable yet")
+    }
+
+    #[allow(dead_code)]
+    fn stub_that_diverges_in_one_branch(ready: bool) -> impl Widget {
+        if ready { crate::ErrorWidget::new("ready") } else { todo!() }
+    }
+
+    /// A stubbed widget keeps working as a child, wherever a `Widget` is taken.
+    #[test]
+    fn a_diverging_expression_can_stand_in_for_a_widget() {
+        fn takes_a_widget(_widget: impl Widget + 'static) {}
+        #[allow(dead_code)]
+        fn as_a_child() {
+            takes_a_widget(todo!());
+        }
+        // Compiling is the check.
+    }
 
     #[test]
     fn the_wrapper_is_exactly_as_large_as_the_owner_it_wraps() {
