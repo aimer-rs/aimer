@@ -1,0 +1,25 @@
+[package]
+name = "stateful_widget_2"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# Mirrors aimer_widget_core's feature so the copied `cfg(feature = "frame-stats")` blocks are live.
+frame-stats = ["aimer_element/frame-stats"]
+
+[dependencies]
+aimer_widget_core.workspace = true
+aimer_element.workspace = true
+aimer_attribute.workspace = true
+aimer_events.workspace = true
+aimer_utils.workspace = true
+aimer_tls.workspace = true
+aimer_venus.workspace = true
+aimer_canvas.workspace = true
+aimer_cupid.workspace = true
+aimer_time.workspace = true
+smallvec.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
+
+[lints]
+workspace = true

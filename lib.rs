@@ -2812,7 +2812,8 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         #[cfg(feature = "provider")]
         #[test]
         fn derived_theme_exposes_snapshot_and_copy_lookup_signatures() {
-            let _: fn(&BuildContext) -> aimer::provider::Snapshot<AppTheme> = AppTheme::of;
+            // `of` subscribes and also hands back the controller of the theme.
+            let _: fn(&BuildContext) -> aimer::style::ThemeSnapshot<AppTheme> = AppTheme::of;
             let _: fn(&BuildContext) -> aimer::provider::Snapshot<AppTheme> = AppTheme::read;
             let _: fn(&BuildContext) -> AppTheme = AppTheme::copied;
         }
