@@ -26,19 +26,24 @@
 //! per item for a range of `u32` — instead of a vector of boxed containers, each
 //! carrying decoration, borders, and an owned string.
 //!
-//! The data source is a `Vec<T>` rather than an
+//! The data source is a shared slice, [`ListItems`], rather than an
 //! [`Iterator`](core::iter::Iterator) on purpose: [`Widget::to_element`] takes
 //! `&self` and runs again on every rebuild, so the source has to be replayable
-//! and indexable. `IntoIterator` is accepted at the call boundary, which keeps
-//! ranges, arrays, vectors, and `map` chains ergonomic.
+//! and indexable, and — because it runs on every rebuild — must not copy the data
+//! each time. Anything an application already shares (a `ShareRef<[T]>` projected
+//! from a provider snapshot, an `Rc<Vec<T>>`) is adopted by reference; ranges,
+//! arrays, and vectors convert directly, and any other iterator is passed through
+//! `collect::<ListItems<_>>()`.
 
 use std::rc::Rc;
 
 use aimer_attribute::Dimension;
+use aimer_rubick::ShareRef;
 use aimer_style::LayoutSpacing;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{AnyElement, Element, Key, Widget};
 
+use crate::flex::list_items::ListItems;
 use crate::flex::children_source::{ChildrenSource, EagerChildren, KeyMapper, WindowedChildren};
 use crate::flex::raw_flex::RawFlex;
 use crate::flex::{BoxAlignment, FlexDirection, JustifyContent, OverflowBehavior};
@@ -59,7 +64,7 @@ fn debug_name_of(direction: FlexDirection) -> &'static str {
 /// [`Column::list`](crate::Column::list), [`Row::list`](crate::Row::list), or
 /// [`Flex::list`](crate::Flex::list). It is not a [`Widget`]; complete it with
 /// [`FlexList::builder`].
-pub struct FlexList<T> {
+pub struct FlexList<T: 'static> {
     direction: FlexDirection,
     vertical_alignment: BoxAlignment,
     horizontal_alignment: BoxAlignment,
@@ -68,11 +73,12 @@ pub struct FlexList<T> {
     overflow: OverflowBehavior,
     item_extent: Option<Dimension>,
     keyed: Option<KeyMapper<T>>,
-    items: Vec<T>,
+    items: ListItems<T>,
 }
 
-impl<T> FlexList<T> {
-    /// Creates a list source for `direction`, collecting `items` once.
+impl<T: 'static> FlexList<T> {
+    /// Creates a list source for `direction` over `items`, which is shared rather
+    /// than copied whenever the caller supplied it shared.
     #[doc(hidden)]
     #[inline]
     pub fn new(
@@ -82,7 +88,7 @@ impl<T> FlexList<T> {
         justify_content: Option<JustifyContent>,
         gaps: LayoutSpacing,
         overflow: OverflowBehavior,
-        items: impl IntoIterator<Item = T>,
+        items: impl Into<ListItems<T>>,
     ) -> Self {
         Self {
             direction,
@@ -93,7 +99,7 @@ impl<T> FlexList<T> {
             overflow,
             item_extent: None,
             keyed: None,
-            items: items.into_iter().collect(),
+            items: items.into(),
         }
     }
 
@@ -258,7 +264,7 @@ impl<T> FlexList<T> {
             overflow: self.overflow,
             item_extent: self.item_extent,
             keyed: self.keyed,
-            items: Rc::new(self.items),
+            items: self.items.into_shared(),
             builder: Rc::new(builder),
         }
     }
@@ -288,7 +294,7 @@ impl<T> FlexList<T> {
 /// [sparse-children contract](crate::flex::children_source) for the limits: a row
 /// scrolled a long way out of view is eventually dropped, and one that has no
 /// element cannot receive a broadcast.
-pub struct ListFlex<T, F> {
+pub struct ListFlex<T: 'static, F> {
     direction: FlexDirection,
     vertical_alignment: BoxAlignment,
     horizontal_alignment: BoxAlignment,
@@ -301,7 +307,7 @@ pub struct ListFlex<T, F> {
     keyed: Option<KeyMapper<T>>,
     /// Shared so [`Widget::to_element`], which only borrows `self`, can hand the
     /// data to a source that outlives the call.
-    items: Rc<Vec<T>>,
+    items: ShareRef<[T]>,
     builder: Rc<F>,
 }
 
@@ -368,7 +374,7 @@ where
     fn children_source(&self, ctx: &BuildContext) -> Box<dyn ChildrenSource> {
         if self.overflow != OverflowBehavior::Wrap {
             return Box::new(WindowedChildren::new(
-                Rc::clone(&self.items),
+                self.items.clone(),
                 Rc::clone(&self.builder),
                 self.keyed.clone(),
             ));
@@ -1383,6 +1389,78 @@ mod tests {
         assert_eq!(
             column.to_element(&ctx).computed_size(&ctx),
             ResolvedSize::default()
+        );
+    }
+
+    /// A datum that is not `Clone`, so a list that accepts it can only have been
+    /// handed the data by sharing.
+    struct Datum(#[allow(dead_code)] u32);
+
+    /// `len` data held by one owner, the way a provider holds them.
+    fn shared_data(len: u32) -> (Rc<Vec<Datum>>, aimer_rubick::ShareRef<[Datum]>) {
+        use aimer_rubick::RcProjectExt;
+
+        let owner = Rc::new((0..len).map(Datum).collect::<Vec<_>>());
+        let shared = owner.project(|owner| owner.as_slice());
+        (owner, shared)
+    }
+
+    /// The point of [`ListItems`]: handing a list the data an application already
+    /// shares must not copy it, and the list must still be windowed over it.
+    #[test]
+    fn a_shared_list_is_windowed_without_copying_its_data() {
+        let counters = Counters::default();
+        let (owner, shared) = shared_data(100_000);
+        let first_row = Rc::new(Cell::new(0_usize));
+        let mapper_counters = counters.clone();
+        let mapper_first_row = Rc::clone(&first_row);
+        let ctx = dummy_build_context(400.0, VIEWPORT, Some((0.0, 0.0, 400.0, VIEWPORT)));
+
+        let element = Column::new()
+            .list(shared)
+            .item_extent(Dimension::Px(ROW_EXTENT))
+            .builder(move |datum: &Datum| {
+                if mapper_counters.built.get() == 0 {
+                    mapper_first_row.set(datum as *const Datum as usize);
+                }
+                Counting::new(&mapper_counters)
+            })
+            .to_element(&ctx);
+        element.update(&ctx);
+
+        assert!(counters.drawn.get() > 0, "nothing was painted");
+        assert!(
+            counters.built.get() <= VISIBLE_BUDGET,
+            "built {} rows of a shared list",
+            counters.built.get()
+        );
+        assert_eq!(
+            first_row.get(),
+            owner.as_ptr() as usize,
+            "the mapper must read the owner's elements, not a copy"
+        );
+    }
+
+    /// Every data-driven container takes the shared form, not only `Column`, and
+    /// lays out exactly as it does when handed the same data as a `Vec`.
+    #[test]
+    fn row_and_flex_lists_accept_shared_data() {
+        let ctx = scrolled_context(0.0);
+        let (_owner, shared) = shared_data(10);
+        let moved = || (0..10).map(Datum).collect::<Vec<_>>();
+
+        let row = Row::new().list(shared.clone()).builder(|_: &Datum| Leaf(10.0));
+        let row_from_vec = Row::new().list(moved()).builder(|_: &Datum| Leaf(10.0));
+        let flex = crate::flex::Flex::new().list(shared).builder(|_: &Datum| Leaf(10.0));
+        let flex_from_vec = crate::flex::Flex::new().list(moved()).builder(|_: &Datum| Leaf(10.0));
+
+        assert_eq!(
+            row.to_element(&ctx).computed_size(&ctx),
+            row_from_vec.to_element(&ctx).computed_size(&ctx)
+        );
+        assert_eq!(
+            flex.to_element(&ctx).computed_size(&ctx),
+            flex_from_vec.to_element(&ctx).computed_size(&ctx)
         );
     }
 }

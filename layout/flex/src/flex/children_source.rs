@@ -64,6 +64,7 @@ use std::collections::VecDeque;
 use std::ops::Range;
 use std::rc::Rc;
 
+use aimer_rubick::ShareRef;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{AnyElement, Element, Key, Widget, carry_element_state};
 
@@ -278,10 +279,16 @@ impl Window {
 /// The container retains `items` and `builder` rather than elements, so the
 /// resident cost is the size of the data — four bytes per item for a range of
 /// `u32` — plus the couple of dozen elements a frame can actually show.
-pub(crate) struct WindowedChildren<T, F> {
+pub(crate) struct WindowedChildren<T: 'static, F> {
     /// Shared with the widget that produced it: [`Widget::to_element`] takes
-    /// `&self`, so the data cannot be moved out of the widget.
-    items: Rc<Vec<T>>,
+    /// `&self`, so the data cannot be moved out of the widget. It is the
+    /// caller's own allocation when they supplied a shared one, so a rebuild
+    /// never copies it.
+    items: ShareRef<[T]>,
+    /// `items.len()`, read once: the data is immutable, and the length is asked
+    /// for on every layout and paint pass, where going through the shared handle
+    /// each time would be a pointless indirect call.
+    len: usize,
     builder: Rc<F>,
     /// Derives a row's identity from its datum, when the caller supplied one.
     ///
@@ -315,8 +322,9 @@ impl<T, F> WindowedChildren<T, F> {
     /// Nothing is materialized yet: the first [`ChildrenSource::window`] call
     /// decides what exists.
     #[inline]
-    pub(crate) fn new(items: Rc<Vec<T>>, builder: Rc<F>, keyed: Option<KeyMapper<T>>) -> Self {
+    pub(crate) fn new(items: ShareRef<[T]>, builder: Rc<F>, keyed: Option<KeyMapper<T>>) -> Self {
         Self {
+            len: items.get().len(),
             items,
             builder,
             keyed,
@@ -401,7 +409,7 @@ impl<T, F> WindowedChildren<T, F> {
     #[inline]
     fn key_of(&self, index: usize) -> Option<Key> {
         let keyed = self.keyed.as_ref()?;
-        Some(keyed(self.items.get(index)?))
+        Some(keyed(self.items.get().get(index)?))
     }
 
     /// Describes a row this source is giving up.
@@ -462,7 +470,7 @@ where
         if let Some(element) = self.take_recycled(index) {
             return element;
         }
-        let element = Box::new((self.builder)(&self.items[index]).to_element(ctx));
+        let element = Box::new((self.builder)(&self.items.get()[index]).to_element(ctx));
         self.revive(index, &element, ctx);
         element
     }
@@ -477,7 +485,7 @@ where
         if self.eager.get() {
             return;
         }
-        let len = self.items.len();
+        let len = self.len;
         let wanted = range.start.saturating_sub(OVERSCAN).min(len)
             ..range.end.saturating_add(OVERSCAN).min(len);
 
@@ -551,7 +559,7 @@ where
 {
     #[inline]
     fn len(&self) -> usize {
-        self.items.len()
+        self.len
     }
 
     #[inline]
@@ -598,7 +606,7 @@ where
         if self.eager.get() {
             return;
         }
-        let len = self.items.len();
+        let len = self.len;
         let build = |index: usize| -> Box<AnyElement> { self.build_row(index, ctx) };
 
         let live = unsafe { self.window_mut() };
@@ -699,7 +707,7 @@ mod tests {
     ) -> WindowedChildren<u32, impl Fn(&u32) -> Counting + use<>> {
         let built = built.clone();
         WindowedChildren::new(
-            Rc::new((0..len).collect()),
+            crate::flex::list_items::ListItems::from(0..len).into_shared(),
             Rc::new(move |_: &u32| Counting(built.clone())),
             None,
         )

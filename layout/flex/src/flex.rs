@@ -4,6 +4,7 @@ pub mod flex_child;
 pub(crate) mod flex_layout;
 pub mod flex_list;
 pub mod layout_transition;
+pub mod list_items;
 #[cfg(test)]
 mod lazy_tests {
     //! Tests for the viewport-proportional behaviour of [`RawFlex`].
@@ -983,6 +984,7 @@ use aimer_widget::base::BuildContext;
 pub use flex_child::Expanded;
 pub use flex_list::{FlexList, ListFlex};
 pub use layout_transition::{FlexGeometrySnapshot, FlexItemGeometry, FlexSnapshotError};
+pub use list_items::ListItems;
 
 pub use raw_flex::Flex;
 pub use row_column::{Column, Row};

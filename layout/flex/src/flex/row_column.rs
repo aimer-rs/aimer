@@ -4,6 +4,7 @@ use aimer_widget::{AnyElement, AnyWidget, Element, RequiredChild, Widget};
 
 use crate::flex::children_source::EagerChildren;
 use crate::flex::flex_list::FlexList;
+use crate::flex::list_items::ListItems;
 use crate::flex::raw_flex::RawFlex;
 use crate::flex::{BoxAlignment, FlexDirection, JustifyContent, OverflowBehavior};
 
@@ -153,6 +154,12 @@ impl Column {
     /// [`Column::children`] for long lists — the column then retains the data
     /// rather than one widget per row.
     ///
+    /// `items` is anything that converts into [`ListItems`]. Data the caller
+    /// already shares — a `ShareRef<[T]>` projected from a provider snapshot, an
+    /// `Rc<Vec<T>>` — is adopted by reference, so rebuilding does not copy it. A
+    /// `Vec<T>`, an array, or a range is moved in once; collect any other iterator
+    /// with `collect::<ListItems<_>>()`.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -163,7 +170,7 @@ impl Column {
     ///                           .builder(|i| SizedBox::new().height(*i % 40));
     /// ```
     #[inline]
-    pub fn list<T>(self, items: impl IntoIterator<Item = T>) -> FlexList<T> {
+    pub fn list<T: 'static>(self, items: impl Into<ListItems<T>>) -> FlexList<T> {
         FlexList::new(
             FlexDirection::Column,
             self.vertical_alignment,
@@ -328,7 +335,7 @@ impl Row {
     ///                     .builder(|width| SizedBox::new().width(*width));
     /// ```
     #[inline]
-    pub fn list<T>(self, items: impl IntoIterator<Item = T>) -> FlexList<T> {
+    pub fn list<T: 'static>(self, items: impl Into<ListItems<T>>) -> FlexList<T> {
         FlexList::new(
             FlexDirection::Row,
             self.vertical_alignment,

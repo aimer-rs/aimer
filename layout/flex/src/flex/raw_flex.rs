@@ -4,6 +4,7 @@ use std::rc::Rc;
 use crate::flex::children_source::{ChildrenSource, EagerChildren};
 use crate::flex::flex_layout::{FlexLayout, FlexLayoutCache, LayerOrder};
 use crate::flex::flex_list::FlexList;
+use crate::flex::list_items::ListItems;
 use crate::flex::layout_transition::{FlexGeometrySnapshot, FlexItemGeometry, FlexSnapshotError};
 use crate::flex::{BoxAlignment, FlexDirection, JustifyContent, OverflowBehavior};
 use aimer_animation::layout::LayoutGeometry;
@@ -154,6 +155,12 @@ impl<W: Widget + 'static> Flex<W> {
     /// rather than one widget per item. Children supplied earlier are replaced,
     /// exactly as [`Flex::children`] replaces them.
     ///
+    /// `items` is anything that converts into [`ListItems`]. Data the caller
+    /// already shares — a `ShareRef<[T]>` projected from a provider snapshot, an
+    /// `Rc<Vec<T>>` — is adopted by reference, so rebuilding does not copy it. A
+    /// `Vec<T>`, an array, or a range is moved in once; collect any other iterator
+    /// with `collect::<ListItems<_>>()`.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -165,7 +172,7 @@ impl<W: Widget + 'static> Flex<W> {
     ///                       .builder(|i| SizedBox::new().height(*i % 40));
     /// ```
     #[inline]
-    pub fn list<T>(self, items: impl IntoIterator<Item = T>) -> FlexList<T> {
+    pub fn list<T: 'static>(self, items: impl Into<ListItems<T>>) -> FlexList<T> {
         FlexList::new(
             self.direction,
             self.vertical_alignment,
