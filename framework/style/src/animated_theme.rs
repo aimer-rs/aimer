@@ -12,7 +12,7 @@ use aimer_widget::{
     StatefulElement, StatefulWidget, StatelessElement, VisitorElement, Widget, platform_brightness,
 };
 
-use crate::{Theme, ThemeData, ThemeMode, ThemeSelection};
+use crate::{Theme, ThemeController, ThemeData, ThemeMode, ThemeSelection};
 
 fn request_next_frame() {
     aimer_events::window::request_animation_frame();
@@ -394,7 +394,134 @@ impl<T: Theme> AnimatedThemeState<T> {
     }
 }
 
-impl<W: Widget + 'static, T: Theme> AnimatedTheme<W, T> {
+/// The state an [`AnimatedTheme`] owns across rebuilds: which appearance it is in.
+///
+/// The decision between the light and dark theme cannot live in the
+/// configuration a parent hands over, because a descendant has to be able to
+/// change it. It lives here instead, in the [`ThemeController`] this host
+/// creates once and provides to everything below it. The parent still has the
+/// last word: configuring a mode *different* from the one it configured before
+/// replaces whatever the controller set.
+struct ThemeHost<T> {
+    selection: ThemeSelection<T>,
+    duration: Duration,
+    curve: AnyCurve,
+    child: ChildBuilder,
+    key: Option<Key>,
+}
+
+impl<T: Theme> Widget for ThemeHost<T> {
+    fn key(&self) -> Option<Key> {
+        self.key.clone()
+    }
+
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        let __key = Widget::key(&self);
+        StatefulElement::new_with_name(self, ctx, std::any::type_name::<Self>(), __key)
+            .0
+            .boxed()
+    }
+
+    /// Named after the theme type, not just "ThemeHost".
+    ///
+    /// Reconciliation reuses a stateful element whose key and debug name match,
+    /// and silently keeps the old state when the new widget's state is a
+    /// different type. A constant name would therefore let a host of one theme
+    /// type adopt the place of a host of another — which is what replacing one
+    /// themed screen with another does — and leave the old subtree on screen.
+    fn debug_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+}
+
+#[doc(hidden)]
+pub struct ThemeHostState<T: Theme> {
+    selection: ThemeSelection<T>,
+    /// The mode the parent configured last, to tell a new decision from above
+    /// apart from a rebuild that repeats the old one.
+    configured_mode: ThemeMode,
+    duration: Duration,
+    curve: AnyCurve,
+    child: ChildBuilder,
+    controller: ThemeController,
+    provided: ProviderHandle<ThemeController>,
+}
+
+impl<T: Theme> StatefulWidget for ThemeHost<T> {
+    type State = ThemeHostState<T>;
+
+    fn create_state(self) -> Self::State {
+        let controller = ThemeController::new(self.selection.mode);
+        ThemeHostState {
+            configured_mode: self.selection.mode,
+            selection: self.selection,
+            duration: self.duration,
+            curve: self.curve,
+            child: self.child,
+            provided: ProviderHandle::new(controller.clone()),
+            controller,
+        }
+    }
+}
+
+impl<T: Theme> State<ThemeHost<T>> for ThemeHostState<T> {
+    fn init_state(&mut self, updater: StateUpdater<Self>) {
+        // A mode change is only a request to build again: `build` reads the
+        // mode from the controller, which already holds it.
+        self.controller
+            .bind(move || updater.set_state(|_: &mut Self| {}));
+    }
+
+    fn adopt_config_from(&mut self, new: Self) {
+        if new.configured_mode != self.configured_mode {
+            self.configured_mode = new.configured_mode;
+            self.controller.adopt_mode(new.configured_mode);
+        }
+        self.selection = new.selection;
+        self.duration = new.duration;
+        self.curve = new.curve;
+        self.child = new.child;
+    }
+
+    fn build(&self, _ctx: &BuildContext) -> impl Widget {
+        let mut selection = self.selection.clone();
+        selection.mode = self.controller.mode();
+        Provider::new()
+            .handle(self.provided.clone())
+            .child(AdaptiveTheme {
+                selection,
+                duration: self.duration,
+                curve: self.curve.clone(),
+                child: self.child.clone(),
+                controller: self.controller.clone(),
+            })
+    }
+}
+
+/// Resolves the appearance to one settled theme and hands it to
+/// [`ResolvedTheme`] to animate.
+struct AdaptiveTheme<T> {
+    selection: ThemeSelection<T>,
+    duration: Duration,
+    curve: AnyCurve,
+    child: ChildBuilder,
+    controller: ThemeController,
+}
+
+impl<T: Clone> Clone for AdaptiveTheme<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            selection: self.selection.clone(),
+            duration: self.duration,
+            curve: self.curve.clone(),
+            child: self.child.clone(),
+            controller: self.controller.clone(),
+        }
+    }
+}
+
+impl<T: Theme> AdaptiveTheme<T> {
     /// Reads the appearance to resolve against, subscribing to it only when it
     /// can change the answer.
     ///
@@ -412,22 +539,21 @@ impl<W: Widget + 'static, T: Theme> AnimatedTheme<W, T> {
         }
     }
 
-    /// Lowers the builder into the widget that animates one settled theme.
+    /// Lowers the configuration into the widget that animates one settled
+    /// theme.
     #[inline]
-    fn resolved(&self, brightness: Brightness, key: Option<Key>) -> ResolvedTheme<T> {
+    fn resolved(&self, brightness: Brightness) -> ResolvedTheme<T> {
         ResolvedTheme {
             data: self.selection.resolve(brightness),
             duration: self.duration,
             curve: self.curve.clone(),
-            // `W: Widget` on this impl is only satisfiable through `child`, so a
-            // theme that reaches this point always carries a subtree.
             child: self.child.clone(),
-            key,
+            key: None,
         }
     }
 }
 
-impl<W: Widget + 'static, T: Theme> Widget for AnimatedTheme<W, T> {
+impl<T: Theme> Widget for AdaptiveTheme<T> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         // Resolving the appearance always happens in this one place, whether the
         // system is followed or overridden. Both answers therefore hang under
@@ -439,14 +565,38 @@ impl<W: Widget + 'static, T: Theme> Widget for AnimatedTheme<W, T> {
         StatelessElement::from_builder(
             ctx,
             move |ctx| {
+                let system = theme.system_appearance(ctx);
+                // Recorded before the subtree builds, so a descendant reading
+                // the controller sees the appearance this pass resolved.
                 theme
-                    .resolved(theme.system_appearance(ctx), None)
-                    .to_element(ctx)
+                    .controller
+                    .set_brightness(theme.selection.mode.resolve(system));
+                theme.resolved(system).to_element(ctx)
             },
-            self.key(),
+            None,
             "AdaptiveTheme",
         )
         .boxed()
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "AdaptiveTheme"
+    }
+}
+
+impl<W: Widget + 'static, T: Theme> Widget for AnimatedTheme<W, T> {
+    fn to_element(self, ctx: &BuildContext) -> AnyElement {
+        let key = self.key();
+        ThemeHost {
+            selection: self.selection,
+            duration: self.duration,
+            curve: self.curve,
+            // `W: Widget` on this impl is only satisfiable through `child`, so a
+            // theme that reaches this point always carries a subtree.
+            child: self.child,
+            key,
+        }
+        .to_element(ctx)
     }
 
     fn debug_name(&self) -> &'static str {
@@ -623,6 +773,29 @@ mod tests {
     }
 
     impl crate::Theme for CustomTheme {}
+
+    /// Resolves a builder the way the theme does at runtime: through the
+    /// [`AdaptiveTheme`] the host builds from it, so these tests keep exercising
+    /// the production lowering rather than a copy of it.
+    trait Resolve<T: Theme> {
+        fn resolved(&self, brightness: Brightness, key: Option<Key>) -> ResolvedTheme<T>;
+    }
+
+    impl<W, T: Theme> Resolve<T> for AnimatedTheme<W, T> {
+        fn resolved(&self, brightness: Brightness, key: Option<Key>) -> ResolvedTheme<T> {
+            let adaptive = AdaptiveTheme {
+                selection: self.selection.clone(),
+                duration: self.duration,
+                curve: self.curve.clone(),
+                child: self.child.clone(),
+                controller: ThemeController::new(self.selection.mode),
+            };
+            ResolvedTheme {
+                key,
+                ..adaptive.resolved(brightness)
+            }
+        }
+    }
 
     struct TestWidget;
 

@@ -8,7 +8,10 @@ pub fn start_animated_theme_example() {
     AimerApp::start(AnimatedThemeExample::new())
 }
 
-#[derive(StatefulWidget)]
+/// Switches between the built-in light and dark themes from a button, with no
+/// stateful widget above the theme: the button asks the theme's own
+/// [`ThemeController`] to change appearance.
+#[derive(Clone, StatelessWidget)]
 pub struct AnimatedThemeExample {}
 
 impl AnimatedThemeExample {
@@ -17,56 +20,34 @@ impl AnimatedThemeExample {
     }
 }
 
-pub struct AnimatedThemeExampleState {
-    is_dark: bool,
-    updater: StateUpdater<Self>,
-}
-
-impl StatefulWidget for AnimatedThemeExample {
-    type State = AnimatedThemeExampleState;
-
-    fn create_state(self) -> Self::State {
-        AnimatedThemeExampleState {
-            is_dark: false,
-            updater: StateUpdater::empty(),
-        }
-    }
-}
-
-impl State<AnimatedThemeExample> for AnimatedThemeExampleState {
-    fn init_state(&mut self, updater: StateUpdater<Self>) {
-        self.updater = updater;
-    }
-
+impl StatelessWidget for AnimatedThemeExample {
     fn build(&self, _ctx: &BuildContext) -> impl Widget {
         AnimatedTheme::new()
-            .data(if self.is_dark {
-                ThemeData::dark()
-            } else {
-                ThemeData::light()
-            })
+            // Starts light whatever the system reports; the button takes it from
+            // there.
+            .mode(ThemeMode::Light)
             .duration(Duration::from_millis(400))
             .curve(curves::EASE_IN_OUT)
-            .child(ThemedPanel::new(self.is_dark, self.updater))
+            .child(ThemedPanel::new())
     }
 }
 
 #[derive(Clone, StatelessWidget)]
-struct ThemedPanel {
-    is_dark: bool,
-    updater: StateUpdater<AnimatedThemeExampleState>,
-}
+struct ThemedPanel {}
 
 impl ThemedPanel {
-    fn new(is_dark: bool, updater: StateUpdater<AnimatedThemeExampleState>) -> Self {
-        Self { is_dark, updater }
+    fn new() -> Self {
+        Self {}
     }
 }
 
 impl StatelessWidget for ThemedPanel {
     fn build(&self, ctx: &BuildContext) -> impl Widget {
+        // Reading the theme subscribes the panel to it and hands back the
+        // controller of the theme that supplied it.
         let theme = ThemeData::of(ctx);
-        let updater = self.updater;
+        let controller = theme.controller().clone();
+        let is_dark = controller.brightness() == Brightness::Dark;
         #[cfg(test)]
         tests::BUILT_BACKGROUNDS.with(|seen| {
             seen.borrow_mut()
@@ -103,9 +84,7 @@ impl StatelessWidget for ThemedPanel {
                         // A button is as big as its child, so the size is the
                         // child's.
                         Button::new()
-                            .on_press(move || {
-                                updater.set_state(|state| state.is_dark = !state.is_dark);
-                            })
+                            .on_press(move || controller.toggle())
                             .decoration(
                                 BoxDecoration::new()
                                     .background_color(theme.primary_color)
@@ -116,7 +95,7 @@ impl StatelessWidget for ThemedPanel {
                                     .width(Dimension::Px(220.0))
                                     .height(Dimension::Px(56.0))
                                     .child(
-                                        Text::new(if self.is_dark {
+                                        Text::new(if is_dark {
                                             "Switch to light theme"
                                         } else {
                                             "Switch to dark theme"

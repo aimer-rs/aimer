@@ -1,8 +1,8 @@
 //! The complete Lucide collection, with labeled, windowed preview rows.
 use aimer::style::{BoxDecoration, LayoutSpacing, Spacing, TextAlign, TextStyle, ThemeData};
 use aimer::{
-    Align, Alignment, AnyWidget, Column, Container, Dimension, Expanded, Icons, Row, ScrollAxis,
-    ScrollController, Scrollable, SizedBox, StaticSvg, Svg, Text, Widget,
+    Align, Alignment, AnyWidget, Column, Container, Dimension, Expanded, Icons, ListItems, Row,
+    ScrollAxis, ScrollController, Scrollable, SizedBox, StaticSvg, Svg, Text, Widget,
 };
 use aimer::{JustifyContent, SvgStyle};
 
@@ -39,7 +39,7 @@ fn gallery(
                 .controller(controller)
                 .child(
                     Column::new()
-                        .list(entries.chunks(COLUMNS))
+                        .list(entries.chunks(COLUMNS).collect::<ListItems<_>>())
                         .item_extent(ROW_EXTENT)
                         .builder(move |entries| {
                             Container::new()

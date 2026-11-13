@@ -5,6 +5,8 @@ use aimer_widget::Brightness;
 use aimer_widget::base::BuildContext;
 use std::any::type_name;
 
+use crate::{ThemeController, ThemeSnapshot};
+
 /// Semantic colors used by themed widgets.
 ///
 /// Start with [`ThemeData::light`] or [`ThemeData::dark`], then replace
@@ -193,6 +195,10 @@ pub trait Theme: Animatable + Clone + PartialEq + Sized + 'static {
     /// Returns the current theme and subscribes the building widget to theme
     /// changes.
     ///
+    /// The result also carries the [`ThemeController`] of the supplying
+    /// [`crate::AnimatedTheme`], reached with [`ThemeSnapshot::controller`], so a
+    /// widget that reads the theme can change it too.
+    ///
     /// # Panics
     ///
     /// Panics when there is no [`crate::AnimatedTheme`] ancestor or when called
@@ -202,14 +208,14 @@ pub trait Theme: Animatable + Clone + PartialEq + Sized + 'static {
     /// than inside a closure: a closure is an untracked frame, so panicking
     /// there blames this file instead of the widget that asked for the theme.
     #[track_caller]
-    fn of(context: &BuildContext) -> Snapshot<Self> {
+    fn of(context: &BuildContext) -> ThemeSnapshot<Self> {
         let Some(theme) = context.try_watch() else {
             panic!(
                 "No provider for `{}` found in the current widget scope",
                 type_name::<Self>()
             )
         };
-        theme
+        ThemeSnapshot::new(theme, ThemeController::of(context))
     }
 
     /// Returns the current theme without subscribing the building widget to

@@ -1846,6 +1846,7 @@ mod tests {
     mod settled_skip;
     mod skeleton_ticks;
     mod skeleton_to_rows;
+    mod theme_controller;
     mod theme_switch;
     mod thumb_hold;
     mod touch_scroll;
