@@ -131,7 +131,17 @@ impl CaretContext {
         composing: bool,
     ) {
         let previous = self.snapshot.get();
-        let visible = focused && available && (composing || self.blink.is_visible());
+        // A frame starts by publishing `available = false` and ends with the real
+        // geometry. Letting the first of those hide the caret would make every
+        // real publish look like a visibility change, and the repaint it asks for
+        // schedules the next frame — an idle focused field would never rest. The
+        // unavailable publish therefore keeps the phase it inherited; only focus
+        // loss hides the caret immediately.
+        let visible = if available {
+            focused && (composing || self.blink.is_visible())
+        } else {
+            focused && previous.visible
+        };
         self.snapshot.set(CaretSnapshot {
             geometry,
             offset,
@@ -619,6 +629,85 @@ mod tests {
             context,
             aimer_widget::base::Colors::default(),
         ));
+    }
+
+    /// Every frame the field first publishes "no caret yet" and then the real
+    /// geometry. That pair must not look like a visibility change, or an idle
+    /// focused field repaints, and so requests another frame, forever.
+    #[test]
+    fn an_unchanged_republish_requests_no_repaint() {
+        let context = CaretContext::new(CaretBlink::new());
+        let repaints = Rc::new(Cell::new(0u32));
+        let counted = Rc::clone(&repaints);
+        context.set_repaint_callback(Rc::new(move || counted.set(counted.get() + 1)));
+        let geometry = CaretGeometry {
+            width: 1.5,
+            height: 16.0,
+            ..CaretGeometry::default()
+        };
+
+        // The first frame legitimately changes the size and shows the caret.
+        context.publish(geometry, 3, true, false, false);
+        context.publish(geometry, 3, true, true, false);
+        assert!(context.is_visible());
+        let settled = repaints.get();
+        assert!(settled > 0);
+
+        for _ in 0..8 {
+            context.publish(geometry, 3, true, false, false);
+            context.publish(geometry, 3, true, true, false);
+        }
+
+        assert!(context.is_visible());
+        assert_eq!(repaints.get(), settled);
+    }
+
+    /// The transient "unavailable" publish keeps the blink phase, so a hidden
+    /// half stays hidden and the toggle back to visible is still reported.
+    #[test]
+    fn a_blink_toggle_is_still_reported_across_the_transient_publish() {
+        let blink = CaretBlink::new();
+        let context = CaretContext::new(blink.clone());
+        let repaints = Rc::new(Cell::new(0u32));
+        let counted = Rc::clone(&repaints);
+        context.set_repaint_callback(Rc::new(move || counted.set(counted.get() + 1)));
+        let geometry = CaretGeometry {
+            width: 1.5,
+            height: 16.0,
+            ..CaretGeometry::default()
+        };
+        let start = AnimInstant::now();
+        blink.tick(start);
+        context.publish(geometry, 0, true, true, false);
+        let after_appearing = repaints.get();
+
+        blink.tick(start + HALF);
+        context.publish(geometry, 0, true, false, false);
+        context.publish(geometry, 0, true, true, false);
+        assert!(!context.is_visible());
+        assert_eq!(repaints.get(), after_appearing + 1);
+
+        blink.tick(start + CaretBlink::DEFAULT_PERIOD);
+        context.publish(geometry, 0, true, false, false);
+        context.publish(geometry, 0, true, true, false);
+        assert!(context.is_visible());
+        assert_eq!(repaints.get(), after_appearing + 2);
+    }
+
+    /// Losing focus still hides the caret immediately, transient or not.
+    #[test]
+    fn losing_focus_hides_the_caret() {
+        let context = CaretContext::new(CaretBlink::new());
+        let geometry = CaretGeometry {
+            width: 1.5,
+            height: 16.0,
+            ..CaretGeometry::default()
+        };
+        context.publish(geometry, 0, true, true, false);
+        assert!(context.is_visible());
+
+        context.publish(geometry, 0, false, false, false);
+        assert!(!context.is_visible());
     }
 
     /// The field keeps publishing geometry after its caret element is gone —
