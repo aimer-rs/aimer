@@ -38,6 +38,7 @@ pub(super) fn field_config(controller: impl Into<TextEditingController>) -> RawF
         selection_color: Color::Rgba(66, 133, 244, 100),
         cursor_color: Colors::default(),
         caret_builder: None,
+        highlighter: None,
         on_changed: TextFieldCallback::default(),
         on_submitted: TextFieldCallback::default(),
         on_focus: TextFieldCallback::default(),

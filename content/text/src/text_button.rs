@@ -281,6 +281,7 @@ impl RawTextButton {
             text_align: Default::default(),
             line_height: Default::default(),
             text_indent: 0.0,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         }

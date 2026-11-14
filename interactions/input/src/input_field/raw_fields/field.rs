@@ -231,6 +231,8 @@ pub(crate) struct RawFieldConfig {
     pub selection_color: Color,
     pub cursor_color: Colors,
     pub caret_builder: Option<CaretBuilder>,
+    /// Styles ranges of the displayed text; see [`TextHighlighter`].
+    pub highlighter: Option<TextHighlighter>,
     pub on_changed: TextFieldCallback,
     pub on_submitted: TextFieldCallback,
     pub on_focus: TextFieldCallback,
@@ -337,6 +339,7 @@ pub(super) struct RetainedFieldPaintState {
     hovered: bool,
     focused: bool,
     composing: bool,
+    highlighter: u64,
 }
 
 #[allow(dead_code)]
@@ -363,6 +366,10 @@ pub(crate) struct RawTextField {
     /// editor's own deltas.
     pub native_mirror_revision: Cell<u64>,
     pub geometry_cache: EditableGeometryCache,
+    /// Styles ranges of the displayed text; ignored by a secure field.
+    pub highlighter: Option<TextHighlighter>,
+    pub highlights: HighlightCache,
+    pub display_widget: RetainedDisplay,
     pub prompt: Arc<str>,
     pub hint: Arc<str>,
     pub hint_style: TextStyle,
@@ -481,6 +488,7 @@ impl Rebuildable for RawTextField {
             return;
         };
 
+        self.highlights.adopt(&old.highlights);
         self.focused.set(old.focused.get());
         self.observed_revision.set(old.observed_revision.get());
         self.native_session.set(old.native_session.get());
@@ -588,6 +596,9 @@ impl RawTextField {
             native_base_revision: Cell::new(0),
             native_mirror_revision: Cell::new(0),
             geometry_cache: EditableGeometryCache::default(),
+            highlighter: config.highlighter,
+            highlights: HighlightCache::default(),
+            display_widget: RetainedDisplay::default(),
             prompt: config.prompt,
             hint: config.hint,
             hint_style: config.hint_style,
@@ -1121,6 +1132,38 @@ impl RawTextField {
     }
 
 
+    /// The highlighter that applies to what the field displays: none for a
+    /// secure field, whose bullets are not the text a highlighter was written for.
+    #[inline]
+    fn effective_highlighter(&self) -> Option<&TextHighlighter> {
+        self.highlighter
+            .as_ref()
+            .filter(|_| !self.input_type.is_obscured())
+    }
+
+    /// Builds the widget that lays out and paints the field's displayed text,
+    /// with the styled ranges `geometry` was shaped with.
+    ///
+    /// Highlighted text is laid out as a paragraph, which is expensive to
+    /// prepare, so its widget is retained and shared by every caller of the
+    /// frame. Plain text gets a fresh widget, as it always did.
+    fn build_display_widget(
+        &self,
+        geometry: &Rc<EditableGeometry>,
+        style: &TextStyle,
+        align: TextAlign,
+    ) -> Rc<RawTextWidget> {
+        let build = || {
+            let mut widget = self.build_text_widget(geometry.display.as_ref(), style, align);
+            widget.ranges = geometry.ranges.clone();
+            widget
+        };
+        if geometry.ranges.is_none() {
+            return Rc::new(build());
+        }
+        self.display_widget.resolve(geometry, style, align, build)
+    }
+
     fn build_text_widget(
         &'_ self,
         text: &str,
@@ -1133,6 +1176,7 @@ impl RawTextField {
             text_align: align,
             line_height: Default::default(),
             text_indent: 0.0,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         }
@@ -1342,6 +1386,7 @@ impl RawTextField {
                 letter_spacing_bits: style.letter_spacing.to_bits(),
                 word_spacing_bits: style.word_spacing.to_bits(),
                 language,
+                highlighter: highlighter_id(self.effective_highlighter()),
             },
             || {
                 let mut layout_ctx = ctx.clone();
@@ -1355,11 +1400,15 @@ impl RawTextField {
                     max_width: content_width,
                     max_height: ctx.box_constraint.max_height,
                 };
-                let text_widget = self.build_text_widget(
+                let ranges = self
+                    .highlights
+                    .resolve(self.effective_highlighter(), &display.display);
+                let mut text_widget = self.build_text_widget(
                     display.display.as_ref(),
                     &style,
                     TextAlign::TopLeft,
                 );
+                text_widget.ranges = ranges.clone();
                 let interaction = text_widget.interaction_layout(&layout_ctx);
                 EditableGeometry::from_interaction(
                     display.display,
@@ -1368,6 +1417,7 @@ impl RawTextField {
                     content_width,
                     self.horizontal_text_align(),
                 )
+                .with_ranges(ranges)
             },
         );
         ctx.canvas.set_text_language(outer_language);

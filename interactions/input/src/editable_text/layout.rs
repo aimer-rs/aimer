@@ -29,6 +29,8 @@ pub(crate) struct EditableGeometryKey {
     pub letter_spacing_bits: u32,
     pub word_spacing_bits: u32,
     pub language: Option<TextLanguage>,
+    /// Identity of the highlighter whose ranges shaped the layout; zero for none.
+    pub highlighter: u64,
 }
 
 pub(crate) struct EditableGeometry {
@@ -37,6 +39,10 @@ pub(crate) struct EditableGeometry {
     pub visual_lines: Vec<VisualLine>,
     pub interaction: Option<Rc<TextInteractionLayout>>,
     pub source_ranges: Vec<Range<usize>>,
+    /// The styled ranges of `display` this layout was shaped with, which the
+    /// painter must hand to its text so the glyphs it draws are the glyphs the
+    /// caret and selection were measured on.
+    pub ranges: Option<Rc<[aimer_text::StyledRange]>>,
     line_offsets: Vec<f32>,
 }
 
@@ -101,8 +107,16 @@ impl EditableGeometry {
             visual_lines,
             interaction: Some(Rc::new(interaction)),
             source_ranges,
+            ranges: None,
             line_offsets,
         }
+    }
+
+    /// Records the styled ranges the layout was shaped with.
+    #[inline]
+    pub(crate) fn with_ranges(mut self, ranges: Option<Rc<[aimer_text::StyledRange]>>) -> Self {
+        self.ranges = ranges;
+        self
     }
 
     /// Converts a displayed grapheme offset into the byte offset consumed by
@@ -406,6 +420,7 @@ mod tests {
             letter_spacing_bits: 0,
             word_spacing_bits: 0,
             language: None,
+            highlighter: 0,
         };
         let build = || {
             builds.set(builds.get() + 1);
@@ -415,6 +430,7 @@ mod tests {
                 visual_lines: Vec::new(),
                 interaction: None,
                 source_ranges: Vec::new(),
+                ranges: None,
                 line_offsets: Vec::new(),
             }
         };

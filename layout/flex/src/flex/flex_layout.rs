@@ -837,11 +837,18 @@ impl FlexLayout {
     /// prediction's assumed size, so the total stays consistent, and a frame
     /// that finds one of them wrong corrects it as usual.
     ///
+    /// `same_cross` says whether `previous` was made under the cross-axis extent
+    /// this table is made under. The main extents it learned carry over either
+    /// way, but the cross extent of every row is a measure of *that* constraint:
+    /// a row that filled a wider window would otherwise keep this table as wide
+    /// as the window it came from. When the cross extent changed, each inherited
+    /// row takes this table's own cross extent instead.
+    ///
     /// Does nothing unless this table is a prediction and `previous` describes
     /// no more children than it along the same axis. A table with flex
     /// children is not inherited from, because each share depends on what the
     /// others consumed.
-    pub(crate) fn inherit_learned(&self, previous: &FlexLayout) {
+    pub(crate) fn inherit_learned(&self, previous: &FlexLayout, same_cross: bool) {
         // A list that only grew keeps what it learned about the rows it had:
         // the rows were appended after them, so each index still names the same
         // row. One that shrank does not, since nothing says which rows went.
@@ -852,6 +859,13 @@ impl FlexLayout {
         {
             return;
         }
+        let cross = cross_of(self.sizes[0], self.is_row);
+        let inherit = |index: usize, mut size: ResolvedSize| {
+            if !same_cross {
+                set_cross_of(&mut size, self.is_row, cross);
+            }
+            self.refine(index, size);
+        };
         match previous.origin {
             Origin::Estimated => {
                 let corrected: Vec<(usize, ResolvedSize)> =
@@ -864,12 +878,12 @@ impl FlexLayout {
                         None => return,
                     };
                 for (index, size) in corrected {
-                    self.refine(index, size);
+                    inherit(index, size);
                 }
             }
             Origin::Measured => {
                 for index in 0..previous.len {
-                    self.refine(index, previous.size(index));
+                    inherit(index, previous.size(index));
                 }
             }
             Origin::Declared => {}
@@ -1159,10 +1173,14 @@ impl FlexLayoutCache {
     /// child a bounded pass measured — does not belong to that constraint
     /// alone. This is how a replacement prediction finds what to inherit when
     /// the constraint it is asked under differs.
+    ///
+    /// Also returns the constraint that table was made under, so the caller can
+    /// tell which of what it learned still describes the constraint it is asked
+    /// under now.
     #[inline]
-    pub(crate) fn learned(&self) -> Option<Rc<FlexLayout>> {
+    pub(crate) fn learned(&self) -> Option<(Rc<FlexLayout>, BoxConstraint)> {
         let cached = self.tables().next()?;
-        (!cached.layout.is_declared()).then(|| Rc::clone(&cached.layout))
+        (!cached.layout.is_declared()).then(|| (Rc::clone(&cached.layout), cached.constraint))
     }
 
     /// The prediction held for this cross-axis extent, if any, whatever main

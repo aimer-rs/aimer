@@ -219,7 +219,7 @@ impl EventElement for RepaintBoundaryTarget {
         context: &mut EventDispatchContext<'_, '_>,
     ) -> EventResult {
         let pos = context.position();
-        context.dispatch_child(self.child.as_ref(), pos, event)
+        context.dispatch_child_transparent(self.child.as_ref(), pos, event)
     }
 
     fn has_overlapping_hit_targets(&self) -> bool {

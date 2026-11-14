@@ -13,6 +13,7 @@ use aimer_widget::{TextOverflowMode, *};
 use crate::paragraph::Paragraph;
 use crate::paragraph::geometry::{DecorationPaint, prepare_decoration_paint};
 use crate::TextSource;
+use crate::styled_range::{StyledRange, resolve_ranges};
 use crate::text_span::ResolvedTextSpan;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +61,14 @@ pub struct RawTextWidget {
     pub text_align: TextAlign,
     pub line_height: LineHeight,
     pub text_indent: f32,
+    /// Optional per-range overrides of `text_style`, as byte ranges into
+    /// `text`.
+    ///
+    /// Ranges restyle the text without changing which characters are shaped, so
+    /// a colour, background or decoration leaves the glyph positions alone. The
+    /// list is repaired rather than validated: see [`StyledRange`]. `None` and an
+    /// empty list are the plain single-run text.
+    pub ranges: Option<Rc<[StyledRange]>>,
     pub cache: LayoutCache,
     pub _typeface: Cell<Option<()>>,
 }
@@ -411,7 +420,8 @@ impl RawTextWidget {
     }
 
     fn uses_paragraph_layout(&self) -> bool {
-        self.line_height != LineHeight::Normal
+        self.ranges.as_ref().is_some_and(|ranges| !ranges.is_empty())
+            || self.line_height != LineHeight::Normal
             || self.text_indent != 0.0
             || self.text_style.text_transform != TextTransform::None
             || self.text_style.letter_spacing != 0.0
@@ -426,10 +436,15 @@ impl RawTextWidget {
             let auxiliary = slot.get_or_insert_with(RawTextAuxCache::default);
             let paragraph = auxiliary.paragraph.get_or_insert_with(|| {
                 Paragraph::with_layout(
-                    vec![ResolvedTextSpan::plain_source(
-                        self.text.clone(),
-                        self.text_style,
-                    )],
+                    match self.ranges.as_deref() {
+                        Some(ranges) if !ranges.is_empty() => {
+                            resolve_ranges(&self.text, self.text_style, ranges)
+                        }
+                        _ => vec![ResolvedTextSpan::plain_source(
+                            self.text.clone(),
+                            self.text_style,
+                        )],
+                    },
                     self.text_align,
                     self.text_style.text_overflow,
                     self.line_height,
@@ -611,6 +626,9 @@ impl LayoutElement for RawTextWidget {
 }
 
 #[cfg(test)]
+mod ranged_tests;
+
+#[cfg(test)]
 mod tests {
     use std::cell::Cell;
 
@@ -632,6 +650,7 @@ mod tests {
             text_align: TextAlign::TopLeft,
             line_height: LineHeight::Px(24.0),
             text_indent: 0.0,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         };
@@ -654,6 +673,7 @@ mod tests {
             text_align: TextAlign::TopLeft,
             line_height: LineHeight::Px(24.0),
             text_indent: 0.0,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         };
@@ -669,6 +689,7 @@ mod tests {
             text_align: TextAlign::TopLeft,
             line_height: LineHeight::Px(24.0),
             text_indent: 8.0,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         };
@@ -719,6 +740,7 @@ mod tests {
             text_align: TextAlign::TopLeft,
             line_height: LineHeight::Normal,
             text_indent: 0.0,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         };
@@ -768,6 +790,7 @@ mod tests {
             text_align: TextAlign::TopLeft,
             line_height: LineHeight::Normal,
             text_indent: 0.0,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         };

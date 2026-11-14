@@ -1,5 +1,6 @@
 mod paragraph;
 mod rich_text;
+mod styled_range;
 mod text;
 mod text_button;
 pub mod text_span;
@@ -18,4 +19,5 @@ pub use aimer_text_selection::{
 };
 pub use text_button::TextButton;
 pub use aimer_text_selection::TextSource;
+pub use styled_range::StyledRange;
 pub use text_span::{SpanStyle, TextSpan};

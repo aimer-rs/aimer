@@ -35,6 +35,9 @@ use crate::input_field::caret::{
 };
 use crate::input_field::chrome::{Chrome, VisualFlags};
 use crate::input_field::context_menu::{FieldAction, HoldOutcome, TouchHold};
+use crate::input_field::highlight::{
+    HighlightCache, RetainedDisplay, TextHighlighter, highlighter_id,
+};
 use crate::{TextEditingController, TextEditingValue};
 
 static NEXT_TEXT_EDITING_SESSION: AtomicU64 = AtomicU64::new(1);
@@ -67,6 +70,9 @@ mod semantics;
 
 include!("raw_fields/event.rs");
 include!("raw_fields/layout.rs");
+
+#[cfg(test)]
+mod highlight_tests;
 
 /// Fixtures shared by the test modules living beside the logic they cover.
 #[cfg(test)]

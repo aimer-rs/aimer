@@ -1,6 +1,7 @@
 pub mod caret;
 pub(crate) mod chrome;
 pub mod context_menu;
+pub mod highlight;
 #[cfg(test)]
 mod controller {
     use crate::TextEditingController;
@@ -491,6 +492,7 @@ use aimer_widget::{
 use crate::TextEditingController;
 use aimer_events::element::{Modifiers, NamedKey};
 use crate::input_field::caret::{CaretBlink, CaretBuilder, CaretContext};
+use crate::input_field::highlight::TextHighlighter;
 use crate::input_field::chrome::{Chrome, TextFieldVisualState, VisualBuilder, VisualFlags};
 use crate::input_field::raw_fields::{
     CaretSlot, ExpandDirection, InputType, KeyFilter, RawFieldConfig, RawTextFieldWidget,
@@ -618,6 +620,8 @@ pub struct TextField {
     pub selection_color: Color,
     pub cursor_color: Colors,
     pub caret_builder: Option<CaretBuilder>,
+    /// Styles ranges of the text; see [`TextField::highlighter`].
+    pub highlighter: Option<TextHighlighter>,
     pub on_changed: TextFieldCallback,
     pub on_submitted: TextFieldCallback,
     pub on_focus: TextFieldCallback,
@@ -853,6 +857,7 @@ impl TextField {
             selection_color: Color::Rgba(66, 133, 244, 100),
             cursor_color: Colors::default(),
             caret_builder: None,
+            highlighter: None,
             on_changed: TextFieldCallback::default(),
             on_submitted: TextFieldCallback::default(),
             on_focus: TextFieldCallback::default(),
@@ -900,6 +905,7 @@ impl TextField {
             selection_color: self.selection_color,
             cursor_color: self.cursor_color,
             caret_builder: self.caret_builder.clone(),
+            highlighter: self.highlighter.clone(),
             on_changed: self.on_changed.clone(),
             on_submitted: self.on_submitted.clone(),
             on_focus: self.on_focus.clone(),
@@ -1195,6 +1201,43 @@ impl TextField {
         self
     }
 
+    /// Styles ranges of the text, such as code tokens or `@mentions`.
+    ///
+    /// The text stays a plain string, so editing, selection and input methods
+    /// behave as without a highlighter. Create the [`TextHighlighter`] once and
+    /// clone it into each build; see its documentation for what the function
+    /// receives and the repairs applied to the ranges it returns.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::{SpanStyle, StyledRange, TextField, TextHighlighter};
+    /// use aimer_widget::base::Color;
+    ///
+    /// let numbers = TextHighlighter::new(|text| {
+    ///     let style = SpanStyle::new().color(Color::Rgba(200, 90, 20, 255));
+    ///     text.char_indices()
+    ///         .filter(|(_, character)| character.is_ascii_digit())
+    ///         .map(|(start, _)| StyledRange::new(start..start + 1, style))
+    ///         .collect()
+    /// });
+    ///
+    /// let field = TextField::new().highlighter(numbers);
+    /// # let _ = field;
+    /// ```
+    #[inline]
+    pub fn highlighter(mut self, highlighter: TextHighlighter) -> Self {
+        self.highlighter = Some(highlighter);
+        self
+    }
+
+    /// Removes the highlighter, so the text is drawn in one style again.
+    #[inline]
+    pub fn no_highlighter(mut self) -> Self {
+        self.highlighter = None;
+        self
+    }
+
     /// Sets the callback invoked after a user edit changes the text.
     ///
     /// The callback receives the complete updated string. Programmatic
@@ -1350,6 +1393,27 @@ mod tests {
             .create_state::<TextFieldState>();
 
         assert!(state.config.caret_builder.is_some());
+    }
+
+    #[test]
+    fn a_highlighter_is_retained_in_field_configuration() {
+        let highlighter = TextHighlighter::new(|_| Vec::new());
+        let state = TextField::new()
+            .highlighter(highlighter.clone())
+            .create_state::<TextFieldState>();
+
+        let configured = state.config.highlighter.as_ref().expect("it was set");
+        assert_eq!(configured.id(), highlighter.id());
+    }
+
+    #[test]
+    fn no_highlighter_removes_it_again() {
+        let state = TextField::new()
+            .highlighter(TextHighlighter::new(|_| Vec::new()))
+            .no_highlighter()
+            .create_state::<TextFieldState>();
+
+        assert!(state.config.highlighter.is_none());
     }
 
     #[test]

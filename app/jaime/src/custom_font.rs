@@ -9,7 +9,8 @@ use crate::theme;
 const CUSTOM_FONT_FAMILY: &str = "Jaime JetBrains Mono";
 const CUSTOM_FONT_BYTES: &[u8] = include_bytes!("../assets/JetBrainsMono-Regular.ttf");
 
-fn register_custom_font() -> Result<FontFamily, FontError> {
+/// Registers the embedded JetBrains Mono family once and returns it.
+pub(crate) fn register_custom_font() -> Result<FontFamily, FontError> {
     if let Some(family) = FontRegistry::family(CUSTOM_FONT_FAMILY) {
         return Ok(family);
     }

@@ -387,11 +387,8 @@ impl RawTextField {
             }
         } else {
             let style = self.field_text_style();
-            let text_widget = self.build_text_widget(
-                geometry.display.as_ref(),
-                &style,
-                self.horizontal_text_align(),
-            );
+            let text_widget =
+                self.build_display_widget(&geometry, &style, self.horizontal_text_align());
             let _ = text_widget.computed_size(&text_ctx);
             if !text_widget.can_paint(&text_ctx) {
                 return None;
@@ -442,6 +439,7 @@ impl RawTextField {
             hovered: self.hovered.get(),
             focused: self.is_focused(),
             composing: self.is_composing(),
+            highlighter: highlighter_id(self.effective_highlighter()),
         }
     }
 }
@@ -1378,8 +1376,8 @@ impl Drawable for RawTextField {
         if !layout.geometry.display.is_empty() {
             let style = self.field_text_style();
             let text_context = field_text_context(ctx, layout.content_width, layout.content_height);
-            let text_widget = self.build_text_widget(
-                layout.geometry.display.as_ref(),
+            let text_widget = self.build_display_widget(
+                &layout.geometry,
                 &style,
                 self.horizontal_text_align(),
             );

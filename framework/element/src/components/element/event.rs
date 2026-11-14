@@ -97,6 +97,54 @@ impl<'dispatcher, 'tree> EventDispatchContext<'dispatcher, 'tree> {
         self.dispatcher
             .dispatch_nested(self.path_root, self.boundary, child, pos, event)
     }
+
+    /// Dispatches into the child view like [`Self::dispatch_child`], for an
+    /// element that adds no event behaviour of its own, and reports a capture
+    /// the child takes or gives up as this element's own.
+    ///
+    /// [`Self::dispatch_child`] records what the child captured under this
+    /// boundary and then hides it: the result it returns carries no capture
+    /// request, because a forwarder that arbitrates for itself — a scrollable
+    /// deciding whether a drag is a scroll — must say for itself whether its
+    /// child's capture stands. A wrapper with nothing to arbitrate has nothing to
+    /// say, and stopping there leaves the dispatcher unaware of the capture: the
+    /// next move is routed by position, so a drag that leaves the child's bounds
+    /// — selecting text and running past the field, pulling a scrollbar thumb
+    /// beyond its track — stops reaching the child the moment it does.
+    ///
+    /// This asks the dispatcher to capture the pointer for this boundary, which
+    /// then routes the pointer's moves and its release here wherever it is, and
+    /// the nested capture hands them on to the child.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// fn on_event_with_context(
+    ///     &self,
+    ///     event: &ElementEvent,
+    ///     context: &mut EventDispatchContext<'_, '_>,
+    /// ) -> EventResult {
+    ///     let pos = context.position();
+    ///     context.dispatch_child_transparent(self.child.as_ref(), pos, event)
+    /// }
+    /// ```
+    pub fn dispatch_child_transparent(
+        &mut self,
+        child: &dyn Element,
+        pos: Vec2d,
+        event: &ElementEvent,
+    ) -> EventResult {
+        let Some(pointer) = event_pointer_key(event) else {
+            return self.dispatch_child(child, pos, event);
+        };
+        let was_captured = self.is_captured(pointer);
+        let result = self.dispatch_child(child, pos, event);
+        match (was_captured, self.is_captured(pointer)) {
+            (false, true) => result.with_pointer_capture(pointer),
+            (true, false) => result.with_pointer_release(pointer),
+            _ => result,
+        }
+    }
 }
 
 /// One retained element in the last uncaptured pointer hit chain.
@@ -982,6 +1030,19 @@ impl EventDispatcher {
             match outcome.result.capture_request() {
                 CaptureRequest::Capture(pointer) => {
                     if let Some(owner) = outcome.capture_owner {
+                        // The root of this boundary's view answers under the
+                        // boundary's own key, so when that root is a forwarder
+                        // too, what its child captured is already recorded
+                        // there. A captured event reaches that root as an owner
+                        // and asks under the root's key, so the record moves to
+                        // it rather than being overwritten by the owner itself.
+                        if owner != boundary
+                            && let Some(inner) =
+                                self.nested_captures.get(&(boundary, pointer)).copied()
+                            && inner != owner
+                        {
+                            self.nested_captures.insert((owner, pointer), inner);
+                        }
                         self.nested_captures.insert((boundary, pointer), owner);
                     }
                 }
@@ -1364,6 +1425,7 @@ impl EventDispatcher {
             .collect();
         let mut owners: HashSet<ElementId> = HashSet::new();
         let mut cancelled: Vec<ElementId> = Vec::new();
+        let mut in_scope: Vec<(ElementId, ElementId)> = Vec::with_capacity(entries.len());
         for (boundary, owner) in entries {
             if let Some(within) = within
                 && !self.is_ancestor_or_self(root, within, boundary)
@@ -1371,7 +1433,16 @@ impl EventDispatcher {
                 continue;
             }
             cancelled.push(boundary);
-            owners.insert(owner);
+            in_scope.push((boundary, owner));
+        }
+        // An owner that is a forwarder in the chain keeps its own record, and
+        // cancelling it hands the cancel on to whatever that record names. That
+        // record's owner is therefore reached already, and cancelling it as well
+        // would tell the same element twice that its press is off.
+        for (boundary, owner) in &in_scope {
+            if !in_scope.iter().any(|(_, other)| other == boundary) {
+                owners.insert(*owner);
+            }
         }
         for owner in owners {
             if let Some(outcome) = self.dispatch_nested_captured(root, owner, &ElementEvent::Cancel) {

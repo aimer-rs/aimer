@@ -126,7 +126,7 @@ impl SpanStyle {
         self
     }
 
-    fn resolve(self, inherited: TextStyle) -> TextStyle {
+    pub(crate) fn resolve(self, inherited: TextStyle) -> TextStyle {
         TextStyle {
             font_size: self.font_size.unwrap_or(inherited.font_size),
             font_family: self.font_family.unwrap_or(inherited.font_family),

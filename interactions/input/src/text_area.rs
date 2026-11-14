@@ -11,6 +11,7 @@ use aimer_widget::{
 use crate::TextEditingController;
 use crate::input_field::caret::CaretContext;
 use crate::input_field::chrome::TextFieldVisualState;
+use crate::input_field::highlight::TextHighlighter;
 use crate::input_field::raw_fields::{ExpandDirection, InputType, TextFieldCallback};
 use crate::input_field::{TextField, TextFieldState};
 
@@ -269,6 +270,44 @@ impl TextArea {
         self
     }
 
+    /// Styles ranges of the text, such as code tokens or `@mentions`.
+    ///
+    /// The text stays a plain string, so editing, selection and input methods
+    /// behave as without a highlighter. Create the [`TextHighlighter`] once and
+    /// clone it into each build; see its documentation for what the function
+    /// receives and how its ranges are repaired.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextArea;
+    /// use aimer_input::input::{SpanStyle, StyledRange, TextHighlighter};
+    /// use aimer_widget::base::Color;
+    ///
+    /// // Marks every `TODO` in a note.
+    /// let todos = TextHighlighter::new(|text| {
+    ///     let style = SpanStyle::new().color(Color::Rgba(220, 60, 60, 255));
+    ///     text.match_indices("TODO")
+    ///         .map(|(start, word)| StyledRange::new(start..start + word.len(), style))
+    ///         .collect()
+    /// });
+    ///
+    /// let area = TextArea::new().highlighter(todos);
+    /// # let _ = area;
+    /// ```
+    #[inline]
+    pub fn highlighter(mut self, highlighter: TextHighlighter) -> Self {
+        self.field = self.field.highlighter(highlighter);
+        self
+    }
+
+    /// Removes the highlighter, so the text is drawn in one style again.
+    #[inline]
+    pub fn no_highlighter(mut self) -> Self {
+        self.field = self.field.no_highlighter();
+        self
+    }
+
     /// Restores the builtin insertion cursor after a custom builder was set.
     #[inline]
     pub fn builtin_caret(mut self) -> Self {
@@ -396,6 +435,7 @@ mod tests {
     use aimer_events::pointer::{PointerButton, PointerInfo};
     use aimer_style::{BoxDecoration, LayoutSpacing, TextAlign, TextStyle};
     use crate::input_field::TextFieldState;
+    use crate::input_field::highlight::TextHighlighter;
     use aimer_widget::base::{Color, Colors};
     use aimer_widget::{AnyElement, Drawable, EventDispatcher, FocusNode, Key, Widget};
 
@@ -435,6 +475,22 @@ mod tests {
             .create_state::<TextFieldState>();
 
         assert!(state.config().caret_builder.is_some());
+    }
+
+    #[test]
+    fn a_highlighter_reaches_the_raw_field_configuration() {
+        let highlighter = TextHighlighter::new(|_| Vec::new());
+        let state = TextArea::new()
+            .highlighter(highlighter.clone())
+            .create_state::<TextFieldState>();
+
+        let configured = state.config().highlighter.as_ref().expect("it was set");
+        assert_eq!(configured.id(), highlighter.id());
+        let cleared = TextArea::new()
+            .highlighter(highlighter)
+            .no_highlighter()
+            .create_state::<TextFieldState>();
+        assert!(cleared.config().highlighter.is_none());
     }
 
     #[test]
@@ -544,5 +600,89 @@ mod tests {
             0 < end && end < length,
             "a drag that ends inside the text selected {start}..{end} of {length}"
         );
+    }
+
+    /// Presses at `start`, moves through every point of `path`, releases at the
+    /// last one, and reports the selection it leaves, in graphemes.
+    fn drag_along(text: &str, start: Vec2d, path: &[Vec2d]) -> (usize, usize) {
+        let controller = TextEditingController::with_text(text);
+        let ctx = dummy_build_context(200.0, 80.0);
+        let element: AnyElement = TextArea::new()
+            .controller(controller.clone())
+            .to_element(&ctx);
+        element.update(&ctx);
+        let mut dispatcher = EventDispatcher::new();
+
+        let _ = dispatcher.dispatch(
+            element.as_ref(),
+            start,
+            &ElementEvent::PointerDown(PointerInfo::mouse(start, PointerButton::Primary)),
+        );
+        element.update(&ctx);
+        for point in path {
+            let _ = dispatcher.dispatch(
+                element.as_ref(),
+                *point,
+                &ElementEvent::PointerMove(PointerInfo::mouse(*point, PointerButton::Primary)),
+            );
+            element.update(&ctx);
+        }
+        let end = *path.last().expect("a drag moves at least once");
+        let _ = dispatcher.dispatch(
+            element.as_ref(),
+            end,
+            &ElementEvent::PointerUp(PointerInfo::mouse(end, PointerButton::Primary)),
+        );
+        controller.selection_graphemes()
+    }
+
+    /// A selection drag keeps following the pointer after it leaves the field.
+    ///
+    /// The press captures the pointer, so the field keeps hearing about it
+    /// wherever it goes; a position past the field, below it or to its side,
+    /// stands for the nearest edge of the text. The drag below ends far below
+    /// and to the right of a two-line field, which is the end of the text.
+    #[test]
+    fn a_drag_that_leaves_the_field_keeps_extending_the_selection() {
+        const TEXT: &str = "first line\nsecond line";
+        let length = TEXT.chars().count();
+        let inside = Vec2d { x: 40.0, y: 12.0 };
+        let outside = Vec2d { x: 900.0, y: 600.0 };
+
+        let selection = drag_along(TEXT, Vec2d { x: 1.0, y: 12.0 }, &[inside, outside]);
+
+        assert_eq!(selection, (0, length), "the selection stopped at the field's edge");
+    }
+
+    /// The same drag, sent straight out of the field with no move in between.
+    #[test]
+    fn a_drag_that_starts_leaving_at_once_still_reaches_the_end() {
+        const TEXT: &str = "first line\nsecond line";
+        let length = TEXT.chars().count();
+
+        let selection = drag_along(
+            TEXT,
+            Vec2d { x: 1.0, y: 12.0 },
+            &[Vec2d { x: 900.0, y: 600.0 }],
+        );
+
+        assert_eq!(selection, (0, length));
+    }
+
+    /// Dragging upward out of the field reaches the start of the text.
+    #[test]
+    fn a_drag_that_leaves_upward_reaches_the_start() {
+        const TEXT: &str = "first line\nsecond line";
+        let length = TEXT.chars().count();
+
+        // The range is reported in order: the press is its end, the drag its start.
+        let (start, end) = drag_along(
+            TEXT,
+            Vec2d { x: 150.0, y: 12.0 },
+            &[Vec2d { x: 60.0, y: 12.0 }, Vec2d { x: -400.0, y: -300.0 }],
+        );
+
+        assert_eq!(start, 0, "the selection stopped at the field's edge");
+        assert!(end > 0 && end <= length, "selected {start}..{end}");
     }
 }

@@ -763,8 +763,13 @@ impl RawFlex {
         // for, which a layout pass and the render-tree synchronization do to one
         // container in the same frame, the held table cannot answer. What it
         // learned still stands, so the replacement starts from it.
-        if let Some(previous) = self.layout.learned() {
-            layout.inherit_learned(&previous);
+        if let Some((previous, made_under)) = self.layout.learned() {
+            let previous_cross = if is_row {
+                made_under.max_height
+            } else {
+                made_under.max_width
+            };
+            layout.inherit_learned(&previous, previous_cross == max_cross);
         }
         Some(layout)
     }

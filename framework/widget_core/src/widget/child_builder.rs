@@ -553,7 +553,7 @@ impl EventElement for RetainedChildElement {
             return EventResult::ignored();
         };
         let pos = context.position();
-        let result = context.dispatch_child(child, pos, event);
+        let result = context.dispatch_child_transparent(child, pos, event);
         if !result.needs_redraw() {
             return result;
         }

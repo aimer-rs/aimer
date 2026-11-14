@@ -686,6 +686,353 @@ fn cached_hit_chain_replays_a_forwarding_boundary_once() {
     assert_eq!(leaf_events.get(), 2);
 }
 
+/// A child that takes the pointer on press and counts the moves it hears.
+struct CapturingLeaf {
+    bounds: (Vec2d, Vec2d),
+    log: Rc<RefCell<Vec<&'static str>>>,
+}
+
+impl VisitorElement for CapturingLeaf {
+    fn visit_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+
+    fn debug_name(&self) -> &'static str {
+        "CapturingLeaf"
+    }
+}
+
+impl EventElement for CapturingLeaf {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedTarget
+    }
+
+    fn on_event(&self, event: &ElementEvent) -> EventResult {
+        match event {
+            ElementEvent::PointerDown(pointer) => {
+                self.log.borrow_mut().push("down");
+                EventResult::consumed()
+                    .with_pointer_capture(PointerKey::new(pointer.source, pointer.id))
+            }
+            ElementEvent::PointerMove(_) => {
+                self.log.borrow_mut().push("move");
+                EventResult::consumed()
+            }
+            ElementEvent::PointerUp(pointer) => {
+                self.log.borrow_mut().push("up");
+                EventResult::consumed()
+                    .with_pointer_release(PointerKey::new(pointer.source, pointer.id))
+            }
+            ElementEvent::Cancel => {
+                self.log.borrow_mut().push("cancel");
+                EventResult::consumed()
+            }
+            _ => EventResult::ignored(),
+        }
+    }
+}
+
+impl LayoutElement for CapturingLeaf {
+    fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> {
+        Some(self.bounds)
+    }
+}
+
+impl Drawable for CapturingLeaf {
+    fn update(&self, _ctx: &BuildContext) {}
+}
+
+impl Rebuildable for CapturingLeaf {}
+
+/// A forwarding element that adds no event behaviour of its own, in the way a
+/// retained child or a repaint boundary does. `transparent` chooses whether it
+/// reports its child's captures as its own.
+struct PassThroughForwarder {
+    child: AnyElement,
+    bounds: (Vec2d, Vec2d),
+    transparent: bool,
+    role: EventTreeRole,
+}
+
+impl VisitorElement for PassThroughForwarder {
+    fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "PassThroughForwarder"
+    }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl EventElement for PassThroughForwarder {
+    fn event_tree_role(&self) -> EventTreeRole {
+        self.role
+    }
+
+    fn on_event_with_context(
+        &self,
+        event: &ElementEvent,
+        context: &mut EventDispatchContext<'_, '_>,
+    ) -> EventResult {
+        let pos = context.position();
+        if self.transparent {
+            context.dispatch_child_transparent(self.child.as_ref(), pos, event)
+        } else {
+            context.dispatch_child(self.child.as_ref(), pos, event)
+        }
+    }
+}
+
+impl LayoutElement for PassThroughForwarder {
+    fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> {
+        Some(self.bounds)
+    }
+}
+
+impl Drawable for PassThroughForwarder {
+    fn update(&self, _ctx: &BuildContext) {}
+}
+
+impl Rebuildable for PassThroughForwarder {}
+
+type LeafLog = Rc<RefCell<Vec<&'static str>>>;
+
+fn forwarded_capturing_leaf(transparent: bool) -> (AnyElement, LeafLog) {
+    let log = LeafLog::default();
+    let bounds = (Vec2d::default(), Vec2d { x: 10.0, y: 10.0 });
+    let root = HitChainCacheRoot {
+        role: EventTreeRole::IndexedTarget,
+        child: PassThroughForwarder {
+            child: CapturingLeaf {
+                bounds,
+                log: log.clone(),
+            }
+            .boxed(),
+            bounds,
+            transparent,
+            role: EventTreeRole::IndexedTarget,
+        }
+        .boxed(),
+        hit_tests: Rc::new(Cell::new(0)),
+    }
+    .boxed();
+    (root, log)
+}
+
+/// Two pass-through forwarders, the inner one the root of the outer one's private
+/// view — a retained child in a retained child — around the capturing leaf.
+fn stacked_forwarders() -> (AnyElement, LeafLog) {
+    let log = LeafLog::default();
+    let bounds = (Vec2d::default(), Vec2d { x: 10.0, y: 10.0 });
+    let inner = PassThroughForwarder {
+        child: CapturingLeaf {
+            bounds,
+            log: log.clone(),
+        }
+        .boxed(),
+        bounds,
+        transparent: true,
+        role: EventTreeRole::IndexedHitTestBoundary,
+    };
+    let root = HitChainCacheRoot {
+        role: EventTreeRole::IndexedTarget,
+        child: PassThroughForwarder {
+            child: inner.boxed(),
+            bounds,
+            transparent: true,
+            role: EventTreeRole::IndexedHitTestBoundary,
+        }
+        .boxed(),
+        hit_tests: Rc::new(Cell::new(0)),
+    }
+    .boxed();
+    (root, log)
+}
+
+/// An arbitrating forwarder in the way a scrollable is one: it lets its child be
+/// pressed, and on the first move takes the pointer back from it.
+struct TakesThePointerOnMove {
+    child: AnyElement,
+    bounds: (Vec2d, Vec2d),
+}
+
+impl VisitorElement for TakesThePointerOnMove {
+    fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "TakesThePointerOnMove"
+    }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl EventElement for TakesThePointerOnMove {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event_with_context(
+        &self,
+        event: &ElementEvent,
+        context: &mut EventDispatchContext<'_, '_>,
+    ) -> EventResult {
+        let pos = context.position();
+        match event {
+            ElementEvent::PointerMove(pointer) => {
+                context.cancel_pointer(PointerKey::new(pointer.source, pointer.id))
+            }
+            _ => context.dispatch_child(self.child.as_ref(), pos, event),
+        }
+    }
+}
+
+impl LayoutElement for TakesThePointerOnMove {
+    fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> {
+        Some(self.bounds)
+    }
+}
+
+impl Drawable for TakesThePointerOnMove {
+    fn update(&self, _ctx: &BuildContext) {}
+}
+
+impl Rebuildable for TakesThePointerOnMove {}
+
+/// When an arbitrating forwarder takes the pointer back, a leaf several
+/// forwarders down hears that its press is off once, not once for every
+/// forwarder that remembers it.
+#[test]
+fn taking_the_pointer_back_cancels_a_stacked_leaf_once() {
+    let log = LeafLog::default();
+    let bounds = (Vec2d::default(), Vec2d { x: 10.0, y: 10.0 });
+    let inner = PassThroughForwarder {
+        child: CapturingLeaf {
+            bounds,
+            log: log.clone(),
+        }
+        .boxed(),
+        bounds,
+        transparent: true,
+        role: EventTreeRole::IndexedHitTestBoundary,
+    };
+    let outer = PassThroughForwarder {
+        child: inner.boxed(),
+        bounds,
+        transparent: true,
+        role: EventTreeRole::IndexedHitTestBoundary,
+    };
+    let root = HitChainCacheRoot {
+        role: EventTreeRole::IndexedTarget,
+        child: TakesThePointerOnMove {
+            child: outer.boxed(),
+            bounds,
+        }
+        .boxed(),
+        hit_tests: Rc::new(Cell::new(0)),
+    }
+    .boxed();
+    let mut dispatcher = EventDispatcher::new();
+    let inside = Vec2d { x: 5.0, y: 5.0 };
+
+    let _ = dispatcher.dispatch(root.as_ref(), inside, &mouse_event(inside, ElementEvent::PointerDown));
+    let _ = dispatcher.dispatch(root.as_ref(), inside, &mouse_event(inside, ElementEvent::PointerMove));
+
+    assert_eq!(*log.borrow(), ["down", "cancel"]);
+}
+
+fn mouse_event(pos: Vec2d, make: fn(PointerInfo) -> ElementEvent) -> ElementEvent {
+    make(PointerInfo::mouse(pos, PointerButton::Primary))
+}
+
+/// A press the child captured must keep reaching it wherever the pointer goes.
+/// The forwarder is what the dispatcher can see, so the capture has to be the
+/// forwarder's: otherwise a drag that leaves the child's bounds is routed by
+/// position and never arrives.
+#[test]
+fn a_transparent_forwarder_keeps_its_childs_capture() {
+    let (root, log) = forwarded_capturing_leaf(true);
+    let mut dispatcher = EventDispatcher::new();
+    let inside = Vec2d { x: 5.0, y: 5.0 };
+    let outside = Vec2d { x: 400.0, y: 300.0 };
+
+    let _ = dispatcher.dispatch(root.as_ref(), inside, &mouse_event(inside, ElementEvent::PointerDown));
+    assert_eq!(dispatcher.capture_count(), 1, "the press was not captured");
+
+    let moved = dispatcher.dispatch(root.as_ref(), outside, &mouse_event(outside, ElementEvent::PointerMove));
+    assert!(moved.is_consumed(), "a move outside the bounds was not delivered");
+    assert_eq!(*log.borrow(), ["down", "move"]);
+
+    let _ = dispatcher.dispatch(root.as_ref(), outside, &mouse_event(outside, ElementEvent::PointerUp));
+    assert_eq!(dispatcher.capture_count(), 0, "the capture outlived the release");
+
+    let after = dispatcher.dispatch(root.as_ref(), outside, &mouse_event(outside, ElementEvent::PointerMove));
+    assert!(!after.is_consumed(), "a released pointer is routed by position again");
+    assert_eq!(*log.borrow(), ["down", "move", "up"]);
+}
+
+/// The opt-in is the point: a forwarder that arbitrates for itself, as a
+/// scrollable does, keeps deciding what happens to its child's capture.
+#[test]
+fn a_plain_forwarder_does_not_pass_its_childs_capture_up() {
+    let (root, log) = forwarded_capturing_leaf(false);
+    let mut dispatcher = EventDispatcher::new();
+    let inside = Vec2d { x: 5.0, y: 5.0 };
+    let outside = Vec2d { x: 400.0, y: 300.0 };
+
+    let _ = dispatcher.dispatch(root.as_ref(), inside, &mouse_event(inside, ElementEvent::PointerDown));
+    let _ = dispatcher.dispatch(root.as_ref(), outside, &mouse_event(outside, ElementEvent::PointerMove));
+
+    assert_eq!(dispatcher.capture_count(), 0);
+    assert_eq!(*log.borrow(), ["down"], "the move outside never arrived");
+}
+
+/// Pressing outside never reaches the child, so nothing is captured.
+#[test]
+fn a_transparent_forwarder_captures_nothing_for_a_press_it_missed() {
+    let (root, log) = forwarded_capturing_leaf(true);
+    let mut dispatcher = EventDispatcher::new();
+    let outside = Vec2d { x: 400.0, y: 300.0 };
+
+    let _ = dispatcher.dispatch(root.as_ref(), outside, &mouse_event(outside, ElementEvent::PointerDown));
+
+    assert_eq!(dispatcher.capture_count(), 0);
+    assert!(log.borrow().is_empty());
+}
+
+/// The same drag through forwarders stacked in one another: every level has to
+/// remember what is below it, or the release finds no owner on the way down.
+#[test]
+fn stacked_forwarders_deliver_a_drag_and_its_release_to_the_leaf() {
+    let (root, log) = stacked_forwarders();
+    let mut dispatcher = EventDispatcher::new();
+    let inside = Vec2d { x: 5.0, y: 5.0 };
+    let outside = Vec2d { x: 400.0, y: 300.0 };
+
+    let _ = dispatcher.dispatch(root.as_ref(), inside, &mouse_event(inside, ElementEvent::PointerDown));
+    assert_eq!(dispatcher.capture_count(), 1);
+    let _ = dispatcher.dispatch(root.as_ref(), outside, &mouse_event(outside, ElementEvent::PointerMove));
+    let _ = dispatcher.dispatch(root.as_ref(), outside, &mouse_event(outside, ElementEvent::PointerUp));
+
+    assert_eq!(*log.borrow(), ["down", "move", "up"]);
+    assert_eq!(dispatcher.capture_count(), 0);
+}
+
+/// A cancel reaches the leaf once, however many forwarders are around it.
+#[test]
+fn stacked_forwarders_cancel_the_leaf_once() {
+    let (root, log) = stacked_forwarders();
+    let mut dispatcher = EventDispatcher::new();
+    let inside = Vec2d { x: 5.0, y: 5.0 };
+
+    let _ = dispatcher.dispatch(root.as_ref(), inside, &mouse_event(inside, ElementEvent::PointerDown));
+    let _ = dispatcher.dispatch(root.as_ref(), inside, &ElementEvent::Cancel);
+
+    assert_eq!(*log.borrow(), ["down", "cancel"]);
+    assert_eq!(dispatcher.capture_count(), 0);
+}
+
 pub(super) fn routed_leaf(
     bounds: (Vec2d, Vec2d),
     events: Rc<Cell<usize>>,

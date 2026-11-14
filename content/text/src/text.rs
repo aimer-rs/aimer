@@ -191,6 +191,7 @@ impl Widget for Text {
             text_align: self.text_align,
             line_height: self.line_height,
             text_indent: self.text_indent,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         }
@@ -291,6 +292,7 @@ mod tests {
             text_align: TextAlign::TopLeft,
             line_height: LineHeight::Normal,
             text_indent: 0.0,
+            ranges: None,
             cache: LayoutCache::new(),
             _typeface: Cell::new(None),
         };

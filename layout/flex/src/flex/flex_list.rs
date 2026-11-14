@@ -1283,6 +1283,85 @@ mod tests {
         );
     }
 
+    /// A row that fills the width it is given, as a feed card does.
+    struct Filling {
+        height: f32,
+    }
+
+    impl Widget for Filling {
+        fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+            FillingElement { height: self.height }.boxed()
+        }
+    }
+
+    struct FillingElement {
+        height: f32,
+    }
+
+    impl VisitorElement for FillingElement {
+        fn debug_name(&self) -> &'static str {
+            "Filling"
+        }
+    }
+    impl aimer_widget::EventElement for FillingElement {}
+    impl aimer_widget::Rebuildable for FillingElement {}
+    impl aimer_widget::Drawable for FillingElement {
+        fn update(&self, _ctx: &BuildContext) {}
+    }
+    impl LayoutElement for FillingElement {
+        fn computed_size(&self, ctx: &BuildContext) -> ResolvedSize {
+            ResolvedSize {
+                width: ctx.box_constraint.max_width,
+                height: self.height,
+            }
+        }
+    }
+
+    /// A window that gets narrower narrows the list with it.
+    ///
+    /// Painting corrects the prediction with the exact size of the rows it
+    /// shows, and a prediction made anew inherits those corrections. The width
+    /// they were measured at belongs to the constraint they were measured
+    /// under, so inheriting it left the list as wide as the window it came from,
+    /// and the right-hand side of every row was clipped away.
+    #[test]
+    fn a_windowed_list_follows_a_narrower_width_after_painting_corrected_it() {
+        let ctx = scrolled_context(0.0);
+        let list = || {
+            Column::new().list(0..20u32).builder(|index: &u32| Filling {
+                height: if *index == 1 { 2.0 * ROW_EXTENT } else { ROW_EXTENT },
+            })
+        };
+
+        let element = list().to_element(&ctx);
+        element.update(&ctx);
+        assert_eq!(element.computed_size(&ctx).width, 400.0);
+
+        let mut narrow = scrolled_context(0.0);
+        narrow.box_constraint.max_width = 300.0;
+        narrow.parent_size.width = 300.0;
+        replace_a_generated_subtree(&narrow);
+        assert_eq!(
+            element.computed_size(&narrow).width,
+            300.0,
+            "the list kept the width the window used to have"
+        );
+        element.update(&narrow);
+        assert_eq!(
+            element.computed_size(&narrow).width,
+            300.0,
+            "painting under the new width brought the old width back"
+        );
+
+        // And widening again grows it back.
+        let mut wide = scrolled_context(0.0);
+        wide.box_constraint.max_width = 500.0;
+        wide.parent_size.width = 500.0;
+        replace_a_generated_subtree(&wide);
+        element.update(&wide);
+        assert_eq!(element.computed_size(&wide).width, 500.0);
+    }
+
     /// A chunk appended to a list replaces its element with one that has more
     /// rows. What the old one learned about the rows it had still holds, and
     /// dropping it made the scroll extent jump under the reader on every chunk,
