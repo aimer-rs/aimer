@@ -52,6 +52,10 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
             crate::link_inbox::deliver_posted_links();
             // Opening a link changes navigator state, which asks for its own frame.
         }
+        AimerNativePlatformEvent::OpenFiles => {
+            crate::file_inbox::deliver_posted_files();
+            // Opening a file changes the app's own state, which asks for its own frame.
+        }
         AimerNativePlatformEvent::NativeInput { event, modifiers } => {
             WindowEventHandler::handle_native_input(app, event, modifiers);
         }

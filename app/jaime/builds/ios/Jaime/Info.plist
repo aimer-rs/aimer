@@ -48,6 +48,8 @@
 				<dict>
 					<key>UISceneConfigurationName</key>
 					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>AimerSceneDelegate</string>
 				</dict>
 			</array>
 		</dict>
@@ -69,5 +71,35 @@
 	</array>
     <key>NSSupportsLiveActivities</key>
     <true/>
+    <!-- aimer:documents:start: generated from [[documents]] in Aimer.toml, edits between the markers are overwritten -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Text document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.plain-text</string>
+                <string>net.daringfireball.markdown</string>
+            </array>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Rust source file</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.source-code</string>
+            </array>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+    </array>
+    <!-- aimer:documents:end -->
 </dict>
 </plist>

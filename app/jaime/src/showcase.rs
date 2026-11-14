@@ -25,6 +25,7 @@ use crate::drag_and_drop::DragBoard;
 use crate::feedback_example::feedback_example;
 use crate::file_drop_zone::FileDropShowcase;
 use crate::file_picker_example::file_picker_example;
+use crate::opened_files_example::opened_files_example;
 use crate::fire_button_example::fire_button_example;
 use crate::floating::FloatingShowcase;
 use crate::focus_node_example::FocusNodeExample;
@@ -731,6 +732,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::HttpRequest => http_request_button_example().boxed(),
         ExampleId::Passkeys => passkey_example().boxed(),
         ExampleId::FilePicker => file_picker_example().boxed(),
+        ExampleId::OpenedFiles => opened_files_example().boxed(),
         ExampleId::Loading => loading_animation_example().boxed(),
         ExampleId::Overflow => overflow_behavior_example().boxed(),
         ExampleId::JustifyContent => justify_content_example().boxed(),

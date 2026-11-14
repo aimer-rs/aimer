@@ -24,6 +24,10 @@ pub mod browser_poll_context;
 pub mod ffi_utils;
 #[doc(hidden)]
 pub mod link_inbox;
+#[doc(hidden)]
+pub mod file_inbox;
+/// Files and links the application is opened with, on macOS.
+pub mod open_documents;
 /// The native application menu, and the shortcuts macOS routes through it.
 pub mod menu;
 #[cfg(target_os = "macos")]

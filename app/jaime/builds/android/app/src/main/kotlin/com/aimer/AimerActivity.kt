@@ -2,7 +2,11 @@ package com.aimer
 
 import android.app.NativeActivity
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -14,6 +18,7 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import java.io.File
 
 /**
  * Thin wrapper around [NativeActivity] that gives the framework a working
@@ -51,6 +56,88 @@ class AimerActivity : NativeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         runOnUiThread(::setupInputView)
+        // The library is loaded by now, so Rust can be told what launched the app.
+        openIncoming(intent)
+    }
+
+    /** An app that is already running is opened again with a new intent. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openIncoming(intent)
+    }
+
+    /**
+     * Hands the link or file the app was opened with to Rust.
+     *
+     * Rust takes a `file:` URL as a file to open and anything else as a link.
+     * Android names most files with a `content:` URI, which is not a path Rust can
+     * open, so the file is copied into the app's cache first and its path is what
+     * Rust is told. The copy runs off the UI thread because a file can be large;
+     * the hand-over is thread-safe and waits in an inbox for the event loop.
+     */
+    private fun openIncoming(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (intent.action != Intent.ACTION_VIEW) return
+        if (!ensureNativeLibrary()) return
+        if (data.scheme != "content") {
+            nativeOpenLink(data.toString())
+            return
+        }
+        Thread {
+            val copy = copyToCache(data)
+            nativeOpenLink(if (copy != null) Uri.fromFile(copy).toString() else data.toString())
+        }.start()
+    }
+
+    /**
+     * Makes the Rust library's `external fun`s callable from Java.
+     *
+     * [NativeActivity] opens the library itself, which the Java runtime does not
+     * count as loaded: a call to a native method would fail with an
+     * `UnsatisfiedLinkError` however the symbol is exported. Loading it through
+     * [System.loadLibrary] as well, which returns the library that is already
+     * open, is what makes the lookup find it. The name is the one the manifest
+     * gives [NativeActivity] under `android.app.lib_name`.
+     */
+    private fun ensureNativeLibrary(): Boolean {
+        return try {
+            val name = packageManager
+                .getActivityInfo(componentName, PackageManager.GET_META_DATA)
+                .metaData
+                ?.getString("android.app.lib_name")
+                ?: return false
+            System.loadLibrary(name)
+            true
+        } catch (e: Exception) {
+            false
+        } catch (e: UnsatisfiedLinkError) {
+            false
+        }
+    }
+
+    /**
+     * Copies a `content:` URI into `cache/opened/`, under the name the other app
+     * gave it so Rust sees the extension, or returns null if it cannot be read.
+     * A file with the same name as an earlier one replaces it.
+     */
+    private fun copyToCache(uri: Uri): File? {
+        return try {
+            val name = contentResolver
+                .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                ?: uri.lastPathSegment
+                ?: "file"
+            val directory = File(cacheDir, "opened").apply { mkdirs() }
+            // `File(name).name` drops any directory the other app put in the name.
+            val target = File(directory, File(name).name)
+            contentResolver.openInputStream(uri)?.use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
+            target
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun setupInputView() {
@@ -312,6 +399,13 @@ class AimerActivity : NativeActivity() {
         private const val INPUT_KIND_TEXT = 0
         private const val INPUT_KIND_NUMBER = 1
         private const val INPUT_KIND_OBSCURE = 2
+
+        /**
+         * Hands Rust a link or a `file:` URL the app was opened with. Safe to call
+         * from any thread, and before the event loop exists: it waits in an inbox.
+         */
+        @JvmStatic
+        external fun nativeOpenLink(url: String)
 
         /**
          * Reports a native editing transaction to Rust.

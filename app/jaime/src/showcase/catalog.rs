@@ -66,6 +66,7 @@ pub(super) enum ExampleId {
     HttpRequest,
     Passkeys,
     FilePicker,
+    OpenedFiles,
     Loading,
     Overflow,
     JustifyContent,
@@ -153,6 +154,7 @@ pub(super) const EXAMPLES: &[ExampleId] = &[
     ExampleId::HttpRequest,
     ExampleId::Passkeys,
     ExampleId::FilePicker,
+    ExampleId::OpenedFiles,
     ExampleId::Loading,
     ExampleId::Overflow,
     ExampleId::JustifyContent,
@@ -336,6 +338,7 @@ pub(super) const EXAMPLE_CATEGORIES: &[ExampleCategory] = &[
             ExampleId::Accessibility,
             ExampleId::Passkeys,
             ExampleId::FilePicker,
+            ExampleId::OpenedFiles,
             ExampleId::PanicRecovery,
         ],
     },
@@ -405,6 +408,7 @@ impl ExampleId {
             Self::HttpRequest => "HTTP request",
             Self::Passkeys => "Passkeys",
             Self::FilePicker => "File & image pickers",
+            Self::OpenedFiles => "Opened files",
             Self::Loading => "Loading animation",
             Self::Overflow => "Overflow behavior",
             Self::JustifyContent => "JustifyContent",
@@ -485,6 +489,7 @@ impl ExampleId {
             Self::AsyncBuilder | Self::HttpRequest => "⇄",
             Self::Passkeys => "⌘",
             Self::FilePicker => "▤",
+            Self::OpenedFiles => "▤",
             Self::SelectableText => "⌁",
             Self::SystemTheme | Self::AnimatedTheme | Self::CustomAnimatedTheme => "◐",
             Self::DragAndDrop => "✥",
@@ -573,6 +578,7 @@ impl ExampleId {
             Self::HttpRequest => "http-request",
             Self::Passkeys => "passkeys",
             Self::FilePicker => "file-picker",
+            Self::OpenedFiles => "opened-files",
             Self::Loading => "loading",
             Self::Overflow => "overflow",
             Self::JustifyContent => "justify-content",
@@ -731,6 +737,9 @@ impl ExampleId {
             }
             Self::FilePicker => {
                 "Open the system file and photo pickers and read what the user chooses."
+            }
+            Self::OpenedFiles => {
+                "Show the files the app is opened with: dropped on its icon or chosen in Open With."
             }
             Self::Loading => "Rotate a bundled SVG while an operation is in progress.",
             Self::Overflow => "Compare hidden, wrapped, and visible overflow.",

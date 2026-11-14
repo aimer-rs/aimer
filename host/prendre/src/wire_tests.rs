@@ -110,6 +110,7 @@ fn every_command_survives_a_round_trip() {
     roundtrip(Command::FileHover(PathBuf::from("/tmp/a b\\c.png")));
     roundtrip(Command::FileHoverCancel);
     roundtrip(Command::FileDrop(PathBuf::from("/tmp/a.png")));
+    roundtrip(Command::FileOpen(PathBuf::from("/tmp/my project/a b\\c.rs")));
     roundtrip(Command::Quit);
 }
 
@@ -261,6 +262,8 @@ fn malformed_lines_are_rejected_with_a_reason() {
     assert_eq!(bad("link "), ParseError::Invalid("url"));
     assert_eq!(bad("file-hover"), ParseError::Missing("path"));
     assert_eq!(bad("file-drop "), ParseError::Invalid("path"));
+    assert_eq!(bad("file-open "), ParseError::Invalid("path"));
+    assert_eq!(bad("file-open"), ParseError::Missing("path"));
     assert_eq!(bad("file-hover-cancel now"), ParseError::TooMany);
     assert_eq!(bad("quit now"), ParseError::TooMany);
     assert_eq!(bad("settle now"), ParseError::TooMany);

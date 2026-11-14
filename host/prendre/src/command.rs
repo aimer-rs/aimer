@@ -249,6 +249,11 @@ pub enum Command {
     FileHoverCancel,
     /// The file drag was released over the window.
     FileDrop(PathBuf),
+    /// The application was asked to open this file: dropped on its icon, chosen
+    /// with "Open With", or double-clicked in a file manager. Unlike
+    /// [`Command::FileDrop`] it has no position and no window under it; the app's
+    /// registered file handlers take it, or it waits for the first to register.
+    FileOpen(PathBuf),
     /// The process was asked to quit, as `SIGTERM` would: the loop exits in an
     /// orderly way and the app's services are told.
     Quit,

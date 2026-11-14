@@ -120,6 +120,12 @@ fn deliver_without_window(event: AimerNativePlatformEvent) -> bool {
         AimerNativePlatformEvent::Notification { id, event } => {
             aimer_platform::notification::dispatch(id, event)
         }
+        // A menu-bar application between its windows is still handed the files
+        // it is opened with; the handler may ask for a window.
+        AimerNativePlatformEvent::OpenFiles => {
+            crate::file_inbox::deliver_posted_files();
+            true
+        }
         _ => false,
     }
 }
@@ -539,6 +545,7 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
         // Before the first frame builds the widget tree: the link that launched
         // the app has to be waiting when the navigator is created.
         crate::link_inbox::deliver_posted_links();
+        crate::file_inbox::deliver_posted_files();
         if self.started {
             for window in &mut self.windows {
                 let _active = enter_window_scope(window.key);

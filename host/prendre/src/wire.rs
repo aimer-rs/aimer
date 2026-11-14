@@ -14,6 +14,7 @@
 //! soft-backspace                    back start|progress P|invoke|cancel
 //! link URL                          menu undo|redo|cut|copy|paste|select-all
 //! file-hover PATH                   file-hover-cancel          file-drop PATH
+//! file-open PATH
 //! quit
 //! ```
 //!
@@ -477,6 +478,10 @@ impl fmt::Display for Command {
                 f.write_str("file-drop ")?;
                 escape(&path.to_string_lossy(), f)
             }
+            Self::FileOpen(path) => {
+                f.write_str("file-open ")?;
+                escape(&path.to_string_lossy(), f)
+            }
             Self::Quit => f.write_str("quit"),
         }
     }
@@ -727,6 +732,7 @@ impl FromStr for Command {
             }
             "file-hover" => rest_of_line(rest, "path").map(|p| Self::FileHover(PathBuf::from(p))),
             "file-drop" => rest_of_line(rest, "path").map(|p| Self::FileDrop(PathBuf::from(p))),
+            "file-open" => rest_of_line(rest, "path").map(|p| Self::FileOpen(PathBuf::from(p))),
             "file-hover-cancel" => no_more(words).map(|()| Self::FileHoverCancel),
             "quit" => no_more(words).map(|()| Self::Quit),
             _ => Err(ParseError::UnknownCommand),

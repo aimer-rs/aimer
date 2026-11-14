@@ -139,8 +139,8 @@ impl Command {
     /// Converts this command into the event the application loop already
     /// understands, so injected input travels the same path as real input.
     ///
-    /// Returns `None` for [`Command::Link`], which is queued in the platform's link
-    /// inbox and has no event of its own, for [`Command::Settle`] and
+    /// Returns `None` for [`Command::Link`] and [`Command::FileOpen`], which are queued
+    /// in the platform's link and file inboxes and have no event of their own, for [`Command::Settle`] and
     /// [`Command::Screenshot`], which are a wait and a question, not events, and
     /// for [`Command::PointerDownHere`] and [`Command::PointerUpHere`], whose
     /// position only the server knows. [`Command::deliver`] handles every command.
@@ -235,7 +235,7 @@ impl Command {
             Self::Preedit { text, cursor } => AimerNativePlatformEvent::SetPreedit { text, cursor },
             Self::SoftBackspace => AimerNativePlatformEvent::ForceBackspace,
             Self::Back(step) => AimerNativePlatformEvent::Back(step.signal()),
-            Self::Link(_) | Self::Settle | Self::Screenshot { .. } => return None,
+            Self::Link(_) | Self::FileOpen(_) | Self::Settle | Self::Screenshot { .. } => return None,
             // Where the mouse is is the server's to say; without it there is no event.
             Self::PointerDownHere { .. } | Self::PointerUpHere { .. } => return None,
             Self::Menu(shortcut) => AimerNativePlatformEvent::MenuShortcut(shortcut.shortcut()),
@@ -297,8 +297,12 @@ impl Command {
                 aimer_platform::link_inbox::post_link(url);
                 true
             }
+            Self::FileOpen(path) => {
+                aimer_platform::file_inbox::post_files([path]);
+                true
+            }
             other => {
-                let event = other.into_platform_event().expect("only a link, a settle and a screenshot have no event");
+                let event = other.into_platform_event().expect("only a link, a file, a settle and a screenshot have no event");
                 proxy.send_event(event).is_ok()
             }
         }
@@ -504,6 +508,7 @@ mod tests {
             Command::Quit,
             Command::SoftBackspace,
             Command::Link("aimer://x".into()),
+            Command::FileOpen("/tmp/a.rs".into()),
             Command::FileHoverCancel,
             Command::Scroll {
                 dx: 0.0,

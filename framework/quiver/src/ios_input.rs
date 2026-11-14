@@ -170,7 +170,8 @@ pub unsafe extern "C" fn aimer_ios_open_url(ptr: *const u8, len: usize) {
     // above satisfy slice length and non-null requirements.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
     if let Ok(url) = std::str::from_utf8(bytes) {
-        crate::link_inbox::post_link(url.to_owned());
+        // A `file:` URL is a file to open; anything else is a link.
+        crate::file_inbox::post_url(url.to_owned());
     }
 }
 

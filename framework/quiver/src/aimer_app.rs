@@ -502,7 +502,9 @@ pub extern "system" fn Java_com_aimer_AimerActivity_nativeInsertText<'caller>(
     .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
 }
 
-/// A link the platform opened the app with, from `onCreate` or `onNewIntent`.
+/// A link or file the platform opened the app with, from `onCreate` or `onNewIntent`.
+/// A `content:` URI, which is how Android names most files, is a link here: it is
+/// not a path, so it is the app's to read through the platform.
 ///
 /// Called on the JVM's UI thread, possibly before the event loop exists, so the
 /// link is posted to a thread-safe inbox that the loop drains on its own thread.
@@ -515,7 +517,8 @@ pub extern "system" fn Java_com_aimer_AimerActivity_nativeOpenLink<'caller>(
 ) {
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let url = String::from(url.mutf8_chars(env)?);
-        crate::link_inbox::post_link(url);
+        // A `file:` URL is a file to open; anything else is a link.
+        crate::file_inbox::post_url(url);
         Ok(())
     })
     .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
@@ -1587,6 +1590,14 @@ fn start_event_loop(
 
     event_loop.set_control_flow(ControlFlow::Wait);
 
+    // Files the application was opened with. macOS reports them through its
+    // delegate, possibly while the application is still launching, so it is
+    // taught to before the loop runs; Windows and Linux pass them as arguments.
+    // Both only queue them: the loop hands them to the app when it resumes.
+    aimer_platform::open_documents::install();
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    aimer_platform::file_inbox::post_launch_files();
+
     aimer_utils::debug!("Creating async runtime...");
     #[cfg(not(target_arch = "wasm32"))]
     let async_runtime = Runtime::new().expect("Failed to create async runtime");
@@ -1805,6 +1816,7 @@ mod tests {
     mod hover_border_damage;
     mod implicit_animation_plays;
     mod capture_request;
+    mod open_files;
     mod capture_widget;
     mod injected_input;
     mod ios_input;

@@ -31,6 +31,7 @@ mod dnd_completion_example;
 mod drag_and_drop;
 mod feedback_example;
 mod file_picker_example;
+mod opened_files_example;
 mod fire_button_example;
 mod lottie_example;
 pub mod file_drop_zone;
@@ -105,6 +106,8 @@ fn main() {
     // empty_screen()
     // Before the app runs, so macOS builds its menu bar from the menu.
     shortcuts_example::install_app_shortcuts();
+    // Also before the app runs: the file that launches it is delivered as it resumes.
+    opened_files_example::install_open_files();
     AimerApp::new()
         .render_mode(render_mode_from_args())
         // Closing the last window leaves the app running; the tray installed in

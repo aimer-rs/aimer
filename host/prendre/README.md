@@ -140,7 +140,8 @@ TCP, each answered with one line, `ok` or `err REASON`. The first line must be
 | `back start\|progress P\|invoke\|cancel` | A step of the system's back (predictive back on Android). |
 | `link URL`                             | The app was opened with a deep link.                      |
 | `menu undo\|redo\|cut\|copy\|paste\|select-all` | An editing shortcut from the menu bar.        |
-| `file-hover PATH`, `file-hover-cancel`, `file-drop PATH` | A file drag entered, left, or dropped.  |
+| `file-hover PATH`, `file-hover-cancel`, `file-drop PATH` | A file drag entered, left, or dropped over the window. |
+| `file-open PATH`                       | The app was asked to open a file, as by a drop on its icon or "Open With". |
 | `quit`                                 | Ask the app to quit in an orderly way, as `SIGTERM` does. |
 
 `BUTTON` is `primary`, `secondary`, `middle` or `other:N`. `MODS` is `-` or
@@ -374,8 +375,8 @@ provided yet.
 
 Every event that comes from outside the process has a command: mouse, touch,
 scroll (pixel and line, with phases), pinch, rotate, pan, smart zoom, keys, text
-and composition, the system's back, links, menu shortcuts, file drags and
-quitting. Pointer and scroll commands carry modifiers, so `ctrl`-click and
+and composition, the system's back, links, menu shortcuts, file drags, files
+the app is asked to open, and quitting. Pointer and scroll commands carry modifiers, so `ctrl`-click and
 `ctrl`-wheel zoom work.
 
 What is not a command is not input:

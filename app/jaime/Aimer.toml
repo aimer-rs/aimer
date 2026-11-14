@@ -27,3 +27,18 @@ test_pattern_chapters = "assets/test_pattern_chapters.vtt"
 [fonts]
 
 jetbrains_mono = "assets/JetBrainsMono-Regular.ttf"
+
+# The kinds of file the app opens: what makes the system offer it a file dropped
+# on its icon or chosen in "Open With". macOS reads the extensions, iOS only the
+# `utis`, Android the `mime_types` or the extensions.
+[[documents]]
+name = "Text document"
+extensions = ["txt", "md"]
+utis = ["public.plain-text", "net.daringfireball.markdown"]
+mime_types = ["text/plain", "text/markdown"]
+
+[[documents]]
+name = "Rust source file"
+extensions = ["rs"]
+utis = ["public.source-code"]
+mime_types = ["text/x-rust"]

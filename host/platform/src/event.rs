@@ -80,6 +80,9 @@ pub enum AimerNativePlatformEvent {
     Back(crate::system_back::BackSignal),
     /// Links were posted from the platform (see [`crate::link_inbox`]).
     OpenLinks,
+    /// Files were posted for the app to open (see [`crate::file_inbox`]): dropped on
+    /// its icon, chosen with "Open With", or named on its command line.
+    OpenFiles,
     /// The device's folds or hinges changed, reported by a platform bridge from
     /// a thread other than the event loop's (Android's `ScreenBridge`).
     ///

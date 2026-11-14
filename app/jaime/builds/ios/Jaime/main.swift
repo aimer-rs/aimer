@@ -952,6 +952,127 @@ final class KeyboardForwarder {
     }
 }
 
+// A URL the system opened the app with: a file chosen with "Open In" or "Open
+// With", or a link. Rust decides which it is (a `file:` URL is a file).
+@_silgen_name("aimer_ios_open_url")
+func aimer_ios_open_url(_ ptr: UnsafePointer<UInt8>, _ len: Int)
+
+func aimerOpenURL(_ url: URL) {
+    #if DEBUG
+    NSLog("[aimer-open] forwarding %@ to Rust", url.absoluteString)
+    #endif
+    let bytes = Array(url.absoluteString.utf8)
+    guard !bytes.isEmpty else { return }
+    bytes.withUnsafeBufferPointer { aimer_ios_open_url($0.baseAddress!, $0.count) }
+}
+
+/// Receives the URLs a scene-based app is opened with.
+///
+/// The app declares scenes (`UIApplicationSceneManifest`), so UIKit hands a URL to
+/// the scene, not to the application delegate: at launch in the connection
+/// options, and afterwards in `scene(_:openURLContexts:)`. The scene shows nothing
+/// of its own — winit creates the window — so this only forwards. Named without
+/// the module so `Info.plist` can refer to it as `AimerSceneDelegate`.
+@objc(AimerSceneDelegate)
+final class AimerSceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options connectionOptions: UIScene.ConnectionOptions
+    ) {
+        #if DEBUG
+        NSLog("[aimer-open] scene willConnect urlContexts=%d", connectionOptions.urlContexts.count)
+        #endif
+        for context in connectionOptions.urlContexts {
+            aimerOpenURL(context.url)
+        }
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        #if DEBUG
+        NSLog("[aimer-open] scene openURLContexts count=%d", URLContexts.count)
+        #endif
+        for context in URLContexts {
+            aimerOpenURL(context.url)
+        }
+    }
+}
+
+/// The delegate the app gets when it has none: it answers the one message that
+/// hands the app a URL.
+final class OpenURLDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        #if DEBUG
+        NSLog("[aimer-open] application(_:open:options:) %@", url.absoluteString)
+        #endif
+        aimerOpenURL(url)
+        return true
+    }
+}
+
+/// Hands the URLs the app is opened with to Rust.
+///
+/// winit drives the app from notifications, not from a delegate, so UIKit has no
+/// delegate to tell about a URL. Two things stand in. The URL that *launches* the
+/// app is in the launch notification's options, which is observed from here, before
+/// UIKit starts. A URL that arrives while the app runs goes to the delegate's
+/// `application(_:open:options:)`, so a minimal delegate is installed once the app
+/// has launched, or, if one exists after all, the method is added to its class.
+final class URLOpenForwarder {
+    static let shared = URLOpenForwarder()
+    private var observer: NSObjectProtocol?
+    /// `UIApplication.delegate` does not keep what it points at.
+    private let ownDelegate = OpenURLDelegate()
+
+    func start() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(
+            forName: UIApplication.didFinishLaunchingNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            #if DEBUG
+            NSLog("[aimer-open] didFinishLaunching options=%@", String(describing: note.userInfo))
+            #endif
+            if let url = note.userInfo?[UIApplication.LaunchOptionsKey.url] as? URL {
+                aimerOpenURL(url)
+            }
+            self?.installOpenHook()
+        }
+    }
+
+    private func installOpenHook() {
+        let application = UIApplication.shared
+        guard let delegate = application.delegate else {
+            application.delegate = ownDelegate
+            #if DEBUG
+            NSLog("[aimer-open] no application delegate: installed one")
+            #endif
+            return
+        }
+        let delegateClass: AnyClass = type(of: delegate)
+        let selector = #selector(UIApplicationDelegate.application(_:open:options:))
+        // A delegate that already answers is left alone.
+        if class_getInstanceMethod(delegateClass, selector) != nil { return }
+        let handler: @convention(block) (AnyObject, UIApplication, URL, [UIApplication.OpenURLOptionsKey: Any]) -> Bool = { _, _, url, _ in
+            aimerOpenURL(url)
+            return true
+        }
+        if class_addMethod(delegateClass, selector, imp_implementationWithBlock(handler), "B@:@@@") {
+            // UIKit may have noted what its delegate answers when it was set, so it
+            // is set again to be asked afresh.
+            application.delegate = delegate
+        }
+    }
+}
+
+URLOpenForwarder.shared.start()
 KeyboardForwarder.shared.start()
 FrameDriver.shared.start()
 

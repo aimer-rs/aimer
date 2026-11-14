@@ -2285,6 +2285,7 @@ impl<W: Widget + 'static> ApplicationHandler<AimerNativePlatformEvent>
         // Before the first frame builds the widget tree: the link that launched
         // the app has to be waiting when the navigator is created.
         crate::link_inbox::deliver_posted_links();
+        crate::file_inbox::deliver_posted_files();
         run_startup_hooks(&mut self.startup_hooks, &mut self.startup_resources);
         self.resume_window(event_loop);
     }
