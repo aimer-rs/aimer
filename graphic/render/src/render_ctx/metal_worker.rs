@@ -266,17 +266,19 @@ impl MetalPresenter {
     fn finish_capture(
         &self,
         capture: Option<aimer_platform::capture::Pending>,
-        readback: Option<super::metal_capture::Readback>,
+        readback: Option<super::capture_readback::Readback<MetalBackend>>,
         size: (u32, u32),
         packet: &FramePacket,
     ) {
         if let (Some(pending), Some(readback)) = (capture, readback) {
-            super::metal_capture::finish(
+            super::capture_readback::finish(
                 &self.backend,
                 pending,
                 &readback,
                 size,
                 packet.metadata().device_scale(),
+                // Both Metal paths present a blue-first surface.
+                true,
             );
         }
     }
@@ -338,7 +340,7 @@ impl WorkerPresenter for MetalPresenter {
             let size = drawable.size();
             let readback = capture
                 .as_ref()
-                .map(|_| super::metal_capture::begin(&self.backend, drawable.texture(), size.0, size.1));
+                .map(|_| super::capture_readback::begin(&self.backend, drawable.texture(), size.0, size.1));
             encode.finish(FramePhase::Encode);
             if gpu_timing {
                 self.backend.end_gpu_frame_timing();

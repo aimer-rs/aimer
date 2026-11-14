@@ -386,12 +386,13 @@ pub use native_ctx::{CompletionStatus, NativeRenderContext as AimerRenderContext
     any(target_os = "macos", target_os = "ios")
 ))]
 mod metal_worker;
+/// Copying a finished frame out through the backend trait, for every native renderer.
 #[cfg(all(
     not(feature = "wgpu"),
     feature = "native",
-    any(target_os = "macos", target_os = "ios")
+    any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android", target_os = "windows")
 ))]
-mod metal_capture;
+mod capture_readback;
 #[cfg(all(
     not(feature = "wgpu"),
     feature = "native",

@@ -1,12 +1,16 @@
 use std::path::PathBuf;
 
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 
 use super::*;
 use crate::command::{BackStep, EditShortcut};
 
 fn ctrl() -> Modifiers {
     Modifiers { ctrl: true, ..Modifiers::default() }
+}
+
+fn bad(line: &str) -> ParseError {
+    line.parse::<Command>().unwrap_err()
 }
 
 fn roundtrip(command: Command) {
@@ -35,6 +39,17 @@ fn every_command_survives_a_round_trip() {
     roundtrip(Command::Screenshot { width: Some(0), jpeg: Some(75) });
     roundtrip(Command::TrackpadScroll { dx: 0.0, dy: -120.5, millis: None, modifiers: none });
     roundtrip(Command::TrackpadScroll { dx: 40.0, dy: 8.0, millis: Some(600), modifiers: ctrl() });
+    for (_, action) in WindowAction::ALL {
+        roundtrip(Command::Window(action));
+    }
+    for (_, _, edge) in WindowEdge::ALL {
+        let (dx, dy) = (if edge.moves_x() { -40.5 } else { 0.0 }, if edge.moves_y() { 12.0 } else { 0.0 });
+        roundtrip(Command::ResizeWindow { edge, dx, dy, millis: None });
+        roundtrip(Command::ResizeWindow { edge, dx, dy, millis: Some(700) });
+        for phase in [TouchPhase::Started, TouchPhase::Moved, TouchPhase::Ended] {
+            roundtrip(Command::ResizeStep { edge, dx, dy, phase });
+        }
+    }
     roundtrip(Command::PointerGlide { x: 10.0, y: -4.5, millis: None, modifiers: none });
     roundtrip(Command::PointerGlide { x: 1.0, y: 2.0, millis: Some(350), modifiers: ctrl() });
     roundtrip(Command::Scroll {
@@ -315,4 +330,46 @@ fn a_press_or_release_without_a_point_is_where_the_mouse_is() {
     let bad = |line: &str| line.parse::<Command>().unwrap_err();
     assert_eq!(bad("down 5"), ParseError::Missing("y"));
     assert_eq!(bad("up 5 nope"), ParseError::Invalid("y"));
+}
+
+#[test]
+fn a_resize_names_an_edge_by_its_short_or_long_name_and_takes_an_optional_duration() {
+    assert_eq!(
+        "resize e 120 0".parse(),
+        Ok(Command::ResizeWindow { edge: WindowEdge::East, dx: 120.0, dy: 0.0, millis: None })
+    );
+    assert_eq!(
+        "resize north-west -30 -20 800".parse(),
+        Ok(Command::ResizeWindow { edge: WindowEdge::NorthWest, dx: -30.0, dy: -20.0, millis: Some(800) })
+    );
+    assert_eq!(
+        "resize-step sw -5 9 move".parse(),
+        Ok(Command::ResizeStep { edge: WindowEdge::SouthWest, dx: -5.0, dy: 9.0, phase: TouchPhase::Moved })
+    );
+}
+
+#[test]
+fn a_resize_that_cannot_mean_what_it_says_is_refused() {
+    assert_eq!(bad("resize"), ParseError::Missing("edge"));
+    assert_eq!(bad("resize up 1 1"), ParseError::Invalid("edge"));
+    assert_eq!(bad("resize e 10"), ParseError::Missing("dy"));
+    assert_eq!(bad("resize e 10 0 0"), ParseError::Invalid("duration"));
+    assert_eq!(bad("resize e 10 0 3001"), ParseError::Invalid("duration"));
+    assert_eq!(bad("resize e 10 0 500 extra"), ParseError::TooMany);
+    assert!("resize e NaN 0".parse::<Command>().is_err());
+    // An edge moves along one axis: a distance along the other would be silently dropped.
+    assert!(matches!(bad("resize e 10 5"), ParseError::Invalid(what) if what.starts_with("dy")));
+    assert!(matches!(bad("resize n 5 10"), ParseError::Invalid(what) if what.starts_with("dx")));
+    assert_eq!(bad("resize-step e 10 0"), ParseError::Missing("phase"));
+    assert_eq!(bad("resize-step e 10 0 cancel"), ParseError::Invalid("phase"));
+    assert_eq!(bad("resize-step e 10 0 end extra"), ParseError::TooMany);
+}
+
+#[test]
+fn a_window_action_is_one_word_and_anything_else_is_refused() {
+    assert_eq!("window maximize".parse(), Ok(Command::Window(WindowAction::Maximize)));
+    assert_eq!("window unminimize".parse(), Ok(Command::Window(WindowAction::Unminimize)));
+    assert_eq!(bad("window"), ParseError::Missing("action"));
+    assert_eq!(bad("window fullscreen"), ParseError::Invalid("action"));
+    assert_eq!(bad("window maximize now"), ParseError::TooMany);
 }

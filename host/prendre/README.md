@@ -118,6 +118,9 @@ TCP, each answered with one line, `ok` or `err REASON`. The first line must be
 | `move X Y`                             | The mouse jumped there.                                   |
 | `glide X Y [MS]`                       | The mouse glides there, in about `MS` milliseconds (1 to 3000; default follows the distance). Replies at once; see [Gliding](#gliding). |
 | `settle`                               | Replies when the mouse has finished gliding.              |
+| `resize EDGE DX DY [MS]`               | Drags a window edge or corner by that distance, step by step; replies when it is over. See [Resizing](#resizing). |
+| `resize-step EDGE DX DY PHASE`         | One step of such a drag, at a distance from the grab.     |
+| `window maximize\|unmaximize\|minimize\|unminimize` | The title-bar buttons. See [Resizing](#resizing). |
 | `trackpad DX DY [MS]`                  | Scrolls smoothly, as a trackpad swipe, where the mouse is; replies when it is over. See [Scrolling](#scrolling). |
 | `screenshot [width=N] [jpeg=Q]`        | A picture of the window. See [Screenshots](#screenshots). |
 | `down [X Y] [BUTTON]`, `up [X Y] [BUTTON]` | A button went down / came up, at `X Y` or, without a point, where the injected mouse is (after any glide arrives; an error if nothing has placed it yet). Default `primary`. |
@@ -263,6 +266,44 @@ a few degrees either side, pivoting on its tip, at about 30 frames a second
 while it lasts. The badge and the pointers fade in over about 0.3 s when a client attaches and fade out when the last one disconnects (a driver that returns mid-fade fades back from where it was); a pointer that leaves goes at once. Both live in `aimer_quiver`'s debug builds only; a
 release build has no overlay and starts no server.
 
+## Resizing
+
+`resize EDGE DX DY [MS]` resizes the real window the way a hand on its border
+does: not one jump to the final size but a steady stream of intermediate sizes,
+about every 12 ms and eased so it starts and ends gently, so the app lays out at
+every step. `EDGE` is `n`, `s`, `e`, `w`, `ne`, `nw`, `se` or `sw` (the long
+names are read too) and `DX DY` is how far the *pointer* travels:
+
+- the `e` edge dragged right by 120 widens the window by 120; the `w` edge
+  dragged right by 120 narrows it by 120 and moves the window with it, because
+  the side opposite the held edge never moves, and the same goes for `n` and the
+  corners;
+- an edge moves along one axis, so the other distance must be `0` (`resize e 120 0`);
+  a line that would silently drop a distance is refused. A corner takes both;
+- without `MS` the time follows the distance, briskly (about 0.45 ms a pixel, from
+  0.12 s to 0.6 s, a step per frame); `MS` is capped at 3 seconds. The command holds its connection until the
+  drag is over.
+
+The server does it with `resize-step EDGE DX DY PHASE`: a `start` that grabs the
+edge (the window's size and position at that moment are remembered), a `move`
+per step, and an `end` at the full distance that lets go. Every step carries the
+distance **since the grab**, not since the previous step, so a step that was late
+or refused leaves no error behind, and the window ends at exactly the size asked
+for unless the platform keeps a minimum. A `resize-step` with no grab before it
+grabs first, so a lone `end` is a whole drag at once, which is also what
+`Command::deliver` does with a `resize`.
+
+`window maximize`, `unmaximize`, `minimize` and `unminimize` press the title-bar
+buttons of the same window; the platform animates the change itself. There is no
+input a person could send to a minimized window, so `unminimize` is how it comes
+back. On macOS a `resize` of a maximized window works and leaves the maximized
+state, so a later `unmaximize` has nothing to undo; other platforms may refuse it.
+
+It resizes the window input goes to (the focused one). Only desktop windows can be
+resized: on iOS, Android and the web it does nothing, and a platform may refuse a
+window that is maximized or fixed in size. The injected pointer overlay does not
+follow the drag.
+
 ## Typing
 
 `text` is one edit: the whole string lands at once, as an input method's commit
@@ -292,8 +333,14 @@ The picture is the window's last drawn frame, copied on the renderer's own queue
 behind the drawing and encoded off the UI thread, so asking for one does not delay
 showing one. An app that is idle is woken to draw it, and that frame is built from
 the whole tree, not the slice that changed. The overlay (badge and pointer) is in
-the picture. Only the Metal renderer can copy a frame so far: the others answer
-`err` at once, naming the renderer, instead of waiting.
+the picture. Every native renderer can copy a frame: Metal (macOS, iOS), Vulkan
+(Linux, Android), OpenGL (the Linux and Android fallback) and Direct3D 12
+(Windows). The Metal, Vulkan and Direct3D 12 pictures are copied out of the
+presented image on the renderer's own queue; OpenGL has no such queue, so its
+picture is read back before the buffers are swapped, which stalls that one frame.
+The WGPU and browser renderers cannot yet, and answer `err` at once, naming the
+renderer, instead of waiting; so does a Vulkan surface that does not allow its
+images to be copied.
 
 ## Security
 

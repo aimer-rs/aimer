@@ -13,6 +13,7 @@ pub mod render_ctx {
 
     use aimer_frame_stats::{FramePhase, PhaseTimer};
     use crate::render_ctx::PresentOutcome;
+    use crate::render_ctx::capture_readback;
 
     /// Quiver's inline Vulkan renderer for native windows.
     pub struct VulkanApi {
@@ -164,8 +165,6 @@ pub mod render_ctx {
         }
 
         pub fn present_packet(&mut self, packet: FramePacket) -> PresentOutcome {
-            // This renderer cannot copy its frames out yet: say so, don't leave the asker waiting.
-            aimer_platform::capture::refuse(aimer_platform::capture::Error::Unsupported);
             let presented = self.present_worker_packet(&packet);
             if let Some(canvas) = &self.canvas {
                 canvas.recycle_draw_list(packet.into_frame().into_draw_list());
@@ -199,6 +198,7 @@ pub mod render_ctx {
             };
             let frame = packet.frame();
             let is_srgb = surface.is_srgb();
+            let (can_capture, bgra) = (surface.supports_capture(), surface.is_bgra());
             let acquire = PhaseTimer::start();
             let acquired = surface.try_acquire();
             acquire.finish_acquire();
@@ -211,10 +211,15 @@ pub mod render_ctx {
             if width == 0 || height == 0 {
                 return false;
             }
+            // Someone asked for a picture of the window. Taken only now that an image is
+            // in hand: a frame that could not be drawn leaves the request waiting.
+            let capture = capture_readback::take_request(can_capture);
             let encode = PhaseTimer::start();
-            if (width, height) == (frame.width, frame.height) {
+            if capture.is_none() && (width, height) == (frame.width, frame.height) {
                 renderer.render_packet(backend, drawable.view(), packet, is_srgb);
             } else {
+                // A capture frame is drawn whole: a frame that changed nothing carries no
+                // damage, and the picture must be the whole window regardless.
                 renderer.render_packet_at_size(
                     backend,
                     drawable.view(),
@@ -224,10 +229,20 @@ pub mod render_ctx {
                     is_srgb,
                 );
             }
+            // Copied out after the frame is drawn and before it is presented, on the same
+            // queue, so it is in order behind the drawing and reads this frame.
+            let readback = capture
+                .as_ref()
+                .map(|_| capture_readback::begin(backend, drawable.texture(), width, height));
             encode.finish(FramePhase::Encode);
             let present = PhaseTimer::start();
             let success = drawable.present().is_ok();
             present.finish(FramePhase::Present);
+            // The frame is on its way; only now wait for the copy, so taking a picture
+            // does not delay showing one.
+            if let (Some(pending), Some(readback)) = (capture, readback) {
+                capture_readback::finish(backend, pending, &readback, (width, height), packet.metadata().device_scale(), bgra);
+            }
             success
         }
     }

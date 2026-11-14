@@ -13,6 +13,7 @@ pub mod render_ctx {
 
     use aimer_frame_stats::{FramePhase, PhaseTimer};
     use crate::render_ctx::PresentOutcome;
+    use crate::render_ctx::capture_readback;
 
     /// Quiver's inline OpenGL renderer for Windows/Linux and GLES 3 on Android.
     ///
@@ -201,8 +202,6 @@ pub mod render_ctx {
 
         /// Presents a frame packet and returns its draw-list storage to the canvas.
         pub fn present_packet(&mut self, packet: FramePacket) -> PresentOutcome {
-            // This renderer cannot copy its frames out yet: say so, don't leave the asker waiting.
-            aimer_platform::capture::refuse(aimer_platform::capture::Error::Unsupported);
             let presented = self.present_worker_packet(&packet);
             if let Some(canvas) = &self.canvas {
                 canvas.recycle_draw_list(packet.into_frame().into_draw_list());
@@ -248,10 +247,15 @@ pub mod render_ctx {
             if width == 0 || height == 0 {
                 return false;
             }
+            // Someone asked for a picture of the window. Taken only now that a drawable is
+            // in hand: a frame that could not be drawn leaves the request waiting.
+            let capture = capture_readback::take_request(true);
             let encode = PhaseTimer::start();
-            if (width, height) == (frame.width, frame.height) {
+            if capture.is_none() && (width, height) == (frame.width, frame.height) {
                 renderer.render_packet(backend, drawable.view(), packet, is_srgb);
             } else {
+                // A capture frame is drawn whole: a frame that changed nothing carries no
+                // damage, and the picture must be the whole window regardless.
                 renderer.render_packet_at_size(
                     backend,
                     drawable.view(),
@@ -260,6 +264,21 @@ pub mod render_ctx {
                     height,
                     is_srgb,
                 );
+            }
+            // The default framebuffer is only defined until the buffers are swapped, so
+            // unlike the other renderers the picture is read before the frame is shown
+            // (and the read waits for the GPU, which is why it is only for a picture).
+            if let Some(pending) = capture {
+                let mut pixels = drawable.read_pixels();
+                // OpenGL stores the default framebuffer bottom row first.
+                aimer_platform::capture::flip_rows(&mut pixels, width, height);
+                pending.complete(aimer_platform::capture::Frame {
+                    width,
+                    height,
+                    scale: packet.metadata().device_scale(),
+                    bgra: false,
+                    pixels,
+                });
             }
             encode.finish(FramePhase::Encode);
             let present = PhaseTimer::start();

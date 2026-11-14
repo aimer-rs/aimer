@@ -95,3 +95,24 @@ fn a_renderer_that_cannot_capture_refuses_at_once_and_only_when_someone_is_waiti
     assert_eq!(reply.recv_timeout(Duration::from_secs(1)).unwrap().unwrap_err(), Error::Unsupported);
     assert!(!is_pending(), "and the request is spent");
 }
+
+#[test]
+fn rows_run_bottom_to_top_are_turned_so_the_first_is_the_top() {
+    // Two pixels wide, four rows, each row filled with its own number.
+    let mut pixels: Vec<u8> = (0..4u8).flat_map(|row| [row; 8]).collect();
+    flip_rows(&mut pixels, 2, 4);
+    let rows: Vec<u8> = pixels.chunks(8).map(|row| row[0]).collect();
+    assert_eq!(rows, [3, 2, 1, 0]);
+    assert!(pixels.chunks(8).all(|row| row.iter().all(|b| *b == row[0])), "a row is turned whole, not mixed");
+}
+
+#[test]
+fn flipping_an_odd_height_leaves_the_middle_row_and_one_row_is_unchanged() {
+    let mut pixels: Vec<u8> = (0..3u8).flat_map(|row| [row; 4]).collect();
+    flip_rows(&mut pixels, 1, 3);
+    assert_eq!(pixels, [2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0]);
+    let mut single = vec![7u8; 8];
+    flip_rows(&mut single, 2, 1);
+    assert_eq!(single, [7; 8]);
+    flip_rows(&mut [], 0, 0);
+}

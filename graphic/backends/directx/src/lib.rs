@@ -493,6 +493,14 @@ impl Dx12SurfaceFrame {
         &self.view
     }
 
+    /// Returns the acquired buffer itself, to copy out of before it is presented.
+    /// Swap-chain buffers are copy sources, and a copy puts the buffer back in the
+    /// state it was in.
+    #[inline]
+    pub fn texture(&self) -> &Dx12Texture {
+        &self.texture
+    }
+
     #[inline]
     pub fn size(&self) -> (u32, u32) {
         (self.texture.size.0, self.texture.size.1)

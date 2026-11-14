@@ -158,6 +158,8 @@ pub(crate) fn handle_user_event<W: Widget + 'static>(
         AimerNativePlatformEvent::RenderWorkerReady => {}
         // Answered by the multi-window host, which owns the windows they name.
         AimerNativePlatformEvent::WindowFrameReady(_) | AimerNativePlatformEvent::WindowRequests => {}
+        // Resizing is the window host's: it owns the platform window and its position.
+        AimerNativePlatformEvent::WindowEdgeDrag { .. } | AimerNativePlatformEvent::WindowAction(_) => {}
     }
 }
 

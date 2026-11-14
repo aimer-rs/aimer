@@ -45,6 +45,7 @@ use aimer_window::host::{AfterClose, OpenRequest, Request, WindowCommand};
 use aimer_window::ExitPolicy;
 use aimer_cupid::AntiAlias;
 use aimer_utils::info;
+use aimer_platform::window_drag::{WindowAction, WindowDragPhase, WindowEdge};
 
 /// A window's application, with every window's root widget erased to one type
 /// so a single list can hold them all.
@@ -208,6 +209,49 @@ pub(crate) struct DesktopHost {
     /// The window that last had keyboard focus, which platform input that names
     /// no window is delivered to.
     focused: Option<WindowId>,
+    /// The window an injected edge drag is resizing, and where it was grabbed.
+    edge_drag: Option<EdgeDragOrigin>,
+}
+
+/// A window's rectangle at the moment an edge of it was grabbed. Every step of
+/// the drag is counted from here, so a step that was late or refused leaves no
+/// error behind for the next one.
+#[derive(Clone, Copy)]
+struct EdgeDragOrigin {
+    window: WindowId,
+    position: winit::dpi::PhysicalPosition<i32>,
+    size: winit::dpi::PhysicalSize<u32>,
+}
+
+/// The smallest a dragged window is made, in logical pixels. Platforms keep
+/// their own minimums; this only keeps a long drag from asking for nothing.
+const MIN_DRAGGED_EXTENT: f64 = 100.0;
+
+/// Gives `native` the rectangle dragging `edge` by `delta` logical pixels from
+/// `origin` makes it, and moves it so the side opposite the edge stays put.
+fn resize_to_edge_drag(
+    native: &winit::window::Window,
+    origin: EdgeDragOrigin,
+    edge: WindowEdge,
+    (dx, dy): (f32, f32),
+) {
+    let scale = native.scale_factor();
+    let from = (
+        f64::from(origin.position.x),
+        f64::from(origin.position.y),
+        f64::from(origin.size.width),
+        f64::from(origin.size.height),
+    );
+    let min = (MIN_DRAGGED_EXTENT * scale, MIN_DRAGGED_EXTENT * scale);
+    let (_, _, width, height) = edge.dragged(from, (f64::from(dx) * scale, f64::from(dy) * scale), min);
+    let asked = winit::dpi::PhysicalSize::new(width.round() as u32, height.round() as u32);
+    // A platform that resizes at once says what it gave (a minimum may have
+    // held it back); one that resizes later is taken at its word.
+    let given = native.request_inner_size(asked).unwrap_or(asked);
+    if edge.moves_origin() {
+        let (x, y) = edge.anchored(from, (f64::from(given.width), f64::from(given.height)));
+        native.set_outer_position(winit::dpi::PhysicalPosition::new(x.round() as i32, y.round() as i32));
+    }
 }
 
 impl DesktopHost {
@@ -226,6 +270,7 @@ impl DesktopHost {
             startup_resources: Vec::new(),
             started: false,
             focused: None,
+            edge_drag: None,
         }
     }
 
@@ -241,6 +286,50 @@ impl DesktopHost {
             .and_then(|id| self.index_of(id))
             .or(if self.windows.is_empty() { None } else { Some(0) })?;
         self.windows.get_mut(index)
+    }
+
+    /// Resizes the input target the way dragging `edge` by `(dx, dy)` logical
+    /// pixels from where it was grabbed would, keeping the side opposite the edge
+    /// where it was.
+    fn drag_edge(&mut self, edge: WindowEdge, delta: (f32, f32), phase: WindowDragPhase) {
+        let Some(target) = self.input_target() else {
+            return;
+        };
+        let id = target.id;
+        let Some(native) = target.app.native_window().cloned() else {
+            return;
+        };
+        let grabbed = match self.edge_drag {
+            Some(origin) if origin.window == id && phase != WindowDragPhase::Started => origin,
+            // The grab itself, or a step whose grab was never seen: the window as it is.
+            _ => EdgeDragOrigin {
+                window: id,
+                // A position the platform cannot report (Wayland) is a window that
+                // is not moved, which only matters for the west and north edges.
+                position: native.outer_position().unwrap_or_default(),
+                size: native.inner_size(),
+            },
+        };
+        self.edge_drag = (phase != WindowDragPhase::Ended).then_some(grabbed);
+        if phase != WindowDragPhase::Started {
+            resize_to_edge_drag(&native, grabbed, edge, delta);
+        }
+    }
+
+    /// Maximizes, minimizes or brings back the input target, as its title-bar
+    /// buttons would.
+    fn window_action(&mut self, action: WindowAction) {
+        let Some(native) = self.input_target().and_then(|window| window.app.native_window().cloned()) else {
+            return;
+        };
+        // An edge drag counts from a rectangle this is about to change.
+        self.edge_drag = None;
+        match action {
+            WindowAction::Maximize => native.set_maximized(true),
+            WindowAction::Unmaximize => native.set_maximized(false),
+            WindowAction::Minimize => native.set_minimized(true),
+            WindowAction::Unminimize => native.set_minimized(false),
+        }
     }
 
     /// Creates `app`'s platform window and brings it up as one of the host's.
@@ -546,6 +635,10 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
                 }
                 self.reap(event_loop);
             }
+            AimerNativePlatformEvent::WindowEdgeDrag { edge, dx, dy, phase } => {
+                self.drag_edge(edge, (dx, dy), phase);
+            }
+            AimerNativePlatformEvent::WindowAction(action) => self.window_action(action),
             AimerNativePlatformEvent::Back(signal) => {
                 // Only Android reports a step of the system back, and no
                 // desktop window is closed by one.

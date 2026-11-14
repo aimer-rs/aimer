@@ -206,6 +206,22 @@ impl<W: HasDisplayHandle + HasWindowHandle + Send + Sync + 'static> VulkanSurfac
         is_srgb_format(self.format)
     }
 
+    /// Returns whether the swapchain's images can be copied out to the CPU, for
+    /// a screenshot. A surface whose images cannot be a transfer source says no.
+    #[inline]
+    pub fn supports_capture(&self) -> bool {
+        self.images
+            .first()
+            .is_some_and(|image| image.0.texture.0.usage.contains(&TextureUsage::CopySrc))
+    }
+
+    /// Returns whether the swapchain stores blue first, which a picture copied out
+    /// of it must say.
+    #[inline]
+    pub fn is_bgra(&self) -> bool {
+        matches!(self.format, vk::Format::B8G8R8A8_UNORM | vk::Format::B8G8R8A8_SRGB)
+    }
+
     /// Returns the current swapchain dimensions in physical pixels.
     #[inline]
     pub fn size(&self) -> (u32, u32) {
@@ -485,6 +501,13 @@ impl<'a, W: HasDisplayHandle + HasWindowHandle + Send + Sync + 'static> VulkanSu
         &self.view
     }
 
+    /// Returns the acquired image itself, to copy out of before it is presented.
+    /// It can be a transfer source only if [`VulkanSurface::supports_capture`].
+    #[inline]
+    pub fn texture(&self) -> &VulkanTexture {
+        &self.view.0.texture
+    }
+
     /// Returns the acquired image dimensions.
     #[inline]
     pub fn size(&self) -> (u32, u32) {
@@ -615,6 +638,16 @@ fn create_swapchain(
     } else {
         (vk::SharingMode::EXCLUSIVE, &[][..])
     };
+    // A screenshot copies the presented image out, which needs it to be a transfer
+    // source. Nearly every surface allows that; one that does not still renders.
+    let capture = capabilities
+        .supported_usage_flags
+        .contains(vk::ImageUsageFlags::TRANSFER_SRC);
+    let image_usage = if capture {
+        vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC
+    } else {
+        vk::ImageUsageFlags::COLOR_ATTACHMENT
+    };
     let mut create_info = vk::SwapchainCreateInfoKHR::default()
         .surface(surface.raw)
         .min_image_count(image_count)
@@ -622,7 +655,7 @@ fn create_swapchain(
         .image_color_space(selected_format.color_space)
         .image_extent(extent)
         .image_array_layers(1)
-        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_usage(image_usage)
         .image_sharing_mode(sharing_mode)
         .queue_family_indices(queue_family_indices)
         .pre_transform(capabilities.current_transform)
@@ -654,7 +687,11 @@ fn create_swapchain(
             format: selected_format.format,
             dimension: super::TextureDimension::D2,
             sample_count: 1,
-            usage: vec![TextureUsage::RenderAttachment],
+            usage: if capture {
+                vec![TextureUsage::RenderAttachment, TextureUsage::CopySrc]
+            } else {
+                vec![TextureUsage::RenderAttachment]
+            },
             layout: Mutex::new(vk::ImageLayout::UNDEFINED),
             presentable: true,
             imported_memory: None,

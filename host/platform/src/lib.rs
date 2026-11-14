@@ -36,6 +36,7 @@ pub mod poll_context;
 #[doc(hidden)]
 pub mod shutdown_signals;
 pub mod system_back;
+pub mod window_drag;
 /// Blurring what is behind a native window.
 pub mod window_backdrop;
 /// System notifications, with their events delivered on the event loop.

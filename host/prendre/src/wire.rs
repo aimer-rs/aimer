@@ -4,6 +4,8 @@
 //! move X Y [OPTS]                   down X Y [BUTTON] [OPTS]   up X Y [BUTTON] [OPTS]
 //! glide X Y [MS] [OPTS]             settle                     leave
 //! scroll DX DY [OPTS]               trackpad DX DY [MS] [OPTS]
+//! resize EDGE DX DY [MS]           resize-step EDGE DX DY PHASE
+//! window maximize|unmaximize|minimize|unminimize
 //! screenshot [width=PIXELS] [jpeg=QUALITY]
 //! touch start|move|end ID X Y       touch cancel
 //! pinch X Y DELTA PHASE             rotate X Y DELTA PHASE     pan X Y DX DY PHASE
@@ -21,7 +23,12 @@
 //! `PHASE` is `start`, `move`, `end` or `cancel`. `RANGE` is `-` or the byte
 //! range `START,END` of the active segment inside the preedit text.
 //!
-//! `MS` is how long a `glide` or a `trackpad` swipe takes, from 1 to 3000
+//! `EDGE` is the edge or corner of the window to drag: `n`, `s`, `e`, `w`, `ne`,
+//! `nw`, `se` or `sw` (the long names, `north`, `north-east`, ... are read too).
+//! `DX DY` is how far the pointer travels; an edge moves along one axis, so the
+//! other distance must be `0`.
+//!
+//! `MS` is how long a `glide`, a `resize` or a `trackpad` swipe takes, from 1 to 3000
 //! milliseconds.
 //!
 //! `OPTS` are `name=value` words after the positional arguments, in any order,
@@ -42,7 +49,7 @@ use std::str::FromStr;
 
 use std::path::PathBuf;
 
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 
 use crate::Command;
 use crate::command::{BackStep, EditShortcut, MAX_GLIDE_MILLIS, MAX_SCREENSHOT_WIDTH};
@@ -141,6 +148,29 @@ fn parse_button(word: &str) -> Result<PointerButton, ParseError> {
             .map(PointerButton::Other)
             .ok_or(ParseError::Invalid("button")),
     }
+}
+
+fn parse_edge(word: &str) -> Result<WindowEdge, ParseError> {
+    WindowEdge::ALL
+        .iter()
+        .find(|(short, long, _)| word == *short || word == *long)
+        .map(|(.., edge)| *edge)
+        .ok_or(ParseError::Invalid("edge"))
+}
+
+/// Reads `EDGE DX DY` of a resize.
+fn parse_edge_drag(words: &mut std::str::SplitAsciiWhitespace<'_>) -> Result<(WindowEdge, f32, f32), ParseError> {
+    let edge = parse_edge(words.next().ok_or(ParseError::Missing("edge"))?)?;
+    let (dx, dy) = (number(words.next(), "dx")?, number(words.next(), "dy")?);
+    // A distance along an axis the edge does not move would be ignored, which is a
+    // command that quietly means less than it says.
+    if !edge.moves_x() && dx != 0.0 {
+        return Err(ParseError::Invalid("dx: this edge moves vertically"));
+    }
+    if !edge.moves_y() && dy != 0.0 {
+        return Err(ParseError::Invalid("dy: this edge moves horizontally"));
+    }
+    Ok((edge, dx, dy))
 }
 
 fn parse_modifiers(word: &str) -> Result<Modifiers, ParseError> {
@@ -342,6 +372,17 @@ impl fmt::Display for Command {
                 }
                 write_mods_option(modifiers, f)
             }
+            Self::ResizeWindow { edge, dx, dy, millis } => {
+                write!(f, "resize {} {dx} {dy}", edge.name())?;
+                if let Some(millis) = millis {
+                    write!(f, " {millis}")?;
+                }
+                Ok(())
+            }
+            Self::Window(action) => write!(f, "window {}", action.name()),
+            Self::ResizeStep { edge, dx, dy, phase } => {
+                write!(f, "resize-step {} {dx} {dy} {}", edge.name(), phase_name(*phase))
+            }
             Self::Typing { text, millis } => {
                 match millis {
                     Some(millis) => write!(f, "typing {millis} ")?,
@@ -504,6 +545,38 @@ impl FromStr for Command {
                 } else {
                     Self::TrackpadScroll { dx: a, dy: b, millis, modifiers }
                 })
+            }
+            "window" => {
+                let word = words.next().ok_or(ParseError::Missing("action"))?;
+                let action = WindowAction::ALL
+                    .iter()
+                    .find(|(name, _)| word == *name)
+                    .map(|(_, action)| *action)
+                    .ok_or(ParseError::Invalid("action"))?;
+                no_more(words).map(|()| Self::Window(action))
+            }
+            "resize" | "resize-step" => {
+                let (edge, dx, dy) = parse_edge_drag(&mut words)?;
+                if verb == "resize-step" {
+                    let phase = parse_phase(words.next().ok_or(ParseError::Missing("phase"))?)?;
+                    // A drag that is abandoned is not undone, so there is no cancel to say.
+                    if phase == TouchPhase::Cancelled {
+                        return Err(ParseError::Invalid("phase"));
+                    }
+                    no_more(words)?;
+                    return Ok(Self::ResizeStep { edge, dx, dy, phase });
+                }
+                let millis = words
+                    .next()
+                    .map(|w| {
+                        w.parse::<u32>()
+                            .ok()
+                            .filter(|ms| (1..=MAX_GLIDE_MILLIS).contains(ms))
+                            .ok_or(ParseError::Invalid("duration"))
+                    })
+                    .transpose()?;
+                no_more(words)?;
+                Ok(Self::ResizeWindow { edge, dx, dy, millis })
             }
             "screenshot" => {
                 let (mut width, mut jpeg) = (None, None);

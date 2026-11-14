@@ -213,6 +213,11 @@ pub fn copy_texture_to_buffer(
             &[region],
         );
     }
+    // A swapchain image is handed to the presentation engine in this layout, and
+    // reading it must not change that.
+    if src.texture.0.presentable {
+        encoder.image_barrier(src.texture, vk::ImageLayout::PRESENT_SRC_KHR);
+    }
     encoder.buffer_barrier(
         dst.buffer,
         vk::AccessFlags::TRANSFER_WRITE,

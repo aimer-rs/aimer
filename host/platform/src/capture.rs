@@ -157,6 +157,19 @@ pub fn unpad_rows(bytes: &[u8], width: u32, height: u32, bytes_per_row: u32) -> 
     out
 }
 
+/// Turns an image whose rows run bottom to top, as OpenGL's default framebuffer
+/// stores them, upside down in place so the first row is the top one.
+pub fn flip_rows(pixels: &mut [u8], width: u32, height: u32) {
+    let stride = width as usize * 4;
+    let rows = height as usize;
+    debug_assert_eq!(pixels.len(), stride * rows, "tightly packed rows");
+    for top in 0..rows / 2 {
+        let bottom = rows - 1 - top;
+        let (head, tail) = pixels.split_at_mut(bottom * stride);
+        head[top * stride..(top + 1) * stride].swap_with_slice(&mut tail[..stride]);
+    }
+}
+
 #[cfg(test)]
 #[path = "capture_tests.rs"]
 mod tests;

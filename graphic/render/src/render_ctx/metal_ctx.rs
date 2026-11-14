@@ -404,7 +404,7 @@ pub mod render_ctx {
             // same queue, so it is in order behind the drawing and reads this frame.
             let readback = capture
                 .as_ref()
-                .map(|_| crate::render_ctx::metal_capture::begin(backend, drawable.texture(), width, height));
+                .map(|_| crate::render_ctx::capture_readback::begin(backend, drawable.texture(), width, height));
             encode.finish(FramePhase::Encode);
             if gpu_timing {
                 backend.end_gpu_frame_timing();
@@ -423,7 +423,8 @@ pub mod render_ctx {
             // The frame is on its way to the screen; only now wait for the copy, so
             // taking a picture does not delay showing it.
             if let (Some(pending), Some(readback)) = (capture, readback) {
-                crate::render_ctx::metal_capture::finish(backend, pending, &readback, (width, height), packet.metadata().device_scale());
+                // Both Metal paths present a blue-first surface.
+                crate::render_ctx::capture_readback::finish(backend, pending, &readback, (width, height), packet.metadata().device_scale(), true);
             }
             true
         }

@@ -99,3 +99,86 @@ pub enum TouchPhase {
     /// The system abandoned it.
     Cancelled,
 }
+
+/// Which edge or corner of the window a resize drags.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowEdge {
+    /// The top edge.
+    North,
+    /// The bottom edge.
+    South,
+    /// The right edge.
+    East,
+    /// The left edge.
+    West,
+    /// The top-right corner.
+    NorthEast,
+    /// The top-left corner.
+    NorthWest,
+    /// The bottom-right corner.
+    SouthEast,
+    /// The bottom-left corner.
+    SouthWest,
+}
+
+impl WindowEdge {
+    /// Every edge and corner, with the short name the wire format writes first
+    /// and the long one it also reads.
+    pub(crate) const ALL: [(&'static str, &'static str, Self); 8] = [
+        ("n", "north", Self::North),
+        ("s", "south", Self::South),
+        ("e", "east", Self::East),
+        ("w", "west", Self::West),
+        ("ne", "north-east", Self::NorthEast),
+        ("nw", "north-west", Self::NorthWest),
+        ("se", "south-east", Self::SouthEast),
+        ("sw", "south-west", Self::SouthWest),
+    ];
+
+    /// The short name the wire format writes: `n`, `s`, `e`, `w`, `ne`, `nw`,
+    /// `se` or `sw`.
+    pub fn name(self) -> &'static str {
+        Self::ALL.iter().find(|(_, _, edge)| *edge == self).map_or("", |(short, ..)| short)
+    }
+
+    /// Whether the pointer's horizontal travel moves this edge.
+    #[inline]
+    pub const fn moves_x(self) -> bool {
+        !matches!(self, Self::North | Self::South)
+    }
+
+    /// Whether the pointer's vertical travel moves this edge.
+    #[inline]
+    pub const fn moves_y(self) -> bool {
+        !matches!(self, Self::East | Self::West)
+    }
+}
+
+/// A change of the window's state, as its title-bar buttons make.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowAction {
+    /// Fills the screen's work area.
+    Maximize,
+    /// Leaves the maximized state, back to the size it had.
+    Unmaximize,
+    /// Hides the window in the dock or taskbar.
+    Minimize,
+    /// Brings a minimized window back.
+    Unminimize,
+}
+
+impl WindowAction {
+    /// Every action with the name the wire format writes.
+    pub(crate) const ALL: [(&'static str, Self); 4] = [
+        ("maximize", Self::Maximize),
+        ("unmaximize", Self::Unmaximize),
+        ("minimize", Self::Minimize),
+        ("unminimize", Self::Unminimize),
+    ];
+
+    /// The name the wire format writes: `maximize`, `unmaximize`, `minimize` or
+    /// `unminimize`.
+    pub fn name(self) -> &'static str {
+        Self::ALL.iter().find(|(_, action)| *action == self).map_or("", |(name, _)| name)
+    }
+}

@@ -110,6 +110,26 @@ pub enum AimerNativePlatformEvent {
     /// input itself so the debug overlay can draw where it is. See
     /// [`crate::attachment::SyntheticPointer`].
     SyntheticPointer(crate::attachment::SyntheticPointer),
+    /// An edge or corner of the window was dragged, as a person resizes it.
+    ///
+    /// `(dx, dy)` is how far the pointer has travelled in **logical pixels since
+    /// the edge was grabbed**, not since the last step, so steps that arrive late
+    /// or are refused leave no error behind. [`Started`](crate::window_drag::WindowDragPhase::Started)
+    /// takes note of the window's rectangle, `Moved` and `Ended` resize from it,
+    /// and `Ended` forgets it; a `Moved` or `Ended` that finds none takes note of
+    /// the current rectangle first, so a single `Ended` is a whole drag. Only a
+    /// desktop window can be resized; elsewhere this does nothing.
+    WindowEdgeDrag {
+        edge: crate::window_drag::WindowEdge,
+        dx: f32,
+        dy: f32,
+        phase: crate::window_drag::WindowDragPhase,
+    },
+    /// The window was maximized, minimized or brought back, as its title-bar
+    /// buttons would have done. Only a desktop window has them; elsewhere this
+    /// does nothing, and the platform may refuse, for a window that cannot be
+    /// resized.
+    WindowAction(crate::window_drag::WindowAction),
 }
 
 pub static EVENT_PROXY: OnceLock<EventLoopProxy<AimerNativePlatformEvent>> = OnceLock::new();

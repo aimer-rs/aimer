@@ -77,3 +77,23 @@ fn nothing_to_scroll_is_nothing() {
     assert!(plan(0.0, 0.0, None).steps.is_empty());
     assert!(plan(0.1, -0.2, None).steps.is_empty(), "less than a pixel");
 }
+
+#[test]
+fn a_window_drag_without_a_duration_is_quick_and_still_a_stream_of_sizes() {
+    let hop = plan_with(200.0, 0.0, None, RESIZE);
+    assert!(duration(&hop) <= Duration::from_millis(260), "200 px took {:?}", duration(&hop));
+    assert!(hop.steps.len() >= 8, "a stream, not a jump: {} steps", hop.steps.len());
+    let far = plan_with(2000.0, 0.0, None, RESIZE);
+    assert!(duration(&far) <= Duration::from_millis(600), "capped however far: {:?}", duration(&far));
+    assert!(duration(&hop) < duration(&plan(200.0, 0.0, None)) / 2, "well under a trackpad swipe of the same distance");
+}
+
+#[test]
+fn a_window_drag_steps_add_up_to_the_distance_and_honour_an_explicit_duration() {
+    let plan = plan_with(-90.0, 45.0, Some(500), RESIZE);
+    let (sx, sy) = total(&plan);
+    assert!((sx + 90.0).abs() < 1e-3 && (sy - 45.0).abs() < 1e-3);
+    let took = duration(&plan);
+    assert!(took >= Duration::from_millis(450) && took <= Duration::from_millis(560), "{took:?}");
+    assert!(plan_with(0.2, 0.0, None, RESIZE).steps.is_empty(), "less than a pixel is no drag");
+}

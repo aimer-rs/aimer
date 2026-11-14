@@ -95,6 +95,35 @@ impl OpenGlSurfaceFrame<'_> {
         self.surface.size
     }
 
+    /// Reads back what has been drawn into this frame, for a screenshot: `width *
+    /// height * 4` bytes of RGBA, **bottom row first**, as OpenGL stores the
+    /// default framebuffer.
+    ///
+    /// Call it after Cupid's render pass and before [`present`](Self::present): once
+    /// the buffers are swapped the back buffer holds nothing defined. It waits for
+    /// the GPU to finish the frame, so it is for a rare picture, not for every frame.
+    pub fn read_pixels(&self) -> Vec<u8> {
+        let (width, height) = self.surface.size;
+        let shared = &self.surface.shared;
+        let mut pixels = vec![0u8; width as usize * height as usize * 4];
+        shared.bind_framebuffer(gl::READ_FRAMEBUFFER, 0);
+        unsafe {
+            // A pixel pack buffer left bound would turn the destination into an offset.
+            (shared.gl.bind_buffer)(gl::PIXEL_PACK_BUFFER, 0);
+            (shared.gl.pixel_store_i)(gl::PACK_ALIGNMENT, 1);
+            (shared.gl.read_pixels)(
+                0,
+                0,
+                width as i32,
+                height as i32,
+                gl::RGBA,
+                gl::UNSIGNED_BYTE,
+                pixels.as_mut_ptr().cast(),
+            );
+        }
+        pixels
+    }
+
     /// Presents the rendered frame.
     pub fn present(mut self) -> Result<(), OpenGlError> {
         let result = self

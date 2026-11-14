@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 
 /// An editing shortcut the application menu offers, delivered without a menu.
 ///
@@ -130,6 +130,41 @@ pub enum Command {
     /// [`Command::deliver`] directly, which has no time to spend, it is one pixel
     /// scroll of the whole distance.
     TrackpadScroll { dx: f32, dy: f32, millis: Option<u32>, modifiers: Modifiers },
+    /// Drags an edge or a corner of the window by `(dx, dy)` logical pixels,
+    /// smoothly, as a person resizes it, and replies when the drag is over.
+    ///
+    /// The distances are how far the pointer travels, so dragging the east edge
+    /// right by 120 widens the window by 120 and dragging the west edge right by
+    /// 120 narrows it by 120 and moves the window with it: the side opposite the
+    /// held edge never moves. An edge moves along one axis, so the other
+    /// distance must be zero; a corner moves along both. The server sends the
+    /// window a steady stream of intermediate sizes, eased so it starts and ends
+    /// gently, so the app lays out at every step instead of once at the end.
+    /// `millis` is about how long it takes, from 1 to [`MAX_GLIDE_MILLIS`];
+    /// without it the time follows the distance. Only a desktop window can be
+    /// resized, and the platform may refuse, for a window that is maximized or
+    /// fixed in size. Handed to [`Command::deliver`] directly, which has no time
+    /// to spend, it is the whole distance at once.
+    ResizeWindow { edge: WindowEdge, dx: f32, dy: f32, millis: Option<u32> },
+    /// One step of a window edge drag, at a distance from where the edge was
+    /// grabbed: what [`Command::ResizeWindow`] is made of, as `move` is to `glide`.
+    ///
+    /// `(dx, dy)` is the pointer's travel **since the grab**, not since the last
+    /// step. [`TouchPhase::Started`] grabs the edge, which takes note of the
+    /// window's size and position, [`Moved`](TouchPhase::Moved) resizes from
+    /// there, and [`Ended`](TouchPhase::Ended) resizes one last time and lets go.
+    /// A step with no grab before it grabs first, so a lone `Ended` is a whole
+    /// drag at once. `Cancelled` is read as `Ended`: a window that was resized
+    /// stays resized.
+    ResizeStep { edge: WindowEdge, dx: f32, dy: f32, phase: TouchPhase },
+    /// Maximizes, minimizes or brings back the window, as its title-bar buttons do.
+    ///
+    /// The window input goes to is the one changed. Only a desktop window has
+    /// these states; elsewhere it does nothing. The platform animates the change
+    /// itself and may refuse it, for a window that cannot be resized. A minimized
+    /// window gets no input a person could send, so
+    /// [`Unminimize`](WindowAction::Unminimize) is how it comes back.
+    Window(WindowAction),
     /// Types `text` one keystroke at a time at a human pace, and replies when the
     /// last one is in.
     ///

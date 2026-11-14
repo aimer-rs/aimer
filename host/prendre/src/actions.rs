@@ -29,7 +29,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use crate::Command;
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, TouchPhase};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, TouchPhase, WindowAction, WindowEdge};
 
 /// How many moves a drag or swipe is cut into. Few enough to be quick, enough
 /// that a widget watching the pointer sees a path and not a jump.
@@ -192,6 +192,34 @@ pub fn scroll(at: Option<(f32, f32)>, direction: Direction, amount: f32) -> Resu
         Some((x, y)) => vec![Command::PointerGlide { x, y, millis: None, modifiers }, Command::Settle, scroll],
         None => vec![scroll],
     })
+}
+
+/// Drags `edge` of the window by `(dx, dy)` logical pixels, smoothly, the way a
+/// person resizes it: the pointer's travel, so dragging the east edge right
+/// widens the window and dragging the west edge right narrows it. The side
+/// opposite the held edge stays where it is.
+///
+/// An edge moves along one axis, so the distance along the other must be `0`;
+/// a corner takes both. `millis` is about how long it takes, from 1 to
+/// [`MAX_GLIDE_MILLIS`](crate::command::MAX_GLIDE_MILLIS), and without it the
+/// time follows the distance. The command replies when the drag is over.
+pub fn resize(edge: WindowEdge, dx: f32, dy: f32, millis: Option<u32>) -> Result<Vec<Command>, ActionError> {
+    finite(&[dx, dy], "a distance")?;
+    if (!edge.moves_x() && dx != 0.0) || (!edge.moves_y() && dy != 0.0) {
+        return Err(ActionError::new(format!(
+            "the {} edge moves along one axis only: the distance along the other is 0",
+            edge.name()
+        )));
+    }
+    if millis.is_some_and(|ms| !(1..=crate::command::MAX_GLIDE_MILLIS).contains(&ms)) {
+        return Err(ActionError::new("a duration is 1 to 3000 milliseconds"));
+    }
+    Ok(vec![Command::ResizeWindow { edge, dx, dy, millis }])
+}
+
+/// Maximizes, minimizes or brings back the window, as its title-bar buttons do.
+pub fn window(action: WindowAction) -> Vec<Command> {
+    vec![Command::Window(action)]
 }
 
 /// A finger touches `(x, y)` and lifts.

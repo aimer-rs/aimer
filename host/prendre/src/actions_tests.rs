@@ -243,3 +243,26 @@ fn a_click_without_a_point_presses_and_releases_where_the_mouse_already_is() {
     assert!(click(None, PointerButton::Primary, 0).is_err());
     assert!(click(None, PointerButton::Primary, 4).is_err());
 }
+
+#[test]
+fn a_resize_is_one_command_that_drags_the_edge_by_the_pointers_travel() {
+    use crate::model::WindowEdge;
+    assert_eq!(lines(&resize(WindowEdge::West, -80.0, 0.0, None).unwrap()), ["resize w -80 0"]);
+    assert_eq!(lines(&resize(WindowEdge::SouthEast, 40.0, 25.0, Some(600)).unwrap()), ["resize se 40 25 600"]);
+}
+
+#[test]
+fn a_resize_that_cannot_mean_what_it_says_is_an_error() {
+    use crate::model::WindowEdge;
+    assert!(resize(WindowEdge::East, 10.0, 5.0, None).is_err(), "an east edge does not move vertically");
+    assert!(resize(WindowEdge::North, 5.0, 10.0, None).is_err(), "a north edge does not move horizontally");
+    assert!(resize(WindowEdge::East, f32::NAN, 0.0, None).is_err());
+    assert!(resize(WindowEdge::East, 1.0, 0.0, Some(0)).is_err());
+    assert!(resize(WindowEdge::East, 1.0, 0.0, Some(3001)).is_err());
+}
+
+#[test]
+fn a_window_action_is_one_command() {
+    use crate::model::WindowAction;
+    assert_eq!(lines(&window(WindowAction::Minimize)), ["window minimize"]);
+}

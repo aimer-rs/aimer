@@ -359,6 +359,7 @@ impl Shared {
                 if self.pointer.wait_settled(&self.stop, SETTLE_TIMEOUT) { Ok(()) } else { Err("timed out") }
             }
             Command::TrackpadScroll { dx, dy, millis, modifiers } => self.swipe((dx, dy), millis, modifiers),
+            Command::ResizeWindow { edge, dx, dy, millis } => self.drag_edge(edge, (dx, dy), millis),
             Command::Typing { text, millis } => self.type_out(&text, millis),
             Command::PointerMove { x, y, .. } | Command::PointerDown { x, y, .. } | Command::PointerUp { x, y, .. } => {
                 if !self.pointer.wait_settled(&self.stop, SETTLE_TIMEOUT) {
@@ -386,6 +387,49 @@ impl Shared {
             }
             other => self.take(other),
         }
+    }
+
+    /// Drags an edge of the window the way a hand does: the grab, a paced stream of
+    /// distances from it, and the release at the full distance. Holds this
+    /// connection until the drag is over, and stops at once if the app stops
+    /// taking input or the server is shut down; an edge already grabbed is let go
+    /// where it got to.
+    fn drag_edge(&self, edge: crate::model::WindowEdge, by: (f32, f32), millis: Option<u32>) -> Result<(), &'static str> {
+        use crate::model::TouchPhase;
+        // The same eased stream a trackpad swipe is, here the pointer's travel, at a quicker pace.
+        let plan = trackpad::plan_with(by.0, by.1, millis, trackpad::RESIZE);
+        if plan.steps.is_empty() {
+            return Ok(());
+        }
+        let step = |(dx, dy), phase| Command::ResizeStep { edge, dx, dy, phase };
+        self.take(step((0.0, 0.0), TouchPhase::Started))?;
+        let (mut dx, mut dy) = (0.0_f32, 0.0_f32);
+        let last = plan.steps.len() - 1;
+        let started = Instant::now();
+        for (index, (sx, sy)) in plan.steps.into_iter().enumerate() {
+            // Steps are gaps; the window is told how far the edge is from where it was grabbed.
+            (dx, dy) = (dx + sx, dy + sy);
+            if index == last {
+                // The steps sum to the distance up to rounding: the last is the distance.
+                (dx, dy) = by;
+            }
+            let phase = if index == last { TouchPhase::Ended } else { TouchPhase::Moved };
+            let sent = if self.stop.load(Ordering::Acquire) { Err("app unavailable") } else { self.take(step((dx, dy), phase)) };
+            if let Err(reason) = sent {
+                if index != last {
+                    // Let go where it got to; the app may be gone, and then this is nothing.
+                    let _ = self.take(step((dx - sx, dy - sy), TouchPhase::Ended));
+                }
+                return Err(reason);
+            }
+            if index < last {
+                let due = started + plan.interval * (index as u32 + 1);
+                if let Some(wait) = due.checked_duration_since(Instant::now()) {
+                    std::thread::sleep(wait);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Scrolls the way a trackpad does: a paced stream of small pixel deltas, with
@@ -912,6 +956,66 @@ mod tests {
         let mean = gaps.iter().sum::<f32>() / gaps.len() as f32;
         assert!(mean < 16.0, "mean gap {mean} ms");
         assert!(gaps.iter().cloned().fold(0.0, f32::max) < 60.0, "no stall: {gaps:?}");
+    }
+
+    #[test]
+    fn a_resize_is_a_grab_then_paced_distances_from_it_then_a_release_at_the_full_distance() {
+        use crate::model::{TouchPhase, WindowEdge};
+        let (server, rx) = timed(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let started = Instant::now();
+        send(&mut client, "resize w -240 0 500");
+        let took = started.elapsed();
+        assert!(took >= Duration::from_millis(430) && took <= Duration::from_millis(650), "about as long as asked: {took:?}");
+
+        let got: Vec<_> = rx.try_iter().collect();
+        let steps: Vec<_> = got
+            .iter()
+            .map(|(at, c)| match c {
+                Command::ResizeStep { edge, dx, dy, phase } => (*at, *edge, *dx, *dy, *phase),
+                other => panic!("only resize steps reach the app: {other:?}"),
+            })
+            .collect();
+        assert!(steps.len() > 20, "a stream of sizes, not one: {} steps", steps.len());
+        assert!(steps.iter().all(|s| s.1 == WindowEdge::West));
+        let (first, last) = (steps[0], steps[steps.len() - 1]);
+        assert_eq!((first.2, first.3, first.4), (0.0, 0.0, TouchPhase::Started), "the grab is at no distance");
+        assert_eq!((last.2, last.3, last.4), (-240.0, 0.0, TouchPhase::Ended), "the release is exactly the distance");
+        assert!(steps[1..steps.len() - 1].iter().all(|s| s.4 == TouchPhase::Moved));
+        // Distances from the grab only ever grow toward the target: the window never jitters back.
+        assert!(steps.windows(2).all(|w| w[1].2 <= w[0].2), "monotonic toward -240");
+        let gaps: Vec<f32> = steps.windows(2).map(|w| w[1].0.duration_since(w[0].0).as_secs_f32() * 1000.0).collect();
+        assert!(gaps.iter().cloned().fold(0.0, f32::max) < 60.0, "no stall: {gaps:?}");
+    }
+
+    #[test]
+    fn a_resize_of_no_distance_sends_nothing() {
+        let (server, rx) = timed(Config::new());
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        send(&mut client, "resize e 0 0");
+        assert!(rx.try_iter().next().is_none());
+    }
+
+    #[test]
+    fn a_resize_cut_short_lets_go_of_the_edge_where_it_got_to() {
+        use crate::model::TouchPhase;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let sink_log = log.clone();
+        let server = Server::start_with(Config::new(), move |command| {
+            // The app stops taking input after the grab and four steps.
+            let accepted = seen.fetch_add(1, Ordering::SeqCst) < 5;
+            sink_log.lock().expect("log").push(command);
+            accepted
+        })
+        .expect("start");
+        let mut client = Client::connect(server.endpoint()).expect("connect");
+        let err = client.send(&"resize se 200 100 400".parse().expect("a command")).unwrap_err();
+        assert!(err.to_string().contains("app unavailable"), "{err}");
+        let log = log.lock().expect("log");
+        let Some(Command::ResizeStep { phase, .. }) = log.last() else { panic!("steps only: {log:?}") };
+        assert_eq!(*phase, TouchPhase::Ended, "the edge is let go, not left grabbed");
     }
 
     #[test]

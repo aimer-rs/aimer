@@ -27,7 +27,7 @@ mod server;
 pub use client::{Client, Screenshot};
 pub use command::{BackStep, Command, EditShortcut};
 pub use hello::Role;
-pub use model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+pub use model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "client", feature = "host")))]
 pub use endpoint::{Endpoint, InvalidEndpoint};
 #[cfg(all(not(target_arch = "wasm32"), feature = "host"))]

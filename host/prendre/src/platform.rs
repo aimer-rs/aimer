@@ -7,9 +7,10 @@ use aimer_platform::AimerNativePlatformEvent;
 use aimer_platform::attachment::{MarkerPhase, SyntheticPointer};
 use aimer_platform::menu::MenuShortcut;
 use aimer_platform::system_back::BackSignal;
+use aimer_platform::window_drag::WindowDragPhase;
 
 use crate::command::{BackStep, EditShortcut};
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 use crate::Command;
 
 // Every match below lists each variant, so a variant added to either side is a
@@ -83,6 +84,32 @@ impl From<TouchPhase> for ev::TouchPhase {
     }
 }
 
+impl From<WindowEdge> for aimer_platform::window_drag::WindowEdge {
+    fn from(edge: WindowEdge) -> Self {
+        match edge {
+            WindowEdge::North => Self::North,
+            WindowEdge::South => Self::South,
+            WindowEdge::East => Self::East,
+            WindowEdge::West => Self::West,
+            WindowEdge::NorthEast => Self::NorthEast,
+            WindowEdge::NorthWest => Self::NorthWest,
+            WindowEdge::SouthEast => Self::SouthEast,
+            WindowEdge::SouthWest => Self::SouthWest,
+        }
+    }
+}
+
+impl From<WindowAction> for aimer_platform::window_drag::WindowAction {
+    fn from(action: WindowAction) -> Self {
+        match action {
+            WindowAction::Maximize => Self::Maximize,
+            WindowAction::Unmaximize => Self::Unmaximize,
+            WindowAction::Minimize => Self::Minimize,
+            WindowAction::Unminimize => Self::Unminimize,
+        }
+    }
+}
+
 impl EditShortcut {
     fn shortcut(self) -> MenuShortcut {
         let (letter, shift) = match self {
@@ -127,6 +154,17 @@ impl Command {
         };
         let plain = |event| native(event, Modifiers::default());
         let at = |x, y| Vec2d { x, y };
+        let drag = |edge: WindowEdge, dx, dy, phase| AimerNativePlatformEvent::WindowEdgeDrag {
+            edge: edge.into(),
+            dx,
+            dy,
+            phase: match phase {
+                TouchPhase::Started => WindowDragPhase::Started,
+                TouchPhase::Moved => WindowDragPhase::Moved,
+                // A drag that is abandoned is not undone: the window stays as it got to.
+                TouchPhase::Ended | TouchPhase::Cancelled => WindowDragPhase::Ended,
+            },
+        };
         Some(match self {
             // Delivered whole there is no time to glide in: it is the move to the end.
             Self::PointerMove { x, y, modifiers } | Self::PointerGlide { x, y, modifiers, .. } => {
@@ -158,6 +196,11 @@ impl Command {
                 },
                 modifiers,
             ),
+            // Delivered whole there is no time to drag in: it is the whole distance, as
+            // one step that is also the release.
+            Self::ResizeWindow { edge, dx, dy, .. } => drag(edge, dx, dy, TouchPhase::Ended),
+            Self::ResizeStep { edge, dx, dy, phase } => drag(edge, dx, dy, phase),
+            Self::Window(action) => AimerNativePlatformEvent::WindowAction(action.into()),
             Self::Touch { phase, id, x, y } => {
                 let contact = ptr::PointerInfo::touch(at(x, y), id);
                 plain(match phase {
@@ -519,6 +562,47 @@ mod tests {
         // No event loop is running in a unit test.
         assert!(!Command::Quit.deliver());
         assert!(!Command::Link("aimer://x".into()).deliver());
+    }
+
+    #[test]
+    fn each_window_action_lands_on_its_own() {
+        use aimer_platform::window_drag::WindowAction as Theirs;
+        for (ours, theirs) in [
+            (WindowAction::Maximize, Theirs::Maximize),
+            (WindowAction::Unmaximize, Theirs::Unmaximize),
+            (WindowAction::Minimize, Theirs::Minimize),
+            (WindowAction::Unminimize, Theirs::Unminimize),
+        ] {
+            let AimerNativePlatformEvent::WindowAction(got) = event(Command::Window(ours)) else {
+                panic!("not a window action")
+            };
+            assert_eq!(got, theirs);
+        }
+    }
+
+    #[test]
+    fn a_resize_delivered_whole_is_one_release_at_the_full_distance() {
+        use aimer_platform::window_drag::{WindowDragPhase, WindowEdge as Edge};
+        let whole = Command::ResizeWindow { edge: WindowEdge::NorthWest, dx: -30.0, dy: 12.0, millis: Some(500) };
+        let AimerNativePlatformEvent::WindowEdgeDrag { edge, dx, dy, phase } = event(whole) else {
+            panic!("not an edge drag")
+        };
+        assert_eq!((edge, dx, dy, phase), (Edge::NorthWest, -30.0, 12.0, WindowDragPhase::Ended));
+    }
+
+    #[test]
+    fn a_resize_step_keeps_its_phase_and_an_abandoned_drag_is_released() {
+        use aimer_platform::window_drag::WindowDragPhase;
+        for (phase, expected) in [
+            (TouchPhase::Started, WindowDragPhase::Started),
+            (TouchPhase::Moved, WindowDragPhase::Moved),
+            (TouchPhase::Ended, WindowDragPhase::Ended),
+            (TouchPhase::Cancelled, WindowDragPhase::Ended),
+        ] {
+            let step = Command::ResizeStep { edge: WindowEdge::East, dx: 4.0, dy: 0.0, phase };
+            let AimerNativePlatformEvent::WindowEdgeDrag { phase, .. } = event(step) else { panic!("not an edge drag") };
+            assert_eq!(phase, expected);
+        }
     }
 }
 
