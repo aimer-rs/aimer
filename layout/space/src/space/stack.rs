@@ -547,15 +547,6 @@ impl VisitorElement for RawStackElement {
     fn debug_name(&self) -> &'static str {
         "RawStackElement"
     }
-}
-
-impl EventElement for RawStackElement {
-    /// Layered children may overlap, so a cached single hit chain could miss
-    /// a newly entered layer while another layer remains under the pointer.
-    #[inline]
-    fn has_overlapping_hit_targets(&self) -> bool {
-        true
-    }
 
     /// The structural order is the retained child order; layer sorting is only
     /// a paint and hit-test concern.
@@ -621,6 +612,19 @@ impl EventElement for RawStackElement {
         visitor: &mut dyn FnMut(&'a dyn Element),
     ) {
         self.visit_indexed(pos, true, visitor);
+    }
+}
+
+impl EventElement for RawStackElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    /// Layered children may overlap, so a cached single hit chain could miss
+    /// a newly entered layer while another layer remains under the pointer.
+    #[inline]
+    fn has_overlapping_hit_targets(&self) -> bool {
+        true
     }
 }
 

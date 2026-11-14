@@ -353,9 +353,6 @@ impl Drawable for RawOverflowIndicator {
 }
 
 impl EventElement for RawOverflowIndicator {
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-    }
 }
 
 impl Rebuildable for RawOverflowIndicator {}
@@ -368,6 +365,10 @@ impl VisitorElement for RawOverflowIndicator {
 
     fn debug_name(&self) -> &'static str {
         "OverflowIndicator"
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 

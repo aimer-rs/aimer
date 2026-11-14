@@ -1258,12 +1258,6 @@ impl VisitorElement for RawFlex {
     fn debug_name(&self) -> &'static str {
         self.debug_name
     }
-}
-
-impl EventElement for RawFlex {
-    fn event_tree_role(&self) -> EventTreeRole {
-        EventTreeRole::IndexedHitTestBoundary
-    }
 
     /// The event and visual child views are the same retained source.
     #[inline]
@@ -1287,7 +1281,7 @@ impl EventElement for RawFlex {
     /// hit-tests its viewport slice instead of its whole child vector — the
     /// difference between a few dozen and a few hundred thousand visits per
     /// pointer move. Keyboard focus and broadcasts keep using
-    /// [`EventElement::event_children`], so an off-screen field still receives
+    /// [`VisitorElement::event_children`], so an off-screen field still receives
     /// them.
     fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         let Some(range) = self.layout.painted() else {
@@ -1332,6 +1326,12 @@ impl EventElement for RawFlex {
         visitor: &mut dyn FnMut(&'a dyn Element),
     ) {
         self.visit_painted_children_at(pos, true, visitor);
+    }
+}
+
+impl EventElement for RawFlex {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
     }
 }
 

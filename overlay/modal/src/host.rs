@@ -661,10 +661,6 @@ impl EventElement for RawModalHost {
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         self.overlay.as_ref().on_event(event)
     }
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-        visitor(self.overlay.as_ref());
-    }
 }
 
 impl LayoutElement for RawModalHost {
@@ -689,6 +685,11 @@ impl VisitorElement for RawModalHost {
 
     fn debug_name(&self) -> &'static str {
         "ModalHost"
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+        visitor(self.overlay.as_ref());
     }
 }
 
@@ -851,12 +852,6 @@ impl EventElement for RawModalOverlay {
         }
         self.forward_child_redraw(result.merge(EventResult::from(!entries.is_empty())))
     }
-
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
-
-    fn focus_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
-
-    fn hit_test_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl RawModalOverlay {
@@ -919,6 +914,12 @@ impl VisitorElement for RawModalOverlay {
     fn debug_name(&self) -> &'static str {
         "ModalOverlay"
     }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+
+    fn focus_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+
+    fn hit_test_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 enum ModalCommand {
@@ -1439,6 +1440,10 @@ mod tests {
     }
 
     impl EventElement for FocusableModalContent {
+        fn event_tree_role(&self) -> EventTreeRole {
+            EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn focus_node(&self) -> Option<&FocusNode> {
             Some(&self.node)
         }

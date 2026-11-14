@@ -529,6 +529,10 @@ impl aimer_widget::Rebuildable for RawRichText {
 }
 
 impl EventElement for RawRichText {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         let hovered_link = match event {
             ElementEvent::PointerDown(info)

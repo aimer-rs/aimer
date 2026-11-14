@@ -30,10 +30,7 @@ pub(super) fn event_pointer_key(event: &ElementEvent) -> Option<PointerKey> {
 
 #[inline]
 pub(super) fn is_indexed_hit_test_boundary(role: EventTreeRole) -> bool {
-    matches!(
-        role,
-        EventTreeRole::Legacy | EventTreeRole::IndexedHitTestBoundary
-    )
+    matches!(role, EventTreeRole::IndexedHitTestBoundary)
 }
 
 pub(super) fn build_indexed_event_tree(
@@ -48,9 +45,7 @@ pub(super) fn build_indexed_event_tree(
 
     let is_indexed_target = matches!(
         role,
-        EventTreeRole::Legacy
-            | EventTreeRole::IndexedTarget
-            | EventTreeRole::IndexedHitTestBoundary
+        EventTreeRole::IndexedTarget | EventTreeRole::IndexedHitTestBoundary
     );
     let mut child_branch = parent_branch;
     let parent = if is_indexed_target {
@@ -501,7 +496,11 @@ fn dispatch_indexed_event(
 }
 
 /// Routes a forwarding element's private event-child view through the retained
-/// event index when the child has an indexed target.
+/// event index.
+///
+/// The child must be an indexed target itself, or sit below the indexed
+/// `boundary` that forwards to it; anything else is not part of the event tree
+/// and receives nothing.
 pub(super) fn dispatch_nested_event(
     dispatcher: &mut EventDispatcher,
     path_root: &dyn Element,
@@ -531,9 +530,19 @@ pub(super) fn dispatch_nested_event(
         );
     }
 
-    let _ = boundary;
-    let mut children = EventChildren::new();
-    dispatch_routed_event_inner(dispatcher, path_root, root, pos, event, &mut children)
+    // A forwarded child that is not in the event tree has no handler the index
+    // knows of, so there is nothing to route to. No element or test reaches this
+    // today; the assertion exists to name the element if one ever does.
+    debug_assert!(
+        false,
+        "nested dispatch into {}, which is not part of the event tree",
+        root.debug_name()
+    );
+    RoutedEventResult {
+        result: EventResult::ignored(),
+        capture_owner: None,
+        focus_owner: None,
+    }
 }
 
 fn dispatch_indexed_event_subtree(
@@ -958,158 +967,12 @@ pub(super) fn focus_candidate_at(element: &dyn Element, pos: Vec2d) -> Option<Fo
     contains(element, pos).then(|| FocusCandidate::new(id, node.clone(), element.autofocus()))
 }
 
-fn dispatch_routed_event_inner<'tree>(
-    dispatcher: &mut EventDispatcher,
-    path_root: &dyn Element,
-    root: &'tree dyn Element,
-    pos: Vec2d,
-    event: &ElementEvent,
-    children: &mut EventChildren<'tree>,
-) -> RoutedEventResult {
-    if !contains(root, pos) {
-        dispatcher.record_hit_chain_miss();
-        return RoutedEventResult {
-            result: EventResult::ignored(),
-            capture_owner: None,
-            focus_owner: None,
-        };
-    }
-    record_routed_event_visit();
-    dispatcher.record_hit_chain_element(root);
-
-    let mut result = EventResult::ignored();
-    let mut capture_owner = None;
-    let mut focus_owner = None;
-    let mut stopped = false;
-    let start = children.len();
-    let mut hit_test_children = 0;
-    root.hit_test_children_at(pos, &mut |child| {
-        hit_test_children += 1;
-        children.push(child);
-    });
-    dispatcher.record_hit_chain_children(hit_test_children);
-    if hit_test_children == 0 {
-        dispatcher.record_empty_hit_chain_node(root);
-    }
-
-    while children.len() > start {
-        if stopped {
-            children.truncate(start);
-            break;
-        }
-        let child = children
-            .pop()
-            .expect("routed event scratch contains an element beyond its entry length");
-        let child_outcome = dispatch_routed_event_inner(
-            dispatcher,
-            path_root,
-            child,
-            pos,
-            event,
-            children,
-        );
-        result = result.merge(child_outcome.result);
-        if focus_owner.is_none() {
-            focus_owner = child_outcome.focus_owner;
-        }
-        if capture_owner.is_none() {
-            capture_owner = child_outcome.capture_owner.or_else(|| {
-                (!matches!(child_outcome.result.capture_request(), CaptureRequest::None))
-                    .then(|| root.element_id())
-                    .flatten()
-            });
-        }
-        if child_outcome.result.is_consumed() {
-            // The press stopped here, but it landed inside this element all the
-            // same: a control that takes a press for itself still sits within
-            // whatever region encloses it, and that region is what the focus
-            // should move to. Giving up the search here would leave the press
-            // with no target at all — and a press with no target takes the
-            // keyboard away, so clicking a field inside a focusable region
-            // would blur it.
-            stopped = true;
-        }
-    }
-    children.truncate(start);
-
-    if stopped {
-        if focus_owner.is_none() {
-            focus_owner = focus_candidate_at(root, pos);
-        }
-        return RoutedEventResult {
-            result,
-            capture_owner,
-            focus_owner,
-        };
-    }
-
-    let own_result = if !event_callback_enabled(root) {
-        EventResult::ignored()
-    } else {
-        let mut context = EventDispatchContext::new(dispatcher, path_root, root.element_id(), pos);
-        root.on_event_with_context(event, &mut context)
-    };
-    dispatcher.merge_nested_focus_owner(&mut focus_owner);
-    if focus_owner.is_none() {
-        focus_owner = focus_candidate_at(root, pos);
-    }
-    if capture_owner.is_none() && !matches!(own_result.capture_request(), CaptureRequest::None) {
-        capture_owner = root.element_id();
-    }
-    result = result.merge(own_result);
-
-    RoutedEventResult {
-        result,
-        capture_owner,
-        focus_owner,
-    }
-}
-
 /// Perform a hit-test on the element tree and dispatch the event to the deepest
 /// hit element. Returns the effects produced by the target element.
 pub fn dispatch_event(root: &dyn Element, pos: Vec2d, event: &ElementEvent) -> EventResult {
     let mut dispatcher = EventDispatcher::new();
     dispatcher.synchronize_paths(root);
     dispatch_indexed_event(&mut dispatcher, root, pos, event).result
-}
-
-#[cfg(test)]
-pub(super) fn dispatch_event_inner<'a>(
-    root: &'a dyn Element,
-    pos: Vec2d,
-    event: &ElementEvent,
-    children: &mut EventChildren<'a>,
-) -> EventResult {
-    if !contains(root, pos) {
-        return EventResult::ignored();
-    }
-
-    let mut result = EventResult::ignored();
-    let start = children.len();
-    root.hit_test_children_at(pos, &mut |child| {
-        if contains(child, pos) {
-            children.push(child);
-        }
-    });
-
-    while children.len() > start {
-        let child = children
-            .pop()
-            .expect("event child scratch contains an element beyond its entry length");
-        let child_result = dispatch_event_inner(child, pos, event, children);
-        result = result.merge(child_result);
-        if child_result.is_consumed() {
-            children.truncate(start);
-            return result;
-        }
-    }
-    children.truncate(start);
-
-    if !event_callback_enabled(root) {
-        result
-    } else {
-        result.merge(root.on_event(event))
-    }
 }
 
 /// Broadcast an event to every element in the tree, regardless of hit-testing.
@@ -1169,31 +1032,6 @@ fn broadcast_indexed_target(
     }
 }
 
-#[cfg(test)]
-pub(super) fn broadcast_event_inner<'a>(
-    root: &'a dyn Element,
-    event: &ElementEvent,
-    children: &mut EventChildren<'a>,
-) -> EventResult {
-    let mut result = EventResult::ignored();
-    let start = children.len();
-    root.event_children(&mut |child| children.push(child));
-
-    while children.len() > start {
-        let child = children
-            .pop()
-            .expect("event child scratch contains an element beyond its entry length");
-        result = result.merge(broadcast_event_inner(child, event, children));
-    }
-    children.truncate(start);
-
-    if !event_callback_enabled(root) {
-        result
-    } else {
-        result.merge(root.on_event(event))
-    }
-}
-
 /// Deliver a focus-directed event to the element that owns keyboard focus.
 ///
 /// Keyboard text and input-method composition carry no meaningful position, so
@@ -1247,33 +1085,4 @@ fn dispatch_focused_indexed_target(
     resolve_element_path(root, entry.element_id(), path_indices, path_links)
         .map(|element| element.on_event(event))
         .unwrap_or_else(EventResult::ignored)
-}
-
-#[cfg(test)]
-pub(super) fn dispatch_focused_event_inner<'a>(
-    root: &'a dyn Element,
-    event: &ElementEvent,
-    children: &mut EventChildren<'a>,
-) -> EventResult {
-    let mut result = EventResult::ignored();
-    let start = children.len();
-    root.event_children(&mut |child| children.push(child));
-
-    while children.len() > start {
-        let child = children
-            .pop()
-            .expect("event child scratch contains an element beyond its entry length");
-        result = result.merge(dispatch_focused_event_inner(child, event, children));
-        if result.is_consumed() {
-            children.truncate(start);
-            return result;
-        }
-    }
-    children.truncate(start);
-
-    if !event_callback_enabled(root) {
-        result
-    } else {
-        result.merge(root.on_event(event))
-    }
 }

@@ -9,23 +9,6 @@ use smallvec::SmallVec;
 use std::hash::{Hash, Hasher};
 use crate::CALLED;
 
-#[derive(Clone, Copy)]
-struct StructuralChildPointer<'a>(*const (dyn Element + 'a));
-
-impl PartialEq for StructuralChildPointer<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.0, other.0)
-    }
-}
-
-impl Eq for StructuralChildPointer<'_> {}
-
-impl Hash for StructuralChildPointer<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.0 as *const ()).hash(state);
-    }
-}
-
 /// Identifies one pointer independently of pointers from other input sources.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PointerKey {
@@ -37,16 +20,14 @@ pub struct PointerKey {
 
 /// Describes how an element participates in indexed event delivery.
 ///
-/// Custom elements default to [`IndexedHitTestBoundary`](Self::IndexedHitTestBoundary),
-/// which keeps their callback and custom child hit-test behavior in the index.
-/// Use [`Transparent`](Self::Transparent) for wrappers that do not handle
-/// events, or [`IndexedTarget`](Self::IndexedTarget) when event-child order is
-/// also the correct positional hit-test order.
+/// Elements default to [`Transparent`](Self::Transparent): they handle no events
+/// and are not part of the index. An element that handles events declares
+/// [`IndexedHitTestBoundary`](Self::IndexedHitTestBoundary), which keeps its
+/// callback and custom child hit-test behavior in the index, or
+/// [`IndexedTarget`](Self::IndexedTarget) when event-child order is also the
+/// correct positional hit-test order.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum EventTreeRole {
-    /// Compatibility alias for [`IndexedHitTestBoundary`](Self::IndexedHitTestBoundary).
-    /// New elements should choose an explicit indexed role.
-    Legacy,
     /// This element is an event target and may participate in indexed routing.
     ///
     /// It still receives its ordinary callback. Use this role only when its
@@ -61,10 +42,10 @@ pub enum EventTreeRole {
     /// children returned by `hit_test_children_at`. That hit-test view must be
     /// a subset of `event_children` in the same paint order. The element still
     /// receives its ordinary callback.
-    #[default]
     IndexedHitTestBoundary,
     /// This element does not handle events; descendants may be routed through
     /// it through the index. It must not impose a custom hit-test boundary.
+    #[default]
     Transparent,
 }
 
@@ -295,23 +276,25 @@ impl From<bool> for EventResult {
 
 /// The input half of an element: routing, focus, accessibility and handling.
 ///
-/// Input reaches an element in three ways, and the trait has a view of the
-/// tree for each:
+/// Input reaches an element in three ways, and each walks a different view of
+/// the tree. Those views are methods of [`VisitorElement`], next to
+/// [`visit_children`](VisitorElement::visit_children), because they answer which
+/// children an element has and not what it does with an event:
 ///
 /// - **Positional** (a pointer at some point): the dispatcher descends through
-///   [`hit_test_children`](EventElement::hit_test_children) and its
+///   [`hit_test_children`](VisitorElement::hit_test_children) and its
 ///   position-aware variants, topmost first, so an element that paints only
 ///   part of its children can keep the walk proportional to what is on screen.
 /// - **Directed** (keyboard input to the focused element, or a pointer that has
 ///   been captured): delivered by identity, through
-///   [`event_children`](EventElement::event_children) and
-///   [`focus_children`](EventElement::focus_children).
+///   [`event_children`](VisitorElement::event_children) and
+///   [`focus_children`](VisitorElement::focus_children).
 /// - **Broadcast** (lifecycle notifications): every element, through
-///   [`event_children`](EventElement::event_children).
+///   [`event_children`](VisitorElement::event_children).
 ///
 /// All three default to [`VisitorElement::visit_children`], so an element whose
 /// children are the same for painting and events implements none of them.
-/// [`structural_children`](EventElement::structural_children) is the union of
+/// [`structural_children`](VisitorElement::structural_children) is the union of
 /// the event and visual views, which is what focus traversal and reconciliation
 /// need.
 ///
@@ -325,16 +308,27 @@ impl From<bool> for EventResult {
 /// technology ([`semantics`](EventElement::semantics)).
 ///
 /// Every method has a default, so a non-interactive element implements it with
-/// an empty `impl`. The default [`EventTreeRole`] is conservative; an element
-/// that handles no events should declare itself
-/// [`Transparent`](EventTreeRole::Transparent) so the event index can skip it.
+/// an empty `impl`, and costs event routing nothing: the default
+/// [`EventTreeRole`] is [`Transparent`](EventTreeRole::Transparent), which keeps
+/// the element out of the event index. An element that handles events declares a
+/// role that registers it; see [`event_tree_role`](EventElement::event_tree_role).
 pub trait EventElement: VisitorElement {
     /// Returns this element's event-routing role.
     ///
-    /// Custom implementations default to conservative indexed hit testing.
+    /// The default is [`EventTreeRole::Transparent`]: an element is registered
+    /// in the event tree only when it says it handles events. **An element that
+    /// overrides [`on_event`](Self::on_event),
+    /// [`on_event_with_context`](Self::on_event_with_context) or
+    /// [`focus_node`](Self::focus_node), or that narrows hit testing through
+    /// [`hit_test_children`](VisitorElement::hit_test_children) or one of its
+    /// variants, must override this too**, or the dispatcher never reaches it.
+    /// [`IndexedHitTestBoundary`](EventTreeRole::IndexedHitTestBoundary) is the
+    /// safe choice, and [`IndexedTarget`](EventTreeRole::IndexedTarget) is the
+    /// cheaper one for an element whose event children are also its hit-test
+    /// order.
     #[inline]
     fn event_tree_role(&self) -> EventTreeRole {
-        EventTreeRole::IndexedHitTestBoundary
+        EventTreeRole::Transparent
     }
 
     /// Returns the focus handle attached to this element, if it is focusable.
@@ -422,132 +416,6 @@ pub trait EventElement: VisitorElement {
         self.on_event(event)
     }
 
-    /// Visit children for event dispatch. By default delegates to
-    /// `visit_children`. Override this when `visit_children` is not
-    /// implemented (e.g. because the element handles its own child
-    /// rendering) but events still need to reach the children.
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.visit_children(visitor);
-    }
-
-    /// Visit the children that make up this element's structural tree.
-    ///
-    /// Focus traversal and reconciliation need the union of the event and
-    /// visual child views. Elements whose two views have one canonical child
-    /// source can override this method to avoid walking and de-duplicating
-    /// that source twice. An override must visit every child exposed by either
-    /// [`Self::event_children`] or [`VisitorElement::visit_children`] exactly
-    /// once, in structural order.
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        // CALLED.update(|c| c + 1);
-        let mut children: SmallVec<[&'a dyn Element; 8]> = SmallVec::new();
-        self.event_children(&mut |child| children.push(child));
-        let event_child_count = children.len();
-        let mut visual_index = 0;
-        let mut seen: Option<HashSet<StructuralChildPointer<'a>>> = None;
-        self.visit_children(&mut |child| {
-            if visual_index < event_child_count
-                && std::ptr::eq(children[visual_index], child)
-            {
-                visual_index += 1;
-                return;
-            }
-
-            visual_index += 1;
-            let child_pointer = StructuralChildPointer(std::ptr::from_ref(child));
-            let already_seen = if let Some(seen) = seen.as_mut() {
-                !seen.insert(child_pointer)
-            } else if children.len() >= 16 {
-                let mut pointers: HashSet<StructuralChildPointer<'a>> = children
-                    .iter()
-                    .map(|existing| StructuralChildPointer(std::ptr::from_ref(*existing)))
-                    .collect();
-                let already_seen = !pointers.insert(child_pointer);
-                seen = Some(pointers);
-                already_seen
-            } else {
-                children
-                    .iter()
-                    .any(|existing| std::ptr::eq(*existing, child))
-            };
-            if !already_seen {
-                children.push(child);
-            }
-        });
-        for child in children {
-            visitor(child);
-        }
-    }
-
-    /// Visit children that can participate in focus traversal.
-    ///
-    /// This defaults to the full structural tree because most elements use the
-    /// same children for painting, events, reconciliation, and focus. A visual
-    /// overlay that must remain part of reconciliation but cannot own focus can
-    /// override this to omit that overlay while leaving
-    /// [`EventElement::structural_children`] complete.
-    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.structural_children(visitor);
-    }
-
-    /// Visit children that a pointer could plausibly hit.
-    ///
-    /// Position-based dispatch uses this hook instead of
-    /// [`EventElement::event_children`], which lets an element that paints only
-    /// part of its children — a clipped or virtualized list — keep the
-    /// hit-test walk proportional to what is on screen. Focus-directed and
-    /// broadcast delivery deliberately keep using `event_children`, so a child
-    /// that was never painted still receives keyboard input and lifecycle
-    /// notifications.
-    ///
-    /// The default forwards to `event_children`; overriding it is purely an
-    /// optimization and must never hide a child that was actually drawn.
-    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.event_children(visitor);
-    }
-
-    /// Visit hit-test children in reverse order for callers that need a
-    /// topmost-first stream.
-    ///
-    /// The default collects the ordinary hit-test view and reverses it, which
-    /// preserves the existing topmost-first behavior for custom elements. Large
-    /// child containers can override this to walk their retained storage in
-    /// reverse directly and avoid a temporary child buffer.
-    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        let mut children: SmallVec<[&'a dyn Element; 32]> = SmallVec::new();
-        self.hit_test_children(&mut |child| children.push(child));
-        for child in children.into_iter().rev() {
-            visitor(child);
-        }
-    }
-
-    /// Visit hit-test children that could contain a pointer at `pos`.
-    ///
-    /// The default delegates to the existing position-independent hook, so
-    /// current element implementations retain their behavior. Containers with
-    /// a retained spatial index may override this to skip known-outside
-    /// children without affecting focus or broadcast traversal.
-    #[inline]
-    fn hit_test_children_at<'a>(&'a self, _pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.hit_test_children(visitor);
-    }
-
-    /// Visit position-aware hit-test children in routed topmost-first order for
-    /// callers that request a reverse stream directly.
-    ///
-    /// The routed dispatcher uses [`EventElement::hit_test_children_at`] with
-    /// one shared reverse scratch stack, so it does not call this default
-    /// buffer. Direct callers still get the historical behavior, and large
-    /// containers can override this method to query retained bounds directly.
-    #[inline]
-    fn hit_test_children_at_reversed<'a>(
-        &'a self,
-        _pos: Vec2d,
-        visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-        self.hit_test_children_reversed(visitor);
-    }
-
     /// Returns whether this element can expose overlapping pointer-hit
     /// children whose hover side effects must all be observed on every move.
     ///
@@ -575,17 +443,6 @@ pub trait EventElement: VisitorElement {
     #[inline]
     fn occludes_pointer_at(&self, _pos: Vec2d) -> bool {
         false
-    }
-
-    /// Visits the children that [`crate::pointer_occluded_at`] searches for an
-    /// occluder at `pos`.
-    ///
-    /// The default is the hit-test view, so a spatially indexed container keeps
-    /// the search as narrow as its routing. An element that routes its child by
-    /// hand and so hides it from that view should visit the child here.
-    #[inline]
-    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.hit_test_children_at(pos, visitor);
     }
 }
 

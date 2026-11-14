@@ -397,6 +397,10 @@ impl Drawable for RawSelectableText {
 }
 
 impl EventElement for RawSelectableText {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         // The selection's knobs and callout are painted over this text, so a
         // press that grabbed one must never reach the paragraph underneath.

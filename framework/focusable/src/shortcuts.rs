@@ -155,10 +155,6 @@ impl EventElement for RawShortcuts {
     fn on_event(&self, _event: &ElementEvent) -> EventResult {
         EventResult::ignored()
     }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-    }
 }
 
 impl Drawable for RawShortcuts {
@@ -210,6 +206,10 @@ impl VisitorElement for RawShortcuts {
 
     fn debug_name(&self) -> &'static str {
         "Shortcuts"
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 

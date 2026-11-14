@@ -448,6 +448,47 @@ impl<E: Element + 'static> VisitorElement for ElementNode<E> {
     fn set_element_id(&self, id: ElementId) {
         self.id.set(id);
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.element.event_children(visitor);
+    }
+
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.element.structural_children(visitor);
+    }
+
+    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.element.focus_children(visitor);
+    }
+
+    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.element.hit_test_children(visitor);
+    }
+
+    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.element.hit_test_children_reversed(visitor);
+    }
+
+    fn hit_test_children_at<'a>(
+        &'a self,
+        pos: Vec2d,
+        visitor: &mut dyn FnMut(&'a dyn Element),
+    ) {
+        self.element.hit_test_children_at(pos, visitor);
+    }
+
+    fn hit_test_children_at_reversed<'a>(
+        &'a self,
+        pos: Vec2d,
+        visitor: &mut dyn FnMut(&'a dyn Element),
+    ) {
+        self.element.hit_test_children_at_reversed(pos, visitor);
+    }
+
+    #[inline]
+    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.element.occlusion_children_at(pos, visitor);
+    }
 }
 
 impl<E: Element + 'static> LayoutElement for ElementNode<E> {
@@ -766,42 +807,6 @@ impl<E: Element + 'static> EventElement for ElementNode<E> {
         result
     }
 
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.element.event_children(visitor);
-    }
-
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.element.structural_children(visitor);
-    }
-
-    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.element.focus_children(visitor);
-    }
-
-    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.element.hit_test_children(visitor);
-    }
-
-    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.element.hit_test_children_reversed(visitor);
-    }
-
-    fn hit_test_children_at<'a>(
-        &'a self,
-        pos: Vec2d,
-        visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-        self.element.hit_test_children_at(pos, visitor);
-    }
-
-    fn hit_test_children_at_reversed<'a>(
-        &'a self,
-        pos: Vec2d,
-        visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-        self.element.hit_test_children_at_reversed(pos, visitor);
-    }
-
     #[inline]
     fn has_overlapping_hit_targets(&self) -> bool {
         self.element.has_overlapping_hit_targets()
@@ -810,11 +815,6 @@ impl<E: Element + 'static> EventElement for ElementNode<E> {
     #[inline]
     fn occludes_pointer_at(&self, pos: Vec2d) -> bool {
         self.element.occludes_pointer_at(pos)
-    }
-
-    #[inline]
-    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.element.occlusion_children_at(pos, visitor);
     }
 
 }
@@ -1053,6 +1053,47 @@ impl VisitorElement for AnyElement {
     fn set_element_id(&self, id: ElementId) {
         self.as_ref().set_element_id(id);
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().event_children(visitor)
+    }
+
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().structural_children(visitor)
+    }
+
+    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().focus_children(visitor)
+    }
+
+    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().hit_test_children(visitor)
+    }
+
+    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().hit_test_children_reversed(visitor)
+    }
+
+    fn hit_test_children_at<'a>(
+        &'a self,
+        pos: Vec2d,
+        visitor: &mut dyn FnMut(&'a dyn Element),
+    ) {
+        self.as_ref().hit_test_children_at(pos, visitor)
+    }
+
+    fn hit_test_children_at_reversed<'a>(
+        &'a self,
+        pos: Vec2d,
+        visitor: &mut dyn FnMut(&'a dyn Element),
+    ) {
+        self.as_ref().hit_test_children_at_reversed(pos, visitor)
+    }
+
+    #[inline]
+    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().occlusion_children_at(pos, visitor);
+    }
 }
 
 impl LayoutElement for AnyElement {
@@ -1196,42 +1237,6 @@ impl EventElement for AnyElement {
         self.as_ref().on_event_with_context(event, context)
     }
 
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().event_children(visitor)
-    }
-
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().structural_children(visitor)
-    }
-
-    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().focus_children(visitor)
-    }
-
-    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().hit_test_children(visitor)
-    }
-
-    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().hit_test_children_reversed(visitor)
-    }
-
-    fn hit_test_children_at<'a>(
-        &'a self,
-        pos: Vec2d,
-        visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-        self.as_ref().hit_test_children_at(pos, visitor)
-    }
-
-    fn hit_test_children_at_reversed<'a>(
-        &'a self,
-        pos: Vec2d,
-        visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-        self.as_ref().hit_test_children_at_reversed(pos, visitor)
-    }
-
     #[inline]
     fn has_overlapping_hit_targets(&self) -> bool {
         self.as_ref().has_overlapping_hit_targets()
@@ -1240,11 +1245,6 @@ impl EventElement for AnyElement {
     #[inline]
     fn occludes_pointer_at(&self, pos: Vec2d) -> bool {
         self.as_ref().occludes_pointer_at(pos)
-    }
-
-    #[inline]
-    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().occlusion_children_at(pos, visitor);
     }
 
 }
@@ -1425,6 +1425,47 @@ impl VisitorElement for Box<dyn Element> {
     fn set_element_id(&self, id: ElementId) {
         self.as_ref().set_element_id(id);
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().event_children(visitor)
+    }
+
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().structural_children(visitor)
+    }
+
+    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().focus_children(visitor)
+    }
+
+    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().hit_test_children(visitor)
+    }
+
+    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().hit_test_children_reversed(visitor)
+    }
+
+    fn hit_test_children_at<'a>(
+        &'a self,
+        pos: Vec2d,
+        visitor: &mut dyn FnMut(&'a dyn Element),
+    ) {
+        self.as_ref().hit_test_children_at(pos, visitor)
+    }
+
+    fn hit_test_children_at_reversed<'a>(
+        &'a self,
+        pos: Vec2d,
+        visitor: &mut dyn FnMut(&'a dyn Element),
+    ) {
+        self.as_ref().hit_test_children_at_reversed(pos, visitor)
+    }
+
+    #[inline]
+    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.as_ref().occlusion_children_at(pos, visitor);
+    }
 }
 
 impl LayoutElement for Box<dyn Element> {
@@ -1565,42 +1606,6 @@ impl EventElement for Box<dyn Element> {
         self.as_ref().on_event_with_context(event, context)
     }
 
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().event_children(visitor)
-    }
-
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().structural_children(visitor)
-    }
-
-    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().focus_children(visitor)
-    }
-
-    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().hit_test_children(visitor)
-    }
-
-    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().hit_test_children_reversed(visitor)
-    }
-
-    fn hit_test_children_at<'a>(
-        &'a self,
-        pos: Vec2d,
-        visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-        self.as_ref().hit_test_children_at(pos, visitor)
-    }
-
-    fn hit_test_children_at_reversed<'a>(
-        &'a self,
-        pos: Vec2d,
-        visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-        self.as_ref().hit_test_children_at_reversed(pos, visitor)
-    }
-
     #[inline]
     fn has_overlapping_hit_targets(&self) -> bool {
         self.as_ref().has_overlapping_hit_targets()
@@ -1609,11 +1614,6 @@ impl EventElement for Box<dyn Element> {
     #[inline]
     fn occludes_pointer_at(&self, pos: Vec2d) -> bool {
         self.as_ref().occludes_pointer_at(pos)
-    }
-
-    #[inline]
-    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.as_ref().occlusion_children_at(pos, visitor);
     }
 
 }

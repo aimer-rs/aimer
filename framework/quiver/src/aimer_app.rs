@@ -5716,6 +5716,10 @@ mod tests {
         }
     }
     impl EventElement for RecordingElement {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             if matches!(event, ElementEvent::Cancel) {
                 self.cancels.fetch_add(1, Ordering::SeqCst);
@@ -5993,6 +5997,10 @@ mod tests {
         }
     }
     impl EventElement for PreeditElement {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn focus_node(&self) -> Option<&FocusNode> {
             Some(&self.focus_node)
         }
@@ -6270,6 +6278,10 @@ mod tests {
         }
     }
     impl EventElement for CapturingElement {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             match event {
                 ElementEvent::PointerDown(pointer) => {
@@ -6364,6 +6376,10 @@ mod tests {
         }
     }
     impl EventElement for ScrollRecordingElement {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             if let ElementEvent::Scroll {
                 delta, kind, phase, ..
@@ -6715,6 +6731,10 @@ mod tests {
     }
 
     impl EventElement for NoopScrollElement {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             if let ElementEvent::Scroll { phase, .. } = event {
                 self.phases.lock().unwrap().push(*phase);

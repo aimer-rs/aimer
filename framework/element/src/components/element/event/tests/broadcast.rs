@@ -26,16 +26,6 @@ impl VisitorElement for BroadcastProbe {
             visitor(child.as_ref());
         }
     }
-}
-
-impl EventElement for BroadcastProbe {
-    fn event_tree_role(&self) -> EventTreeRole {
-        self.role
-    }
-
-    fn focus_node(&self) -> Option<&FocusNode> {
-        self.focus.as_ref()
-    }
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
@@ -49,6 +39,16 @@ impl EventElement for BroadcastProbe {
             self.traversal.event_visits.set(self.traversal.event_visits.get() + 1);
             visitor(child.as_ref());
         }
+    }
+}
+
+impl EventElement for BroadcastProbe {
+    fn event_tree_role(&self) -> EventTreeRole {
+        self.role
+    }
+
+    fn focus_node(&self) -> Option<&FocusNode> {
+        self.focus.as_ref()
     }
 
     fn on_event(&self, _event: &ElementEvent) -> EventResult {

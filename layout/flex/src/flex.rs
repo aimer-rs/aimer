@@ -320,15 +320,15 @@ mod lazy_tests {
         fn debug_name(&self) -> &'static str {
             "TransparentDispatchWrapper"
         }
+
+        fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+            visitor(self.child.as_ref());
+        }
     }
 
     impl EventElement for TransparentDispatchWrapper {
         fn event_tree_role(&self) -> EventTreeRole {
             EventTreeRole::Transparent
-        }
-
-        fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-            visitor(self.child.as_ref());
         }
     }
 

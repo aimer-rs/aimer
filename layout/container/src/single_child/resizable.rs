@@ -571,6 +571,16 @@ impl<E: Element> VisitorElement for RawResizable<E> {
     fn debug_name(&self) -> &'static str {
         "Resizable"
     }
+
+    /// Resizing changes handling, not the single-child structural shape.
+    #[inline]
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(&self.child);
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(&self.child);
+    }
 }
 
 impl<E: Element + 'static> Rebuildable for RawResizable<E> {
@@ -602,10 +612,8 @@ impl<E: Element + 'static> Rebuildable for RawResizable<E> {
 }
 
 impl<E: Element> EventElement for RawResizable<E> {
-    /// Resizing changes handling, not the single-child structural shape.
-    #[inline]
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(&self.child);
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
     }
 
     fn on_event(&self, event: &ElementEvent) -> EventResult {
@@ -688,10 +696,6 @@ impl<E: Element> EventElement for RawResizable<E> {
             }
             _ => EventResult::ignored(),
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(&self.child);
     }
 }
 

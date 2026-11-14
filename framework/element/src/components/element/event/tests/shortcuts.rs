@@ -42,6 +42,10 @@ impl VisitorElement for Greedy {
 }
 
 impl EventElement for Greedy {
+    fn event_tree_role(&self) -> crate::EventTreeRole {
+        crate::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.0)
     }
@@ -70,6 +74,10 @@ impl VisitorElement for Passive {
 }
 
 impl EventElement for Passive {
+    fn event_tree_role(&self) -> crate::EventTreeRole {
+        crate::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.0)
     }

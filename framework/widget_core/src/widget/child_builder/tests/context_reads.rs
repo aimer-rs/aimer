@@ -242,6 +242,10 @@ impl Drawable for TouchedElement {
 }
 impl LayoutElement for TouchedElement {}
 impl EventElement for TouchedElement {
+    fn event_tree_role(&self) -> aimer_element::EventTreeRole {
+        aimer_element::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         self.touches.set(self.touches.get() + 1);
         None

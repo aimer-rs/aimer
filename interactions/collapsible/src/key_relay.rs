@@ -64,6 +64,10 @@ impl VisitorElement for RawKeyRelay {
     fn debug_name(&self) -> &'static str {
         "CollapsibleListKeyRelay"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
 }
 
 impl Rebuildable for RawKeyRelay {
@@ -149,10 +153,6 @@ impl EventElement for RawKeyRelay {
         } else {
             EventResult::ignored()
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }
 

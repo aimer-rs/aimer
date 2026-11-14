@@ -1106,6 +1106,10 @@ impl LayoutElement for TabBar {
     }
 }
 impl EventElement for TabBar {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &aimer_events::element::ElementEvent) -> aimer_widget::EventResult {
         use aimer_events::element::ElementEvent as E;
         let name = match event {
@@ -1433,6 +1437,10 @@ impl Drawable for FocusedPage {}
 impl LayoutElement for FocusedPage {}
 impl Rebuildable for FocusedPage {}
 impl EventElement for FocusedPage {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&aimer_widget::focus::FocusNode> {
         Some(&self.0)
     }

@@ -581,6 +581,26 @@ impl VisitorElement for NavigationFrameElement {
         if let Some(child) = self.anchor() { visitor(2, child.as_ref()); }
         if let Some(child) = above { visitor(3, child.as_ref()); }
     }
+
+    /// A touch that begins at the left edge is the swipe's before it is the
+    /// page's: a button or a horizontal scroller there would otherwise take the
+    /// press, and no swipe could ever start from it. Only the *page* is hidden
+    /// from hit testing, and only there, only for a finger, and only while the
+    /// navigator has somewhere to go back to; the host then gets the press.
+    fn hit_test_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        if let Some(link) = &self.swipe {
+            // A scroll goes to the host first, which hands it to the page itself.
+            if link.hides_page_for_scroll() { return; }
+            let (left, width) = self.horizontal_extent();
+            if link.hides_page(pos, left, width) { return; }
+        }
+        self.hit_test_children(visitor);
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) { visitor(self.incoming.as_ref()); }
+
+    /// The page that left and the copy of the item are only visual.
+    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) { visitor(self.incoming.as_ref()); }
 }
 
 impl Drawable for NavigationFrameElement {
@@ -697,28 +717,15 @@ impl NavigationFrameElement {
 }
 
 impl EventElement for NavigationFrameElement {
-    /// A touch that begins at the left edge is the swipe's before it is the
-    /// page's: a button or a horizontal scroller there would otherwise take the
-    /// press, and no swipe could ever start from it. Only the *page* is hidden
-    /// from hit testing, and only there, only for a finger, and only while the
-    /// navigator has somewhere to go back to; the host then gets the press.
-    fn hit_test_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        if let Some(link) = &self.swipe {
-            // A scroll goes to the host first, which hands it to the page itself.
-            if link.hides_page_for_scroll() { return; }
-            let (left, width) = self.horizontal_extent();
-            if link.hides_page(pos, left, width) { return; }
-        }
-        self.hit_test_children(visitor);
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
     }
+
     fn on_event_with_context(&self, event: &ElementEvent, context: &mut EventDispatchContext<'_, '_>) -> EventResult {
         let Some(link) = &self.swipe else { return EventResult::ignored(); };
         let (left, width) = self.horizontal_extent();
         link.handle(event, context, self.incoming.as_ref(), left, width)
     }
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) { visitor(self.incoming.as_ref()); }
-    /// The page that left and the copy of the item are only visual.
-    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) { visitor(self.incoming.as_ref()); }
 }
 impl Rebuildable for NavigationFrameElement {}
 impl LayoutElement for NavigationFrameElement {

@@ -490,16 +490,6 @@ impl<E: Element> EventElement for RawScrollableContainer<E> {
             _ => result,
         }
     }
-
-    fn event_children<'a>(&'a self, _: &mut dyn FnMut(&'a dyn Element)) {}
-
-    /// Event dispatch is handled by the nested dispatcher, but focus and
-    /// reconciliation still need the child and live scroll bars from the
-    /// visual structural view.
-    #[inline]
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.visit_children(visitor);
-    }
 }
 
 impl<E: Element> VisitorElement for RawScrollableContainer<E> {
@@ -515,6 +505,16 @@ impl<E: Element> VisitorElement for RawScrollableContainer<E> {
 
     fn debug_name(&self) -> &'static str {
         "RawScrollableContainer"
+    }
+
+    fn event_children<'a>(&'a self, _: &mut dyn FnMut(&'a dyn Element)) {}
+
+    /// Event dispatch is handled by the nested dispatcher, but focus and
+    /// reconciliation still need the child and live scroll bars from the
+    /// visual structural view.
+    #[inline]
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.visit_children(visitor);
     }
 }
 

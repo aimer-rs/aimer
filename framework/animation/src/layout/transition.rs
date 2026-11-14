@@ -1061,15 +1061,19 @@ impl aimer_widget::VisitorElement for AnimatedLayoutElement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn aimer_widget::Element)) {
         visitor(self.child.as_ref());
     }
-}
-
-impl aimer_widget::EventElement for AnimatedLayoutElement {
-    fn on_event(&self, event: &aimer_events::element::ElementEvent) -> aimer_widget::EventResult {
-        self.child.on_event(event)
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn aimer_widget::Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl aimer_widget::EventElement for AnimatedLayoutElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, event: &aimer_events::element::ElementEvent) -> aimer_widget::EventResult {
+        self.child.on_event(event)
     }
 }
 

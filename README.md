@@ -13,20 +13,20 @@
 
 </div>
 
-Describe your UI as composable Rust widgets. Aimer lays it out, animates it and draws it on the GPU itself:
-no webview, no system widgets, and the same code on every platform.
+## What is Aimer?
+
+
+Aimer is the powerful, flexible,framework for building applications. It's provided the tools that can build the powerful and lightweight application.
+
+Learn moew at [Aimer Website](https://aimer.rs)
 
 ## Why Aimer
 
-- **Declarative and type-safe.** Fluent builders, `StatelessWidget` / `StatefulWidget` derives and a typed `Router`
-  keep UI code short and let the compiler catch mistakes.
-- **Built for frame time.** Scoped rebuilds, incremental render sync and allocation-free hot paths, tuned for debug
-  builds as well as release.
-- **One renderer, everywhere.** `Cupid` is a from-scratch 2D vector and text engine: shaping, rasterization,
-  gradients, shadows and glass backdrops, with no HarfBuzz, FreeType or cosmic-text.
-- **Async from the ground up.** `Venus` runs futures aligned to the frame, so slow work never blocks a draw.
-- **Batteries included.** Navigation and gestures, modals, storage, SVG, Markdown, icons
-  and animation ship in the box.
+- **Declarative** Write user interfaces using declarative pattern.
+- **Built for frame time.** Scoped rebuilds, incremental render sync and allocation-free hot paths, debug
+  builds is fast as release builds.
+- **One renderer, everywhere.** `Cupid` is a 2D vector and text engine, handle all the render work in `Aimer` framework, highly portable regardless of GPU backend.
+- **Async from the ground up.** `Venus` runs futures aligned to the frame, no any update in helf of frame.
 
 ## Hello World
 
@@ -36,14 +36,16 @@ fn main() {
     Container::new()
       .child(
         Text::new("Hello World!")
-          .text_align(TextAlign::MidCenter)
+          .text_align(TextAlign::MidCenter) 
           .text_style(TextStyle::new().color(Color::WHITE))
       )
   );
 }
 ```
 
-## Platform Support
+## Platform Support & Backends
+
+### Tier 1
 
 | Platform       | Graphics Backend            |    Status    |
 |:---------------|:----------------------------|:------------:|
@@ -54,20 +56,15 @@ fn main() {
 | **Windows**    | Direct3D 12                 | ✅ Supported |
 | **Linux**      | Vulkan with OpenGL fallback | ✅ Supported |
 
-## Renderer Backends
-
-### Tier 1
-
-Metal, Vulkan, Direct3D 12, OpenGL, and the web canvas renderer.
-
-These are the renderers the table above relies on. New renderer features land
-here first, and a regression here is fixed before anything else.
-
 ### Tier 2
 
 wgpu (the opt-in `wgpu` feature).
 
-Kept working on a best-effort basis. A feature may arrive later than on tier 1,
+
+>  **Tier 1** are the renderers the table above relies on. New renderer features land
+here first, and a regression here is fixed before anything else.
+>
+> **Tier 2** are working on a best-effort basis. A feature may arrive later than on tier 1,
 and a tier 2 problem does not block a release.
 
 ## Built with Aimer

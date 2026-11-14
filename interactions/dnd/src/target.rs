@@ -342,6 +342,10 @@ impl<T: 'static> VisitorElement for RawDragTarget<T> {
     fn debug_name(&self) -> &'static str {
         "DragTarget"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
 }
 
 impl<T: 'static> EventElement for RawDragTarget<T> {
@@ -390,10 +394,6 @@ impl<T: 'static> EventElement for RawDragTarget<T> {
 
             _ => EventResult::ignored(),
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }
 

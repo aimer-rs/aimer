@@ -366,6 +366,70 @@ impl VisitorElement for RetainedChildElement {
             child.set_element_id(id);
         }
     }
+
+    /// Offers the retained child's *own* children, not the child itself.
+    ///
+    /// This placement stands in for the child in every way an event cares
+    /// about: it reports the child's identity, its bounds and its focus node,
+    /// and [`Self::on_event`] hands the event straight to it. Yielding the
+    /// child here as well would put it in the walk twice — once on its own
+    /// account and once through this placement — so an event it did not consume
+    /// would be delivered to it two times. Skipping a level keeps the subtree
+    /// below reachable while each element is asked exactly once.
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        if let Some(child) = self.child() {
+            child.event_children(visitor);
+        }
+    }
+
+    /// Reconciliation and focus traversal need the retained element itself as
+    /// the placement's structural child. Descendants are visited after that
+    /// element by the normal walk, which keeps positional state handoff aligned
+    /// when the retained element owns a child list.
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        if let Some(child) = self.child() {
+            visitor(child);
+        }
+    }
+
+    /// Offers the retained child's own children, for the reason given on
+    /// [`Self::event_children`]: this placement is hit-tested with the child's
+    /// bounds and answers with the child's handler, so the child must not also
+    /// be visited in its own right.
+    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        if let Some(child) = self.child() {
+            child.hit_test_children(visitor);
+        }
+    }
+
+    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        if let Some(child) = self.child() {
+            child.hit_test_children_reversed(visitor);
+        }
+    }
+
+    fn hit_test_children_at<'a>(
+        &'a self,
+        _pos: Vec2d,
+        _visitor: &mut dyn FnMut(&'a dyn Element),
+    ) {
+    }
+
+    fn hit_test_children_at_reversed<'a>(
+        &'a self,
+        pos: Vec2d,
+        visitor: &mut dyn FnMut(&'a dyn Element),
+    ) {
+        if let Some(child) = self.child() {
+            child.hit_test_children_at_reversed(pos, visitor);
+        }
+    }
+
+    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        if let Some(child) = self.child() {
+            child.occlusion_children_at(pos, visitor);
+        }
+    }
 }
 
 impl LayoutElement for RetainedChildElement {
@@ -430,10 +494,30 @@ impl LayoutElement for RetainedChildElement {
 }
 
 impl EventElement for RetainedChildElement {
+    /// A placement is registered as a boundary unless it provably has nothing to
+    /// do: its child handles no events and has no event children below it.
+    ///
+    /// It cannot simply take its child's role. In
+    /// [`on_event_with_context`](Self::on_event_with_context) it forwards what
+    /// comes back through the child and removes the redraw flag a descendant
+    /// asked for, so that the child's own paint is not marked stale; that work is
+    /// needed whenever something below the child can answer an event. A leaf
+    /// child such as a `Text` has nothing below it, so its placement costs
+    /// routing no target at all.
     fn event_tree_role(&self) -> EventTreeRole {
-        self.child()
-            .map(|_| EventTreeRole::IndexedHitTestBoundary)
-            .unwrap_or(EventTreeRole::Transparent)
+        let Some(child) = self.child() else {
+            return EventTreeRole::Transparent;
+        };
+        if child.event_tree_role() != EventTreeRole::Transparent || child.focus_node().is_some() {
+            return EventTreeRole::IndexedHitTestBoundary;
+        }
+        let mut has_event_children = false;
+        child.event_children(&mut |_| has_event_children = true);
+        if has_event_children {
+            EventTreeRole::IndexedHitTestBoundary
+        } else {
+            EventTreeRole::Transparent
+        }
     }
 
     fn focus_node(&self) -> Option<&FocusNode> {
@@ -483,64 +567,6 @@ impl EventElement for RetainedChildElement {
         result.without_redraw()
     }
 
-    /// Offers the retained child's *own* children, not the child itself.
-    ///
-    /// This placement stands in for the child in every way an event cares
-    /// about: it reports the child's identity, its bounds and its focus node,
-    /// and [`Self::on_event`] hands the event straight to it. Yielding the
-    /// child here as well would put it in the walk twice — once on its own
-    /// account and once through this placement — so an event it did not consume
-    /// would be delivered to it two times. Skipping a level keeps the subtree
-    /// below reachable while each element is asked exactly once.
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        if let Some(child) = self.child() {
-            child.event_children(visitor);
-        }
-    }
-
-    /// Reconciliation and focus traversal need the retained element itself as
-    /// the placement's structural child. Descendants are visited after that
-    /// element by the normal walk, which keeps positional state handoff aligned
-    /// when the retained element owns a child list.
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        if let Some(child) = self.child() {
-            visitor(child);
-        }
-    }
-
-    /// Offers the retained child's own children, for the reason given on
-    /// [`Self::event_children`]: this placement is hit-tested with the child's
-    /// bounds and answers with the child's handler, so the child must not also
-    /// be visited in its own right.
-    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        if let Some(child) = self.child() {
-            child.hit_test_children(visitor);
-        }
-    }
-
-    fn hit_test_children_reversed<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        if let Some(child) = self.child() {
-            child.hit_test_children_reversed(visitor);
-        }
-    }
-
-    fn hit_test_children_at<'a>(
-        &'a self,
-        _pos: Vec2d,
-        _visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-    }
-
-    fn hit_test_children_at_reversed<'a>(
-        &'a self,
-        pos: Vec2d,
-        visitor: &mut dyn FnMut(&'a dyn Element),
-    ) {
-        if let Some(child) = self.child() {
-            child.hit_test_children_at_reversed(pos, visitor);
-        }
-    }
-
     fn has_overlapping_hit_targets(&self) -> bool {
         self.child()
             .is_some_and(EventElement::has_overlapping_hit_targets)
@@ -549,12 +575,6 @@ impl EventElement for RetainedChildElement {
     fn occludes_pointer_at(&self, pos: Vec2d) -> bool {
         self.child()
             .is_some_and(|child| child.occludes_pointer_at(pos))
-    }
-
-    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        if let Some(child) = self.child() {
-            child.occlusion_children_at(pos, visitor);
-        }
     }
 }
 
@@ -742,6 +762,10 @@ mod tests {
     impl LayoutElement for Counter {}
 
     impl EventElement for Counter {
+        fn event_tree_role(&self) -> EventTreeRole {
+            EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, _event: &ElementEvent) -> EventResult {
             self.events.set(self.events.get() + 1);
             EventResult::ignored()
@@ -911,6 +935,29 @@ mod tests {
             names,
             vec!["StructuralParent"],
             "a retained placement must pair with its represented element before descending"
+        );
+    }
+
+    /// A placement over a child that handles nothing and has no event children
+    /// must not cost routing a target of its own.
+    #[tokio::test]
+    async fn a_placement_takes_the_event_role_of_the_child_it_stands_for() {
+        let ctx = context();
+
+        let handler = ChildBuilder::from_widget(Counting {
+            events: Rc::new(Cell::new(0)),
+        })
+        .build(&ctx);
+        let plain = ChildBuilder::from_widget(Probe {
+            builds: Rc::new(Cell::new(0)),
+        })
+        .build(&ctx);
+
+        assert_eq!(handler.event_tree_role(), EventTreeRole::IndexedHitTestBoundary);
+        assert_eq!(
+            plain.event_tree_role(),
+            EventTreeRole::Transparent,
+            "an error placeholder handles no events"
         );
     }
 

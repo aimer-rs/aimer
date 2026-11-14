@@ -390,6 +390,10 @@ impl VisitorElement for RawColorPicker {
 }
 
 impl EventElement for RawColorPicker {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.runtime.focus_node)
     }

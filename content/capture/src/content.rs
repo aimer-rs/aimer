@@ -323,11 +323,6 @@ impl EventElement for RawCapture {
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::Transparent
     }
-
-    #[inline]
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-    }
 }
 
 impl VisitorElement for RawCapture {
@@ -338,6 +333,11 @@ impl VisitorElement for RawCapture {
 
     fn debug_name(&self) -> &'static str {
         "Capture"
+    }
+
+    #[inline]
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 

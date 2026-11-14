@@ -843,6 +843,16 @@ impl<T: Element, D: Decoration> VisitorElement for RawContainer<T, D> {
             "Container"
         }
     }
+
+    /// The opaque container has one child in both structural views.
+    #[inline]
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(&self.child);
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(&self.child);
+    }
 }
 
 impl<T: Element, D: Decoration> EventElement for RawContainer<T, D> {
@@ -853,12 +863,6 @@ impl<T: Element, D: Decoration> EventElement for RawContainer<T, D> {
         } else {
             EventTreeRole::Transparent
         }
-    }
-
-    /// The opaque container has one child in both structural views.
-    #[inline]
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(&self.child);
     }
 
     fn on_event(&self, event: &ElementEvent) -> EventResult {
@@ -875,10 +879,6 @@ impl<T: Element, D: Decoration> EventElement for RawContainer<T, D> {
             return EventResult::consumed();
         }
         EventResult::ignored()
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(&self.child);
     }
 
     /// An opaque container covers the layers behind it in a `Stack` for the

@@ -325,20 +325,6 @@ impl VisitorElement for AnimatedCollapseElement {
     fn debug_name(&self) -> &'static str {
         "AnimatedCollapseElement"
     }
-}
-
-impl EventElement for AnimatedCollapseElement {
-    fn event_tree_role(&self) -> EventTreeRole {
-        EventTreeRole::IndexedTarget
-    }
-
-    fn on_event(&self, event: &ElementEvent) -> EventResult {
-        if self.is_event_visible() {
-            self.child.on_event(event)
-        } else {
-            EventResult::ignored()
-        }
-    }
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
@@ -353,6 +339,20 @@ impl EventElement for AnimatedCollapseElement {
     fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         if self.is_event_visible() {
             visitor(self.child.as_ref());
+        }
+    }
+}
+
+impl EventElement for AnimatedCollapseElement {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedTarget
+    }
+
+    fn on_event(&self, event: &ElementEvent) -> EventResult {
+        if self.is_event_visible() {
+            self.child.on_event(event)
+        } else {
+            EventResult::ignored()
         }
     }
 }

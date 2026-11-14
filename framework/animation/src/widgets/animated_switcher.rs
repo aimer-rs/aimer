@@ -347,15 +347,19 @@ impl VisitorElement for AnimatedSwitcherElement {
     fn debug_name(&self) -> &'static str {
         "AnimatedSwitcherElement"
     }
-}
-
-impl EventElement for AnimatedSwitcherElement {
-    fn on_event(&self, event: &ElementEvent) -> EventResult {
-        self.current_child.on_event(event)
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.current_child.as_ref());
+    }
+}
+
+impl EventElement for AnimatedSwitcherElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, event: &ElementEvent) -> EventResult {
+        self.current_child.on_event(event)
     }
 }
 

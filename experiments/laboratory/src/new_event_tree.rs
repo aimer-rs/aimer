@@ -1578,6 +1578,35 @@ mod tests {
             fn debug_name(&self) -> &'static str {
                 "EventTreeComparisonElement"
             }
+
+            fn hit_test_children_at<'a>(
+                &'a self,
+                pos: aimer_attribute::Vec2d,
+                visitor: &mut dyn FnMut(&'a dyn FrameworkElement),
+            ) {
+                let Some(index) = &self.spatial_index else {
+                    self.visit_children(visitor);
+                    return;
+                };
+                if self.event_child_targets.is_empty() {
+                    return;
+                }
+
+                let mut hits = index.hit_test_iter(pos.x, pos.y, false);
+                while let Some(target) = hits.next() {
+                    if let Ok(child_index) = self
+                        .event_child_targets
+                        .binary_search_by_key(&target.0, |child_target| child_target.0)
+                    {
+                        visitor(self.children[child_index].as_ref());
+                    }
+                }
+                self.metrics.spatial_index_checks.set(
+                    self.metrics.spatial_index_checks.get()
+                        + hits.index_bounds_checked
+                        + hits.target_bounds_checked,
+                );
+            }
         }
 
         impl FrameworkEventElement for ComparisonElement {
@@ -1646,35 +1675,6 @@ mod tests {
                 result
             }
 
-            fn hit_test_children_at<'a>(
-                &'a self,
-                pos: aimer_attribute::Vec2d,
-                visitor: &mut dyn FnMut(&'a dyn FrameworkElement),
-            ) {
-                let Some(index) = &self.spatial_index else {
-                    self.visit_children(visitor);
-                    return;
-                };
-                if self.event_child_targets.is_empty() {
-                    return;
-                }
-
-                let mut hits = index.hit_test_iter(pos.x, pos.y, false);
-                while let Some(target) = hits.next() {
-                    if let Ok(child_index) = self
-                        .event_child_targets
-                        .binary_search_by_key(&target.0, |child_target| child_target.0)
-                    {
-                        visitor(self.children[child_index].as_ref());
-                    }
-                }
-                self.metrics.spatial_index_checks.set(
-                    self.metrics.spatial_index_checks.get()
-                        + hits.index_bounds_checked
-                        + hits.target_bounds_checked,
-                );
-            }
-
             fn has_overlapping_hit_targets(&self) -> bool {
                 self.overlapping_children
             }
@@ -1724,15 +1724,6 @@ mod tests {
             fn debug_name(&self) -> &'static str {
                 "LegacyHitBoundary"
             }
-        }
-
-        impl FrameworkEventElement for LegacyHitBoundary {
-            fn on_event(&self, _event: &FrameworkEvent) -> EventResult {
-                self.metrics
-                    .callback_visits
-                    .set(self.metrics.callback_visits.get() + 1);
-                EventResult::ignored()
-            }
 
             fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn FrameworkElement)) {
                 visitor(self.child.as_ref());
@@ -1746,6 +1737,19 @@ mod tests {
                 if self.hit_region.is_inside(pos.x, pos.y) {
                     visitor(self.child.as_ref());
                 }
+            }
+        }
+
+        impl FrameworkEventElement for LegacyHitBoundary {
+            fn event_tree_role(&self) -> EventTreeRole {
+                EventTreeRole::IndexedHitTestBoundary
+            }
+
+            fn on_event(&self, _event: &FrameworkEvent) -> EventResult {
+                self.metrics
+                    .callback_visits
+                    .set(self.metrics.callback_visits.get() + 1);
+                EventResult::ignored()
             }
         }
 

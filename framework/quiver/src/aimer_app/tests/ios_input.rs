@@ -24,6 +24,10 @@ impl VisitorElement for InputElement {
     }
 }
 impl EventElement for InputElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
         self.0.lock().unwrap().push(event.clone());
         aimer_widget::EventResult::consumed()

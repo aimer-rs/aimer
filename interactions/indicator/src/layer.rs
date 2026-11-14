@@ -166,15 +166,6 @@ impl VisitorElement for IndicatorLayerElement {
     fn debug_name(&self) -> &'static str {
         "IndicatorLayerElement"
     }
-}
-
-/// A layer is drawn over or under the content, never in the way of it, so it
-/// takes no pointer input and no focus. It is still a structural child, which
-/// reconciliation needs.
-impl EventElement for IndicatorLayerElement {
-    fn on_event(&self, _event: &ElementEvent) -> EventResult {
-        EventResult::ignored()
-    }
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
@@ -183,6 +174,19 @@ impl EventElement for IndicatorLayerElement {
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
     fn focus_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+/// A layer is drawn over or under the content, never in the way of it, so it
+/// takes no pointer input and no focus. It is still a structural child, which
+/// reconciliation needs.
+impl EventElement for IndicatorLayerElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, _event: &ElementEvent) -> EventResult {
+        EventResult::ignored()
+    }
 }
 
 impl Rebuildable for IndicatorLayerElement {

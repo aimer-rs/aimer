@@ -881,6 +881,25 @@ impl Drawable for RawGrid {
 }
 
 impl EventElement for RawGrid {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+}
+
+impl Rebuildable for RawGrid {}
+
+impl VisitorElement for RawGrid {
+    fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        for item in &self.children {
+            visitor(item.child.as_ref());
+        }
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "Grid"
+    }
+
     /// The event and visual child views expose the same grid-item children.
     #[inline]
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
@@ -930,20 +949,6 @@ impl EventElement for RawGrid {
                 visitor(item.child.as_ref());
             }
         }
-    }
-}
-
-impl Rebuildable for RawGrid {}
-
-impl VisitorElement for RawGrid {
-    fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        for item in &self.children {
-            visitor(item.child.as_ref());
-        }
-    }
-
-    fn debug_name(&self) -> &'static str {
-        "Grid"
     }
 }
 

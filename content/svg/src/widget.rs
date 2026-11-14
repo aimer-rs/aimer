@@ -660,6 +660,8 @@ impl VisitorElement for RawSvgAsset {
     fn debug_name(&self) -> &'static str {
         "SvgAssetElement"
     }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl LayoutElement for RawSvgAsset {
@@ -713,12 +715,14 @@ impl Drawable for RawSvgAsset {
 }
 
 impl EventElement for RawSvgAsset {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         self.active_element()
             .map_or_else(EventResult::ignored, |element| element.on_event(event))
     }
-
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl Rebuildable for RawSvgAsset {
@@ -1094,6 +1098,10 @@ impl Drawable for RawSvg {
 }
 
 impl EventElement for RawSvg {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event {
             ElementEvent::PointerMove(PointerInfo {

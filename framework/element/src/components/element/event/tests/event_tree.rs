@@ -11,6 +11,10 @@ impl VisitorElement for CapturingElement {
 }
 
 impl EventElement for CapturingElement {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         self.events.set(self.events.get() + 1);
         match event {
@@ -46,6 +50,12 @@ impl VisitorElement for TreeElement {
     fn debug_name(&self) -> &'static str {
         "TreeElement"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        for child in &self.children {
+            visitor(child.as_ref());
+        }
+    }
 }
 
 impl EventElement for TreeElement {
@@ -56,12 +66,6 @@ impl EventElement for TreeElement {
     fn on_event(&self, _event: &ElementEvent) -> EventResult {
         self.events.set(self.events.get() + 1);
         EventResult::consumed()
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        for child in &self.children {
-            visitor(child.as_ref());
-        }
     }
 }
 
@@ -86,17 +90,21 @@ impl VisitorElement for EffectTreeElement {
     fn debug_name(&self) -> &'static str {
         "EffectTreeElement"
     }
-}
-
-impl EventElement for EffectTreeElement {
-    fn on_event(&self, _event: &ElementEvent) -> EventResult {
-        self.result
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
             visitor(child.as_ref());
         }
+    }
+}
+
+impl EventElement for EffectTreeElement {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, _event: &ElementEvent) -> EventResult {
+        self.result
     }
 }
 
@@ -217,47 +225,6 @@ fn cancel_pointer_is_not_delivered_twice_to_captured_target() {
 }
 
 #[test]
-fn recursive_dispatch_helpers_reuse_inline_scratch_without_spilling() {
-    let root_events = Rc::new(Cell::new(0));
-    let transparent_events = Rc::new(Cell::new(0));
-    let target_events = Rc::new(Cell::new(0));
-    let element = TreeElement {
-        children: vec![TreeElement {
-            children: vec![TreeElement {
-                children: Vec::new(),
-                events: target_events.clone(),
-                role: EventTreeRole::IndexedTarget,
-                bounds: None,
-            }
-            .boxed()],
-            events: transparent_events.clone(),
-            role: EventTreeRole::Transparent,
-            bounds: None,
-        }
-        .boxed()],
-        events: root_events.clone(),
-        role: EventTreeRole::IndexedTarget,
-        bounds: None,
-    };
-    let event = ElementEvent::Cancel;
-    let mut children = EventChildren::new();
-
-    assert!(
-        dispatch_event_inner(&element, Vec2d { x: 5.0, y: 5.0 }, &event, &mut children)
-            .is_consumed()
-    );
-    assert!(children.is_empty());
-    assert!(!children.spilled());
-
-    assert!(broadcast_event_inner(&element, &event, &mut children).is_consumed());
-    assert!(children.is_empty());
-    assert!(!children.spilled());
-    assert_eq!(root_events.get(), 1);
-    assert_eq!(transparent_events.get(), 0);
-    assert_eq!(target_events.get(), 2);
-}
-
-#[test]
 fn indexed_dispatch_flattens_transparent_nodes_and_keeps_target_order() {
     let root_events = Rc::new(Cell::new(0));
     let transparent_events = Rc::new(Cell::new(0));
@@ -317,12 +284,6 @@ impl VisitorElement for IndexedHitTestBoundaryRoot {
     fn debug_name(&self) -> &'static str {
         "IndexedHitTestBoundaryRoot"
     }
-}
-
-impl EventElement for IndexedHitTestBoundaryRoot {
-    fn event_tree_role(&self) -> EventTreeRole {
-        EventTreeRole::IndexedHitTestBoundary
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.visit_children(visitor);
@@ -343,6 +304,12 @@ impl EventElement for IndexedHitTestBoundaryRoot {
                 visitor(child.as_ref());
             }
         }
+    }
+}
+
+impl EventElement for IndexedHitTestBoundaryRoot {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
     }
 }
 
@@ -692,15 +659,15 @@ impl VisitorElement for SwitchingEventRoot {
     fn debug_name(&self) -> &'static str {
         "SwitchingEventRoot"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.visit_children(visitor);
+    }
 }
 
 impl EventElement for SwitchingEventRoot {
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::Transparent
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.visit_children(visitor);
     }
 }
 

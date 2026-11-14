@@ -1864,6 +1864,10 @@ impl VisitorElement for RawNavigationKeyRelay {
     fn debug_name(&self) -> &'static str {
         "NavigationKeyRelay"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
 }
 
 impl Rebuildable for RawNavigationKeyRelay {
@@ -1919,14 +1923,14 @@ impl LayoutElement for RawNavigationKeyRelay {
 }
 
 impl EventElement for RawNavigationKeyRelay {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event_navigation_key(event) {
             Some(key) if (self.on_key)(key) => EventResult::consumed(),
             _ => EventResult::ignored(),
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }

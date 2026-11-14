@@ -152,31 +152,6 @@ impl VisitorElement for RepaintBoundaryTarget {
     fn debug_name(&self) -> &'static str {
         "RepaintBoundary"
     }
-}
-
-impl Rebuildable for RepaintBoundaryTarget {
-    fn rebuild_if_dirty(&self, ctx: &BuildContext) {
-        self.child.rebuild_if_dirty(ctx);
-    }
-
-    fn mark_needs_rebuild(&self) {
-        self.child.mark_needs_rebuild();
-    }
-}
-
-impl EventElement for RepaintBoundaryTarget {
-    fn on_event(&self, _event: &ElementEvent) -> EventResult {
-        EventResult::ignored()
-    }
-
-    fn on_event_with_context(
-        &self,
-        event: &ElementEvent,
-        context: &mut EventDispatchContext<'_, '_>,
-    ) -> EventResult {
-        let pos = context.position();
-        context.dispatch_child(self.child.as_ref(), pos, event)
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
@@ -214,16 +189,45 @@ impl EventElement for RepaintBoundaryTarget {
         self.child.hit_test_children_at_reversed(pos, visitor);
     }
 
+    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.child.occlusion_children_at(pos, visitor);
+    }
+}
+
+impl Rebuildable for RepaintBoundaryTarget {
+    fn rebuild_if_dirty(&self, ctx: &BuildContext) {
+        self.child.rebuild_if_dirty(ctx);
+    }
+
+    fn mark_needs_rebuild(&self) {
+        self.child.mark_needs_rebuild();
+    }
+}
+
+impl EventElement for RepaintBoundaryTarget {
+    fn event_tree_role(&self) -> aimer_element::EventTreeRole {
+        aimer_element::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, _event: &ElementEvent) -> EventResult {
+        EventResult::ignored()
+    }
+
+    fn on_event_with_context(
+        &self,
+        event: &ElementEvent,
+        context: &mut EventDispatchContext<'_, '_>,
+    ) -> EventResult {
+        let pos = context.position();
+        context.dispatch_child(self.child.as_ref(), pos, event)
+    }
+
     fn has_overlapping_hit_targets(&self) -> bool {
         self.child.has_overlapping_hit_targets()
     }
 
     fn occludes_pointer_at(&self, pos: Vec2d) -> bool {
         self.child.occludes_pointer_at(pos)
-    }
-
-    fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.child.occlusion_children_at(pos, visitor);
     }
 }
 

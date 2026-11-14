@@ -356,9 +356,17 @@ impl VisitorElement for RawDraggable {
     fn debug_name(&self) -> &'static str {
         "Draggable"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.visible_child());
+    }
 }
 
 impl EventElement for RawDraggable {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event {
             ElementEvent::PointerDown(info) => {
@@ -444,10 +452,6 @@ impl EventElement for RawDraggable {
 
             _ => EventResult::ignored(),
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.visible_child());
     }
 }
 

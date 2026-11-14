@@ -234,11 +234,6 @@ impl EventElement for RawOverlayBox {
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::Transparent
     }
-
-    #[inline]
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-    }
 }
 
 impl VisitorElement for RawOverlayBox {
@@ -250,6 +245,11 @@ impl VisitorElement for RawOverlayBox {
 
     fn debug_name(&self) -> &'static str {
         self.name
+    }
+
+    #[inline]
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 

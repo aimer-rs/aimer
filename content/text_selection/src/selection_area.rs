@@ -291,6 +291,10 @@ impl LayoutElement for SelectionAreaElement {
 }
 
 impl EventElement for SelectionAreaElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         // The knobs and the callout sit above everything the region drew, so
         // they are offered the event before it can mean anything else.

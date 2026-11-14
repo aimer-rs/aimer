@@ -589,23 +589,27 @@ impl VisitorElement for MorphTransitionElement {
     fn debug_name(&self) -> &'static str {
         "MorphTransitionElement"
     }
-}
-
-impl EventElement for MorphTransitionElement {
-    fn on_event(&self, event: &ElementEvent) -> EventResult {
-        unsafe {
-            self.current_child
-                .get()
-                .map(|c| c.on_event(event))
-                .unwrap_or_else(EventResult::ignored)
-        }
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         unsafe {
             if let Some(child) = self.current_child.get() {
                 visitor(child);
             }
+        }
+    }
+}
+
+impl EventElement for MorphTransitionElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, event: &ElementEvent) -> EventResult {
+        unsafe {
+            self.current_child
+                .get()
+                .map(|c| c.on_event(event))
+                .unwrap_or_else(EventResult::ignored)
         }
     }
 }

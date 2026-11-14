@@ -45,12 +45,6 @@ impl VisitorElement for BroadcastElement {
             visitor(child.as_ref());
         }
     }
-}
-
-impl EventElement for BroadcastElement {
-    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
-        aimer_widget::EventTreeRole::IndexedTarget
-    }
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
@@ -68,6 +62,12 @@ impl EventElement for BroadcastElement {
                 .set(self.counts.event_visits.get() + 1);
             visitor(child.as_ref());
         }
+    }
+}
+
+impl EventElement for BroadcastElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedTarget
     }
 
     fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {

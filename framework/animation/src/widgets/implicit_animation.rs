@@ -292,15 +292,19 @@ impl<T: Animatable + Clone + PartialEq + 'static> VisitorElement for ImplicitAni
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(unsafe { &*self.child.get() }.as_ref());
     }
-}
-
-impl<T: Animatable + Clone + PartialEq + 'static> EventElement for ImplicitAnimatedElement<T> {
-    fn on_event(&self, event: &ElementEvent) -> EventResult {
-        unsafe { &*self.child.get() }.on_event(event)
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(unsafe { &*self.child.get() }.as_ref());
+    }
+}
+
+impl<T: Animatable + Clone + PartialEq + 'static> EventElement for ImplicitAnimatedElement<T> {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, event: &ElementEvent) -> EventResult {
+        unsafe { &*self.child.get() }.on_event(event)
     }
 }
 

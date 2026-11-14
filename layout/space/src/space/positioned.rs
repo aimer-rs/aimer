@@ -660,9 +660,7 @@ impl<E: Element> VisitorElement for RawPositionedElement<E> {
     fn debug_name(&self) -> &'static str {
         "RawPositionedElement"
     }
-}
 
-impl<E: Element> EventElement for RawPositionedElement<E> {
     /// Positioned hides its child from visual traversal because it renders the
     /// child itself, but the event view is the structural child view.
     #[inline]
@@ -673,6 +671,9 @@ impl<E: Element> EventElement for RawPositionedElement<E> {
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.child);
     }
+}
+
+impl<E: Element> EventElement for RawPositionedElement<E> {
 }
 
 impl<E: Element> LayoutElement for RawPositionedElement<E> {

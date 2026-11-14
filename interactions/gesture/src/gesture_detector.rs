@@ -461,6 +461,20 @@ impl<E: Element> VisitorElement for RawGestureDetector<E> {
     fn debug_name(&self) -> &'static str {
         "GestureDetector"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        if self.behavior == GestureDetectorBehavior::PassThrough {
+            visitor(&self.child);
+        }
+    }
+
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(&self.child);
+    }
+
+    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        self.event_children(visitor);
+    }
 }
 
 impl<E: Element> EventElement for RawGestureDetector<E> {
@@ -561,20 +575,6 @@ impl<E: Element> EventElement for RawGestureDetector<E> {
         self.handlers.dispatch_all(output);
         self.window.request_redraw();
         pointer_capture_effect(EventResult::consumed().with_redraw(), event)
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        if self.behavior == GestureDetectorBehavior::PassThrough {
-            visitor(&self.child);
-        }
-    }
-
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(&self.child);
-    }
-
-    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        self.event_children(visitor);
     }
 }
 
@@ -731,6 +731,10 @@ mod tests {
     }
 
     impl EventElement for RecordingElement {
+        fn event_tree_role(&self) -> EventTreeRole {
+            EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, _event: &ElementEvent) -> EventResult {
             self.events.set(self.events.get() + 1);
             EventResult::ignored()

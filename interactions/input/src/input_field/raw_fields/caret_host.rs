@@ -279,9 +279,31 @@ impl VisitorElement for RawTextFieldHost {
     fn debug_name(&self) -> &'static str {
         "TextField"
     }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
+        // The field is embedded and has no retained ElementId of its own.
+        // Its callbacks are forwarded directly by this host, so it must not be
+        // registered as a separate indexed event target.
+    }
+
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(&self.field);
+        visitor(&self.caret);
+    }
+
+    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(&self.field);
+    }
+
+    fn hit_test_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
+    }
 }
 
 impl EventElement for RawTextFieldHost {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         self.field.on_event(event)
     }
@@ -306,24 +328,6 @@ impl EventElement for RawTextFieldHost {
         // editing logic, so forward directly instead of indexing it as a
         // separate child target.
         self.field.on_event(event)
-    }
-
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
-        // The field is embedded and has no retained ElementId of its own.
-        // Its callbacks are forwarded directly by this host, so it must not be
-        // registered as a separate indexed event target.
-    }
-
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(&self.field);
-        visitor(&self.caret);
-    }
-
-    fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(&self.field);
-    }
-
-    fn hit_test_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
     }
 }
 

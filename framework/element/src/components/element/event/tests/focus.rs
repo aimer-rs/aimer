@@ -13,6 +13,10 @@ impl VisitorElement for FocusTestElement {
 }
 
 impl EventElement for FocusTestElement {
+    fn event_tree_role(&self) -> crate::EventTreeRole {
+        crate::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.node)
     }
@@ -598,6 +602,10 @@ impl VisitorElement for PressableFocusElement {
 }
 
 impl EventElement for PressableFocusElement {
+    fn event_tree_role(&self) -> crate::EventTreeRole {
+        crate::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.node)
     }
@@ -643,6 +651,10 @@ impl VisitorElement for FocusKeyElement {
 }
 
 impl EventElement for FocusKeyElement {
+    fn event_tree_role(&self) -> crate::EventTreeRole {
+        crate::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.node)
     }
@@ -739,6 +751,10 @@ impl VisitorElement for FocusRequestingElement {
 }
 
 impl EventElement for FocusRequestingElement {
+    fn event_tree_role(&self) -> crate::EventTreeRole {
+        crate::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         if matches!(event, ElementEvent::PointerDown(_)) {
             self.requests.request_focus();

@@ -410,6 +410,19 @@ impl<E: Element> VisitorElement for RawMouseRegion<E> {
     fn debug_name(&self) -> &'static str {
         "MouseRegion"
     }
+
+    fn event_children<'b>(&'b self, visitor: &mut dyn FnMut(&'b dyn Element)) {
+        visitor(&self.child);
+    }
+
+    fn hit_test_children_at<'b>(&'b self, _pos: Vec2d, _visitor: &mut dyn FnMut(&'b dyn Element)) {}
+
+    /// The region routes its child by hand, so the child is hidden from the
+    /// hit-test view; an occluder inside it, a button with a background say, is
+    /// still an occluder.
+    fn occlusion_children_at<'b>(&'b self, _pos: Vec2d, visitor: &mut dyn FnMut(&'b dyn Element)) {
+        visitor(&self.child);
+    }
 }
 
 impl<E: Element> EventElement for RawMouseRegion<E> {
@@ -427,18 +440,6 @@ impl<E: Element> EventElement for RawMouseRegion<E> {
         context: &mut EventDispatchContext<'_, '_>,
     ) -> EventResult {
         self.handle_event(event, Some(context))
-    }
-    fn event_children<'b>(&'b self, visitor: &mut dyn FnMut(&'b dyn Element)) {
-        visitor(&self.child);
-    }
-
-    fn hit_test_children_at<'b>(&'b self, _pos: Vec2d, _visitor: &mut dyn FnMut(&'b dyn Element)) {}
-
-    /// The region routes its child by hand, so the child is hidden from the
-    /// hit-test view; an occluder inside it, a button with a background say, is
-    /// still an occluder.
-    fn occlusion_children_at<'b>(&'b self, _pos: Vec2d, visitor: &mut dyn FnMut(&'b dyn Element)) {
-        visitor(&self.child);
     }
 }
 
@@ -574,6 +575,10 @@ mod tests {
     }
 
     impl EventElement for ResultElement {
+        fn event_tree_role(&self) -> EventTreeRole {
+            EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, _event: &ElementEvent) -> EventResult {
             EventResult::consumed()
         }
@@ -596,6 +601,10 @@ mod tests {
     }
 
     impl EventElement for CapturingElement {
+        fn event_tree_role(&self) -> EventTreeRole {
+            EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> EventResult {
             self.events.set(self.events.get() + 1);
             match event {

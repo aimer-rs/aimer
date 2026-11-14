@@ -1,8 +1,6 @@
 use super::*;
 use crate::event_tree::{EventTargetId, EventTree};
 
-type EventChildren<'a> = smallvec::SmallVec<[&'a dyn Element; 32]>;
-
 /// A compact link from an indexed element to its structural parent.
 ///
 /// The public name is retained for source compatibility, but the dispatcher no
@@ -221,15 +219,6 @@ impl HitChainRecorder {
             return;
         }
         self.empty_hit_test_node_has_children |= has_structural_children;
-    }
-
-    #[inline]
-    fn record_miss(&mut self) {
-        if self.forwarding_boundary {
-            return;
-        }
-        self.cacheable = false;
-        self.elements.clear();
     }
 
     #[inline]
@@ -532,13 +521,6 @@ impl EventDispatcher {
             .unwrap_or(true);
         if let Some(recorder) = self.hit_chain_recorder.as_mut() {
             recorder.record_empty_hit_test_node(has_structural_children);
-        }
-    }
-
-    #[inline]
-    fn record_hit_chain_miss(&mut self) {
-        if let Some(recorder) = self.hit_chain_recorder.as_mut() {
-            recorder.record_miss();
         }
     }
 
@@ -2037,8 +2019,6 @@ use routing::{
     is_indexed_hit_test_boundary, index_element_links, RoutedEventResult,
 };
 pub use routing::{broadcast_event, dispatch_event, dispatch_focused_event};
-#[cfg(test)]
-use routing::{broadcast_event_inner, dispatch_event_inner};
 
 #[cfg(test)]
 mod tests;

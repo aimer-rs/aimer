@@ -303,15 +303,19 @@ impl VisitorElement for AnimatedElement {
     fn debug_name(&self) -> &'static str {
         "AnimatedElement"
     }
-}
-
-impl EventElement for AnimatedElement {
-    fn on_event(&self, event: &ElementEvent) -> EventResult {
-        self.child.on_event(event)
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl EventElement for AnimatedElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, event: &ElementEvent) -> EventResult {
+        self.child.on_event(event)
     }
 }
 

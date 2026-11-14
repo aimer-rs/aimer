@@ -5,6 +5,10 @@ impl VisitorElement for RawTextField {
 }
 
 impl EventElement for RawTextField {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         if let Some(selection) = self.selection.borrow().as_ref().cloned()
             && let Some(result) = selection.intercept(event)

@@ -17,7 +17,7 @@ pub const COVERED_CURSOR: Vec2d = Vec2d {
 ///
 /// A layered parent asks this of the layers above a point to decide whether the
 /// layers below may still see the pointer there. The walk follows each element's
-/// [`EventElement::occlusion_children_at`](crate::EventElement::occlusion_children_at),
+/// [`VisitorElement::occlusion_children_at`](crate::VisitorElement::occlusion_children_at),
 /// so it descends only through children whose bounds hold `pos` and stops at the
 /// first occluder. An element that reports no bounds is taken to be everywhere,
 /// as the event dispatcher does, but never occludes on that account: only an

@@ -329,15 +329,6 @@ impl VisitorElement for AnimatedPaintElement {
     fn debug_name(&self) -> &'static str {
         "AnimatedPaintElement"
     }
-}
-
-impl EventElement for AnimatedPaintElement {
-    fn on_event(&self, event: &ElementEvent) -> EventResult {
-        if self.inert {
-            return EventResult::ignored();
-        }
-        self.child.on_event(event)
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         if !self.inert {
@@ -354,6 +345,19 @@ impl EventElement for AnimatedPaintElement {
         if !self.inert {
             visitor(self.child.as_ref());
         }
+    }
+}
+
+impl EventElement for AnimatedPaintElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
+    fn on_event(&self, event: &ElementEvent) -> EventResult {
+        if self.inert {
+            return EventResult::ignored();
+        }
+        self.child.on_event(event)
     }
 }
 

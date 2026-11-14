@@ -351,11 +351,6 @@ impl<D: Decoration> EventElement for RawDecorationBox<D> {
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::Transparent
     }
-
-    #[inline]
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-    }
 }
 
 impl<D: Decoration> VisitorElement for RawDecorationBox<D> {
@@ -366,6 +361,11 @@ impl<D: Decoration> VisitorElement for RawDecorationBox<D> {
 
     fn debug_name(&self) -> &'static str {
         self.name
+    }
+
+    #[inline]
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 

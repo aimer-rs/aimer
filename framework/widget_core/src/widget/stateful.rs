@@ -2023,6 +2023,14 @@ impl VisitorElement for StatefulElement {
     fn reconciliation_key(&self) -> Option<&crate::Key> {
         self.key.as_ref()
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        // The generated child is the ordinary event child. Stateful elements
+        // are retained wrappers, not forwarding boundaries; routing it again
+        // from `on_event_with_context` would deliver every pointer event twice.
+        let child = unsafe { &*self.child.0.get() };
+        visitor(child.as_ref());
+    }
 }
 
 impl EventElement for StatefulElement {
@@ -2032,14 +2040,6 @@ impl EventElement for StatefulElement {
 
     fn on_event(&self, _event: &ElementEvent) -> EventResult {
         EventResult::ignored()
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        // The generated child is the ordinary event child. Stateful elements
-        // are retained wrappers, not forwarding boundaries; routing it again
-        // from `on_event_with_context` would deliver every pointer event twice.
-        let child = unsafe { &*self.child.0.get() };
-        visitor(child.as_ref());
     }
 }
 

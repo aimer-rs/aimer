@@ -399,15 +399,15 @@ impl VisitorElement for RawSliderVisualSlot {
     fn debug_name(&self) -> &'static str {
         "SliderVisualSlot"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
 }
 
 impl EventElement for RawSliderVisualSlot {
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::Transparent
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }
 
@@ -669,12 +669,16 @@ impl<T: RangeValue> VisitorElement for RawSlider<T> {
     fn debug_name(&self) -> &'static str {
         "RawSlider"
     }
-}
 
-impl<T: RangeValue> EventElement for RawSlider<T> {
     // The visual slots are composable decorations. The slider itself owns the
     // pointer gesture so an interactive child cannot steal its capture.
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl<T: RangeValue> EventElement for RawSlider<T> {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
 
     fn focus_node(&self) -> Option<&FocusNode> {
         (!self.model.is_disabled()).then_some(&self.runtime.focus_node)
@@ -1301,10 +1305,14 @@ impl<T: RangeValue> VisitorElement for RawRangeSlider<T> {
     fn debug_name(&self) -> &'static str {
         "RawRangeSlider"
     }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl<T: RangeValue> EventElement for RawRangeSlider<T> {
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
 
     fn focus_node(&self) -> Option<&FocusNode> {
         (!self.model.is_disabled()).then_some(&self.runtime.focus_node)

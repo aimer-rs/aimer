@@ -291,9 +291,7 @@ impl VisitorElement for TraversalElement {
     fn debug_name(&self) -> &'static str {
         "PhaseTraversalElement"
     }
-}
 
-impl EventElement for TraversalElement {
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
             visitor(child.as_ref());
@@ -304,6 +302,12 @@ impl EventElement for TraversalElement {
         for child in self.children.iter().rev() {
             visitor(child.as_ref());
         }
+    }
+}
+
+impl EventElement for TraversalElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
     }
 
     fn focus_node(&self) -> Option<&aimer::FocusNode> {

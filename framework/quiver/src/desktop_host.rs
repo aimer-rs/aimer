@@ -179,17 +179,17 @@ impl HostedWindow {
             drop(app);
         }
         drop(scope);
-        if let Some(window) = window {
-            let others = Arc::strong_count(&window) - 1;
-            if others == 0 {
-                info!("window {:?} released", window.id());
-            } else {
-                info!(
-                    "window {:?} is still held by {others} other owner(s); it is destroyed when they let go",
-                    window.id()
-                );
-            }
-        }
+        // if let Some(window) = window {
+        //     let others = Arc::strong_count(&window) - 1;
+        //     if others == 0 {
+        //         info!("window {:?} released", window.id());
+        //     } else {
+        //         info!(
+        //             "window {:?} is still held by {others} other owner(s); it is destroyed when they let go",
+        //             window.id()
+        //         );
+        //     }
+        // }
     }
 }
 
@@ -280,7 +280,7 @@ impl DesktopHost {
             drew: false,
         });
         aimer_window::host::mark_open(app_id);
-        info!("window {id:?} opened ({} open)", self.windows.len());
+        // info!("window {id:?} opened ({} open)", self.windows.len());
         let window = self.windows.last_mut().expect("the window was just added");
         let _active = enter_window_scope(key);
         window.app.resume_window(event_loop);
@@ -384,7 +384,7 @@ impl DesktopHost {
                     on_closed();
                 }
                 closed_any = true;
-                info!("window {id:?} closed ({} left)", self.windows.len());
+                // info!("window {id:?} closed ({} left)", self.windows.len());
             } else {
                 index += 1;
             }
@@ -480,7 +480,7 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
             let window = &mut self.windows[index];
             if !window.drew && matches!(event, WindowEvent::RedrawRequested) {
                 window.drew = true;
-                info!("window {id:?} is drawing its first frame");
+                // info!("window {id:?} is drawing its first frame");
             }
             let _active = enter_window_scope(window.key);
             WindowEventHandler::handle_events(&mut window.app, event_loop, id, event);

@@ -298,6 +298,10 @@ impl Drawable for RawModal {
 }
 
 impl EventElement for RawModal {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         let dismiss = match event {
             ElementEvent::PointerDown(pointer)
@@ -316,11 +320,6 @@ impl EventElement for RawModal {
             host::dismiss(id);
         }
         EventResult::consumed()
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.barrier.as_ref());
-        visitor(self.child.as_ref());
     }
 }
 
@@ -397,6 +396,11 @@ impl VisitorElement for RawModal {
 
     fn debug_name(&self) -> &'static str {
         "Modal"
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.barrier.as_ref());
+        visitor(self.child.as_ref());
     }
 }
 

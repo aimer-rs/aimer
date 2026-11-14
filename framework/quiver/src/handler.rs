@@ -2846,9 +2846,7 @@ mod tests {
         fn debug_name(&self) -> &'static str {
             "ScrollContentClipTest"
         }
-    }
 
-    impl EventElement for ScrollContentClipElement {
         fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
         }
@@ -2856,6 +2854,9 @@ mod tests {
         fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
         }
+    }
+
+    impl EventElement for ScrollContentClipElement {
     }
 
     impl Rebuildable for ScrollContentClipElement {}

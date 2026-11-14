@@ -653,11 +653,13 @@ impl Drawable for RawContextMenuRow {
 }
 
 impl EventElement for RawContextMenuRow {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, _event: &ElementEvent) -> EventResult {
         EventResult::ignored()
     }
-
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl LayoutElement for RawContextMenuRow {}
@@ -666,9 +668,15 @@ impl VisitorElement for RawContextMenuRow {
     fn debug_name(&self) -> &'static str {
         "ContextMenuRow"
     }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl EventElement for RawContextMenuRows {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event {
             ElementEvent::PointerDown(info) => {
@@ -738,8 +746,6 @@ impl EventElement for RawContextMenuRows {
             _ => EventResult::ignored(),
         }
     }
-
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn aimer_widget::Element)) {}
 }
 
 impl LayoutElement for RawContextMenuRows {
@@ -762,6 +768,8 @@ impl VisitorElement for RawContextMenuRows {
     fn debug_name(&self) -> &'static str {
         "ContextMenuRows"
     }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn aimer_widget::Element)) {}
 }
 
 /// The device pixel ratio, never zero.

@@ -55,9 +55,7 @@ impl VisitorElement for StructuralTraversalElement {
     fn debug_name(&self) -> &'static str {
         "StructuralTraversalElement"
     }
-}
 
-impl EventElement for StructuralTraversalElement {
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.event_child.as_ref());
     }
@@ -67,6 +65,9 @@ impl EventElement for StructuralTraversalElement {
         visitor(self.event_child.as_ref());
         visitor(self.visual_child.as_ref());
     }
+}
+
+impl EventElement for StructuralTraversalElement {
 }
 
 impl LayoutElement for StructuralTraversalElement {}
@@ -90,12 +91,13 @@ impl VisitorElement for DefaultStructuralTraversalElement {
     fn debug_name(&self) -> &'static str {
         "DefaultStructuralTraversalElement"
     }
-}
 
-impl EventElement for DefaultStructuralTraversalElement {
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.event_child.as_ref());
     }
+}
+
+impl EventElement for DefaultStructuralTraversalElement {
 }
 
 impl LayoutElement for DefaultStructuralTraversalElement {}
@@ -119,18 +121,18 @@ impl VisitorElement for IndexedStructuralChildElement {
     fn debug_name(&self) -> &'static str {
         "IndexedStructuralChildElement"
     }
-}
-
-impl EventElement for IndexedStructuralChildElement {
-    fn event_tree_role(&self) -> EventTreeRole {
-        EventTreeRole::IndexedTarget
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.direct_calls.set(self.direct_calls.get() + 1);
         visitor(self.child.as_ref());
+    }
+}
+
+impl EventElement for IndexedStructuralChildElement {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedTarget
     }
 }
 

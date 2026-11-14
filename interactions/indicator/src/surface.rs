@@ -155,6 +155,10 @@ impl VisitorElement for IndicatorSurfaceElement {
 }
 
 impl EventElement for IndicatorSurfaceElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event {
             ElementEvent::PointerDown(pointer)

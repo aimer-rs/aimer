@@ -13,10 +13,12 @@ use crate::{FocusNode, Key};
 mod broadcast;
 mod core;
 mod dispatch;
+mod dispatch_profile;
 mod event_tree;
 mod focus;
 mod live_children;
 mod path_patch;
+mod registration;
 mod shortcuts;
 
 use core::{IdentityBranch, ReplacementLeaf};

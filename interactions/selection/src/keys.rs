@@ -121,6 +121,10 @@ impl VisitorElement for RawKeyRelay {
     fn debug_name(&self) -> &'static str {
         "KeyRelay"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
 }
 
 impl Rebuildable for RawKeyRelay {
@@ -179,6 +183,10 @@ impl LayoutElement for RawKeyRelay {
 }
 
 impl EventElement for RawKeyRelay {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         let key = match event {
             ElementEvent::KeyInput { key, action, .. }
@@ -200,9 +208,5 @@ impl EventElement for RawKeyRelay {
             Some(key) if (self.on_key)(key) => EventResult::consumed(),
             _ => EventResult::ignored(),
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }

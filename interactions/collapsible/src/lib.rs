@@ -83,6 +83,10 @@ mod tests {
         }
     }
     impl EventElement for EventProbeElement {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, _event: &ElementEvent) -> aimer_widget::EventResult {
             self.events.set(self.events.get() + 1);
             aimer_widget::EventResult::ignored()

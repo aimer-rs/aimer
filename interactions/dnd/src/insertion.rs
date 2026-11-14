@@ -667,6 +667,10 @@ impl<T: 'static> VisitorElement for RawInsertionGate<T> {
     fn debug_name(&self) -> &'static str {
         "InsertionList"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
 }
 
 impl<T: 'static> EventElement for RawInsertionGate<T> {
@@ -723,10 +727,6 @@ impl<T: 'static> EventElement for RawInsertionGate<T> {
 
             _ => EventResult::ignored(),
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }
 
@@ -850,16 +850,16 @@ impl VisitorElement for RawSlotProbe {
     fn debug_name(&self) -> &'static str {
         "SlotProbe"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
 }
 
 impl EventElement for RawSlotProbe {
     /// The probe handles nothing; the item inside it may.
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::Transparent
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }
 

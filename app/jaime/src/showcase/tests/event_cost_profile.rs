@@ -178,6 +178,7 @@ fn profile_event_costs() {
             let mut event_times = Vec::with_capacity(scenario.events.len());
             let mut frame_times = Vec::new();
             aimer_widget::reset_clean_subtree_skip_stats();
+            let layout_before = aimer_widget::layout_invalidation_generation();
             let wall = Instant::now();
             for event in &scenario.events {
                 let start = Instant::now();
@@ -211,6 +212,13 @@ fn profile_event_costs() {
                     stats.skips as f64 / per,
                     stats.records as f64 / per,
                     stats.tree_queries as f64 / per,
+                );
+                // Each advance makes the first event after it rewrite the bounds of
+                // every event target, so this is what `dispatch_phase_profile`
+                // (aimer_element) says that rewrite costs per advance.
+                eprintln!(
+                    "===   layout generation advanced {:.2} times per frame",
+                    (aimer_widget::layout_invalidation_generation() - layout_before) as f64 / per,
                 );
                 for (at, count) in aimer_widget::clean_skip_frame_requesters().into_iter().take(8) {
                     eprintln!("===     {:>7.1}/frame  frames requested from {at}", count as f64 / per);

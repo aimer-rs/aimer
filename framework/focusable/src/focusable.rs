@@ -499,12 +499,6 @@ impl EventElement for RawFocusable {
         EventTreeRole::IndexedTarget
     }
 
-    /// This wrapper exposes one child through both structural views.
-    #[inline]
-    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-    }
-
     /// Offers this region as a focus target, unless it is ignored.
     ///
     /// Answering `None` is the whole of [`FocusBehavior::Ignore`]: a target that
@@ -540,10 +534,6 @@ impl EventElement for RawFocusable {
             _ if is_owner_directed(event) && self.node.has_focus() => self.offer_inside(event),
             _ => EventResult::ignored(),
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }
 
@@ -640,6 +630,16 @@ impl VisitorElement for RawFocusable {
 
     fn debug_name(&self) -> &'static str {
         "Focusable"
+    }
+
+    /// This wrapper exposes one child through both structural views.
+    #[inline]
+    fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 
@@ -760,6 +760,10 @@ mod tests {
     }
 
     impl EventElement for Greedy {
+        fn event_tree_role(&self) -> aimer_widget_core::components::event_element::EventTreeRole {
+            aimer_widget_core::components::event_element::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> EventResult {
             matches!(event, ElementEvent::PointerDown(_)).into()
         }
@@ -844,6 +848,10 @@ mod tests {
     }
 
     impl EventElement for Recorder {
+        fn event_tree_role(&self) -> aimer_widget_core::components::event_element::EventTreeRole {
+            aimer_widget_core::components::event_element::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> EventResult {
             let name = match event {
                 ElementEvent::FocusGained => "focus",

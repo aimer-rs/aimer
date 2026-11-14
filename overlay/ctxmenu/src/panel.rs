@@ -417,12 +417,12 @@ impl Drawable for RawContextMenuPanel {
 }
 
 impl EventElement for RawContextMenuPanel {
-    fn on_event(&self, _event: &ElementEvent) -> EventResult {
-        EventResult::ignored()
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
     }
 
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
+    fn on_event(&self, _event: &ElementEvent) -> EventResult {
+        EventResult::ignored()
     }
 }
 
@@ -443,6 +443,10 @@ impl VisitorElement for RawContextMenuPanel {
 
     fn debug_name(&self) -> &'static str {
         "ContextMenu"
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 

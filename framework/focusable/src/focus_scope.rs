@@ -147,10 +147,6 @@ impl EventElement for RawFocusScope {
     fn on_event(&self, _event: &ElementEvent) -> EventResult {
         EventResult::ignored()
     }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-    }
 }
 
 impl Drawable for RawFocusScope {
@@ -208,6 +204,10 @@ impl VisitorElement for RawFocusScope {
 
     fn debug_name(&self) -> &'static str {
         "FocusScope"
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 

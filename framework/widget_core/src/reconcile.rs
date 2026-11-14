@@ -29,10 +29,11 @@ impl crate::VisitorElement for ScrollableLikeWrapper {
     fn debug_name(&self) -> &'static str {
         "ScrollableLikeWrapper"
     }
+
+    fn event_children<'a>(&'a self, _: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl crate::EventElement for ScrollableLikeWrapper {
-    fn event_children<'a>(&'a self, _: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl crate::Drawable for ScrollableLikeWrapper {
@@ -113,14 +114,15 @@ mod tests {
         fn debug_name(&self) -> &'static str {
             "SplitTraversal"
         }
+
+        fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+            visitor(self.event_child.as_ref());
+        }
     }
     impl Drawable for SplitTraversal {
         fn update(&self, _: &BuildContext) {}
     }
     impl EventElement for SplitTraversal {
-        fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-            visitor(self.event_child.as_ref());
-        }
     }
     impl LayoutElement for SplitTraversal {}
     impl Rebuildable for SplitTraversal {}
@@ -494,6 +496,10 @@ mod tests {
         fn debug_name(&self) -> &'static str {
             "DrawWrapper"
         }
+
+        fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+            visitor(self.0.as_ref());
+        }
     }
     impl Drawable for DrawWrapper {
         fn update(&self, ctx: &BuildContext) {
@@ -501,9 +507,6 @@ mod tests {
         }
     }
     impl EventElement for DrawWrapper {
-        fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-            visitor(self.0.as_ref());
-        }
     }
     impl LayoutElement for DrawWrapper {}
     impl Rebuildable for DrawWrapper {}
@@ -518,6 +521,12 @@ mod tests {
         fn debug_name(&self) -> &'static str {
             "DrawRow"
         }
+
+        fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+            for c in &self.0 {
+                visitor(c.as_ref());
+            }
+        }
     }
     impl Drawable for DrawRow {
         fn update(&self, ctx: &BuildContext) {
@@ -527,11 +536,6 @@ mod tests {
         }
     }
     impl EventElement for DrawRow {
-        fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-            for c in &self.0 {
-                visitor(c.as_ref());
-            }
-        }
     }
     impl LayoutElement for DrawRow {}
     impl Rebuildable for DrawRow {}
@@ -1416,6 +1420,10 @@ mod tests {
             fn debug_name(&self) -> &'static str {
                 "FakeContainer"
             }
+
+            fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+                visitor(self.child.as_ref());
+            }
         }
 
         impl Drawable for FakeContainer {
@@ -1425,9 +1433,6 @@ mod tests {
         }
 
         impl EventElement for FakeContainer {
-            fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-                visitor(self.child.as_ref());
-            }
         }
 
         impl LayoutElement for FakeContainer {
@@ -1451,6 +1456,12 @@ mod tests {
         impl VisitorElement for FakeFlex {
             fn debug_name(&self) -> &'static str {
                 "FakeFlex"
+            }
+
+            fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+                for child in &self.children {
+                    visitor(child.as_ref());
+                }
             }
         }
 
@@ -1487,11 +1498,6 @@ mod tests {
         }
 
         impl EventElement for FakeFlex {
-            fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-                for child in &self.children {
-                    visitor(child.as_ref());
-                }
-            }
         }
 
         impl LayoutElement for FakeFlex {
@@ -1572,6 +1578,10 @@ mod tests {
             fn debug_name(&self) -> &'static str {
                 "FakePositioned"
             }
+
+            fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+                visitor(self.child.as_ref());
+            }
         }
 
         impl Drawable for FakePositioned {
@@ -1581,9 +1591,6 @@ mod tests {
         }
 
         impl EventElement for FakePositioned {
-            fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-                visitor(self.child.as_ref());
-            }
         }
 
         impl LayoutElement for FakePositioned {
@@ -1625,6 +1632,8 @@ mod tests {
             fn debug_name(&self) -> &'static str {
                 "FakeScrollable"
             }
+
+            fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
         }
 
         impl Drawable for FakeScrollable {
@@ -1634,7 +1643,6 @@ mod tests {
         }
 
         impl EventElement for FakeScrollable {
-            fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
         }
 
         impl LayoutElement for FakeScrollable {

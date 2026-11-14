@@ -21,6 +21,10 @@ impl VisitorElement for RoutedElement {
 }
 
 impl EventElement for RoutedElement {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         self.events.set(self.events.get() + 1);
         match event {
@@ -106,12 +110,6 @@ impl VisitorElement for HitChainCacheRoot {
     fn debug_name(&self) -> &'static str {
         "HitChainCacheRoot"
     }
-}
-
-impl EventElement for HitChainCacheRoot {
-    fn event_tree_role(&self) -> EventTreeRole {
-        self.role
-    }
 
     fn hit_test_children_at<'a>(
         &'a self,
@@ -122,6 +120,12 @@ impl EventElement for HitChainCacheRoot {
         if contains(self.child.as_ref(), pos) {
             visitor(self.child.as_ref());
         }
+    }
+}
+
+impl EventElement for HitChainCacheRoot {
+    fn event_tree_role(&self) -> EventTreeRole {
+        self.role
     }
 }
 
@@ -151,14 +155,14 @@ impl VisitorElement for HitChainCacheForwarder {
     fn debug_name(&self) -> &'static str {
         "HitChainCacheForwarder"
     }
+
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl EventElement for HitChainCacheForwarder {
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::IndexedTarget
     }
-
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
     fn on_event_with_context(
         &self,
@@ -200,6 +204,10 @@ impl VisitorElement for HoverProbe {
 }
 
 impl EventElement for HoverProbe {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event {
             ElementEvent::PointerMove(_) => {
@@ -242,9 +250,7 @@ impl VisitorElement for HoverProbeRoot {
     fn debug_name(&self) -> &'static str {
         "HoverProbeRoot"
     }
-}
 
-impl EventElement for HoverProbeRoot {
     fn hit_test_children_at<'a>(
         &'a self,
         pos: Vec2d,
@@ -256,6 +262,13 @@ impl EventElement for HoverProbeRoot {
             }
         }
     }
+}
+
+impl EventElement for HoverProbeRoot {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
 }
 
 impl LayoutElement for HoverProbeRoot {
@@ -701,9 +714,7 @@ impl VisitorElement for ForwardOnlyHitTestElement {
     fn debug_name(&self) -> &'static str {
         "ForwardOnlyHitTestElement"
     }
-}
 
-impl EventElement for ForwardOnlyHitTestElement {
     fn hit_test_children_at<'a>(
         &'a self,
         _pos: Vec2d,
@@ -715,6 +726,13 @@ impl EventElement for ForwardOnlyHitTestElement {
     fn hit_test_children_reversed<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
         panic!("routed dispatch should use the shared forward hit-test scratch");
     }
+}
+
+impl EventElement for ForwardOnlyHitTestElement {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
 }
 
 impl LayoutElement for ForwardOnlyHitTestElement {}
@@ -800,6 +818,10 @@ impl VisitorElement for DragCarrier {
 }
 
 impl EventElement for DragCarrier {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event {
             ElementEvent::PointerDown(pointer) => EventResult::consumed()
@@ -843,6 +865,10 @@ impl VisitorElement for DragReceiver {
 }
 
 impl EventElement for DragReceiver {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, event: &ElementEvent) -> EventResult {
         match event {
             ElementEvent::DragOver { .. } => {
@@ -1338,6 +1364,10 @@ impl VisitorElement for CaptureChainElement {
 }
 
 impl EventElement for CaptureChainElement {
+    fn event_tree_role(&self) -> EventTreeRole {
+        EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn on_event(&self, _event: &ElementEvent) -> EventResult {
         EventResult::ignored().with_pointer_capture(self.pointer)
     }

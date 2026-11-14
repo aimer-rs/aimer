@@ -377,6 +377,10 @@ impl VisitorElement for RawDropZone {
     fn debug_name(&self) -> &'static str {
         "DropZone"
     }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
+    }
 }
 
 impl EventElement for RawDropZone {
@@ -425,10 +429,6 @@ impl EventElement for RawDropZone {
 
             _ => EventResult::ignored(),
         }
-    }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
     }
 }
 

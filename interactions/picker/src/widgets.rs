@@ -344,6 +344,10 @@ impl VisitorElement for RawCalendar {
     }
 }
 impl EventElement for RawCalendar {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.runtime.focus_node)
     }
@@ -818,6 +822,10 @@ impl VisitorElement for RawDatePicker {
     }
 }
 impl EventElement for RawDatePicker {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.runtime.focus_node)
     }
@@ -1617,6 +1625,10 @@ impl VisitorElement for RawDateTimePicker {
 }
 
 impl EventElement for RawDateTimePicker {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedHitTestBoundary
+    }
+
     fn focus_node(&self) -> Option<&FocusNode> {
         Some(&self.runtime.focus_node)
     }

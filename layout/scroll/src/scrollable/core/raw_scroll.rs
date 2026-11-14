@@ -495,6 +495,10 @@ mod tests {
     }
 
     impl EventElement for CapturingChild {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> EventResult {
             self.events.set(self.events.get() + 1);
             match event {
@@ -557,15 +561,19 @@ mod tests {
         fn debug_name(&self) -> &'static str {
             "ScrollBlockingWrapper"
         }
-    }
 
-    impl EventElement for ScrollBlockingWrapper {
         fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
         }
 
         fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
+        }
+    }
+
+    impl EventElement for ScrollBlockingWrapper {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
         }
 
         fn on_event(&self, event: &ElementEvent) -> EventResult {
@@ -1887,6 +1895,10 @@ mod tests {
     }
 
     impl EventElement for HoverChild {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> EventResult {
             match event {
                 ElementEvent::PointerMove(_) => self.hovered.set(true),

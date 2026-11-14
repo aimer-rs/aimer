@@ -199,10 +199,6 @@ impl EventElement for RawSemantics {
     fn on_event(&self, _event: &ElementEvent) -> EventResult {
         EventResult::ignored()
     }
-
-    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(self.child.as_ref());
-    }
 }
 
 impl Drawable for RawSemantics {
@@ -265,6 +261,10 @@ impl VisitorElement for RawSemantics {
 
     fn debug_name(&self) -> &'static str {
         "Semantics"
+    }
+
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        visitor(self.child.as_ref());
     }
 }
 

@@ -396,6 +396,10 @@ mod swipe_touch {
         fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> { Some((Vec2d::ZERO, Vec2d { x: 200.0, y: 100.0 })) }
     }
     impl EventElement for Probe {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             let name = match event {
                 ElementEvent::PointerDown(_) => "down",
@@ -427,6 +431,10 @@ mod swipe_touch {
         fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> { Some((Vec2d::ZERO, Vec2d { x: 200.0, y: 100.0 })) }
     }
     impl EventElement for Scroller {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             if !matches!(event, ElementEvent::Scroll { .. }) { return aimer_widget::EventResult::ignored(); }
             self.0.borrow_mut().push("scroll");
@@ -449,6 +457,10 @@ mod swipe_touch {
         fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> { Some((Vec2d::ZERO, Vec2d { x: 200.0, y: 100.0 })) }
     }
     impl EventElement for Occluder {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             if !matches!(event, ElementEvent::Scroll { .. }) { return aimer_widget::EventResult::ignored(); }
             self.0.borrow_mut().push("scroll");
@@ -469,6 +481,10 @@ mod swipe_touch {
         fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> { Some((Vec2d::ZERO, Vec2d { x: 200.0, y: 100.0 })) }
     }
     impl EventElement for UsesOnce {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             if !matches!(event, ElementEvent::Scroll { .. }) { return aimer_widget::EventResult::ignored(); }
             self.0.borrow_mut().push("scroll");
@@ -495,6 +511,10 @@ mod swipe_touch {
         fn pos_start_end(&self) -> Option<(Vec2d, Vec2d)> { Some((Vec2d::ZERO, Vec2d { x: 200.0, y: 100.0 })) }
     }
     impl EventElement for Pressable {
+        fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+            aimer_widget::EventTreeRole::IndexedHitTestBoundary
+        }
+
         fn on_event(&self, event: &ElementEvent) -> aimer_widget::EventResult {
             use aimer_widget::{EventResult, PointerKey};
             match event {
