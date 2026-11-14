@@ -23,5 +23,5 @@ slow-timeout = { period = "30s", terminate-after = 2 }
 # themselves are tested deterministically; these are the ones that need a quiet
 # machine, so they run alone.
 [[profile.default.overrides]]
-filter = 'package(aimer_prendre) & test(/^server::tests::.*(trackpad|typing|glide|scroll|settle|held_up|mid_flight|promptly)/)'
+filter = 'package(aimer_prendre) & test(/^server::tests::.*(trackpad|typing|glide|scroll|resize|settle|held_up|mid_flight|promptly)/)'
 threads-required = 'num-test-threads'
