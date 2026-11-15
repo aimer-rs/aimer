@@ -25,7 +25,7 @@ const ELEMENT_WORDS: usize = 4;
 /// element is created.
 pub trait Element: 'static {
     /// Returns a stable name used by assertions and diagnostics.
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Unknown"
     }
 
@@ -63,8 +63,8 @@ impl AnyElement {
 
     /// Returns the erased element's diagnostic name.
     #[inline]
-    pub fn debug_name(&self) -> &'static str {
-        self.0.debug_name()
+    pub fn name(&self) -> &'static str {
+        self.0.name()
     }
 
     /// Rebuilds the erased element's subtree in place.
@@ -97,7 +97,7 @@ mod tests {
     struct Marker;
 
     impl Element for Marker {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Marker"
         }
     }
@@ -110,7 +110,7 @@ mod tests {
     fn erased_elements_keep_their_identity() {
         let element = AnyElement::new(Marker);
 
-        assert_eq!(element.debug_name(), "Marker");
+        assert_eq!(element.name(), "Marker");
         assert!(element.is_inline());
     }
 
@@ -118,7 +118,7 @@ mod tests {
     fn oversized_elements_fall_back_to_pooled_storage() {
         let element = AnyElement::new(Wide([0; ELEMENT_WORDS + 1]));
 
-        assert_eq!(element.debug_name(), "Unknown");
+        assert_eq!(element.name(), "Unknown");
         assert!(!element.is_inline());
     }
 }

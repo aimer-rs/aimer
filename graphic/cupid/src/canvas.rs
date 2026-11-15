@@ -21,6 +21,22 @@ pub struct TextMetrics {
     pub line_count: usize,
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many times measuring went to the metrics cache proper, for tests.
+    static METRICS_PROBES: Cell<u64> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+fn metrics_probes() -> u64 {
+    METRICS_PROBES.with(Cell::get)
+}
+
+#[cfg(test)]
+fn reset_metrics_probes() {
+    METRICS_PROBES.with(|probes| probes.set(0));
+}
+
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 struct TextMetricsKey {
     text: String,
@@ -60,6 +76,48 @@ impl TextMetricsKey {
             && self.language == lookup.language
             && self.font_revision == lookup.font_revision
     }
+}
+
+/// How many answers the table in front of the metrics cache keeps.
+const RECENT_METRICS_SLOTS: usize = 128;
+
+/// An answer the metrics cache gave a moment ago.
+struct RecentMetrics {
+    key: TextMetricsKey,
+    metrics: TextMetrics,
+}
+
+/// Where a measurement of `text` is remembered in the table in front of the
+/// metrics cache.
+///
+/// Only a few cheap numbers go into it (the length, three bytes of the text and
+/// the size, width and weight), not a hash of the whole string: the point is to
+/// answer a repeated measurement without hashing it. Texts that land in the same
+/// slot take turns in it, and the full key is compared before an answer is used.
+#[inline]
+fn recent_metrics_slot(
+    text: &str,
+    font_size_tenths: u32,
+    max_width_tenths: u32,
+    font_weight: u16,
+) -> usize {
+    const MIX: u32 = 0x9E37_79B1;
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let (first, middle, last) = if len == 0 {
+        (0, 0, 0)
+    } else {
+        (bytes[0], bytes[len / 2], bytes[len - 1])
+    };
+    let mut h = len as u32;
+    h = h.wrapping_mul(MIX) ^ u32::from(first);
+    h = h.wrapping_mul(MIX) ^ u32::from(middle);
+    h = h.wrapping_mul(MIX) ^ u32::from(last);
+    h = h.wrapping_mul(MIX) ^ font_size_tenths;
+    h = h.wrapping_mul(MIX) ^ max_width_tenths;
+    h = h.wrapping_mul(MIX) ^ u32::from(font_weight);
+    // The top bits of a multiplicative mix are the well-mixed ones.
+    (h.wrapping_mul(MIX) >> (32 - RECENT_METRICS_SLOTS.trailing_zeros())) as usize
 }
 
 #[derive(Clone, Debug)]
@@ -128,6 +186,11 @@ pub struct CupidCanvas {
     texture_registry: Arc<TextureRegistry>,
     rasterizer: Rc<RefCell<GlyphRasterizer>>,
     metrics_cache: Rc<RefCell<LruMap<TextMetricsKey, CachedTextMetrics>>>,
+    /// The last answers the metrics cache gave, so that a text measured again
+    /// moments later (layout asks several times) costs a comparison and not a
+    /// hash and a probe. Never holds an answer the cache would not give: it is
+    /// filled from the cache and emptied whenever the cache is.
+    recent_metrics: Rc<RefCell<Box<[Option<RecentMetrics>]>>>,
     /// The break opportunities of the text being measured. Measuring many
     /// paragraphs reuses one allocation instead of building a table for each.
     break_scratch: Rc<RefCell<Vec<bool>>>,
@@ -161,6 +224,9 @@ impl CupidCanvas {
             texture_registry,
             rasterizer: Rc::new(RefCell::new(GlyphRasterizer::new())),
             metrics_cache: Rc::new(RefCell::new(LruMap::new(METRICS_CACHE_CAPACITY))),
+            recent_metrics: Rc::new(RefCell::new(
+                std::iter::repeat_with(|| None).take(RECENT_METRICS_SLOTS).collect(),
+            )),
             break_scratch: Rc::new(RefCell::new(Vec::new())),
             shaping_cache: Rc::new(RefCell::new(LruMap::new(SHAPING_CACHE_CAPACITY))),
             unwrapped_layout_cache: Rc::new(RefCell::new(LruMap::new(
@@ -188,6 +254,7 @@ impl CupidCanvas {
             texture_registry: self.texture_registry.clone(),
             rasterizer: self.rasterizer.clone(),
             metrics_cache: self.metrics_cache.clone(),
+            recent_metrics: self.recent_metrics.clone(),
             break_scratch: self.break_scratch.clone(),
             shaping_cache: self.shaping_cache.clone(),
             unwrapped_layout_cache: self.unwrapped_layout_cache.clone(),
@@ -254,6 +321,7 @@ impl CupidCanvas {
     pub fn register_font_bytes(&self, bytes: Vec<u8>) -> Option<crate::text_layout::FontId> {
         let font_id = self.rasterizer.borrow_mut().register_font_bytes(bytes)?;
         self.metrics_cache.borrow_mut().clear();
+        self.recent_metrics.borrow_mut().iter_mut().for_each(|slot| *slot = None);
         self.shaping_cache.borrow_mut().clear();
         self.unwrapped_layout_cache.borrow_mut().clear();
         Some(font_id)
@@ -512,6 +580,17 @@ impl CupidCanvas {
             language,
             font_revision,
         };
+        let slot = recent_metrics_slot(text, font_size_tenths, max_width_tenths, font_weight);
+        if let Some(recent) = &self.recent_metrics.borrow()[slot]
+            && recent.key.matches(&lookup)
+        {
+            #[cfg(debug_assertions)]
+            self.metrics_cache_hits
+                .set(self.metrics_cache_hits.get().saturating_add(1));
+            return recent.metrics;
+        }
+        #[cfg(test)]
+        METRICS_PROBES.with(|probes| probes.set(probes.get() + 1));
         if let Some(cached) = self
             .metrics_cache
             .borrow_mut()
@@ -520,7 +599,9 @@ impl CupidCanvas {
             #[cfg(debug_assertions)]
             self.metrics_cache_hits
                 .set(self.metrics_cache_hits.get().saturating_add(1));
-            return cached.metrics;
+            let metrics = cached.metrics;
+            self.remember_metrics(slot, &lookup, metrics);
+            return metrics;
         }
 
         #[cfg(debug_assertions)]
@@ -625,7 +706,44 @@ impl CupidCanvas {
                 line_widths,
             },
         );
+        self.remember_metrics(slot, &lookup, metrics);
         metrics
+    }
+
+    /// Keeps `metrics` as the answer for `lookup` in `slot` of the table in front
+    /// of the metrics cache, reusing the text buffer the slot already owns.
+    fn remember_metrics(&self, slot: usize, lookup: &TextMetricsKeyRef<'_>, metrics: TextMetrics) {
+        let mut slots = self.recent_metrics.borrow_mut();
+        match &mut slots[slot] {
+            Some(recent) => {
+                let key = &mut recent.key;
+                key.text.clear();
+                key.text.push_str(lookup.text);
+                key.font_size_tenths = lookup.font_size_tenths;
+                key.max_width_tenths = lookup.max_width_tenths;
+                key.font_family = lookup.font_family;
+                key.font_style = lookup.font_style;
+                key.font_weight = lookup.font_weight;
+                key.language = lookup.language;
+                key.font_revision = lookup.font_revision;
+                recent.metrics = metrics;
+            }
+            empty => {
+                *empty = Some(RecentMetrics {
+                    key: TextMetricsKey {
+                        text: lookup.text.to_string(),
+                        font_size_tenths: lookup.font_size_tenths,
+                        max_width_tenths: lookup.max_width_tenths,
+                        font_family: lookup.font_family,
+                        font_style: lookup.font_style,
+                        font_weight: lookup.font_weight,
+                        language: lookup.language,
+                        font_revision: lookup.font_revision,
+                    },
+                    metrics,
+                });
+            }
+        }
     }
 
     /// Measures the rendered width of each line after applying the same
@@ -784,8 +902,60 @@ impl Default for CupidCanvas {
 mod family_metrics_tests {
     use std::rc::Rc;
 
-    use super::CupidCanvas;
+    use super::{metrics_probes, reset_metrics_probes, CupidCanvas};
     use crate::font::{FontFamily, FontStyle, FontWeight};
+
+    /// Layout measures a text again for every pass that asks, so a text measured a
+    /// moment ago must be answered from the small table in front of the metrics
+    /// cache, which costs a comparison instead of a hash and a probe.
+    #[test]
+    fn measuring_the_same_text_again_does_not_probe_the_metrics_cache() {
+        let canvas = CupidCanvas::new();
+        let measure = |text: &str| {
+            canvas.measure_text_metrics_styled(
+                text,
+                16.0,
+                200.0,
+                FontFamily::SANS_SERIF,
+                FontStyle::Normal,
+                400,
+            )
+        };
+        reset_metrics_probes();
+        let first = measure("Sidebar row label");
+        assert_eq!(metrics_probes(), 1, "the first measurement looks the text up once");
+        for _ in 0..5 {
+            assert_eq!(measure("Sidebar row label"), first);
+        }
+        assert_eq!(metrics_probes(), 1, "repeats are answered without probing");
+    }
+
+    /// What was remembered for one set of parameters is never given for another.
+    #[test]
+    fn the_table_in_front_of_the_cache_tells_parameters_apart() {
+        let canvas = CupidCanvas::new();
+        let at = |text: &str, size: f32, max_width: f32, weight: u16| {
+            canvas.measure_text_metrics_styled(
+                text,
+                size,
+                max_width,
+                FontFamily::SANS_SERIF,
+                FontStyle::Normal,
+                weight,
+            )
+        };
+        let text = "The same words, measured four different ways in a row.";
+        let base = at(text, 16.0, 0.0, 400);
+        for _ in 0..2 {
+            assert_eq!(at(text, 16.0, 0.0, 400), base);
+            assert!(at(text, 32.0, 0.0, 400).width > base.width, "a larger size is wider");
+            assert!(at(text, 16.0, 80.0, 400).line_count > base.line_count, "a narrow width wraps");
+            assert_ne!(at(text, 16.0, 0.0, 700).width, base.width, "a bolder face is wider");
+        }
+        let other = at("Different text", 16.0, 0.0, 400);
+        assert_ne!(other.width, base.width);
+        assert_eq!(at(text, 16.0, 0.0, 400), base, "the first answer survives the others");
+    }
 
     /// A canvas that has already measured other text, and so starts each run
     /// with remembered ASCII advances, must report exactly what a canvas that

@@ -56,7 +56,7 @@ struct DecoratedElement {
 }
 
 impl Element for DecoratedElement {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DecoratedElement"
     }
 
@@ -76,7 +76,7 @@ impl Widget for Decorated {
     }
 
     #[inline]
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Decorated"
     }
 }
@@ -87,7 +87,7 @@ pub struct Leaf;
 struct LeafElement;
 
 impl Element for LeafElement {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "LeafElement"
     }
 }
@@ -99,7 +99,7 @@ impl Widget for Leaf {
     }
 
     #[inline]
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Leaf"
     }
 }
@@ -135,7 +135,7 @@ struct ComposedElement<C: Composable> {
 }
 
 impl<C: Composable> Element for ComposedElement<C> {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ComposedElement"
     }
 
@@ -155,7 +155,7 @@ impl<C: Composable> Widget for Composed<C> {
     }
 
     #[inline]
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Composed"
     }
 }
@@ -191,7 +191,7 @@ struct SelfRebuildingElement {
 }
 
 impl Element for SelfRebuildingElement {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SelfRebuildingElement"
     }
 
@@ -211,7 +211,7 @@ impl Widget for SelfRebuilding {
     }
 
     #[inline]
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SelfRebuilding"
     }
 }
@@ -297,7 +297,7 @@ mod tests {
     }
 
     impl Element for ProbeElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "ProbeElement"
         }
     }
@@ -341,7 +341,7 @@ mod tests {
 
         let element = Probe { shadows }.boxed().into_element();
 
-        assert_eq!(element.debug_name(), "ProbeElement");
+        assert_eq!(element.name(), "ProbeElement");
         assert_eq!(
             RECEIVED_BUFFER.with(Cell::get),
             buffer,
@@ -375,7 +375,7 @@ mod tests {
         let element = widget.into_element();
         let spent = allocations() - start;
 
-        assert_eq!(element.debug_name(), "DecoratedElement");
+        assert_eq!(element.name(), "DecoratedElement");
         assert_eq!(
             spent, 0,
             "turning a warm widget tree into an element tree must not allocate"
@@ -390,7 +390,7 @@ mod tests {
         });
 
         let mut element = widget.boxed().into_element();
-        assert_eq!(element.debug_name(), "ComposedElement");
+        assert_eq!(element.name(), "ComposedElement");
         assert_eq!(builds.get(), 1);
 
         element.rebuild();
@@ -416,7 +416,7 @@ mod tests {
     }
 
     impl Element for TrackedElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "TrackedElement"
         }
     }
@@ -436,7 +436,7 @@ mod tests {
             })
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Tracked"
         }
     }
@@ -452,7 +452,7 @@ mod tests {
         });
 
         let mut element = SelfRebuilding::new(child).boxed().into_element();
-        assert_eq!(element.debug_name(), "SelfRebuildingElement");
+        assert_eq!(element.name(), "SelfRebuildingElement");
 
         for _ in 0..16 {
             element.rebuild();

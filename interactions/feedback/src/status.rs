@@ -124,7 +124,7 @@ impl<W: Widget + 'static> Widget for FeedbackSlot<W> {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "FeedbackSlot"
     }
 }
@@ -265,7 +265,7 @@ impl Widget for StatusBanner {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "StatusBanner"
     }
 }

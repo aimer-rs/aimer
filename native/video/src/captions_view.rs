@@ -166,7 +166,7 @@ impl State<Captions> for CaptionsState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let watch = {
             let player = this.config.player.clone();
             let track = this.config.track.clone();
@@ -221,7 +221,7 @@ impl Widget for Captions {
         StatefulElement::new_with_name::<Self, CaptionsState>(self, ctx, "Captions", None).0.boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Captions"
     }
 }

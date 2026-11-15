@@ -48,8 +48,8 @@ pub trait DynWidget: 'static {
     /// storage vacant before this runs.
     unsafe fn to_element_in_place(&mut self) -> AnyElement;
 
-    /// Forwards [`Widget::debug_name`].
-    fn debug_name(&self) -> &'static str;
+    /// Forwards [`Widget::name`].
+    fn name(&self) -> &'static str;
 }
 
 impl<W: Widget> DynWidget for W {
@@ -63,8 +63,8 @@ impl<W: Widget> DynWidget for W {
     }
 
     #[inline]
-    fn debug_name(&self) -> &'static str {
-        Widget::debug_name(self)
+    fn name(&self) -> &'static str {
+        Widget::name(self)
     }
 }
 
@@ -105,8 +105,8 @@ impl AnyWidget {
 
     /// Returns the erased widget's diagnostic name.
     #[inline]
-    pub fn debug_name(&self) -> &'static str {
-        self.0.debug_name()
+    pub fn name(&self) -> &'static str {
+        self.0.name()
     }
 
     /// Returns `true` when the widget needs no separate allocation.
@@ -131,8 +131,8 @@ impl Widget for AnyWidget {
     }
 
     #[inline]
-    fn debug_name(&self) -> &'static str {
-        AnyWidget::debug_name(self)
+    fn name(&self) -> &'static str {
+        AnyWidget::name(self)
     }
 }
 
@@ -171,7 +171,7 @@ mod tests {
     }
 
     impl Element for MovedElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "MovedElement"
         }
     }
@@ -202,7 +202,7 @@ mod tests {
     }
 
     impl Element for WideElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "WideElement"
         }
     }
@@ -243,7 +243,7 @@ mod tests {
 
         let element = widget.into_element();
 
-        assert_eq!(element.debug_name(), "MovedElement");
+        assert_eq!(element.name(), "MovedElement");
         assert_eq!(
             drops.get(),
             0,
@@ -278,7 +278,7 @@ mod tests {
         let block = widget.payload_address();
 
         let element = widget.into_element();
-        assert_eq!(element.debug_name(), "WideElement");
+        assert_eq!(element.name(), "WideElement");
         assert!(
             element.is_inline(),
             "the element must not compete for the widget's block"
@@ -329,7 +329,7 @@ mod tests {
 
         let element = widget.into_element();
 
-        assert_eq!(element.debug_name(), "MovedElement");
+        assert_eq!(element.name(), "MovedElement");
         assert_eq!(drops.get(), 0);
     }
 
@@ -344,7 +344,7 @@ mod tests {
 
         let element = widget.boxed().into_element();
 
-        assert_eq!(element.debug_name(), "MovedElement");
+        assert_eq!(element.name(), "MovedElement");
         assert_eq!(
             LABEL_ADDRESS.with(Cell::get),
             address,

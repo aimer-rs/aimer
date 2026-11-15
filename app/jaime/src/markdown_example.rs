@@ -262,7 +262,7 @@ impl State<CustomMarkdownExample> for CustomMarkdownExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &aimer::BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &aimer::BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let updater = this.updater();
         Column::new().children([

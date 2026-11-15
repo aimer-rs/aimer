@@ -45,7 +45,7 @@ impl State<Sidebar> for SidebarState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let zone_updater = this.updater.borrow().expect("initialised");
         let hovered = this.hovered.clone();
         ImplicitAnimatedBuilder::new(

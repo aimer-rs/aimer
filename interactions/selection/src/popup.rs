@@ -446,7 +446,7 @@ impl<T: Clone + PartialEq + 'static> State<PopupPanel<T>> for PanelState<T> {
         self.model = Rc::clone(&new.model);
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let model = &this.model;
         let tokens = tokens(ctx);
         let row_height = tokens.density.target_size(ROW_HEIGHT);
@@ -665,7 +665,7 @@ impl<T: Clone + PartialEq + 'static> Widget for PopupPanel<T> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SelectionPopup"
     }
 }

@@ -81,7 +81,7 @@ impl Widget for Shell {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Shell"
     }
 }
@@ -384,7 +384,7 @@ impl<R: Route> State<StatefulShell<R>> for StatefulShellState<R> {
         self.back_guard = Some(back::register(StatefulShellBack { updater }));
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         // Inject the imperative controller for descendants.
         ctx.insert_state(StatefulShellController::<R> {
             go_branch_fn: {

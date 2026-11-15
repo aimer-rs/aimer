@@ -1050,3 +1050,106 @@ async fn generic_decoration_conversion_and_retained_checks_allocate_nothing_afte
     assert!(unchanged);
     assert_eq!(checking, 0);
 }
+
+/// The two clamps are spelled as comparisons for debug-build speed; they must
+/// keep returning what `is_finite` plus `max(0.0)` returned, including for the
+/// values a bad constraint can produce.
+#[test]
+fn geometry_clamps_match_the_float_methods_they_replace() {
+    let samples = [
+        0.0,
+        -0.0,
+        1.0,
+        -1.0,
+        0.5,
+        f32::MAX,
+        f32::MIN,
+        f32::MIN_POSITIVE,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+    ];
+    for value in samples {
+        let finite = if value.is_finite() { value.max(0.0) } else { 0.0 };
+        assert_eq!(finite_nonnegative(value), finite, "finite_nonnegative({value})");
+        assert_eq!(at_least_zero(value), value.max(0.0), "at_least_zero({value})");
+    }
+}
+
+/// What the render-tree sync asks of a container for its one child, taken as
+/// three separate hooks. A debug build pays for the geometry behind each of them.
+fn separate_child_inputs(
+    node: &dyn Element,
+    ctx: &BuildContext<'static>,
+    child: &dyn Element,
+) -> (BuildContext<'static>, Option<(aimer_cupid::draw_cmd::Rect, Option<aimer_cupid::draw_cmd::Rect>)>, [f32; 4]) {
+    let context = node.child_context_at(ctx, child, 0).expect("the container places its child");
+    let geometry = node.child_geometry_at(ctx, child, 0);
+    let radius = if geometry.is_some() {
+        node.child_clip_radius(ctx, child)
+    } else {
+        [0.0; 4]
+    };
+    (context, geometry, radius)
+}
+
+/// The sync computes a container's geometry once and takes the child's context,
+/// bounds, clip and clip radius from it, instead of four times through four hooks;
+/// the answers must not move.
+#[tokio::test]
+async fn one_pass_places_the_child_as_the_separate_hooks_do() {
+    let border = BorderSlice::new().style(BorderStyle::Solid).stroke(3.0);
+    for scale in [1.0, 2.0, 3.0] {
+        for (max_width, max_height) in [(400.0, 300.0), (120.0, 40.0), (400.0, f32::MAX)] {
+            for rounded in [false, true] {
+                let (mut ctx, _inner) = recording_context();
+                ctx.scale = scale;
+                ctx.box_constraint = aimer_attribute::BoxConstraint {
+                    min_width: 0.0,
+                    min_height: 0.0,
+                    max_width,
+                    max_height,
+                };
+                let mut decoration = BoxDecoration::new().background_color(Color::BLUE);
+                if rounded {
+                    decoration = decoration.border(BoxBorder::all(border)).border_radius(12);
+                }
+                let element = Container::new()
+                    .padding(LayoutSpacing::all(5))
+                    .margin(LayoutSpacing::all(7))
+                    .box_decoration(decoration)
+                    .child(crate::ZeroSizedBox)
+                    .to_element(&ctx);
+                let node: &dyn Element = element.as_ref();
+                let mut child = None;
+                node.visit_children(&mut |element| child = Some(element));
+                let child = child.expect("the container exposes its child");
+
+                let (want_ctx, want_geometry, want_radius) = separate_child_inputs(node, &ctx, child);
+                reset_geometry_passes();
+                let placement = node
+                    .child_placement_at(&ctx, child, 0)
+                    .expect("a container places its own child in one pass");
+
+                assert_eq!(geometry_passes(), 1, "scale {scale}, {max_width}x{max_height}");
+                assert_eq!(placement.geometry, want_geometry, "scale {scale}, {max_width}x{max_height}");
+                assert_eq!(placement.clip_radius, want_radius, "scale {scale}, {max_width}x{max_height}");
+                assert_eq!(placement.context.box_constraint, want_ctx.box_constraint);
+                assert_eq!(placement.context.parent_size, want_ctx.parent_size);
+                assert_eq!(placement.context.paint_background(), want_ctx.paint_background());
+                assert_eq!(placement.context.visible_rect(), want_ctx.visible_rect());
+            }
+        }
+    }
+}
+
+/// Anything but the container's own child is not placed by it.
+#[tokio::test]
+async fn a_container_places_nothing_but_its_own_child() {
+    let (ctx, _inner) = recording_context();
+    let element = Container::new().child(crate::ZeroSizedBox).to_element(&ctx);
+    let other = crate::ZeroSizedBox.to_element(&ctx);
+    let node: &dyn Element = element.as_ref();
+
+    assert!(node.child_placement_at(&ctx, other.as_ref(), 0).is_none());
+}

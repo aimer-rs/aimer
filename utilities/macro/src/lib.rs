@@ -350,7 +350,7 @@ pub fn stateless_widget_derive(input: TokenStream) -> TokenStream {
 ///         Self { count: widget.initial_count }
 ///     }
 ///
-///     fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+///     fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
 ///         Text::new(format!("{}", this.count))
 ///     }
 /// }

@@ -68,7 +68,7 @@ impl State<Page> for PageState {
         PageState { settings_open: true }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let updater = this.updater();
         Window::new()
             .title("Settings")

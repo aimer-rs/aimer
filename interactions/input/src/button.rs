@@ -440,7 +440,7 @@ impl<W: Widget + 'static> State<Button<W>> for ButtonState<W> {
         self.child = new.child;
     }
 
-    fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
         // A button is composed of a gesture detector, a container and whatever
         // the caller put inside, so none of those elements knows it is a button.
         // This is where that is said, once, for every way the button can be

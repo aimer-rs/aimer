@@ -98,7 +98,7 @@ impl<W: Widget + 'static> Widget for RepaintBoundary<W> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RepaintBoundary"
     }
 }
@@ -122,7 +122,7 @@ impl<W: Widget + 'static> State<RepaintBoundary<W>> for RepaintBoundaryState<W> 
         self.child = new.child;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         RepaintBoundaryTarget {
             child: this.child.clone().to_element(ctx),
         }
@@ -139,7 +139,7 @@ impl Widget for RepaintBoundaryTarget {
         self.child
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RepaintBoundary"
     }
 }

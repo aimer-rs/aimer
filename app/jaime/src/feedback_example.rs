@@ -215,7 +215,7 @@ impl State<FeedbackExample> for FeedbackExampleState {
         FeedbackExampleState::initial()
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let mut progress = ProgressIndicator::determinate(this.progress_value)
             .expect("the showcase progress value is always bounded");

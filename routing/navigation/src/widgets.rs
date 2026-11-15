@@ -381,7 +381,7 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for TabBarWidget<K> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "TabBarWidget"
     }
 }
@@ -404,7 +404,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<TabBarWidget<K>> for TabBa
         self.on_changed = new.on_changed;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let Some(model) = this.runtime.model.as_ref().ok() else {
             return ErrorWidget::new(
                 this.runtime
@@ -555,7 +555,7 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for NavigationMenuWidget<
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "NavigationMenuWidget"
     }
 }
@@ -589,7 +589,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<NavigationMenuWidget<K>>
         self.on_overflow = new.on_overflow;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let Some(model) = this.runtime.model.as_ref().ok() else {
             return ErrorWidget::new(
                 this.runtime
@@ -808,7 +808,7 @@ impl<R: Route> Widget for RouteTabBarWidget<R> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RouteTabBarWidget"
     }
 }
@@ -886,7 +886,7 @@ impl<R: Route> State<RouteTabBarWidget<R>> for RouteTabBarWidgetState<R> {
         self.on_changed = new.on_changed;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let navigator = ctx
             .get_state::<NavigatorController<R>>()
             .map(|controller| controller.as_ref().clone());
@@ -1142,7 +1142,7 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for TabViewWidget<K> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "TabViewWidget"
     }
 }
@@ -1170,7 +1170,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<TabViewWidget<K>> for TabV
         self.on_changed = new.on_changed;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let Some(model) = this.runtime.model.as_ref().ok() else {
             return ErrorWidget::new(
                 this.runtime
@@ -1340,7 +1340,7 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for BreadcrumbsWidget<K> 
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "BreadcrumbsWidget"
     }
 }
@@ -1435,7 +1435,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<BreadcrumbsWidget<K>>
         self.on_changed = new.on_changed;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let Some(model) = this.model.as_ref().ok() else {
             return ErrorWidget::new(
                 this.model
@@ -1631,7 +1631,7 @@ impl<K: Clone + PartialEq + ToString + 'static> Widget for StepperWidget<K> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "StepperWidget"
     }
 }
@@ -1721,7 +1721,7 @@ impl<K: Clone + PartialEq + ToString + 'static> State<StepperWidget<K>> for Step
         self.on_changed = new.on_changed;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let Some(model) = this.model.as_ref().ok() else {
             return ErrorWidget::new(
                 this.model
@@ -1846,7 +1846,7 @@ impl<W: Widget + 'static> Widget for NavigationKeyRelay<W> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "NavigationKeyRelay"
     }
 }

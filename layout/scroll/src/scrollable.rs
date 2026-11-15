@@ -452,7 +452,7 @@ impl<W: Widget + 'static> State<Scrollable<W>> for ScrollableState<W> {
     }
 
     #[inline]
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let ctrl = this.live_scroll_state(ctx);
 
         ScrollableFrame {
@@ -889,7 +889,7 @@ mod tests {
             ErrorWidget::new("probe").to_element(ctx)
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Probe"
         }
     }
@@ -904,7 +904,7 @@ mod tests {
             ErrorWidget::new("constraint probe").to_element(ctx)
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "ConstraintProbe"
         }
     }

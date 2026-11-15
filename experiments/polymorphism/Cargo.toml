@@ -7,7 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-
+aimer_time.workspace = true
 
 
 [[bench]]

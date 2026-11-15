@@ -63,7 +63,7 @@ impl State<Bar> for BarState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         bar_widget(this.scrolled, this.filter)
     }
@@ -269,7 +269,7 @@ impl State<ScrollBar> for ScrollBarState {
         self.register_scroll_hook();
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         bar_widget(this.scrolled, true)
     }
 }
@@ -305,7 +305,7 @@ impl State<Host> for HostState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         if !this.show {
             return SizedBox::new().boxed();

@@ -231,7 +231,7 @@ impl State<Rebuilding> for RebuildingState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         this.handle.set(Some(this.updater()));
         TextField::new().builder(recording(&this.seen))
     }

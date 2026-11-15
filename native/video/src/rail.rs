@@ -39,7 +39,7 @@ impl Widget for Rail {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "VideoRail"
     }
 }

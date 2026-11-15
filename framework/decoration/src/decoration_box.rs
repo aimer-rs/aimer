@@ -108,7 +108,7 @@ impl<D: Decoration + 'static, W: Widget> Widget for DecorationBox<D, W> {
         decoration_element(self.decoration, self.child, ctx, "DecorationBox")
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DecorationBox"
     }
 }

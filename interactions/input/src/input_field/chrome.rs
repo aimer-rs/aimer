@@ -216,7 +216,7 @@ impl State<Visual> for VisualState {
         self.visual = new.visual;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         this.visual.flags.updater.set(Some(this.updater()));
         let visual = &this.visual;
         (visual.builder)(TextFieldVisualState {

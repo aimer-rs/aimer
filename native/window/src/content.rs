@@ -66,7 +66,7 @@ impl State<LiveRoot> for LiveRootState {
     }
 
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         this.content.refresh.set(Some(this.updater()));
         // Cloned out first: the content may build something that replaces it.
         let builder = this.content.current();

@@ -212,7 +212,7 @@ impl Widget for AssetsMediaExample {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AssetsMediaExample"
     }
 }

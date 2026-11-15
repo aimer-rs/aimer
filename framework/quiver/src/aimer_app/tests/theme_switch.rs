@@ -91,7 +91,7 @@ impl State<Root> for RootState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         let seen = this.seen.clone();
         AnimatedTheme::new()
@@ -395,7 +395,7 @@ impl State<StatefulSidebar> for StatefulSidebarState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         let theme = ThemeData::of(ctx);
         let seen = this.seen.clone();
@@ -515,7 +515,7 @@ impl State<Shell> for ShellState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         AnimatedTheme::new()
             .mode(this.mode)

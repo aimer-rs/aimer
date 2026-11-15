@@ -254,7 +254,7 @@ impl Widget for Icon<SvgDocument> {
     }
 
     #[inline]
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Icon"
     }
 }

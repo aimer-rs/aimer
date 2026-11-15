@@ -64,7 +64,7 @@ impl State<MagnificationExample> for MagnificationExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let zoom_updater = this.updater();
         let depth_updater = this.updater();
         let bulge_updater = this.updater();

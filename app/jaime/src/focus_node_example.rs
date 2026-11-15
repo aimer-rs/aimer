@@ -228,7 +228,7 @@ impl State<FocusNodeExample> for FocusNodeExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let owner = match this.focused {
             Some(which) => which.label(),
@@ -393,7 +393,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
             this.builds
                 .set(this.builds.get() + 1);
             let reporter = |which: FocusBox, updater: StateUpdater<Self>| {

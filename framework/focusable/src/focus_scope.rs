@@ -121,7 +121,7 @@ impl<W: Widget + 'static> Widget for FocusScope<W> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "FocusScope"
     }
 }

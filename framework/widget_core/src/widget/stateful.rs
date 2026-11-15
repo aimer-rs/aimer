@@ -628,6 +628,35 @@ impl<S: 'static> StateUpdater<S> {
         .unwrap_or_else(|error| panic_state_updater_resolution(error))
     }
 
+    /// Resolves the state to a plain reference for [`StateView`]'s `Deref`.
+    ///
+    /// The slot is checked here, once; the reference then lives as long as the
+    /// borrow of `self` with no lease behind it. That is sound only because the
+    /// state is mutated and dropped solely from the frame loop, never while a
+    /// caller holds this reference (see [`StateView`]).
+    #[inline]
+    #[track_caller]
+    pub(crate) fn state_ref(&self) -> &S {
+        let slot = match self.slot {
+            Some(slot) => slot,
+            None => {
+                let loc = Location::caller();
+                self.beautiful_error(loc);
+                panic!("State is not initialized (see error above)");
+            }
+        };
+        let state = slot
+            .try_resolve_unflushed(|inner| {
+                // Safety: the native rendering pipeline is single-threaded.
+                unsafe { (&*inner.state.0.get()).as_ref().map(|state| state as *const S) }
+            })
+            .unwrap_or_else(|error| panic_state_updater_resolution(error))
+            .unwrap_or_else(|| panic_consumed_state());
+        // SAFETY: the pointer was just read from a live slot whose state is
+        // `Some`; the caller contract is documented on this method.
+        unsafe { &*state }
+    }
+
     /// Attempts to obtain the checked guard used by [`Self::read_state`].
     ///
     /// The returned guard keeps the resolved slot live for as long as its
@@ -663,31 +692,67 @@ impl<S: 'static> StateUpdater<S> {
 /// The view of a state that [`State::build`] receives.
 ///
 /// Derefs to the state, so `build` reads its fields directly (`this.count`), and
-/// carries the [`StateUpdater`] that callbacks use to change it. The state no
-/// longer stores that updater itself.
+/// carries the [`StateUpdater`] that callbacks use to change it.
 ///
-/// The view borrows the state for the one `build` call. That borrow is the safety
-/// argument: queued mutations only run before a build, never during one, so
-/// nothing can change the state while the view exists, and a closure that
-/// captured the view could not be `'static`. A callback that has to read the
-/// state when it *runs* takes [`StateView::updater`] instead, which is `Copy`
-/// and `'static`.
-pub struct StateView<'a, S: 'static> {
+/// Like [`StateUpdater`] the view borrows nothing: it holds a generation-checked
+/// handle to the element's state slot. It is therefore `Copy` and `'static`, and
+/// a `move` closure can capture `this` and call `this.set_state(..)`,
+/// `this.read(..)` or `this.count` when it runs, with no `updater()` first.
+///
+/// Every `Deref` looks the slot up, so a view whose element is gone panics on
+/// field access instead of reading freed memory, and the `try_*` methods report
+/// that case as `None`. Inside `build` that lookup is the price of the handle
+/// being freely copyable; a field read many times in one build is worth binding
+/// once (`let count = this.count;`).
+///
+/// # The reference `Deref` returns
+///
+/// The `&S` is checked when it is created, not while it is held. It is sound
+/// because state is only ever mutated by queued mutations and reconciliation, and
+/// only ever dropped with its element, all of which run from the frame loop and
+/// never from inside a callback or `build` that holds such a reference. Do not
+/// keep the reference across anything that can run the frame loop. When in
+/// doubt, copy the field out or use [`StateView::read`], whose closure bounds the
+/// borrow.
+///
+/// Like [`StateUpdater`], the view is confined to the UI thread:
+///
+/// ```compile_fail
+/// fn require_send<T: Send>() {}
+/// fn require_sync<T: Sync>() {}
+///
+/// require_send::<aimer_widget_core::StateView<()>>();
+/// require_sync::<aimer_widget_core::StateView<()>>();
+/// ```
+pub struct StateView<S: 'static> {
     // Named so no user state's own field (`state`, `updater`) is shadowed when a
     // module can see these privately.
-    view_state: &'a S,
     view_updater: StateUpdater<S>,
+    /// Null for a mounted view. A [`detached`](StateView::detached) view reads the
+    /// caller's state through this instead of a slot.
+    view_detached: *const S,
 }
 
-impl<'a, S: 'static> StateView<'a, S> {
+impl<S: 'static> Copy for StateView<S> {}
+
+impl<S: 'static> Clone for StateView<S> {
     #[inline]
-    fn new(state: &'a S, updater: StateUpdater<S>) -> Self {
-        Self { view_state: state, view_updater: updater }
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S: 'static> StateView<S> {
+    #[inline]
+    fn new(updater: StateUpdater<S>) -> Self {
+        Self { view_updater: updater, view_detached: std::ptr::null() }
     }
 
     /// The handle callbacks use to change this state later.
     ///
-    /// `Copy`, so it can be moved into any number of `'static` closures.
+    /// `Copy`, so it can be moved into any number of `'static` closures. The view
+    /// is `Copy` and `'static` too, so this is only needed to hand a callback the
+    /// narrower, state-less handle.
     #[inline]
     pub fn updater(&self) -> StateUpdater<S> {
         self.view_updater
@@ -701,18 +766,137 @@ impl<'a, S: 'static> StateView<'a, S> {
     pub fn mounted(&self) -> bool {
         self.view_updater.mounted()
     }
+
+    /// Whether the updater still resolves to a usable live state. See
+    /// [`StateUpdater::has_state`].
+    #[inline]
+    pub fn has_state(&self) -> bool {
+        self.view_updater.has_state()
+    }
+
+    /// Queues a mutation, applied before the next build. See
+    /// [`StateUpdater::set_state`], which this forwards to.
+    ///
+    /// The view borrows the state for one `build` call and so cannot be captured
+    /// by a `'static` callback; this is for the code that runs *inside* `build`.
+    /// A callback copies [`StateView::updater`] and calls the same method on it.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a [`detached`](StateView::detached) view, like the updater.
+    #[inline]
+    #[track_caller]
+    pub fn set_state(&self, f: impl FnOnce(&mut S) + 'static) {
+        self.view_updater.set_state(f);
+    }
+
+    /// Queues a mutation that receives a clone of `value`. See
+    /// [`StateUpdater::set_state_with`].
+    ///
+    /// # Panics
+    ///
+    /// Panics on a [`detached`](StateView::detached) view.
+    #[inline]
+    #[track_caller]
+    pub fn set_state_with<V: Clone + Send + 'static>(
+        &self,
+        value: &V,
+        f: impl FnOnce(&mut S, V) + Send + 'static,
+    ) {
+        self.view_updater.set_state_with(value, f);
+    }
+
+    /// Queues a mutation unless the state is gone, returning `Some(())` when it
+    /// was accepted. See [`StateUpdater::try_set_state`].
+    #[inline]
+    pub fn try_set_state(&self, mutation: impl FnOnce(&mut S) + 'static) -> Option<()> {
+        self.view_updater.try_set_state(mutation)
+    }
+
+    /// Queues a mutation without validity checks. See
+    /// [`StateUpdater::set_state_unchecked`].
+    ///
+    /// # Safety
+    ///
+    /// The requirements of [`StateUpdater::set_state_unchecked`] apply. A view
+    /// handed to `build` by its element satisfies them for the duration of that
+    /// call; a [`detached`](StateView::detached) view never does.
+    #[inline]
+    #[track_caller]
+    pub unsafe fn set_state_unchecked(&self, mutation: impl FnOnce(&mut S) + 'static) {
+        // SAFETY: forwarded to the caller, who upholds the updater's contract.
+        unsafe { self.view_updater.set_state_unchecked(mutation) }
+    }
+
+    /// Reads the state through the updater. See [`StateUpdater::read`].
+    ///
+    /// Inside `build` the view already derefs to the state, so plain field
+    /// access is cheaper; this exists so a call site can be moved between the
+    /// view and an updater unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a [`detached`](StateView::detached) view.
+    #[inline]
+    #[track_caller]
+    pub fn read<R>(&self, f: impl FnOnce(&S) -> R) -> R {
+        self.view_updater.read(f)
+    }
+
+    /// Reads the state unless it is gone. See [`StateUpdater::try_read`].
+    #[inline]
+    pub fn try_read<R>(&self, read: impl FnOnce(&S) -> R) -> Option<R> {
+        self.view_updater.try_read(read)
+    }
+
+    /// Borrows the state through a guard. See [`StateUpdater::read_state`].
+    ///
+    /// # Panics
+    ///
+    /// Panics on a [`detached`](StateView::detached) view.
+    #[inline]
+    #[track_caller]
+    pub fn read_state(&self) -> StateReadGuard<'_, S> {
+        self.view_updater.read_state()
+    }
+
+    /// Borrows the state through a guard unless it is gone. See
+    /// [`StateUpdater::try_read_state`].
+    #[inline]
+    pub fn try_read_state(&self) -> Option<StateReadGuard<'_, S>> {
+        self.view_updater.try_read_state()
+    }
+
+    /// Borrows the state without validity checks. See
+    /// [`StateUpdater::read_state_unchecked`].
+    ///
+    /// # Safety
+    ///
+    /// The requirements of [`StateUpdater::read_state_unchecked`] apply.
+    #[inline]
+    #[track_caller]
+    pub unsafe fn read_state_unchecked(&self) -> StateReadGuard<'_, S> {
+        // SAFETY: forwarded to the caller, who upholds the updater's contract.
+        unsafe { self.view_updater.read_state_unchecked() }
+    }
 }
 
-impl<'a, S: 'static> StateView<'a, S> {
+impl<S: 'static> StateView<S> {
     /// A view of a state that is not mounted in an element, for tests that build
     /// a state directly.
     ///
     /// Its updater is empty: reading or changing state through it panics, so use
-    /// it only to read fields and build.
+    /// it only to read fields and build. Field reads go straight to `state`.
+    ///
+    /// # Safety
+    ///
+    /// The view is `Copy` and carries no lifetime, so nothing stops it outliving
+    /// `state`. The caller must not use the view, or any copy of it, once `state`
+    /// has been moved or dropped.
     #[doc(hidden)]
     #[inline]
-    pub fn detached(state: &'a S) -> Self {
-        Self::new(state, StateUpdater::empty())
+    pub unsafe fn detached(state: &S) -> Self {
+        Self { view_updater: StateUpdater::empty(), view_detached: state }
     }
 }
 
@@ -736,22 +920,30 @@ impl<W: Widget> CreateState for W {}
 /// the result to an element at once.
 #[doc(hidden)]
 pub trait BuildElement<W: Widget>: State<W> {
-    /// The built widget borrows the view, so it cannot outlive this call: it is
-    /// converted before the view goes away.
+    /// The built widget may borrow the view, so it is converted before the view
+    /// goes away.
     fn build_element(&self, ctx: &BuildContext) -> AnyElement {
-        let view = StateView::detached(self);
-        Widget::to_element(Self::build(&view, ctx), ctx)
+        // SAFETY: `self` outlives the view, which is dropped before this returns.
+        let view = unsafe { StateView::detached(self) };
+        Widget::to_element(Self::build(view, ctx), ctx)
     }
 }
 
 impl<W: Widget, S: State<W>> BuildElement<W> for S {}
 
-impl<S: 'static> Deref for StateView<'_, S> {
+impl<S: 'static> Deref for StateView<S> {
     type Target = S;
 
+    /// Reads the state, panicking if the element is gone. See the type-level
+    /// notes on the reference this returns.
     #[inline]
+    #[track_caller]
     fn deref(&self) -> &S {
-        self.view_state
+        if !self.view_detached.is_null() {
+            // SAFETY: `StateView::detached` makes its caller keep the state alive.
+            return unsafe { &*self.view_detached };
+        }
+        self.view_updater.state_ref()
     }
 }
 
@@ -827,7 +1019,7 @@ impl<S: 'static> Deref for StateView<'_, S> {
 ///         Self { count: widget.start }
 ///     }
 ///
-///     fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+///     fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
 ///         // Hand this to a button's press handler: it rebuilds with `count + 1`.
 ///         let updater = this.updater();
 ///         let _increment = move || updater.set_state(|state| state.count += 1);
@@ -877,7 +1069,7 @@ pub trait State<W: Widget>: Sized + 'static {
     fn adopt_config_from(&mut self, _new: Self) {}
 
     /// Describes the UI for the current state.
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget;
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget;
 }
 
 pub type RebuildCallBack = dyn Fn(&BuildContext) -> AnyElement;
@@ -1276,14 +1468,9 @@ impl StatefulElement {
                 );
             }
             ctx.with_build_consumer(consumer_for_rebuild.clone(), |ctx| {
-                let s = unsafe {
-                    (&*state_for_build.0.get())
-                        .as_ref()
-                        .expect("State has already been consumed during reconciliation")
-                };
-                let view = StateView::new(s, init_updater);
+                let view = StateView::new(init_updater);
                 let child_widget =
-                    match recover_operation(debug_name, BuildPhase::Build, || S::build(&view, ctx)) {
+                    match recover_operation(debug_name, BuildPhase::Build, || S::build(view, ctx)) {
                         Ok(widget) => widget,
                         Err(diagnostic) => {
                             return recover_failure(
@@ -1314,16 +1501,10 @@ impl StatefulElement {
         let child = if defer_first_build {
             PendingChild.boxed()
         } else {
-            // Safety: single-threaded, initial build during construction.
-            let s = unsafe {
-                (&*state_cell.0.get())
-                    .as_ref()
-                    .expect("State was consumed before the initial build")
-            };
-            let view = StateView::new(s, init_updater);
+            let view = StateView::new(init_updater);
             ctx.with_build_consumer(build_consumer, |ctx| {
                 let child_widget =
-                    recover_operation(debug_name, BuildPhase::Build, || S::build(&view, ctx))?;
+                    recover_operation(debug_name, BuildPhase::Build, || S::build(view, ctx))?;
                 recover_operation(debug_name, BuildPhase::ToElement, || {
                     Widget::to_element(child_widget, ctx)
                 })
@@ -2322,7 +2503,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             PaintCountWidget {
                 draws: this.draws.clone(),
                 paints: this.paints.clone(),
@@ -2376,7 +2557,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.builds.set(this.builds.get() + 1);
             crate::ErrorWidget::new("state").boxed()
         }
@@ -2408,7 +2589,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.built_by.set(this.id);
             LeafProbe
         }
@@ -2450,7 +2631,7 @@ mod tests {
             .boxed()
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             self.name
         }
     }
@@ -2476,7 +2657,7 @@ mod tests {
             self.page = new.page;
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.page.clone()
         }
     }
@@ -2521,7 +2702,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             EventProbeChild {
                 events: this.events.clone(),
             }
@@ -2781,7 +2962,7 @@ mod tests {
             self.phase = new.phase;
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             // Tests reach the updater through this slot; the state no longer stores it.
             this.updater.replace(Some(this.updater()));
             this.builds.set(this.builds.get() + 1);
@@ -3094,7 +3275,8 @@ mod tests {
             AlphaState
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            state_view_edge::remember_alpha_view(this);
             LeafProbe
         }
     }
@@ -3113,7 +3295,7 @@ mod tests {
             BetaState
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             LeafProbe
         }
     }
@@ -3489,7 +3671,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             LeafProbe
         }
     }
@@ -3601,7 +3783,7 @@ mod tests {
                 .push(if updater.mounted() { "on_mount: mounted" } else { "on_mount: not mounted" });
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.seen
                 .borrow_mut()
                 .push(if this.mounted() { "build: mounted" } else { "build: not mounted" });
@@ -3665,7 +3847,8 @@ mod tests {
     #[test]
     fn a_detached_view_is_not_mounted() {
         let state = MountedProbeState { seen: Rc::default() };
-        let view = StateView::detached(&state);
+        // SAFETY: `state` outlives the view.
+        let view = unsafe { StateView::detached(&state) };
         assert!(!view.mounted());
     }
 
@@ -3707,7 +3890,7 @@ mod tests {
             self.depth = new.depth;
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.counts.builds.set(this.counts.builds.get() + 1);
             {
                 let mut updaters = this.counts.updaters.borrow_mut();
@@ -3853,7 +4036,7 @@ mod tests {
             self.depth = new.depth;
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.counts.builds.set(this.counts.builds.get() + 1);
             if this.depth > 1 {
                 KeyedChainWidget { depth: this.depth - 1, counts: this.counts.clone() }.boxed()
@@ -3917,6 +4100,168 @@ mod tests {
         drop(unchecked_guard);
     }
 
+    struct ViewCallsWidget {
+        log: Rc<RefCell<Vec<String>>>,
+    }
+
+    struct ViewCallsState {
+        value: String,
+        log: Rc<RefCell<Vec<String>>>,
+        builds: Cell<usize>,
+    }
+
+    impl Widget for ViewCallsWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, ViewCallsState>(self, ctx, "ViewCallsWidget", None)
+        }
+    }
+
+    impl State<ViewCallsWidget> for ViewCallsState {
+        fn create(widget: ViewCallsWidget) -> Self {
+            Self {
+                value: String::from("a"),
+                log: widget.log,
+                builds: Cell::new(0),
+            }
+        }
+
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.builds.set(this.builds.get() + 1);
+            let mut log = this.log.borrow_mut();
+            log.push(format!(
+                "build {} has={} mounted={} read={} try_read={:?} guard={} try_guard={}",
+                this.builds.get(),
+                this.has_state(),
+                this.mounted(),
+                this.read(|state| state.value.clone()),
+                this.try_read(|state| state.value.clone()),
+                this.read_state().value,
+                this.try_read_state().is_some(),
+            ));
+            if this.builds.get() == 1 {
+                this.set_state(|state| state.value.push('b'));
+                assert_eq!(this.try_set_state(|state| state.value.push('c')), Some(()));
+                this.set_state_with(&String::from("d"), |state, suffix| state.value.push_str(&suffix));
+                // SAFETY: the element built this view, so the updater is live and
+                // its state is neither consumed nor failed, on the UI thread.
+                unsafe { this.set_state_unchecked(|state| state.value.push('e')) };
+                // SAFETY: as above.
+                let guard = unsafe { this.read_state_unchecked() };
+                log.push(format!("unchecked guard={}", guard.value));
+            }
+            LeafProbe
+        }
+    }
+
+    #[test]
+    fn a_state_view_forwards_every_updater_method_in_order() {
+        let context = dummy_build_context();
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let (element, updater) = StatefulElement::new_with_name::<ViewCallsWidget, ViewCallsState>(
+            ViewCallsWidget { log: log.clone() },
+            &context,
+            "ViewCallsWidget",
+            None,
+        );
+        assert_eq!(
+            log.borrow()[0],
+            "build 1 has=true mounted=true read=a try_read=Some(\"a\") guard=a try_guard=true"
+        );
+        assert_eq!(log.borrow()[1], "unchecked guard=a");
+
+        // The four mutations queued from `build` run, in order, before the next one.
+        element.rebuild_if_dirty(&context);
+        assert_eq!(updater.try_read(|state| state.value.clone()), Some(String::from("abcde")));
+        assert_eq!(log.borrow().len(), 3, "one coalesced rebuild, not one per mutation");
+        assert_eq!(
+            log.borrow()[2],
+            "build 2 has=true mounted=true read=abcde try_read=Some(\"abcde\") guard=abcde try_guard=true"
+        );
+    }
+
+    #[test]
+    fn a_detached_state_view_is_quiet_for_try_forms_and_panics_for_the_rest() {
+        struct Plain(i32);
+        let state = Plain(7);
+        // SAFETY: `state` outlives the view.
+        let view = unsafe { StateView::detached(&state) };
+
+        assert!(!view.has_state());
+        assert!(!view.mounted());
+        assert_eq!(view.try_read(|state| state.0), None);
+        assert!(view.try_read_state().is_none());
+        assert_eq!(view.try_set_state(|_| {}), None);
+
+        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| view.set_state(|_| {}))).is_err());
+        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| view.set_state_with(&1, |_, _| {}))).is_err());
+        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| view.read(|state| state.0))).is_err());
+        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| drop(view.read_state()))).is_err());
+        // Plain deref reads are unaffected.
+        assert_eq!(view.0, 7);
+    }
+
+    struct EscapingViewWidget {
+        slot: Rc<RefCell<Option<StateView<EscapingViewState>>>>,
+    }
+
+    struct EscapingViewState {
+        count: i32,
+        slot: Rc<RefCell<Option<StateView<EscapingViewState>>>>,
+    }
+
+    impl Widget for EscapingViewWidget {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, EscapingViewState>(self, ctx, "EscapingViewWidget", None)
+        }
+    }
+
+    impl State<EscapingViewWidget> for EscapingViewState {
+        fn create(widget: EscapingViewWidget) -> Self {
+            Self { count: 1, slot: widget.slot }
+        }
+
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            // The view is `Copy + 'static`, so it can be kept past this call.
+            *this.slot.borrow_mut() = Some(this);
+            LeafProbe
+        }
+    }
+
+    #[test]
+    fn a_state_view_is_copy_static_and_usable_from_a_callback_until_unmount() {
+        fn assert_copy_static<T: Copy + 'static>() {}
+        assert_copy_static::<StateView<EscapingViewState>>();
+
+        let context = dummy_build_context();
+        let slot = Rc::new(RefCell::new(None));
+        let (element, _updater) = StatefulElement::new_with_name::<EscapingViewWidget, EscapingViewState>(
+            EscapingViewWidget { slot: slot.clone() },
+            &context,
+            "EscapingViewWidget",
+            None,
+        );
+        let view = slot.borrow().expect("build stores the view");
+
+        // After `build` returned: reads and writes both work through the copy.
+        let callback = move || {
+            view.set_state(|state| state.count += 10);
+        };
+        assert_eq!(view.count, 1);
+        callback();
+        element.rebuild_if_dirty(&context);
+        assert_eq!(view.count, 11);
+        assert_eq!(view.read(|state| state.count), 11);
+
+        // Once the element is gone the copy refuses instead of reading freed state.
+        drop(element);
+        assert!(!view.mounted());
+        assert_eq!(view.try_read(|state| state.count), None);
+        assert_eq!(view.try_set_state(|_| {}), None);
+        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| view.count)).is_err());
+    }
+
+    mod state_view_edge;
+
     struct OwnedConfigWidget;
 
     struct OwnedConfigState {
@@ -3934,7 +4279,7 @@ mod tests {
             self.config = new.config;
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             LeafProbe
         }
     }

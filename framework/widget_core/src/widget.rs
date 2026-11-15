@@ -54,11 +54,25 @@ pub trait Widget {
     where
         Self: Sized;
 
-    fn debug_name(&self) -> &'static str {
+    /// Names the widget's type for diagnostics and reconciliation.
+    ///
+    /// A short type name such as `"Container"` is conventional. The default,
+    /// `"Unknown"`, is only meant for widgets that never take part in
+    /// stateful reconciliation.
+    fn name(&self) -> &'static str {
         "Unknown"
     }
 
-    // fn hash(&self) 
+    /// Returns a cheap content hash of this widget's configuration.
+    ///
+    /// The framework treats equal non-zero hashes as "configuration unchanged",
+    /// so a widget that overrides this must hash every field that influences
+    /// the element it builds. The default, `0`, means "no hash available" and
+    /// is never assumed equal to another widget's.
+    #[inline]
+    fn hash(&self) -> usize {
+        0
+    }
 
     /// Erases this widget into an inline-or-heap [`AnyWidget`].
     ///
@@ -121,7 +135,7 @@ pub trait Widget {
 /// - The pointer is called at conversion time, so it runs again on every build
 ///   that places it. It is not called while the widget is merely held or erased.
 /// - The pointer does not forward the returned widget's [`Widget::key`],
-///   [`Widget::debug_name`] or [`Widget::text_content`]: it reports the
+///   [`Widget::name`] or [`Widget::text_content`]: it reports the
 ///   defaults, because the widget does not exist until the pointer is called.
 ///
 /// For a function that reads inherited state, see the `fn(&BuildContext) -> T`
@@ -161,7 +175,7 @@ impl<T: Widget + 'static> Widget for fn() -> T {
 ///
 /// The notes on the `fn() -> T` implementation apply here too: only a plain `fn` pointer or a non-capturing closure
 /// qualifies, the pointer is called on every build that places it, and the
-/// pointer itself reports the default `key`, `debug_name` and `text_content`.
+/// pointer itself reports the default `key`, `name`, `hash` and `text_content`.
 ///
 /// The context is borrowed for the call only; the returned widget must not
 /// borrow from it, since the widget is converted after the function returns.
@@ -222,8 +236,11 @@ pub trait DynWidget: 'static {
     /// `widget.key()` ambiguous at a call site that has both traits in scope.
     fn dyn_key(&self) -> Option<crate::key::Key>;
 
-    /// Forwards [`Widget::debug_name`].
-    fn dyn_debug_name(&self) -> &'static str;
+    /// Forwards [`Widget::name`].
+    fn dyn_name(&self) -> &'static str;
+
+    /// Forwards [`Widget::hash`].
+    fn dyn_hash(&self) -> usize;
 
     /// Forwards [`Widget::text_content`].
     fn dyn_text_content(&self) -> Option<&str>;
@@ -246,8 +263,13 @@ impl<W: Widget + 'static> DynWidget for W {
     }
 
     #[inline]
-    fn dyn_debug_name(&self) -> &'static str {
-        Widget::debug_name(self)
+    fn dyn_name(&self) -> &'static str {
+        Widget::name(self)
+    }
+
+    #[inline]
+    fn dyn_hash(&self) -> usize {
+        Widget::hash(self)
     }
 
     #[inline]
@@ -381,8 +403,13 @@ impl Widget for AnyWidget {
         self.into_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.as_ref().dyn_debug_name()
+    fn name(&self) -> &'static str {
+        self.as_ref().dyn_name()
+    }
+
+    #[inline]
+    fn hash(&self) -> usize {
+        self.as_ref().dyn_hash()
     }
 
     fn text_content(&self) -> Option<&str> {
@@ -510,7 +537,7 @@ mod tests {
         let direct = AnyWidget::new(StorageWidget([0; 1]));
         let boxed = StorageWidget([0; 1]).boxed();
         assert_eq!(direct.is_inline(), boxed.is_inline());
-        assert_eq!(direct.debug_name(), boxed.debug_name());
+        assert_eq!(direct.name(), boxed.name());
 
         let rebox = direct.boxed();
         assert!(rebox.is_inline(), "boxing a handle returns it unchanged");
@@ -523,7 +550,7 @@ mod tests {
             panic!("storage contract test does not build an element")
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "StorageWidget"
         }
     }
@@ -537,8 +564,32 @@ mod tests {
         assert!(heap.is_heap());
 
         let owners = std::hint::black_box([inline, heap]);
-        assert_eq!(Widget::debug_name(&owners[0]), "StorageWidget");
-        assert_eq!(Widget::debug_name(&owners[1]), "StorageWidget");
+        assert_eq!(Widget::name(&owners[0]), "StorageWidget");
+        assert_eq!(Widget::name(&owners[1]), "StorageWidget");
+    }
+
+    struct HashedWidget(usize);
+
+    impl Widget for HashedWidget {
+        fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+            panic!("hash contract test does not build an element")
+        }
+
+        fn hash(&self) -> usize {
+            self.0
+        }
+    }
+
+    #[test]
+    fn hash_defaults_to_zero_and_is_forwarded_through_erasure() {
+        assert_eq!(Widget::hash(&StorageWidget([0; 1])), 0);
+        assert_eq!(Widget::hash(&StorageWidget([0; 1]).boxed()), 0);
+
+        let inline = HashedWidget(0xA11CE).boxed();
+        assert_eq!(Widget::hash(&inline), 0xA11CE);
+        let moved = std::hint::black_box(inline);
+        assert_eq!(Widget::hash(&moved), 0xA11CE);
+        assert_eq!(Widget::name(&moved), "Unknown");
     }
 
     #[test]
@@ -581,7 +632,7 @@ mod tests {
             inline.is_inline(),
             "re-erasing must not wrap the owner in another owner"
         );
-        assert_eq!(Widget::debug_name(&inline), "StorageWidget");
+        assert_eq!(Widget::name(&inline), "StorageWidget");
 
         // A heap payload keeps its allocation across owner moves, so its
         // address proves that no second erasure took place.

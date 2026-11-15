@@ -126,3 +126,34 @@ fn component_decorations_ignore_invalid_device_scales() {
         }
     }
 }
+
+/// The clamps are comparisons for debug-build speed; they must keep returning
+/// what `f32::max` returned, NaN included.
+#[test]
+fn inset_clamps_match_the_float_methods_they_replace() {
+    let samples = [
+        0.0,
+        -0.0,
+        2.5,
+        -2.5,
+        f32::MAX,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+    ];
+    for a in samples {
+        assert_eq!(at_least_zero(a), a.max(0.0), "at_least_zero({a})");
+        for b in samples.into_iter().filter(|b| !b.is_nan()) {
+            if !a.is_nan() {
+                assert_eq!(larger(a, b), a.max(b), "larger({a}, {b})");
+            }
+        }
+    }
+}
+
+#[test]
+fn border_radius_child_clip_is_unchanged_by_the_explicit_arrays() {
+    let radius = BorderRadius::from((8.0, 4.0, 2.0, 0.0));
+    let clip = Decoration::child_clip_radius(&radius, size(), 2.0).unwrap();
+    assert_eq!(clip, [8.0, 4.0, 2.0, 0.0]);
+}

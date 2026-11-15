@@ -206,7 +206,7 @@ impl State<Parent> for ParentState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         AnimatedTheme::new()
             .adaptive(TestTheme::light(), TestTheme::dark())
             .mode(this.mode)
@@ -328,7 +328,7 @@ impl State<Swap> for SwapState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let built = this.built.clone();
         if this.custom {
             AnimatedTheme::new()

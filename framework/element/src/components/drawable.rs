@@ -81,6 +81,24 @@ pub enum CompositorAnimationDecision {
     Compositor(CompositorAnimationFrame),
 }
 
+/// How a parent places one direct child during retained-tree synchronization: the
+/// context to lay the child out in, its geometry override and the radius of the clip
+/// the parent supplies with it.
+///
+/// It carries what [`Drawable::child_context_at`], [`Drawable::child_geometry_at`]
+/// and [`Drawable::child_clip_radius`] answer separately, so a parent that derives
+/// all three from the same measurements can do that once.
+#[doc(hidden)]
+pub struct ChildPlacement<'a> {
+    /// The context the child is laid out and updated in.
+    pub context: BuildContext<'a>,
+    /// The child's render bounds and clip, local to the parent, when the parent
+    /// overrides them.
+    pub geometry: Option<(aimer_cupid::draw_cmd::Rect, Option<aimer_cupid::draw_cmd::Rect>)>,
+    /// The corner radii of that clip; square when there is no geometry override.
+    pub clip_radius: [f32; 4],
+}
+
 /// The per-frame half of an element: advancing it and producing its pixels.
 ///
 /// Drawing is split in two so that most frames do almost no work:
@@ -342,6 +360,26 @@ pub trait Drawable {
         self.child_context(ctx, child)
     }
 
+    /// Places one direct child in a single pass, when the parent can answer
+    /// [`Self::child_context_at`], [`Self::child_geometry_at`] and
+    /// [`Self::child_clip_radius`] from the same measurements.
+    ///
+    /// The synchronization asks this first. `None`, the default, means the three
+    /// hooks are asked one after another. An implementation must return exactly
+    /// what they would, and may return `None` for any child it would not give a
+    /// context to. It must give the context before it measures the child, as the
+    /// separate hooks do.
+    #[doc(hidden)]
+    #[inline]
+    fn child_placement_at<'a>(
+        &self,
+        _ctx: &BuildContext<'a>,
+        _child: &dyn Element,
+        _child_index: usize,
+    ) -> Option<ChildPlacement<'a>> {
+        None
+    }
+
     /// Overrides one direct child's render bounds and clip during tree sync.
     ///
     /// The returned rectangle is local to `self`. This lets a viewport keep a
@@ -488,6 +526,16 @@ impl Drawable for Box<dyn Drawable> {
     #[inline]
     fn child_clip_radius(&self, ctx: &BuildContext, child: &dyn Element) -> [f32; 4] {
         self.as_ref().child_clip_radius(ctx, child)
+    }
+
+    #[inline]
+    fn child_placement_at<'a>(
+        &self,
+        ctx: &BuildContext<'a>,
+        child: &dyn Element,
+        child_index: usize,
+    ) -> Option<ChildPlacement<'a>> {
+        self.as_ref().child_placement_at(ctx, child, child_index)
     }
 
     #[inline]

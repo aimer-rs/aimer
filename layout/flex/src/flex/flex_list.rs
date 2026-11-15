@@ -412,7 +412,7 @@ where
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         debug_name_of(self.direction)
     }
 }
@@ -610,7 +610,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.seen.borrow_mut().insert(this.item, this.counter);
             this.updaters.borrow_mut().insert(this.item, this.updater());
             Leaf(ROW_EXTENT)

@@ -46,7 +46,7 @@ impl State<GifExample> for GifExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let updater = this.updater();
         let playing = this.controller.is_playing();

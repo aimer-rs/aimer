@@ -138,7 +138,7 @@ impl State<ProfileWidget> for ProfileState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let updater = this.updater();
         Column::new().children((0..this.callback_count).map(move |index| {
             let updater = updater;

@@ -405,7 +405,7 @@ impl<T: 'static> Widget for InsertionList<T, HasChild> {
         StatefulElement::from_widget::<Self, InsertionLiveState<T>>(self, ctx, "InsertionList", None)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "InsertionList"
     }
 }
@@ -511,7 +511,7 @@ impl<T: 'static> State<InsertionList<T, HasChild>> for InsertionLiveState<T> {
         self.items = new.items;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let items = this.items
             .as_ref()
             .map(|build| build(this.hover))
@@ -637,7 +637,7 @@ impl<T: 'static> Widget for InsertionGate<T> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "InsertionGate"
     }
 }
@@ -819,7 +819,7 @@ impl Widget for SlotProbe {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SlotProbe"
     }
 }

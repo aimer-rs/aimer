@@ -62,7 +62,7 @@ use crate::{WindowAttr, WindowId};
 ///         PageState { settings_open: true }
 ///     }
 ///
-///     fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+///     fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
 ///         let updater = this.updater();
 ///         Window::new()
 ///             .title("Settings")
@@ -259,7 +259,7 @@ impl State<WindowHost> for WindowHostState {
         self.inherit = new.inherit;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         if this.inner.needs_sync() {
             // Only what has to be acted on is captured, and it is acted on after
             // this build: see `Inner::superseded`.

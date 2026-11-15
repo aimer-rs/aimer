@@ -195,7 +195,7 @@ impl State<Checkbox> for CheckboxState {
         self.adopt(new);
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         this.render(ctx)
     }
 }
@@ -207,7 +207,7 @@ impl Widget for Checkbox {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Checkbox"
     }
 }

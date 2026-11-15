@@ -18,7 +18,7 @@ pub fn generate_raw_widget_impl(input: TokenStream) -> TokenStream {
             fn to_element(self, ctx: &aimer::widget::base::BuildContext) -> Box<dyn aimer::widget::Element> {
                 unimplemented!("RawWidget: implement to_element for {}", stringify!(#struct_name))
             }
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 stringify!(#struct_name)
             }
         }

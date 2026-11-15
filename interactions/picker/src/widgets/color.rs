@@ -160,7 +160,7 @@ impl State<ColorPickerView> for ColorPickerViewState {
         self.model = new.model;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         *this.runtime.updater.borrow_mut() = Some(this.updater());
         ColorPickerSurface {
             runtime: Rc::clone(&this.runtime),
@@ -180,7 +180,7 @@ impl Widget for ColorPickerView {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ColorPickerView"
     }
 }
@@ -217,7 +217,7 @@ impl Widget for ColorPickerSurface {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawColorPicker"
     }
 }
@@ -652,7 +652,7 @@ impl Widget for RawColorPicker {
         Element::boxed(self)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawColorPicker"
     }
 }

@@ -282,7 +282,7 @@ impl<T: Theme> Widget for ResolvedTheme<T> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AnimatedTheme"
     }
 }
@@ -368,7 +368,7 @@ impl<T: Theme> State<ResolvedTheme<T>> for AnimatedThemeState<T> {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         AnimatedThemeFrame {
             current: this.current.clone(),
             child: this.child.clone(),
@@ -423,7 +423,7 @@ impl<T: Theme> Widget for ThemeHost<T> {
     /// different type. A constant name would therefore let a host of one theme
     /// type adopt the place of a host of another — which is what replacing one
     /// themed screen with another does — and leave the old subtree on screen.
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
 }
@@ -473,7 +473,7 @@ impl<T: Theme> State<ThemeHost<T>> for ThemeHostState<T> {
         self.child = new.child;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let mut selection = this.selection.clone();
         selection.mode = this.controller.mode();
         Provider::new()
@@ -569,7 +569,7 @@ impl<T: Theme> Widget for AdaptiveTheme<T> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AdaptiveTheme"
     }
 }
@@ -589,7 +589,7 @@ impl<W: Widget + 'static, T: Theme> Widget for AnimatedTheme<W, T> {
         .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AdaptiveTheme"
     }
 }
@@ -1006,7 +1006,7 @@ mod tests {
             Some(Key::Static("probe"))
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Probe"
         }
     }

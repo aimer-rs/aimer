@@ -607,7 +607,7 @@ impl State<TabBar> for TabBarState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let items: Vec<AnyWidget> = this.items
             .iter()
             .enumerate()
@@ -645,7 +645,7 @@ impl State<TabBar> for TabBarState {
 }
 
 impl Widget for TabBar {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "TabBar"
     }
 

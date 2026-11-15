@@ -99,7 +99,7 @@ impl State<LiquidTabBarExample> for LiquidTabBarExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let app_theme = theme::app_theme();
         Column::new()
             .gaps(LayoutSpacing::all(Spacing::Px(20)))

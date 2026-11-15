@@ -34,7 +34,7 @@ impl Widget for SliderTrack {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SliderTrack"
     }
 }
@@ -246,7 +246,7 @@ impl Widget for SliderThumb {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SliderThumb"
     }
 }
@@ -471,7 +471,7 @@ impl Widget for SliderTrail {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SliderTrail"
     }
 }

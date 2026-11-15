@@ -147,7 +147,7 @@ impl<W: Widget + 'static> Widget for SelectionArea<W> {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SelectionArea"
     }
 }

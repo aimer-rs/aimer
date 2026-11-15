@@ -52,7 +52,7 @@ impl State<Scene> for SceneState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         let opacity = if this.hovered { 1.0f32 } else { 0.4 };
         let glass = this.glass;

@@ -95,7 +95,7 @@ impl<T: Widget + 'static> Widget for AnimatedCollapse<T> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AnimatedCollapse"
     }
 }
@@ -454,7 +454,7 @@ impl<W: Widget> Widget for ListHeader<W> {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ListHeader"
     }
 }
@@ -512,7 +512,7 @@ impl<W: Widget> Widget for ListBody<W> {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ListBody"
     }
 }
@@ -696,7 +696,7 @@ impl<H: Widget + 'static, B: Widget + 'static> Widget for CollapsibleList<H, B> 
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "CollapsibleList"
     }
 }
@@ -740,7 +740,7 @@ impl<H: Widget + 'static, B: Widget + 'static> State<CollapsibleList<H, B>>
         self.body = new.body;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ctx.try_copied().unwrap_or(ThemeData::default());
         let updater = this.updater();
         let header = Container::new()

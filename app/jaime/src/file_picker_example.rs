@@ -201,7 +201,7 @@ impl State<FilePickerExample> for FilePickerExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
         let operations = [
             Operation::OneFile,

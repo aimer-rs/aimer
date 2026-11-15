@@ -93,7 +93,7 @@ impl Widget for NamedWidget {
         StatelessElement::wrapper(child, None, self.name).boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         self.name
     }
 }

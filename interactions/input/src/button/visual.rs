@@ -46,7 +46,7 @@ impl State<Visual> for VisualState {
         self.0 = new.0;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         this.0.updater.set(Some(this.updater()));
         (this.0.builder)(ButtonVisualState {
             is_hovered: !this.0.disabled && this.0.hover.get(),

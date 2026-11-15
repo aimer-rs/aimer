@@ -68,15 +68,19 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
 
     #[inline]
     pub(super) fn decoration_insets(&self, width: f32, height: f32, scale: f32) -> [f32; 4] {
-        self.decoration()
-            .content_insets(
-                ResolvedSize {
-                    width: width / scale,
-                    height: height / scale,
-                },
-                scale,
-            )
-            .map(|inset| finite_nonnegative(inset) * scale)
+        let [i0, i1, i2, i3] = self.decoration().content_insets(
+            ResolvedSize {
+                width: width / scale,
+                height: height / scale,
+            },
+            scale,
+        );
+        [
+            finite_nonnegative(i0) * scale,
+            finite_nonnegative(i1) * scale,
+            finite_nonnegative(i2) * scale,
+            finite_nonnegative(i3) * scale,
+        ]
     }
 
     /// Says to the framework who paints from the decoration source, so that a

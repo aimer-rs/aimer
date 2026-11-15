@@ -141,7 +141,7 @@ impl Widget for Video {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Video"
     }
 }

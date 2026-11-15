@@ -252,7 +252,7 @@ mod moved_state {
             self.updater.borrow_mut().get_or_insert(updater);
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.builds.set(this.builds.get() + 1);
             SizedBox::new()
                 .width(Dimension::Px(40.0))

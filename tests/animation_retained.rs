@@ -124,7 +124,7 @@ impl State<Page> for PageState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         PAGE.replace(Some(this.updater()));
         let (key, color) = if this.showing_second {
             ("second", Color::Rgb(0, 0, 255))
@@ -143,7 +143,7 @@ impl Widget for Page {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Page"
     }
 }
@@ -180,7 +180,7 @@ impl State<ImplicitPage> for ImplicitPageState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         IMPLICIT.replace(Some(this.updater()));
         ImplicitAnimatedBuilder::new(
             this.target,
@@ -200,7 +200,7 @@ impl Widget for ImplicitPage {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ImplicitPage"
     }
 }
@@ -258,7 +258,7 @@ impl State<MorphPage> for MorphPageState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         MORPH.replace(Some(this.updater()));
         let (key, color) = if this.showing_second {
             ("second", Color::Rgb(0, 0, 255))
@@ -277,7 +277,7 @@ impl Widget for MorphPage {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "MorphPage"
     }
 }

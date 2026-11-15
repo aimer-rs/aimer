@@ -330,7 +330,7 @@ impl WindowRenderTree {
         aimer_utils::frame_trace("sync_collected", specs.len() as f64, 0.0);
         let added_nodes = element_ids
             .iter()
-            .any(|element_id| !self.element_nodes.contains_key(element_id));
+            .any(|element_id| !self.element_nodes.contains(element_id));
         aimer_utils::frame_trace("sync_added_checked", 0.0, 0.0);
         let render_ids = self
             .tree
@@ -631,6 +631,15 @@ fn child_input<'c>(
     child: &dyn Element,
     index: usize,
 ) -> ChildInput<'c> {
+    // A parent that derives the context, the geometry and the clip radius from
+    // the same measurements answers all three at once.
+    if let Some(placement) = element.child_placement_at(ctx, child, index) {
+        return ChildInput {
+            geometry: placement.geometry,
+            clip_radius: placement.clip_radius,
+            ctx: placement.context,
+        };
+    }
     let provided = element.child_context_at(ctx, child, index);
     // A child that was measured keeps the size of its last measurement, and the
     // geometry below measures it again in the space it is laid out in. The tree
@@ -727,7 +736,7 @@ fn collect_render_tree_nodes<'element, 'context>(
             ),
         ));
     }
-    let is_new = !existing.contains_key(&element_id);
+    let is_new = !existing.contains(&element_id);
     if is_new {
         new_elements.push((node_index, element, ctx.clone(), element_path.clone()));
     }
@@ -751,7 +760,7 @@ fn collect_render_tree_nodes<'element, 'context>(
 
     let mut has_new_child = false;
     element.visit_retained_children(&mut |index, child| {
-        has_new_child |= !existing.contains_key(&child.id());
+        has_new_child |= !existing.contains(&child.id());
         let ChildInput {
             geometry: child_geometry,
             clip_radius: child_clip_radius,

@@ -407,7 +407,7 @@ impl State<TextArea> for TextFieldState {
     }
 
     #[inline]
-    fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
         this.build_field()
     }
 }

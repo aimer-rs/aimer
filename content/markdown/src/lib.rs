@@ -333,7 +333,7 @@ impl Widget for MarkdownViewer {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "MarkdownViewer"
     }
 

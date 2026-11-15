@@ -112,7 +112,7 @@ mod focus_ring {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             let values = this.values.clone();
             let updater = this.updater().clone();
             ImplicitAnimatedBuilder::new(

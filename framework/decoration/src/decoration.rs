@@ -18,6 +18,22 @@ pub use any_decor::AnyDecor;
 mod collections;
 mod components;
 
+/// `value.max(0.0)` without the call a debug build makes for `f32::max`.
+///
+/// A NaN fails the comparison and becomes `0.0`, as `f32::max` returns its
+/// non-NaN operand.
+#[inline(always)]
+fn at_least_zero(value: f32) -> f32 {
+    if value > 0.0 { value } else { 0.0 }
+}
+
+/// `a.max(b)` without the call a debug build makes for `f32::max`, for the
+/// non-NaN insets it is given here.
+#[inline(always)]
+fn larger(a: f32, b: f32) -> f32 {
+    if a > b { a } else { b }
+}
+
 #[cfg(test)]
 mod components_tests;
 
@@ -221,12 +237,11 @@ impl Decoration for BoxDecoration {
     #[inline]
     fn content_insets(&self, size: ResolvedSize, _scale: f32) -> [f32; 4] {
         let resolve = |dimension: aimer_attribute::Dimension, parent: f32| {
-            match dimension {
+            at_least_zero(match dimension {
                 aimer_attribute::Dimension::Auto => 0.0,
                 aimer_attribute::Dimension::Px(value) => value,
                 aimer_attribute::Dimension::Percent(value) => parent * (value / 100.0),
-            }
-            .max(0.0)
+            })
         };
         [
             resolve(self.border.left.stroke, size.width),
@@ -239,15 +254,17 @@ impl Decoration for BoxDecoration {
     #[inline]
     fn child_clip_radius(&self, size: ResolvedSize, scale: f32) -> Option<[f32; 4]> {
         let [left, top, right, bottom] = self.content_insets(size, scale);
-        let radii = self
+        // Written out rather than `[f32; 4]::map`, `max` and `max(0.0)`: a debug
+        // build turns each into non-inlined calls, and a container asks for this
+        // on every geometry query.
+        let [r0, r1, r2, r3] = self
             .border_radius
-            .resolve(size.width * scale, size.height * scale, scale)
-            .map(|radius| radius / scale);
+            .resolve(size.width * scale, size.height * scale, scale);
         Some([
-            (radii[0] - top.max(left)).max(0.0),
-            (radii[1] - top.max(right)).max(0.0),
-            (radii[2] - bottom.max(right)).max(0.0),
-            (radii[3] - bottom.max(left)).max(0.0),
+            at_least_zero(r0 / scale - larger(top, left)),
+            at_least_zero(r1 / scale - larger(top, right)),
+            at_least_zero(r2 / scale - larger(bottom, right)),
+            at_least_zero(r3 / scale - larger(bottom, left)),
         ])
     }
 

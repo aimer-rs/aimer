@@ -30,7 +30,7 @@ impl Widget for FrameWatch {
         RawFrameWatch { check: self.check }.boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "FrameWatch"
     }
 }

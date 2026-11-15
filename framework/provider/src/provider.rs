@@ -543,7 +543,7 @@ impl<T: 'static, W: Widget + 'static> State<Provider<T, W>> for ProviderState<T,
         self.child = new.child;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         ProviderScope {
             handle: this.handle.clone(),
             child: this.child.clone(),
@@ -558,7 +558,7 @@ impl<T: 'static, W: Widget + 'static> Widget for Provider<T, W> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         type_name::<Provider<T>>()
     }
 }
@@ -801,7 +801,7 @@ impl<T: Clone + 'static, A: 'static, W: Widget + 'static> State<StoreProvider<T,
         self.reducer = new.reducer;
         self.child = new.child;
     }
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         StoreScope {
             handle: this.handle.clone(),
             reducer: this.reducer.clone(),
@@ -817,7 +817,7 @@ impl<T: Clone + 'static, A: 'static, W: Widget + 'static> Widget for StoreProvid
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         type_name::<StoreProvider<T, A>>()
     }
 }
@@ -1096,7 +1096,7 @@ mod tests {
             Some(aimer_widget::Key::Static("probe"))
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "ProbeWidget"
         }
     }
@@ -1130,7 +1130,7 @@ mod tests {
             ))
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "RebuildingProbe"
         }
     }
@@ -1166,7 +1166,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, context: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, context: &BuildContext) -> impl Widget {
             this.builds.set(this.builds.get() + 1);
             if this.select_count {
                 ProviderContext::select::<Counter, usize>(context, |counter| counter.count);
@@ -1195,7 +1195,7 @@ mod tests {
             KeyedProviderConsumerState
         }
 
-        fn build(this: &StateView<Self>, context: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, context: &BuildContext) -> impl Widget {
             let _ = ProviderContext::read::<Counter>(context);
             LeafWidget
         }
@@ -1222,7 +1222,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, context: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, context: &BuildContext) -> impl Widget {
             this.builds.set(this.builds.get() + 1);
             ProviderContext::select::<Counter, usize>(context, |counter| counter.count);
             ProviderContext::select::<Counter, &'static str>(context, |counter| counter.label);
@@ -1643,7 +1643,7 @@ mod tests {
             Some(aimer_widget::Key::Static("probe")),
             "reconciliation matches the child on its own key, not on its holder"
         );
-        assert_eq!(Widget::debug_name(&state.child), "ProbeWidget");
+        assert_eq!(Widget::name(&state.child), "ProbeWidget");
     }
 
     #[test]

@@ -72,6 +72,26 @@ impl<T: Any + 'static> StateUpdaterGeneration<T> {
         })
     }
 
+    /// Resolves this generation like [`Self::try_resolve`] but without flushing
+    /// deferred releases around the lookup.
+    ///
+    /// A release that is still pending leaves its slot readable, with its value
+    /// intact, until the next flush, so skipping the flush cannot expose freed
+    /// memory. It can only let a slot that is about to be released answer one
+    /// more read. `callback` must not release or acquire slots.
+    #[inline]
+    #[doc(hidden)]
+    pub fn try_resolve_unflushed<R>(
+        self,
+        callback: impl FnOnce(&T) -> R,
+    ) -> Result<R, StateSlotResolutionError> {
+        STATE_SLOT_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            let value = arena.resolve::<T>(self.key)?;
+            Ok(callback(value))
+        })
+    }
+
     /// Resolves this generation without checking the slot index, generation,
     /// value presence, or erased value type.
     ///

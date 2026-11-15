@@ -97,7 +97,7 @@ impl State<TweenKeyframeExample> for TweenKeyframeState {
         state
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
         let accent = theme.primary_color;
         let heading = move |text: &'static str| {

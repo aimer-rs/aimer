@@ -177,7 +177,7 @@ impl State<VideoControls> for VideoControlsState {
         self.config = new.config;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let mut layers = Stack::new();
         let Some(player) = this.config.player.clone() else {
             return layers;
@@ -500,7 +500,7 @@ impl Widget for VideoControls {
         StatefulElement::new_with_name::<Self, VideoControlsState>(self, ctx, "VideoControls", None).0.boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "VideoControls"
     }
 }

@@ -29,6 +29,8 @@ mod clipped_out_tests;
 mod render_order_tests;
 #[cfg(test)]
 mod sync_damage_tests;
+#[cfg(test)]
+mod sync_membership_tests;
 mod escape_index;
 mod subtree_extent;
 #[cfg(test)]
@@ -1191,7 +1193,10 @@ impl RenderTree {
         // is square.
         let radius_at = |index: usize| radius_updates.map_or([0.0; 4], |radii| radii[index]);
         let mut tree = self.draw_cmd.borrow_mut();
-        let mut seen = HashSet::with_capacity(nodes.len());
+        // Which of the tree's current nodes the list has named, by position in
+        // `tree.nodes`. A set of ids would hash every node of the list on every
+        // synchronization, and a resize synchronizes the whole window.
+        let mut seen = vec![false; tree.nodes.len()];
         let mut ids = Vec::with_capacity(nodes.len());
         let mut next_id = tree.next_id;
 
@@ -1209,11 +1214,11 @@ impl RenderTree {
             }
 
             let id = if let Some(id) = spec.existing_id {
-                if !seen.insert(id) {
-                    return Err(RenderTreeError::DuplicateNode(id));
-                }
-                if tree.node(id).is_none() {
+                let Some(position) = tree.index_of(id) else {
                     return Err(RenderTreeError::UnknownNode(id));
+                };
+                if mem::replace(&mut seen[position], true) {
+                    return Err(RenderTreeError::DuplicateNode(id));
                 }
                 id
             } else {
@@ -1309,8 +1314,8 @@ impl RenderTree {
                 structural_damage_ids.insert(parents[index].unwrap_or(id));
             }
         }
-        for old in &tree.nodes {
-            if !seen.contains(&old.id) {
+        for (position, old) in tree.nodes.iter().enumerate() {
+            if !seen[position] {
                 structural_damage_ids.insert(old.parent.unwrap_or(old.id));
             }
         }

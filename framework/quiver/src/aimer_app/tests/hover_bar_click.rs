@@ -45,7 +45,7 @@ impl State<Screen> for ScreenState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         this.counters.builds.set(this.counters.builds.get() + 1);
         let updater = this.updater.borrow().expect("initialised");

@@ -139,7 +139,7 @@ impl Default for SlidingIndicator {
 }
 
 impl<W: Widget + 'static> Widget for SlidingIndicator<W> {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SlidingIndicator"
     }
 

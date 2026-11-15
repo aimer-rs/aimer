@@ -39,7 +39,7 @@ impl State<StatefulBox> for BoxState {
         self.updaters.borrow_mut().push(updater);
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let swatch = |width: f32, shade: u8| {
             SizedBox::new()
                 .width(Dimension::Px(width))
@@ -311,7 +311,7 @@ impl State<PressableBox> for PressableState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.handle.borrow_mut() = Some(this.updater());
         let presses = this.presses.clone();
         aimer_input::button::Button::new()

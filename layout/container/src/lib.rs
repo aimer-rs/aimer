@@ -138,7 +138,7 @@ mod tests {
             self.selected = new.selected;
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.observers[this.index].set(if this.selected { 1 } else { 0 });
             Container::new().height(32).child(crate::ZeroSizedBox)
         }
@@ -177,7 +177,7 @@ mod tests {
                 .boxed()
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "TabWidget"
         }
     }
@@ -192,7 +192,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.observer.set(this.index);
             *this.live_updater.borrow_mut() = Some(this.updater());
             // Content follows the selection (the image in the real app) AND a

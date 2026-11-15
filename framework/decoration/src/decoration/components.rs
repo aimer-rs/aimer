@@ -82,7 +82,12 @@ impl Decoration for BoxBorder {
     #[inline]
     fn content_insets(&self, size: ResolvedSize, _scale: f32) -> [f32; 4] {
         let (left, top, right, bottom) = self.strokes(size.width, size.height, 1.0);
-        [left, top, right, bottom].map(|width| width.max(0.0))
+        [
+            super::at_least_zero(left),
+            super::at_least_zero(top),
+            super::at_least_zero(right),
+            super::at_least_zero(bottom),
+        ]
     }
 
     #[inline]
@@ -191,7 +196,12 @@ impl Decoration for BorderRadius {
 
     #[inline]
     fn child_clip_radius(&self, size: ResolvedSize, scale: f32) -> Option<[f32; 4]> {
-        Some(self.resolve(size.width * scale, size.height * scale, scale)
-            .map(|radius| (radius / scale).max(0.0)))
+        let [r0, r1, r2, r3] = self.resolve(size.width * scale, size.height * scale, scale);
+        Some([
+            super::at_least_zero(r0 / scale),
+            super::at_least_zero(r1 / scale),
+            super::at_least_zero(r2 / scale),
+            super::at_least_zero(r3 / scale),
+        ])
     }
 }

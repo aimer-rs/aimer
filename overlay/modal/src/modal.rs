@@ -211,7 +211,7 @@ impl<W: Widget + 'static> Widget for Modal<W> {
         )
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Modal"
     }
 }

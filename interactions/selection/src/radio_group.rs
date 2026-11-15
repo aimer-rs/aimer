@@ -386,7 +386,7 @@ impl<T: Clone + PartialEq + 'static> State<RadioGroup<T>> for Group<T> {
         self.adopt(new);
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         this.render(ctx)
     }
 }
@@ -398,7 +398,7 @@ impl<T: Clone + PartialEq + 'static> Widget for RadioGroup<T> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RadioGroup"
     }
 }

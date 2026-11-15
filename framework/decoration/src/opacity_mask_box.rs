@@ -103,7 +103,7 @@ impl<D: Decoration + 'static, W: Widget> Widget for OpacityMaskBox<D, W> {
         )
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "OpacityMaskBox"
     }
 }

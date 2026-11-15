@@ -112,7 +112,7 @@ impl<T: Clone + 'static> State<Radio<T>> for RadioState<T> {
         self.adopt(new);
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         this.render(ctx)
     }
 }
@@ -124,7 +124,7 @@ impl<T: Clone + 'static> Widget for Radio<T> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Radio"
     }
 }

@@ -176,7 +176,7 @@ impl<W: Widget + 'static> Widget for WindowBackdrop<W> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "WindowBackdrop"
     }
 }
@@ -201,7 +201,7 @@ impl<W: Widget + 'static> State<WindowBackdrop<W>> for WindowBackdropState<W> {
         self.child = new.child.clone();
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         this.sync(&ctx.window());
         this.child.clone()
     }

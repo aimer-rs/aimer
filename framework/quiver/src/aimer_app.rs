@@ -2008,7 +2008,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             let paints = this.paints.clone();
             Column::new()
                 .list(0..this.item_count)
@@ -2159,7 +2159,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             let paints = this.paints.clone();
             Row::new()
                 .list(0..this.item_count)
@@ -2267,7 +2267,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             HeadlessHorizontalItemPaintWidget {
                 color: this.color,
                 height: this.height,
@@ -3457,7 +3457,7 @@ mod tests {
             }
 
 
-            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         SWITCH.replace(Some(this.updater()));
                 let (key, width) = if this.second {
                     ("b", 60.0)

@@ -950,7 +950,7 @@ impl<T: aimer_widget::Widget + 'static> aimer_widget::Widget for AnimatedLayout<
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AnimatedLayout"
     }
 }

@@ -146,7 +146,7 @@ impl State<GlassLiquidExample> for GlassLiquidExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let glass = Glass::new()
             .tint(aimer::Color::Rgba(64, 148, 214, 255))
             .opacity(0.78)

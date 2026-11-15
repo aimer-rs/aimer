@@ -162,7 +162,7 @@ impl<P: CanvasPainter> Widget for CustomPaint<P> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "CustomPaint"
     }
 }

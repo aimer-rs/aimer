@@ -44,7 +44,7 @@ impl State<CounterWidget> for CounterState {
     }
 
     // build the widget with state
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         // debug!("this.count: {}", this.count);
         let updater = this.updater();
         let theme = ThemeData::copied(ctx);

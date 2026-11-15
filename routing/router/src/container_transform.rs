@@ -314,7 +314,7 @@ impl<W: Widget + 'static> Widget for ContainerTransform<W> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ContainerTransform"
     }
 }
@@ -505,7 +505,7 @@ impl<W: Widget + 'static> State<ContainerTransform<W>> for ContainerTransformSta
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let scrim = this.scrim.clamp(0.0, 1.0);
         let base = AnimatedPaint::new(this.controller.clone(), this.base.clone()).effect(move |progress| {
             // The base dims as the page comes up.

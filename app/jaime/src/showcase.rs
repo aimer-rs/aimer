@@ -210,7 +210,7 @@ impl State<ExampleShowcase> for ExampleShowcaseState {
         ExampleShowcaseState::with_selected(widget.selected.unwrap_or(EXAMPLES[0]))
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         #[cfg(test)]
         SHELL_BUILDS.with(|builds| builds.set(builds.get() + 1));
         let app_theme = ThemeData::copied(ctx);

@@ -86,7 +86,7 @@ fn stateless_widget_impl(input: &DeriveInput) -> TokenStream {
                 ))
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 #item_name_str
             }
         }

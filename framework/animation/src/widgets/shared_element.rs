@@ -292,7 +292,7 @@ impl<W: Widget> Widget for SharedElement<W> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SharedElement"
     }
 }

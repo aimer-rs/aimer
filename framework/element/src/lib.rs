@@ -68,7 +68,8 @@ pub static CALLED: CalledCounter = CalledCounter::new();
 pub use crate::components::context::{InheritedScope, InheritedStates, RetainedNodeHandle};
 // #[doc(hidden)]
 pub use crate::components::drawable::{
-    CompositorAnimationDecision, CompositorAnimationFrame, CompositorTransform, Drawable,
+    ChildPlacement, CompositorAnimationDecision, CompositorAnimationFrame, CompositorTransform,
+    Drawable,
 };
 pub use crate::components::element::{
     AnyElement, Element, ElementId, ElementNodeMap, ElementPath, EventDispatchContext,

@@ -69,7 +69,7 @@ impl Widget for ErrorWidget {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ErrorWidget"
     }
 }
@@ -197,7 +197,7 @@ pub struct OverflowIndicator<W> {
 
 impl<W: Widget + 'static> OverflowIndicator<W> {
     /// Creates an indicator for `child`, with clipping enabled and a label
-    /// derived from [`Widget::debug_name`].
+    /// derived from [`Widget::name`].
     pub fn new(child: W) -> Self {
         Self {
             child,
@@ -226,7 +226,7 @@ impl<W: Widget + 'static> Widget for OverflowIndicator<W> {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let label = self
             .label
-            .unwrap_or_else(|| self.child.debug_name().to_string());
+            .unwrap_or_else(|| self.child.name().to_string());
         let child = self.child.to_element(ctx);
         let paint = Rc::new(Cell::new(OverflowPaintData::default()));
         let decoration = RawOverflowDecoration {
@@ -246,7 +246,7 @@ impl<W: Widget + 'static> Widget for OverflowIndicator<W> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "OverflowIndicator"
     }
 }

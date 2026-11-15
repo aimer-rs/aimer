@@ -82,7 +82,7 @@ impl Widget for CustomTextFieldCaretExample {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "CustomTextFieldCaretExample"
     }
 }
@@ -109,7 +109,7 @@ impl Widget for ThemedCaret {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ThemedCaret"
     }
 }

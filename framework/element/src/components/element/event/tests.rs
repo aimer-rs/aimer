@@ -20,6 +20,7 @@ mod live_children;
 mod path_patch;
 mod registration;
 mod shortcuts;
+mod structural_walk_count;
 
 use core::{IdentityBranch, ReplacementLeaf};
 use dispatch::routed_leaf;

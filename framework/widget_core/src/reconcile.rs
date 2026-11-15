@@ -179,7 +179,7 @@ mod tests {
         fn to_element(self, _ctx: &BuildContext) -> AnyElement {
             EmptyLeaf.boxed()
         }
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "EmptyWidget"
         }
     }
@@ -218,7 +218,7 @@ mod tests {
         fn to_element(self, _ctx: &BuildContext) -> AnyElement {
             self.element
         }
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "ElementWidget"
         }
     }
@@ -251,7 +251,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             // Record the counter value the rebuild closure actually saw. This
             // is the only observable proof of which state cell a `StatefulElement`
             // is reading from after `adopt_state_from` rewires its `rebuild_fn`.
@@ -281,7 +281,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
             let widget = CounterWidget {
                 observer: this.observer.clone(),
             };
@@ -322,7 +322,7 @@ mod tests {
         }
 
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.published_updater.borrow_mut() = Some(this.updater());
             this.builds.borrow_mut().push(this.counter);
             EmptyWidget
@@ -353,7 +353,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
             let child = BuildRecordingCounterWidget {
                 builds: this.builds.clone(),
                 updater: this.child_updater.clone(),
@@ -411,7 +411,7 @@ mod tests {
             self.config_label = new.config_label;
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             this.observed_label.set(this.config_label);
             this.observed_runtime.set(this.runtime);
             *this.live_updater.borrow_mut() = Some(this.updater());
@@ -582,7 +582,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             EmptyWidget
         }
     }
@@ -611,7 +611,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
             *this.live_updater.borrow_mut() = Some(this.updater());
 
             // container -> row -> [ text-leaf(counter), nested stateful button ]
@@ -1130,7 +1130,7 @@ mod tests {
                 self.child_key = new.child_key;
             }
         }
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             EmptyWidget
         }
     }
@@ -1162,7 +1162,7 @@ mod tests {
             }
             .to_element(ctx)
         }
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Outlet"
         }
     }
@@ -1199,7 +1199,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
             // Shell: publish the active route's transition key for the Outlet.
             ctx.insert_state(RouteKeySlot(route_key(this.route)));
             // Frame: a stateful header sibling + a content area holding the
@@ -1284,7 +1284,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
             // Provide the inherited value *before* building the child subtree —
             // exactly what `NavigatorState::build` does with its controller.
             ctx.insert_state(ProvidedValue);
@@ -1312,7 +1312,7 @@ mod tests {
             }
         }
 
-        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
             ctx.get_state::<ProvidedValue>().expect(
                 "No provided value in context. Ancestor provider must build before descendant.",
             );
@@ -1385,7 +1385,7 @@ mod tests {
                 }
             }
 
-            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 this.observer.set(this.counter);
                 *this.live_updater.borrow_mut() = Some(this.updater());
                 EmptyWidget
@@ -1919,7 +1919,7 @@ mod tests {
                 self.selected = new.selected;
             }
 
-            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 // Record what this button believes its selection state is —
                 // this is what drives its visible highlight in the real app.
                 this.observer.set(if this.selected { 1 } else { 0 });

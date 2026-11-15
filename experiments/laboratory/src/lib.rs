@@ -49,7 +49,7 @@
 //! struct LabelElement(String);
 //!
 //! impl Element for LabelElement {
-//!     fn debug_name(&self) -> &'static str {
+//!     fn name(&self) -> &'static str {
 //!         "LabelElement"
 //!     }
 //! }
@@ -64,7 +64,7 @@
 //! let widget = AnyWidget::new(Label(String::from("Aimer")));
 //! let element = widget.into_element();
 //!
-//! assert_eq!(element.debug_name(), "LabelElement");
+//! assert_eq!(element.name(), "LabelElement");
 //! ```
 
 mod element;

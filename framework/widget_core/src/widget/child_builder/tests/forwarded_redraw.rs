@@ -61,7 +61,7 @@ impl Widget for PageWidget {
         self.leaf_id.set(child.element_id());
         Page { child }.boxed()
     }
-    fn debug_name(&self) -> &'static str { "PageWidget" }
+    fn name(&self) -> &'static str { "PageWidget" }
 }
 
 #[tokio::test]

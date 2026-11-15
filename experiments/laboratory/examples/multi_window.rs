@@ -88,7 +88,7 @@ impl State<Panel> for PanelState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let updater = this.updater.expect("initialised before the first build");
         let opened = this.opened.clone();
         let id = this.id.clone();

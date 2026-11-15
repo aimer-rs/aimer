@@ -222,20 +222,20 @@ mod tests {
 
     #[test]
     fn name_reports_declared_names() {
-        assert_eq!(AppRouting::Home.name(), None);
+        // Routed enums are also widgets, so `Widget::name` competes: name the trait.
+        use aimer::router::Route;
+        assert_eq!(Route::name(&AppRouting::Home), None);
         assert_eq!(
-            AppRouting::Profile {
+            Route::name(&AppRouting::Profile {
                 name: "x".to_string()
-            }
-            .name(),
+            }),
             Some("profile")
         );
         assert_eq!(
-            AppRouting::Search {
+            Route::name(&AppRouting::Search {
                 q: "x".to_string(),
                 page: 1
-            }
-            .name(),
+            }),
             Some("search")
         );
     }

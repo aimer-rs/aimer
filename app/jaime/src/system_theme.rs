@@ -37,7 +37,7 @@ impl State<SystemThemeExample> for SystemThemeExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         // `AnimatedTheme::new()` already carries the built-in light and dark
         // themes; the mode decides which of them is supplied, and whether the
         // platform is consulted at all.

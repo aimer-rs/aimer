@@ -263,7 +263,7 @@ impl<W: Widget> Widget for Capture<W> {
         RawCapture { handle: self.handle, child: self.child.to_element(ctx), owner: next_owner() }.boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Capture"
     }
 }

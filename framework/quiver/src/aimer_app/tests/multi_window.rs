@@ -79,7 +79,7 @@ impl State<ProbeWidget> for ProbeState {
     }
 
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         *this.probe.updater.borrow_mut() = Some(this.updater());
         this.probe.builds.set(this.probe.builds.get() + 1);
         *this.probe.runtime_during_build.borrow_mut() = Venus::current();

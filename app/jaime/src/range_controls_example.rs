@@ -76,7 +76,7 @@ impl State<RangeControlsExample> for RangeControlsExampleState {
         RangeControlsExampleState::initial()
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         let slider_trail = SliderTrail::new()

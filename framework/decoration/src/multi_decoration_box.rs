@@ -228,7 +228,7 @@ impl<D: Decoration + 'static, W: Widget> Widget for MultiDecorationBox<D, W> {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "MultiDecorationBox"
     }
 }

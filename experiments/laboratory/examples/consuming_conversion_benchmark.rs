@@ -255,7 +255,7 @@ mod borrowing {
     }
 
     impl Element for DecoratedElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "DecoratedElement"
         }
 
@@ -282,7 +282,7 @@ mod borrowing {
     struct LeafElement;
 
     impl Element for LeafElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "LeafElement"
         }
     }
@@ -311,7 +311,7 @@ mod borrowing {
     }
 
     impl Element for ScalarElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "ScalarElement"
         }
     }
@@ -342,7 +342,7 @@ mod borrowing {
     }
 
     impl<const N: usize> Element for BulkyElement<N> {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "BulkyElement"
         }
     }
@@ -379,7 +379,7 @@ mod borrowing {
     }
 
     impl<W: Widget> Element for SelfRebuildingElement<W> {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "SelfRebuildingElement"
         }
 
@@ -422,7 +422,7 @@ mod consuming {
     }
 
     impl Element for ScalarElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "ScalarElement"
         }
     }
@@ -454,7 +454,7 @@ mod consuming {
     }
 
     impl<const N: usize> Element for BulkyElement<N> {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "BulkyElement"
         }
     }

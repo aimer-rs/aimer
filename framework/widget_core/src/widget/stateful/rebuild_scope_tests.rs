@@ -160,7 +160,7 @@ impl State<Counter> for CounterState {
 
     /// Deliberately ignores `taps`: none of the leaves depend on the state that
     /// `set_state` mutates below.
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         this.counts.builds.set(this.counts.builds.get() + 1);
         Group {
             children: (0..this.leaves)
@@ -281,7 +281,7 @@ impl State<Nested> for NestedState {
             self.counts.init_states.set(self.counts.init_states.get() + 1);
         }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         this.counts.builds.set(this.counts.builds.get() + 1);
         this.counts.last_built_value.set(this.value);
@@ -324,7 +324,7 @@ impl State<NestingParent> for NestingParentState {
     }
 
     /// The nested child does not depend on `taps`.
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         Group {
             children: vec![
                 Nested {
@@ -460,7 +460,7 @@ mod rebuild_scope_profile {
         }
 
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
             Group {
                 children: (0..LEAVES)
@@ -513,7 +513,7 @@ mod rebuild_scope_profile {
             }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             let mut children: Vec<AnyWidget> = (0..this.size)
                 .map(|_| {
                     CountedLeaf {

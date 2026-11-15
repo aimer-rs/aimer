@@ -150,7 +150,7 @@ impl State<Switch> for SwitchState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         this.builds.set(this.builds.get() + 1);
         SizedBox::new()

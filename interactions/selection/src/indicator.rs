@@ -139,7 +139,7 @@ impl Widget for Indicator {
         RawIndicator(self).boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "SelectionIndicator"
     }
 }

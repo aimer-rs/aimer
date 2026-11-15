@@ -61,7 +61,7 @@ impl State<MultiDecorationBoxExample> for MultiDecorationBoxExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let updater = this.updater();
         let mut layers: Vec<Box<dyn Decoration>> = Vec::with_capacity(2);
         layers.push(Box::new(background()));

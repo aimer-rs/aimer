@@ -224,7 +224,7 @@ impl Widget for DefaultCaret {
         .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DefaultCaret"
     }
 }
@@ -241,7 +241,7 @@ impl Widget for DefaultCaretWidget {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DefaultCaret"
     }
 }
@@ -280,7 +280,7 @@ impl State<DefaultCaretWidget> for DefaultCaretState {
         self.color = new.color;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let _revision = this.revision;
         DefaultCaretPaint {
             context: this.context.clone(),

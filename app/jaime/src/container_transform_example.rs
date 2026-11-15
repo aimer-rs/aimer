@@ -258,7 +258,7 @@ impl State<StandalonePreview> for StandaloneState {
         StandaloneState { selected: None, updater: StateUpdater::empty() }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
         let white = theme.on_primary_color;
         let updater = this.updater();

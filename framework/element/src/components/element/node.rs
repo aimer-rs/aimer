@@ -492,6 +492,11 @@ impl<E: Element + 'static> Element for ElementNode<E> {
     fn name(&self) -> &'static str {
         self.element.name()
     }
+
+    #[inline]
+    fn hash(&self) -> usize {
+        self.element.hash()
+    }
 }
 
 impl<E: Element + 'static> LayoutElement for ElementNode<E> {
@@ -908,6 +913,17 @@ impl<E: Element + 'static> Drawable for ElementNode<E> {
     ) -> Option<BuildContext<'a>> {
         self.element
             .child_context_at(ctx, child, child_index)
+    }
+
+    #[inline]
+    fn child_placement_at<'a>(
+        &self,
+        ctx: &BuildContext<'a>,
+        child: &dyn Element,
+        child_index: usize,
+    ) -> Option<crate::components::drawable::ChildPlacement<'a>> {
+        self.element
+            .child_placement_at(ctx, child, child_index)
     }
 
     #[inline]
@@ -1380,6 +1396,17 @@ impl Drawable for AnyElement {
     }
 
     #[inline]
+    fn child_placement_at<'a>(
+        &self,
+        ctx: &BuildContext<'a>,
+        child: &dyn Element,
+        child_index: usize,
+    ) -> Option<crate::components::drawable::ChildPlacement<'a>> {
+        self.as_ref()
+            .child_placement_at(ctx, child, child_index)
+    }
+
+    #[inline]
     fn child_geometry(
         &self,
         ctx: &BuildContext,
@@ -1750,6 +1777,17 @@ impl Drawable for Box<dyn Element> {
     ) -> Option<BuildContext<'a>> {
         self.as_ref()
             .child_context_at(ctx, child, child_index)
+    }
+
+    #[inline]
+    fn child_placement_at<'a>(
+        &self,
+        ctx: &BuildContext<'a>,
+        child: &dyn Element,
+        child_index: usize,
+    ) -> Option<crate::components::drawable::ChildPlacement<'a>> {
+        self.as_ref()
+            .child_placement_at(ctx, child, child_index)
     }
 
     #[inline]

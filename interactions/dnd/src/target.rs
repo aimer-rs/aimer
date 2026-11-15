@@ -207,7 +207,7 @@ impl<T: 'static> Widget for DragTarget<T, HasChild> {
         StatefulElement::from_widget::<Self, DragTargetLiveState<T>>(self, ctx, "DragTarget", None)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DragTarget"
     }
 }
@@ -238,7 +238,7 @@ impl<T: 'static> State<DragTarget<T, HasChild>> for DragTargetLiveState<T> {
         self.child = new.child;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let content = this.child
             .as_ref()
             .map(|build| build(this.hover))
@@ -305,7 +305,7 @@ impl<T: 'static> Widget for TargetGate<T> {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DragTargetGate"
     }
 }

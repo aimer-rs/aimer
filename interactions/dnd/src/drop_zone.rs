@@ -184,7 +184,7 @@ impl Widget for DropZone<HasChild> {
         StatefulElement::from_widget::<Self, DropZoneLiveState>(self, ctx, "DropZone", None)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DropZone"
     }
 }
@@ -219,7 +219,7 @@ impl State<DropZone<HasChild>> for DropZoneLiveState {
         self.child = new.child;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let content = this.child
             .as_ref()
             .map(|build| build(this.hover))
@@ -297,7 +297,7 @@ impl Widget for DropZoneGate {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DropZoneGate"
     }
 }

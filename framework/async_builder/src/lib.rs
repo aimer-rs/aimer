@@ -307,7 +307,7 @@ where
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         AsyncFrame {
             future_factory: this.future_factory.clone(),
             snapshot_builder: this.snapshot_builder.clone(),
@@ -338,7 +338,7 @@ where
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AsyncBuilder"
     }
 }
@@ -380,7 +380,7 @@ where
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AsyncFrame"
     }
 }
@@ -612,7 +612,7 @@ mod tests {
             MarkerElement(self.0, self.1).boxed()
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             self.0
         }
     }

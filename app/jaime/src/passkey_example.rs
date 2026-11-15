@@ -130,7 +130,7 @@ impl State<PasskeyExample> for PasskeyExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
         let server = this.server.value().text().to_owned();
         let username = this.username.value().text().to_owned();

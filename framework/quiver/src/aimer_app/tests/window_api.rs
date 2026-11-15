@@ -61,7 +61,7 @@ impl State<Parent> for ParentState {
     }
 
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         let closed = this.closed.clone();
         let built = this.built.clone();

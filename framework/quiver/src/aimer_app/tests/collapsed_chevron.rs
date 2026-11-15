@@ -82,7 +82,7 @@ impl State<Screen> for ScreenState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         // Each rebuild hands the list a new header, as a screen rebuilding does.
         let title = format!("Categories {}", this.rebuilds % 2);

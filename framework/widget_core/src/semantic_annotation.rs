@@ -154,7 +154,7 @@ impl<W: Widget + 'static> Widget for Semantics<W> {
         RawSemantics { spec: self.spec, child: self.child.to_element(ctx) }.boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Semantics"
     }
 }

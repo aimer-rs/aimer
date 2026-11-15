@@ -174,7 +174,7 @@ impl State<TimePickerView> for TimePickerViewState {
         self.model = new.model;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         TimePickerSurface {
             runtime: Rc::clone(&this.runtime),
             width: this.model.width,
@@ -194,7 +194,7 @@ impl Widget for TimePickerView {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "TimePickerView"
     }
 }
@@ -231,7 +231,7 @@ impl Widget for TimePickerSurface {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawTimePicker"
     }
 }
@@ -716,7 +716,7 @@ impl Widget for RawTimePicker {
         Element::boxed(self)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawTimePicker"
     }
 }

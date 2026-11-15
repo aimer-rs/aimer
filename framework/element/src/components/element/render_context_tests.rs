@@ -205,3 +205,30 @@ fn inserting_into_a_map_replaces_what_was_remembered() {
     assert_eq!(mapped.get(&element), Some(new_node), "the answer follows the insert");
     assert_eq!(mapped.get(&ElementId::next()), None);
 }
+
+/// A sync asks whether an element has a node several times (as a child, as
+/// itself, and once more over the whole list), so the question has to be
+/// answered from the table of recent answers like `get`, not by hashing each time.
+#[test]
+fn asking_whether_an_element_is_mapped_hashes_it_once() {
+    let tree = RenderTree::new();
+    let node = tree.add_root(Rect::new(0.0, 0.0, 10.0, 10.0)).unwrap();
+    let (mapped_element, unmapped) = (ElementId::next(), ElementId::next());
+    let mut mapped = ElementNodeMap::default();
+    mapped.insert(mapped_element, node);
+
+    reset_node_for_element_hashes();
+    for _ in 0..4 {
+        assert!(mapped.contains(&mapped_element));
+    }
+    assert_eq!(node_for_element_hashes(), 1, "four questions about one element");
+    assert_eq!(mapped.get(&mapped_element), Some(node));
+    assert_eq!(node_for_element_hashes(), 1, "`get` reuses what `contains` remembered");
+    // An unmapped element is never remembered, so each question hashes again.
+    assert!(!mapped.contains(&unmapped));
+    assert!(!mapped.contains(&unmapped));
+    assert_eq!(node_for_element_hashes(), 3);
+    // Agrees with the map's own `contains_key` for both kinds.
+    assert_eq!(mapped.contains(&mapped_element), mapped.contains_key(&mapped_element));
+    assert_eq!(mapped.contains(&unmapped), mapped.contains_key(&unmapped));
+}

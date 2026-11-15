@@ -271,7 +271,7 @@ impl<W: Widget + 'static> Widget for Focusable<W> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Focusable"
     }
 }
@@ -306,7 +306,7 @@ impl<W: Widget + 'static> State<Focusable<W>> for FocusableState<W> {
         self.child = new.child;
     }
 
-    fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
         FocusTarget {
             node: this.node.clone(),
             on_focus: this.on_focus.clone(),
@@ -348,7 +348,7 @@ impl Widget for FocusTarget {
         .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Focusable"
     }
 }
@@ -721,7 +721,7 @@ mod tests {
             Bounded.boxed()
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Boxed"
         }
     }
@@ -895,7 +895,7 @@ mod tests {
             .boxed()
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Recording"
         }
     }

@@ -356,7 +356,7 @@ members = [
     "app/jaime",
     # experiments
     "experiments/laboratory",
-    "experiments/polymorphism", "experiments/stateful_widget_2",
+    "experiments/polymorphism",
 ]
 
 [workspace.dependencies]

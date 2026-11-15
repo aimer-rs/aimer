@@ -358,7 +358,7 @@ impl<R: Route + Router> State<Navigator<R>> for NavigatorState<R> {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let controller = navigator_controller(this.updater());
         ctx.insert_state(controller.clone());
 

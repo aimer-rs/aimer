@@ -67,7 +67,7 @@ impl State<LightEdgeExample> for LightEdgeExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let updater = this.updater();
         Column::new().gaps(LayoutSpacing::all(Spacing::Px(16))).children([
             Text::new("Turn the light to move the highlight around the surface. Compare it with the unlit card beside it.")

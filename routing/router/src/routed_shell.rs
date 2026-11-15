@@ -151,7 +151,7 @@ impl<R: Route + Router> State<RoutedShell<R>> for RoutedShellState<R> {
         self.route = new.route;
         self.transition = new.transition;
     }
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let route = this.route.clone();
         let path = route.format();
         let builder = this.builder.clone();

@@ -212,7 +212,7 @@ impl State<CalendarView> for CalendarViewState {
         self.model = new.model;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         CalendarSurface {
             runtime: Rc::clone(&this.runtime),
             width: this.model.width,
@@ -229,7 +229,7 @@ impl Widget for CalendarView {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "CalendarView"
     }
 }
@@ -253,7 +253,7 @@ impl Widget for CalendarSurface {
         })
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawCalendar"
     }
 }
@@ -490,7 +490,7 @@ impl Widget for RawCalendar {
         Element::boxed(self)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawCalendar"
     }
 }
@@ -614,7 +614,7 @@ impl State<DatePickerView> for DatePickerViewState {
         self.model = new.model;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         DatePickerSurface {
             runtime: Rc::clone(&this.runtime),
             width: this.model.width,
@@ -632,7 +632,7 @@ impl Widget for DatePickerView {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DatePickerView"
     }
 }
@@ -666,7 +666,7 @@ impl Widget for DatePickerSurface {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawDatePicker"
     }
 }
@@ -1015,7 +1015,7 @@ impl Widget for RawDatePicker {
         Element::boxed(self)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawDatePicker"
     }
 }
@@ -1155,7 +1155,7 @@ impl State<DateTimePickerView> for DateTimePickerViewState {
         self.model = new.model;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         DateTimePickerSurface {
             runtime: Rc::clone(&this.runtime),
             width: this.model.width,
@@ -1174,7 +1174,7 @@ impl Widget for DateTimePickerView {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "DateTimePickerView"
     }
 }
@@ -1211,7 +1211,7 @@ impl Widget for DateTimePickerSurface {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawDateTimePicker"
     }
 }
@@ -1887,7 +1887,7 @@ impl Widget for RawDateTimePicker {
         Element::boxed(self)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawDateTimePicker"
     }
 }

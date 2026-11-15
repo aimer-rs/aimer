@@ -75,7 +75,7 @@ impl State<ForegroundDecorationExample> for ForegroundDecorationExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let updater = this.updater();
         Column::new().gaps(LayoutSpacing::all(Spacing::Px(16))).children([
             note("The card paints first. The foreground decoration paints after it, so the fade darkens the card's text and the rim stays on top of its edge."),

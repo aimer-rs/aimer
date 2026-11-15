@@ -199,7 +199,7 @@ impl State<ZoneScreen> for ZoneState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         this.log.borrow_mut().push(this.active);
         let updater = this.updater.borrow().expect("initialised");
         Row::new().children(vec![
@@ -530,7 +530,7 @@ impl State<ClickPanel> for ClickState {
 
     fn adopt_config_from(&mut self, _new: Self) {}
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let updater = this.updater.borrow().expect("initialised");
         let rows: Vec<aimer_widget::AnyWidget> = (0..6)
             .map(|index| {

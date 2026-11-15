@@ -109,7 +109,7 @@ impl State<WindowShowcase> for WindowShowcaseState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let menu = this.menu.clone();
 
@@ -210,7 +210,7 @@ impl State<MusicMainMenu> for MusicMenuState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let updater = this.updater();
         let playback = this.playback;

@@ -334,7 +334,7 @@ impl<T: Widget + 'static> State<MorphTransition<T>> for MorphTransitionState<T> 
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let morphing = this.controller.is_animating();
         MorphTransitionFrame {
             current_child: this.current_child.clone(),

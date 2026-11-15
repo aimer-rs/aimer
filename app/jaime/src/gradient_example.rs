@@ -108,7 +108,7 @@ impl State<GradientExample> for GradientExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let updater = this.updater();
         Column::new().gaps(LayoutSpacing::all(Spacing::Px(16))).children([
             note("Gradients are evaluated per pixel on the GPU, so they stay smooth at any size and scale."),

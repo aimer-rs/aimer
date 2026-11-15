@@ -186,7 +186,7 @@ impl<T: Widget + 'static> State<AnimatedSwitcher<T>> for AnimatedSwitcherState<T
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         AnimatedSwitcherFrame {
             current_child: this.current_child.clone(),
             current_child_key: this.child_key.clone(),
@@ -524,7 +524,7 @@ mod tests {
                 ErrorWidget::new("probe").to_element(ctx)
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "Probe"
             }
         }
@@ -742,7 +742,7 @@ mod tests {
                 }
                 .boxed()
             }
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "RecordingPage"
             }
         }
@@ -774,7 +774,7 @@ mod tests {
                 }
             }
 
-            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 let label = route_label(this.route);
                 AnimatedSwitcher::new(
                     Duration::from_millis(50),

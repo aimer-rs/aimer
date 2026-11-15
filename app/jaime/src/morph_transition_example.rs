@@ -371,7 +371,7 @@ impl State<MorphTransitionExample> for MorphTransitionState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
         let card = &CARDS[this.card];
 

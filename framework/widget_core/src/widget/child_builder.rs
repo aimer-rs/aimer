@@ -44,7 +44,7 @@ use crate::{AnyElement, AnyWidget};
 /// # Identity
 ///
 /// Reconciliation matches an old element to a new one by [`Widget::key`], and
-/// diagnostics name a node by [`Widget::debug_name`]. Both are copied out of the
+/// diagnostics name a node by [`Widget::name`]. Both are copied out of the
 /// widget before it is stored, and the proxy reports the retained element's own
 /// key and name, so a child reached through a slot keeps the identity it had
 /// when it was reached directly.
@@ -65,7 +65,7 @@ use crate::{AnyElement, AnyWidget};
 ///
 /// // The builder is a widget itself, so it can be handed to any parent, and
 /// // it reports the name of the widget it was made from.
-/// assert_eq!(aimer_widget_core::Widget::debug_name(&child), "ErrorWidget");
+/// assert_eq!(aimer_widget_core::Widget::name(&child), "ErrorWidget");
 /// ```
 pub struct ChildBuilder {
     source: Source,
@@ -168,12 +168,12 @@ impl ChildBuilder {
     ///
     /// let child = ChildBuilder::from_widget(ErrorWidget::new("boom"));
     ///
-    /// assert_eq!(child.debug_name(), "ErrorWidget");
+    /// assert_eq!(child.name(), "ErrorWidget");
     /// ```
     #[inline]
     pub fn from_widget<W: Widget + 'static>(widget: W) -> Self {
         let key = widget.key();
-        let debug_name = widget.debug_name();
+        let debug_name = widget.name();
         Self {
             source: Some(Rc::new(Child {
                 origin: Origin::Once(Cell::new(Some(widget.boxed()))),
@@ -253,7 +253,7 @@ impl ChildBuilder {
     /// ```
     /// use aimer_widget_core::{ChildBuilder, Widget};
     ///
-    /// assert_eq!(ChildBuilder::required().debug_name(), "RequiredChild");
+    /// assert_eq!(ChildBuilder::required().name(), "RequiredChild");
     /// ```
     #[inline]
     pub fn required() -> Self {
@@ -303,7 +303,7 @@ impl Widget for ChildBuilder {
     }
 
     #[inline]
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         self.debug_name
     }
 }
@@ -789,7 +789,7 @@ mod tests {
             .boxed()
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Counting"
         }
     }
@@ -804,7 +804,7 @@ mod tests {
             Some(Key::Static("probe"))
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Probe"
         }
     }
@@ -928,7 +928,7 @@ mod tests {
                 .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "ParentWidget"
             }
         }
@@ -987,7 +987,7 @@ mod tests {
             Some(Key::Static("probe")),
             "reconciliation matches on the key of the widget, not of its holder"
         );
-        assert_eq!(child.debug_name(), "Probe");
+        assert_eq!(child.name(), "Probe");
     }
 
     #[tokio::test]
@@ -1194,7 +1194,7 @@ mod tests {
 
         assert_eq!(builds.get(), 2);
         assert_eq!(
-            child.debug_name(),
+            child.name(),
             "ChildBuilder",
             "a closure has no widget to take a name from until it runs"
         );

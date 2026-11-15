@@ -248,7 +248,7 @@ impl State<FireButtonExample> for FireButtonExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &aimer::BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &aimer::BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
 
         let on_tap = {

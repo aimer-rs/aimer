@@ -121,7 +121,7 @@ mod public_api_tests {
     #[test]
     fn exposes_font_and_svg_assets_from_one_crate() {
         assert_ne!(FontFamily::SANS_SERIF, FontFamily::MONOSPACE);
-        assert_eq!(SvgAsset::new("assets/icon.svg").debug_name(), "SvgAsset");
+        assert_eq!(SvgAsset::new("assets/icon.svg").name(), "SvgAsset");
     }
 
     #[test]

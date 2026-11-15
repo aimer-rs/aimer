@@ -46,7 +46,7 @@ mod tests {
     fn svg_asset_exposes_the_asset_widget_contract() {
         let widget = SvgAsset::new("assets/icon.svg").width(24.0).height(32.0);
 
-        assert_eq!(widget.debug_name(), "SvgAsset");
+        assert_eq!(widget.name(), "SvgAsset");
     }
 
     #[test]

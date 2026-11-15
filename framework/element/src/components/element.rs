@@ -311,6 +311,17 @@ impl ElementNodeMap {
         self.get_by_hash(element, slot)
     }
 
+    /// Whether `element` has a render node.
+    ///
+    /// Answers from the same table of recent answers as [`Self::get`], so asking
+    /// about an element a synchronization has already asked about does not hash
+    /// it again. The map's own `contains_key` always hashes, which is what made
+    /// a full sync hash each element several times.
+    #[inline(always)]
+    pub fn contains(&self, element: &ElementId) -> bool {
+        self.get(element).is_some()
+    }
+
     #[inline(never)]
     fn get_by_hash(
         &self,
@@ -1610,6 +1621,17 @@ pub trait Element: VisitorElement + EventElement + LayoutElement + Rebuildable +
     /// frame statistics and unmapped-draw reports; a short type name such as
     /// `"Container"` is conventional.
     fn name(&self) -> &'static str;
+
+    /// Returns a cheap content hash of the configuration this element was
+    /// built from.
+    ///
+    /// The default, `0`, means "no hash available" and is never assumed equal
+    /// to another element's. An element that overrides this must hash every
+    /// field that influences how it lays out, paints or reacts.
+    #[inline]
+    fn hash(&self) -> usize {
+        0
+    }
 
     /// Returns this element's stable logical identity.
     ///

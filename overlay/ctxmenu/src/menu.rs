@@ -311,7 +311,7 @@ impl Widget for ContextMenu {
         RawContextMenuPanel::element(content, style)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ContextMenu"
     }
 }

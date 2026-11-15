@@ -397,7 +397,7 @@ mod tests {
             FetchingState { seen: widget.seen }
         }
 
-        fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
             let task = async { Ok::<u32, &'static str>(1) }.watch("fetch");
             this.seen.borrow_mut().push(label(&task.read()));
             LeafWidget

@@ -147,7 +147,7 @@ impl Widget for Outlet {
             move |ctx| slot.build_child(ctx).to_element(ctx), None, "Outlet").boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Outlet"
     }
 }

@@ -34,7 +34,7 @@ impl State<Subject> for SubjectState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         this.builds.set(this.builds.get() + 1);
         if this.reads_context {
             if let Some(published) = ctx.get_state::<Published>() {
@@ -79,7 +79,7 @@ impl State<Host> for HostState {
         self.child = new.child;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         ctx.insert_state(Published(this.version));
         this.child.clone()
     }

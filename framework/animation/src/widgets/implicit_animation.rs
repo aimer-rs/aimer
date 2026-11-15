@@ -161,7 +161,7 @@ where
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         ImplicitAnimatedFrame {
             current: this.current.clone(),
             target: this.target.clone(),

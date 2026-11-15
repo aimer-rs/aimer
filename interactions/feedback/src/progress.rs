@@ -211,7 +211,7 @@ impl Widget for ProgressIndicator {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "ProgressIndicator"
     }
 }
@@ -335,7 +335,7 @@ impl Widget for Spinner {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Spinner"
     }
 }

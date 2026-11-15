@@ -105,7 +105,7 @@ impl State<LottieExample> for LottieExampleState {
         LottieExampleState { playing: true, slow: false, updater: StateUpdater::empty() }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let updater = this.updater();
         let (playing, slow) = (this.playing, this.slow);

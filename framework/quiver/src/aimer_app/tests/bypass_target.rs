@@ -153,7 +153,7 @@ impl State<BarScene> for BarState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         let updater = this.updater.borrow().expect("initialised");
         let opacity = if this.hovered { 1.0f32 } else { 0.4 };

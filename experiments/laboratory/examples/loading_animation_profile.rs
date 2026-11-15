@@ -125,7 +125,7 @@ impl State<StatePage> for StatePageState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.handle.borrow_mut() = Some(this.updater());
         SizedBox::new()
             .width(Dimension::Px(96.0))

@@ -314,7 +314,7 @@ impl State<FormExample> for FormExampleState {
         FormExampleState::initial()
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let email_field = this.field_section(
             "email",

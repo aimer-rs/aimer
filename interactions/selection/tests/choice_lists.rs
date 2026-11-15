@@ -262,7 +262,7 @@ async fn an_autocomplete_builds_loading_and_error_states() {
         .query("pr")
         .loading(true)
         .error("offline");
-    assert_eq!(Widget::debug_name(&widget), "Autocomplete");
+    assert_eq!(Widget::name(&widget), "Autocomplete");
     let _ = widget.to_element(&ctx).layout(&ctx);
 }
 

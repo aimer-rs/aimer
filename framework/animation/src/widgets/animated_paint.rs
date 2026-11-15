@@ -226,7 +226,7 @@ impl<T: Widget> AnimatedPaint<T> {
 }
 
 impl<T: Widget + 'static> Widget for AnimatedPaint<T> {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "AnimatedPaint"
     }
 

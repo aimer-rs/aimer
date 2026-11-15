@@ -33,7 +33,7 @@ impl State<Leaf> for LeafState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         this.builds.set(this.builds.get() + 1);
         this.log.borrow_mut().push(this.label);
         ErrorWidget::new("leaf")
@@ -74,7 +74,7 @@ impl State<Owner> for OwnerState {
         }
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         this.builds.set(this.builds.get() + 1);
         let leaves = this.keys
             .iter()
@@ -375,7 +375,7 @@ mod retain_slots_profile {
             }
         }
 
-        fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+        fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
             let body = || Column {
                 leaves: (0..this.size)
                     .map(|_| {

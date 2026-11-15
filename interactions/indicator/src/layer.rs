@@ -32,7 +32,7 @@ pub(crate) struct IndicatorLayerWidget<W> {
 }
 
 impl<W: Widget + 'static> Widget for IndicatorLayerWidget<W> {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "IndicatorLayer"
     }
 

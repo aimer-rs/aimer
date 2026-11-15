@@ -331,7 +331,7 @@ impl<W: Widget + 'static> Widget for Floating<W> {
         )
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Floating"
     }
 }

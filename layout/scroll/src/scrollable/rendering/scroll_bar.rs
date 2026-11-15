@@ -152,7 +152,7 @@ impl State<ScrollBar> for ScrollBarState {
         self.config = new.config;
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         // The region covers exactly the strip this bar is laid out as, so
         // hovering it means the pointer is over the bar and not merely over
         // the content it floats above. A standalone bar has no scroll state to

@@ -45,7 +45,7 @@ use crate::widget::erased::AnyWidget;
 ///     }
 /// }
 ///
-/// assert_eq!(Spacer(8.0).boxed().debug_name(), "Unknown");
+/// assert_eq!(Spacer(8.0).boxed().name(), "Unknown");
 /// ```
 pub trait Widget: 'static {
     /// Consumes this widget and produces its element.
@@ -57,7 +57,7 @@ pub trait Widget: 'static {
         Self: Sized;
 
     /// Returns a stable name used by assertions and diagnostics.
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Unknown"
     }
 
@@ -90,7 +90,7 @@ mod tests {
     struct NamedElement;
 
     impl Element for NamedElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "NamedElement"
         }
     }
@@ -100,18 +100,18 @@ mod tests {
             AnyElement::new(NamedElement)
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Named"
         }
     }
 
     #[test]
     fn a_widget_builds_its_element_directly() {
-        assert_eq!(Named.to_element().debug_name(), "NamedElement");
+        assert_eq!(Named.to_element().name(), "NamedElement");
     }
 
     #[test]
     fn erasing_preserves_the_widget_name() {
-        assert_eq!(Named.boxed().debug_name(), "Named");
+        assert_eq!(Named.boxed().name(), "Named");
     }
 }

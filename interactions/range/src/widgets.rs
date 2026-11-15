@@ -285,7 +285,7 @@ impl<T: RangeValue> State<Slider<T>> for SliderState<T> {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let visual_state = SliderVisualState {
             disabled: this.model.is_disabled(),
             pressed: this.runtime.pressed.get(),
@@ -315,7 +315,7 @@ impl<T: RangeValue> Widget for Slider<T> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Slider"
     }
 }
@@ -359,7 +359,7 @@ impl<T: RangeValue> Widget for SliderSurface<T> {
         })
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawSlider"
     }
 }
@@ -892,7 +892,7 @@ impl<T: RangeValue> Widget for RawSlider<T> {
         Element::boxed(self)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawSlider"
     }
 }
@@ -1010,7 +1010,7 @@ impl<T: RangeValue> State<RangeSlider<T>> for RangeSliderState<T> {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let visual_state = SliderVisualState {
             disabled: this.model.is_disabled(),
             pressed: this.runtime.pressed.get(),
@@ -1043,7 +1043,7 @@ impl<T: RangeValue> Widget for RangeSlider<T> {
             .boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RangeSlider"
     }
 }
@@ -1095,7 +1095,7 @@ impl<T: RangeValue> Widget for RangeSliderSurface<T> {
         })
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawRangeSlider"
     }
 }
@@ -1554,7 +1554,7 @@ impl<T: RangeValue> Widget for RawRangeSlider<T> {
         Element::boxed(self)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "RawRangeSlider"
     }
 }

@@ -45,7 +45,7 @@ use crate::widget::erased::AnyWidget;
 /// struct LeafElement;
 ///
 /// impl Element for LeafElement {
-///     fn debug_name(&self) -> &'static str {
+///     fn name(&self) -> &'static str {
 ///         "LeafElement"
 ///     }
 /// }
@@ -59,8 +59,8 @@ use crate::widget::erased::AnyWidget;
 /// let slot = RetainedChild::new(Leaf);
 ///
 /// // Both builds name the same retained element.
-/// assert_eq!(slot.build().debug_name(), "LeafElement");
-/// assert_eq!(slot.build().debug_name(), "LeafElement");
+/// assert_eq!(slot.build().name(), "LeafElement");
+/// assert_eq!(slot.build().name(), "LeafElement");
 /// ```
 pub struct RetainedChild(Rc<Slot>);
 
@@ -90,7 +90,7 @@ impl RetainedChild {
     /// produce an element.
     #[inline]
     pub fn new<W: Widget>(child: W) -> Self {
-        let debug_name = child.debug_name();
+        let debug_name = child.name();
         Self(Rc::new(Slot {
             widget: Cell::new(Some(child.boxed())),
             element: UnsafeCell::new(None),
@@ -132,7 +132,7 @@ impl RetainedChild {
 
     /// Returns the retained child's diagnostic name.
     #[inline]
-    pub fn debug_name(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         self.0.debug_name
     }
 }
@@ -179,9 +179,9 @@ impl Slot {
 struct RetainedChildElement(Rc<Slot>);
 
 impl Element for RetainedChildElement {
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         self.0
-            .with_element(|element| element.map(AnyElement::debug_name))
+            .with_element(|element| element.map(AnyElement::name))
             .unwrap_or("RetainedChild")
     }
 
@@ -211,7 +211,7 @@ mod tests {
     }
 
     impl Element for ProbeElement {
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "ProbeElement"
         }
 
@@ -226,7 +226,7 @@ mod tests {
             AnyElement::new(ProbeElement { rebuilds: 0 })
         }
 
-        fn debug_name(&self) -> &'static str {
+        fn name(&self) -> &'static str {
             "Probe"
         }
     }
@@ -259,8 +259,8 @@ mod tests {
         let address = slot.retained_address();
         let second = slot.build();
 
-        assert_eq!(first.debug_name(), "ProbeElement");
-        assert_eq!(second.debug_name(), "ProbeElement");
+        assert_eq!(first.name(), "ProbeElement");
+        assert_eq!(second.name(), "ProbeElement");
         assert_eq!(
             slot.retained_address(),
             address,
@@ -284,7 +284,7 @@ mod tests {
             builds: Rc::new(Cell::new(0)),
         });
 
-        assert_eq!(slot.debug_name(), "Probe");
+        assert_eq!(slot.name(), "Probe");
     }
 
     #[test]
@@ -296,6 +296,6 @@ mod tests {
         let mut placement = slot.build();
         placement.rebuild();
 
-        assert_eq!(placement.debug_name(), "ProbeElement");
+        assert_eq!(placement.name(), "ProbeElement");
     }
 }

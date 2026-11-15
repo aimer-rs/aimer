@@ -25,7 +25,7 @@ impl State<Root> for RootState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.updater.borrow_mut() = Some(this.updater());
         ImplicitAnimatedBuilder::new(
             this.target,

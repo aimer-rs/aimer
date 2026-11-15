@@ -217,7 +217,7 @@ impl State<Rebuilding> for RebuildingState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         *this.poke.borrow_mut() = Some(this.updater());
         let tapped = this.tapped.clone();
         let rows = Column::new().list(0..this.count).builder(move |&index| {

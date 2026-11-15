@@ -80,7 +80,7 @@ impl State<OpenedFilesExample> for OpenedFilesExampleState {
         OpenedFilesExampleState
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         PAGE.set(Some(this.updater()));
         let theme = ThemeData::copied(ctx);
         let line = |text: String, color, size| {

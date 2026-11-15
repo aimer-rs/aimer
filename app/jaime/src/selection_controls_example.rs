@@ -120,7 +120,7 @@ impl State<SelectionControlsExample> for SelectionControlsExampleState {
         SelectionControlsExampleState::initial()
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let reset_generation = this.reset_generation;
 
@@ -221,7 +221,7 @@ impl State<CheckboxSection> for CheckboxSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let checkbox_updater = this.updater();
         let checkbox_theme = app_theme;
@@ -349,7 +349,7 @@ impl State<SwitchSection> for SwitchSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let updater = this.updater();
         let switch = Switch::new()
@@ -408,7 +408,7 @@ impl State<RadioSection> for RadioSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let updater = this.updater();
         let radios = RadioGroup::new()
@@ -473,7 +473,7 @@ impl State<SelectSection> for SelectSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let updater = this.updater();
         let select = Select::new()
@@ -544,7 +544,7 @@ impl State<AutocompleteSection> for AutocompleteSectionState {
         self.reset_generation = new.reset_generation;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let app_theme = ThemeData::copied(ctx);
         let updater = this.updater();
         let autocomplete = Autocomplete::new()

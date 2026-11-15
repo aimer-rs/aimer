@@ -107,7 +107,7 @@ impl Widget for I18nExample {
             .to_element(ctx)
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "I18nExample"
     }
 }

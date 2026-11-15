@@ -129,7 +129,7 @@ impl State<CustomAnimatedThemeExample> for CustomAnimatedThemeExampleState {
         }
     }
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         let palette = &PALETTES[this.palette];
         AnimatedTheme::new()
             .adaptive(palette.light, palette.dark)

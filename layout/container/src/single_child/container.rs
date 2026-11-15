@@ -300,6 +300,22 @@ impl ContainerPaintState {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many times a container's geometry was derived, for tests that bound it.
+    static GEOMETRY_PASSES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn geometry_passes() -> u64 {
+    GEOMETRY_PASSES.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+fn reset_geometry_passes() {
+    GEOMETRY_PASSES.with(|passes| passes.set(0));
+}
+
 #[derive(Clone, Copy)]
 struct LocalV2ContainerGeometry {
     clip_origin: Vec2d,
@@ -429,8 +445,8 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
         }
 
         Some(ResolvedSize {
-            width: width.max(0.0),
-            height: height.max(0.0),
+            width: at_least_zero(width),
+            height: at_least_zero(height),
         })
     }
 
@@ -448,6 +464,8 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
     }
 
     fn local_v2_geometry(&self, ctx: &BuildContext) -> Option<LocalV2ContainerGeometry> {
+        #[cfg(test)]
+        GEOMETRY_PASSES.with(|passes| passes.set(passes.get() + 1));
         let scale = ctx.scale;
         let size = self.local_v2_paint_size(ctx)?;
         let (margin_left, margin_top, _, _) = self.margin(ctx);
@@ -460,16 +478,16 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
         let [border_left, border_top, border_right, border_bottom] =
             self.decoration_insets(width, height, scale);
         let clip_size = ResolvedSize {
-            width: (width - border_left - border_right).max(0.0),
-            height: (height - border_top - border_bottom).max(0.0),
+            width: at_least_zero(width - border_left - border_right),
+            height: at_least_zero(height - border_top - border_bottom),
         };
         let child_origin = Vec2d {
             x: margin_left + padding_left + border_left,
             y: margin_top + padding_top + border_top,
         };
         let content_size = ResolvedSize {
-            width: (clip_size.width - padding_left - padding_right).max(0.0),
-            height: (clip_size.height - padding_top - padding_bottom).max(0.0),
+            width: at_least_zero(clip_size.width - padding_left - padding_right),
+            height: at_least_zero(clip_size.height - padding_top - padding_bottom),
         };
         let clip = self.decoration().child_clip_radius(
             ResolvedSize {
@@ -478,9 +496,16 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
             },
             scale,
         );
-        let clip_radii = clip
-            .unwrap_or([0.0; 4])
-            .map(|radius| finite_nonnegative(radius) * scale);
+        // Written out rather than `[f32; 4]::map`: a debug build compiles the
+        // array `map` into a chain of non-inlined calls, and this runs for every
+        // container on every geometry query.
+        let [r0, r1, r2, r3] = clip.unwrap_or([0.0; 4]);
+        let clip_radii = [
+            finite_nonnegative(r0) * scale,
+            finite_nonnegative(r1) * scale,
+            finite_nonnegative(r2) * scale,
+            finite_nonnegative(r3) * scale,
+        ];
         Some(LocalV2ContainerGeometry {
             clip_origin: Vec2d {
                 x: margin_left + border_left,
@@ -511,6 +536,51 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
 
     fn local_v2_child_context<'a>(&self, ctx: &BuildContext<'a>) -> Option<BuildContext<'a>> {
         let geometry = self.local_v2_geometry(ctx)?;
+        Some(self.local_v2_child_context_in(ctx, &geometry))
+    }
+
+    /// The child's render bounds and clip, local to this container, from geometry
+    /// and a child context the caller already derived.
+    fn placed_child_geometry(
+        &self,
+        scale: f32,
+        child: &dyn Element,
+        geometry: &LocalV2ContainerGeometry,
+        child_ctx: &BuildContext<'_>,
+    ) -> (
+        aimer_cupid::draw_cmd::Rect,
+        Option<aimer_cupid::draw_cmd::Rect>,
+    ) {
+        let child_size = child.content_size(child_ctx);
+        let position = child.pos().unwrap_or_default();
+        let x = geometry.child_origin.x + position.x;
+        let y = geometry.child_origin.y + position.y;
+        let bounds = aimer_cupid::draw_cmd::Rect::new(
+            x / scale,
+            y / scale,
+            child_size.width / scale,
+            child_size.height / scale,
+        );
+        let clip = aimer_cupid::draw_cmd::Rect::new(
+            (geometry.clip_origin.x - x) / scale,
+            (geometry.clip_origin.y - y) / scale,
+            render_extent(geometry.clip_size.width, scale) / scale,
+            render_extent(geometry.clip_size.height, scale) / scale,
+        );
+        let clip = geometry.clips_child.then_some(clip);
+        let clip = match (clip, child.retained_clip(child_ctx)) {
+            (Some(clip), Some(child_clip)) => Some(intersect_retained_clip(clip, child_clip)),
+            (clip, child_clip) => clip.or(child_clip),
+        };
+        (bounds, clip)
+    }
+
+    /// The child's context from geometry the caller already derived.
+    fn local_v2_child_context_in<'a>(
+        &self,
+        ctx: &BuildContext<'a>,
+        geometry: &LocalV2ContainerGeometry,
+    ) -> BuildContext<'a> {
         let mut child_ctx = ctx.clone();
         child_ctx.set_paint_background(self.child_paint_background(ctx));
         child_ctx.box_constraint.max_width = geometry.content_size.width;
@@ -524,14 +594,44 @@ impl<E: Element, D: Decoration> RawContainer<E, D> {
                 height,
             )
         }));
-        Some(child_ctx)
+        child_ctx
     }
 }
 
+/// The child clip's corner radii in logical pixels, as the render tree takes them.
+///
+/// Written out rather than `[f32; 4]::map`, which a debug build compiles into a
+/// chain of calls.
 #[inline]
+fn logical_clip_radii(geometry: &LocalV2ContainerGeometry, scale: f32) -> [f32; 4] {
+    let [r0, r1, r2, r3] = geometry.clip_radii;
+    [
+        (r0 / scale).min(LOCAL_V2_CONTAINER_EXTENT_LIMIT),
+        (r1 / scale).min(LOCAL_V2_CONTAINER_EXTENT_LIMIT),
+        (r2 / scale).min(LOCAL_V2_CONTAINER_EXTENT_LIMIT),
+        (r3 / scale).min(LOCAL_V2_CONTAINER_EXTENT_LIMIT),
+    ]
+}
+
+/// `value.max(0.0)` without the call a debug build makes for `f32::max`.
+///
+/// A NaN fails the comparison and so becomes `0.0`, exactly as `f32::max` returns
+/// its non-NaN operand.
+#[inline(always)]
+fn at_least_zero(value: f32) -> f32 {
+    if value > 0.0 { value } else { 0.0 }
+}
+
+/// Returns `value` when it is a finite, positive number, and `0.0` for zero,
+/// negatives, infinities and NaN.
+///
+/// Spelled as comparisons because `f32::is_finite` and `f32::max` are real calls
+/// in a debug build, and this runs several times per container per geometry
+/// query. A NaN fails both comparisons, so it lands on `0.0` as before.
+#[inline(always)]
 fn finite_nonnegative(value: f32) -> f32 {
-    if value.is_finite() {
-        value.max(0.0)
+    if value > 0.0 && value < f32::INFINITY {
+        value
     } else {
         0.0
     }
@@ -664,16 +764,19 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
 
     fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         let size = self.local_v2_paint_size(ctx)?;
-        let mut outsets = self
-            .decoration()
-            .paint_outsets(
-                ResolvedSize {
-                    width: render_extent(size.width, ctx.scale) / ctx.scale,
-                    height: render_extent(size.height, ctx.scale) / ctx.scale,
-                },
-                ctx.scale,
-            )
-            .map(finite_nonnegative);
+        let [o0, o1, o2, o3] = self.decoration().paint_outsets(
+            ResolvedSize {
+                width: render_extent(size.width, ctx.scale) / ctx.scale,
+                height: render_extent(size.height, ctx.scale) / ctx.scale,
+            },
+            ctx.scale,
+        );
+        let mut outsets = [
+            finite_nonnegative(o0),
+            finite_nonnegative(o1),
+            finite_nonnegative(o2),
+            finite_nonnegative(o3),
+        ];
 
         // The render node is as large as the container's content, but the
         // decoration is painted over the whole box: padding, border and the
@@ -709,10 +812,31 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         if !std::ptr::eq(child, &self.child as &dyn Element) {
             return [0.0; 4];
         }
-        self.local_v2_geometry(ctx).map_or([0.0; 4], |geometry| {
-            geometry
-                .clip_radii
-                .map(|radius| (radius / ctx.scale).min(LOCAL_V2_CONTAINER_EXTENT_LIMIT))
+        let Some(geometry) = self.local_v2_geometry(ctx) else {
+            return [0.0; 4];
+        };
+        logical_clip_radii(&geometry, ctx.scale)
+    }
+
+    fn child_placement_at<'a>(
+        &self,
+        ctx: &BuildContext<'a>,
+        child: &dyn Element,
+        _child_index: usize,
+    ) -> Option<aimer_widget::ChildPlacement<'a>> {
+        if !std::ptr::eq(child, &self.child as &dyn Element) {
+            return None;
+        }
+        // One derivation of the geometry serves the context, the bounds and the
+        // clip radius, which the three separate hooks each derive again. The
+        // context comes first because measuring the child below reads it.
+        let geometry = self.local_v2_geometry(ctx)?;
+        let context = self.local_v2_child_context_in(ctx, &geometry);
+        let placed = self.placed_child_geometry(ctx.scale, child, &geometry, &context);
+        Some(aimer_widget::ChildPlacement {
+            context,
+            geometry: Some(placed),
+            clip_radius: logical_clip_radii(&geometry, ctx.scale),
         })
     }
 
@@ -727,31 +851,9 @@ impl<T: Element, D: Decoration> Drawable for RawContainer<T, D> {
         if !std::ptr::eq(child, &self.child as &dyn Element) {
             return None;
         }
-        let scale = ctx.scale;
         let geometry = self.local_v2_geometry(ctx)?;
-        let child_ctx = self.local_v2_child_context(ctx)?;
-        let child_size = child.content_size(&child_ctx);
-        let position = child.pos().unwrap_or_default();
-        let x = geometry.child_origin.x + position.x;
-        let y = geometry.child_origin.y + position.y;
-        let bounds = aimer_cupid::draw_cmd::Rect::new(
-            x / scale,
-            y / scale,
-            child_size.width / scale,
-            child_size.height / scale,
-        );
-        let clip = aimer_cupid::draw_cmd::Rect::new(
-            (geometry.clip_origin.x - x) / scale,
-            (geometry.clip_origin.y - y) / scale,
-            render_extent(geometry.clip_size.width, scale) / scale,
-            render_extent(geometry.clip_size.height, scale) / scale,
-        );
-        let clip = geometry.clips_child.then_some(clip);
-        let clip = match (clip, child.retained_clip(&child_ctx)) {
-            (Some(clip), Some(child_clip)) => Some(intersect_retained_clip(clip, child_clip)),
-            (clip, child_clip) => clip.or(child_clip),
-        };
-        Some((bounds, clip))
+        let child_ctx = self.local_v2_child_context_in(ctx, &geometry);
+        Some(self.placed_child_geometry(ctx.scale, child, &geometry, &child_ctx))
     }
 
     #[inline]

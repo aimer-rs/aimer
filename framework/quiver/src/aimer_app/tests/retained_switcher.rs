@@ -67,7 +67,7 @@ impl State<ImagePage> for ImagePageState {
     }
 
 
-    fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
         this.updater.set(Some(this.updater()));
         aimer_container::Container::new().height(80.0).child(
             AnimatedSwitcher::new(

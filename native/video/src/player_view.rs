@@ -209,7 +209,7 @@ impl State<VideoPlayerView> for VideoPlayerViewState {
         self.config = new.config;
     }
 
-    fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+    fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let config = &this.config;
         let mut layers = Stack::new();
         if let Some(player) = config.player.clone() {
@@ -277,7 +277,7 @@ impl Widget for VideoPlayerView {
         StatefulElement::new_with_name::<Self, VideoPlayerViewState>(self, ctx, "VideoPlayerView", None).0.boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "VideoPlayerView"
     }
 }

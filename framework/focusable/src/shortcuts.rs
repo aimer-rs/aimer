@@ -129,7 +129,7 @@ impl<W: Widget + 'static> Widget for Shortcuts<W> {
         RawShortcuts { scope: self.scope, child: self.child.to_element(ctx) }.boxed()
     }
 
-    fn debug_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Shortcuts"
     }
 }

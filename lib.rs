@@ -2253,7 +2253,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 }
             }
 
-            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 let zone_updater = this.updater();
                 let presses = this.presses.clone();
                 let resizes = this.resizes.clone();
@@ -2478,7 +2478,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 MODE.replace(Some(updater));
             }
 
-            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 AnimatedTheme::new()
                     .mode(this.mode)
                     .duration(TRANSITION)
@@ -2493,7 +2493,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                     .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "ThemeSwitch"
             }
         }
@@ -2956,7 +2956,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 THEME.replace(Some(updater));
             }
 
-            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 AnimatedTheme::new()
                     .data(if this.dark {
                         ThemeData::dark()
@@ -2976,7 +2976,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                     .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "AppShell"
             }
         }
@@ -3013,7 +3013,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "ThemedFrame"
             }
         }
@@ -3059,7 +3059,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "BlogListPage"
             }
         }
@@ -3109,7 +3109,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "LearnPage"
             }
         }
@@ -3146,7 +3146,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "Marker"
             }
         }
@@ -3429,7 +3429,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 THEME.replace(Some(updater));
             }
 
-            fn build(this: &StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
                 AnimatedTheme::new()
                     .data(if this.dark {
                         ThemeData::dark()
@@ -3449,7 +3449,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                     .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "AppShell"
             }
         }
@@ -3486,7 +3486,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "ThemedFrame"
             }
         }
@@ -3506,7 +3506,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _updater: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
                 let theme = ThemeData::of(ctx);
                 Container::new().color(theme.background_color).child(
                     Scrollable::new().axis(ScrollAxis::Vertical).child(
@@ -3530,7 +3530,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                     .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "HomePage"
             }
         }
@@ -3554,7 +3554,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 }
             }
 
-            fn build(this: &StateView<Self>, ctx: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
                 let theme = ThemeData::of(ctx);
                 let index = this.current_index;
                 // The real section hands this same clone to its buttons' callback, so a
@@ -3592,7 +3592,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                     .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "SelectionSection"
             }
         }
@@ -3620,7 +3620,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                 .boxed()
             }
 
-            fn debug_name(&self) -> &'static str {
+            fn name(&self) -> &'static str {
                 "Marker"
             }
         }
@@ -3909,7 +3909,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
                 Text::new(this.0.to_string())
             }
         }
@@ -3933,7 +3933,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
                 Text::new(this.0.to_string())
             }
         }
@@ -4005,7 +4005,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
                 Text::new(format!("{}", this.count))
             }
         }
@@ -4046,7 +4046,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
                 Text::new(this.0.to_string())
             }
         }
@@ -4069,7 +4069,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
                 Text::new(this.0.to_string())
             }
         }
@@ -4093,7 +4093,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
                 Text::new(this.greeting.clone())
             }
         }
@@ -4117,7 +4117,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
                 Text::new(this.shown.clone())
             }
         }
@@ -4136,7 +4136,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
 
             fn on_mount(&mut self, _: StateUpdater<Self>) {}
 
-            fn build(this: &StateView<Self>, _: &BuildContext) -> impl Widget {
+            fn build(this: StateView<Self>, _: &BuildContext) -> impl Widget {
                 Text::new(if this.0 { "yes" } else { "no" })
             }
         }
@@ -4188,7 +4188,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             let greeting = Greeting {
                 name: "aimer".to_string(),
             };
-            assert_eq!(Widget::debug_name(&greeting), "Greeting");
+            assert_eq!(Widget::name(&greeting), "Greeting");
             assert!(Widget::key(&greeting).is_none());
         }
 
@@ -4206,7 +4206,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             assert_widget::<Counter>();
 
             let counter = Counter { initial_count: 7 };
-            assert_eq!(Widget::debug_name(&counter), "Counter");
+            assert_eq!(Widget::name(&counter), "Counter");
             assert_eq!(counter.create_state::<CounterState>().count, 7);
         }
 
@@ -4217,7 +4217,7 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             let greeter = Greeter {
                 name: "aimer".to_string(),
             };
-            assert_eq!(Widget::debug_name(&greeter), "Greeter");
+            assert_eq!(Widget::name(&greeter), "Greeter");
             assert_eq!(
                 greeter.create_state::<GreeterState>().greeting,
                 "hello aimer"
@@ -4316,11 +4316,11 @@ use aimer_grid::{Grid, GridItem, GridTrack};
                     name: "john".to_string()
                 })
             );
+            // `Widget::name` is also in scope for a routed widget, so name the trait.
             assert_eq!(
-                AppRoute::Profile {
+                aimer_router::Route::name(&AppRoute::Profile {
                     name: "john".to_string()
-                }
-                .name(),
+                }),
                 Some("profile")
             );
         }
