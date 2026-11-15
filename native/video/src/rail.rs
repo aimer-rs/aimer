@@ -123,8 +123,10 @@ impl EventElement for RawRail {
     }
 }
 
-impl VisitorElement for RawRail {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawRail {}
+
+impl Element for RawRail {
+    fn name(&self) -> &'static str {
         "VideoRail"
     }
 }

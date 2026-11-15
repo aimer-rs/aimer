@@ -61,8 +61,10 @@ impl EventElement for RawFrameWatch {
     }
 }
 
-impl VisitorElement for RawFrameWatch {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawFrameWatch {}
+
+impl Element for RawFrameWatch {
+    fn name(&self) -> &'static str {
         "FrameWatch"
     }
 }

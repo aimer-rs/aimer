@@ -267,8 +267,10 @@ impl EventElement for RawVideo {
     }
 }
 
-impl VisitorElement for RawVideo {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawVideo {}
+
+impl Element for RawVideo {
+    fn name(&self) -> &'static str {
         "Video"
     }
 }

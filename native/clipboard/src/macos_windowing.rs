@@ -5,6 +5,9 @@ use std::rc::Rc;
 
 use winit::window::{Window, WindowAttributes};
 
+#[cfg(target_os = "macos")]
+mod traffic_lights;
+
 type WindowCreated = Box<dyn for<'window> FnOnce(MacosWindowHandle<'window>)>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -137,6 +140,10 @@ pub struct MacosWindowing {
     window_drag: Option<(f32, f32)>,
     #[cfg(any(target_os = "macos", test))]
     traffic_light_layout_state: TrafficLightLayoutState,
+    /// Keeps the traffic lights in place while AppKit lays the titlebar out;
+    /// belongs to the one window this was created for.
+    #[cfg(target_os = "macos")]
+    traffic_light_keeper: Option<traffic_lights::TrafficLightKeeper>,
     on_created: Option<WindowCreated>,
 }
 
@@ -160,6 +167,8 @@ impl MacosWindowing {
             window_drag: None,
             #[cfg(any(target_os = "macos", test))]
             traffic_light_layout_state: TrafficLightLayoutState::default(),
+            #[cfg(target_os = "macos")]
+            traffic_light_keeper: None,
             on_created: None,
         }
     }
@@ -323,6 +332,8 @@ impl MacosWindowing {
             drag_band: None,
             window_drag: None,
             traffic_light_layout_state: TrafficLightLayoutState::default(),
+            #[cfg(target_os = "macos")]
+            traffic_light_keeper: None,
             on_created: None,
         }
     }
@@ -489,6 +500,9 @@ impl MacosWindowing {
         let traffic_light_height = self
             .traffic_light_position
             .and_then(|position| apply_traffic_light_position(&native_window, position));
+        self.traffic_light_keeper = self
+            .traffic_light_position
+            .and_then(|position| traffic_lights::TrafficLightKeeper::watch(&native_window, position));
         if self.framework_owns_titlebar_drag() {
             // AppKit would move the window for any press in the titlebar strip,
             // whatever the application did with it. With dragging off, the press
@@ -585,6 +599,10 @@ fn apply_traffic_light_position(
     use objc2_app_kit::NSWindowButton;
     use objc2_foundation::NSPoint;
 
+    // The full-screen titlebar is AppKit's; see `is_full_screen`.
+    if traffic_lights::is_full_screen(window) {
+        return None;
+    }
     let close = window.standardWindowButton(NSWindowButton::CloseButton)?;
     let minimize = window.standardWindowButton(NSWindowButton::MiniaturizeButton)?;
     let zoom = window.standardWindowButton(NSWindowButton::ZoomButton)?;
@@ -610,23 +628,21 @@ fn apply_traffic_light_position(
         ],
     );
 
+    // Only what differs is written: every write posts a frame change, which
+    // the keeper answers by placing the buttons again.
     let mut titlebar_frame = titlebar_view.frame();
-    titlebar_frame.size.height = layout.titlebar_height;
-    titlebar_frame.origin.y = layout.titlebar_y;
-    titlebar_view.setFrame(titlebar_frame);
+    if titlebar_frame.size.height != layout.titlebar_height || titlebar_frame.origin.y != layout.titlebar_y {
+        titlebar_frame.size.height = layout.titlebar_height;
+        titlebar_frame.origin.y = layout.titlebar_y;
+        titlebar_view.setFrame(titlebar_frame);
+    }
 
-    close.setFrameOrigin(NSPoint {
-        x: layout.button_origins[0].0,
-        y: layout.button_origins[0].1,
-    });
-    minimize.setFrameOrigin(NSPoint {
-        x: layout.button_origins[1].0,
-        y: layout.button_origins[1].1,
-    });
-    zoom.setFrameOrigin(NSPoint {
-        x: layout.button_origins[2].0,
-        y: layout.button_origins[2].1,
-    });
+    for (button, origin) in [(&close, layout.button_origins[0]), (&minimize, layout.button_origins[1]), (&zoom, layout.button_origins[2])] {
+        let current = button.frame().origin;
+        if current.x != origin.0 || current.y != origin.1 {
+            button.setFrameOrigin(NSPoint { x: origin.0, y: origin.1 });
+        }
+    }
     Some(layout.titlebar_height)
 }
 
