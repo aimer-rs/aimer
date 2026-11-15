@@ -27,8 +27,10 @@ struct FixedElement {
     size: Fixed,
 }
 
-impl VisitorElement for FixedElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for FixedElement {}
+
+impl Element for FixedElement {
+    fn name(&self) -> &'static str {
         "Fixed"
     }
 }
@@ -132,8 +134,10 @@ struct CountedElement {
     measured: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for CountedElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for CountedElement {}
+
+impl Element for CountedElement {
+    fn name(&self) -> &'static str {
         "Counted"
     }
 }

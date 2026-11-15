@@ -41,11 +41,14 @@ struct CapturedElement {
     snapshot: Rc<RefCell<Snapshot>>,
 }
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedMultiDecorationBox"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str {
+        "CapturedMultiDecorationBox"
     }
 }
 impl EventElement for CapturedElement {}
@@ -93,7 +96,7 @@ fn collect_elements(
     checkboxes: &mut Vec<Rect>,
     text_ids: &mut Vec<ElementId>,
 ) {
-    if element.debug_name() == "GestureDetector" {
+    if element.name() == "GestureDetector" {
         let (start, end) = element
             .pos_start_end()
             .expect("visible checkbox interaction bounds");
@@ -104,7 +107,7 @@ fn collect_elements(
             end.y - start.y,
         ));
     }
-    if element.debug_name() == "RawTextWidget" {
+    if element.name() == "RawTextWidget" {
         text_ids.push(element.id());
     }
     element.visit_children(&mut |child| collect_elements(child, checkboxes, text_ids));

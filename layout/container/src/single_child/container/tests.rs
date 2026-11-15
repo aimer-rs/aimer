@@ -6,7 +6,7 @@ use super::*;
 use crate::SizedBox;
 use aimer_cupid::render_list::DrawCommand;
 use aimer_widget::base::WindowHandle;
-use aimer_widget::{Drawable, EventElement, LayoutElement, Rebuildable, VisitorElement};
+use aimer_widget::{Drawable, EventElement, LayoutElement, Rebuildable, Element, VisitorElement};
 
 #[tokio::test]
 async fn container_accepts_a_backdrop_decoration_without_changing_layout() {
@@ -63,8 +63,10 @@ impl EventElement for DrawProbe {}
 impl LayoutElement for DrawProbe {}
 impl Rebuildable for DrawProbe {}
 
-impl VisitorElement for DrawProbe {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for DrawProbe {}
+
+impl Element for DrawProbe {
+    fn name(&self) -> &'static str {
         "DrawProbe"
     }
 }
@@ -79,8 +81,10 @@ impl EventElement for PaintStableProbe {}
 impl LayoutElement for PaintStableProbe {}
 impl Rebuildable for PaintStableProbe {}
 
-impl VisitorElement for PaintStableProbe {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for PaintStableProbe {}
+
+impl Element for PaintStableProbe {
+    fn name(&self) -> &'static str {
         "PaintStableProbe"
     }
 }
@@ -109,8 +113,10 @@ impl LayoutElement for ParentSizeProbe {
     }
 }
 
-impl VisitorElement for ParentSizeProbe {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ParentSizeProbe {}
+
+impl Element for ParentSizeProbe {
+    fn name(&self) -> &'static str {
         "ParentSizeProbe"
     }
 }

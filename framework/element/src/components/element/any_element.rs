@@ -25,6 +25,9 @@ pub struct AnyElement(Rubick<dyn Element, 4>);
 impl AnyElement {
     /// Erases `element`, giving it a fresh [`ElementId`](super::ElementId).
     ///
+    /// An element that is already an `AnyElement` is returned unchanged, with
+    /// the id it already has.
+    ///
     /// This is what [`Element::boxed`] calls; it exists so an element can be
     /// erased without importing the trait.
     #[inline]

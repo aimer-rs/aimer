@@ -172,7 +172,7 @@ impl Scene {
                 .render_node_for_element(element.id())
                 .and_then(|node| app.app.render_tree().element_bounds(node).ok())
                 .map(|r| (r.x, r.y, r.width, r.height));
-            out.push((element.debug_name(), bounds));
+            out.push((element.name(), bounds));
             element.visit_retained_children(&mut |_, child| walk(child, app, out));
         }
         let mut out = Vec::new();
@@ -571,7 +571,7 @@ fn owners_that_take_turns_rebuilding_all_stay_cheap() {
 /// The revision of the draw list of the first element called `name`'s child.
 fn child_revision(scene: &Scene, name: &str, nth: usize) -> u64 {
     fn collect<'a>(element: &'a dyn Element, name: &str, out: &mut Vec<&'a dyn Element>) {
-        if element.debug_name() == name {
+        if element.name() == name {
             out.push(element);
         }
         element.visit_children(&mut |child| collect(child, name, out));
@@ -630,7 +630,7 @@ fn a_scoped_state_frame_re_records_paint_below_the_rebuilt_root() {
     // The root of the rebuild is the column; its first swatch is what changes.
     fn swatch_revision(scene: &Scene) -> u64 {
         fn collect<'a>(element: &'a dyn Element, out: &mut Vec<&'a dyn Element>) {
-            if element.debug_name() == "ScopedBox" {
+            if element.name() == "ScopedBox" {
                 out.push(element);
             }
             element.visit_children(&mut |child| collect(child, out));

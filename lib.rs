@@ -1038,8 +1038,10 @@ mod tests {
             }
         }
 
-        impl VisitorElement for PositionProbeElement {
-            fn debug_name(&self) -> &'static str {
+        impl VisitorElement for PositionProbeElement {}
+
+        impl Element for PositionProbeElement {
+            fn name(&self) -> &'static str {
                 "PositionProbe"
             }
         }
@@ -1254,8 +1256,10 @@ use aimer_grid::{Grid, GridItem, GridTrack};
         impl LayoutElement for SizeProbeElement {}
         impl Rebuildable for SizeProbeElement {}
 
-        impl VisitorElement for SizeProbeElement {
-            fn debug_name(&self) -> &'static str {
+        impl VisitorElement for SizeProbeElement {}
+
+        impl Element for SizeProbeElement {
+            fn name(&self) -> &'static str {
                 "SizeProbe"
             }
         }
@@ -3156,8 +3160,10 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 visitor(self.child.as_ref());
             }
+        }
 
-            fn debug_name(&self) -> &'static str {
+        impl Element for MarkerElement {
+            fn name(&self) -> &'static str {
                 "Marker"
             }
         }
@@ -3628,8 +3634,10 @@ use aimer_grid::{Grid, GridItem, GridTrack};
             fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 visitor(self.child.as_ref());
             }
+        }
 
-            fn debug_name(&self) -> &'static str {
+        impl Element for MarkerElement {
+            fn name(&self) -> &'static str {
                 "Marker"
             }
         }

@@ -288,9 +288,6 @@ impl VisitorElement for TraversalElement {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "PhaseTraversalElement"
-    }
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
@@ -302,6 +299,12 @@ impl VisitorElement for TraversalElement {
         for child in self.children.iter().rev() {
             visitor(child.as_ref());
         }
+    }
+}
+
+impl Element for TraversalElement {
+    fn name(&self) -> &'static str {
+        "PhaseTraversalElement"
     }
 }
 

@@ -896,9 +896,6 @@ impl VisitorElement for RawGrid {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Grid"
-    }
 
     /// The event and visual child views expose the same grid-item children.
     #[inline]
@@ -949,6 +946,12 @@ impl VisitorElement for RawGrid {
                 visitor(item.child.as_ref());
             }
         }
+    }
+}
+
+impl Element for RawGrid {
+    fn name(&self) -> &'static str {
+        "Grid"
     }
 }
 
@@ -1096,8 +1099,10 @@ mod tests {
         }
     }
     impl Rebuildable for HitTestChild {}
-    impl VisitorElement for HitTestChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for HitTestChild {}
+
+    impl Element for HitTestChild {
+        fn name(&self) -> &'static str {
             "HitTestChild"
         }
     }
@@ -1116,8 +1121,10 @@ mod tests {
         }
     }
     impl Rebuildable for WorkRecorder {}
-    impl VisitorElement for WorkRecorder {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for WorkRecorder {}
+
+    impl Element for WorkRecorder {
+        fn name(&self) -> &'static str {
             "WorkRecorder"
         }
     }
@@ -1138,8 +1145,10 @@ mod tests {
         }
     }
     impl Rebuildable for VisibleRectRecorder {}
-    impl VisitorElement for VisibleRectRecorder {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for VisibleRectRecorder {}
+
+    impl Element for VisibleRectRecorder {
+        fn name(&self) -> &'static str {
             "VisibleRectRecorder"
         }
     }

@@ -285,16 +285,18 @@ impl<T: Animatable + Clone + PartialEq + 'static> Drawable for ImplicitAnimatedE
 }
 
 impl<T: Animatable + Clone + PartialEq + 'static> VisitorElement for ImplicitAnimatedElement<T> {
-    fn debug_name(&self) -> &'static str {
-        "ImplicitAnimatedElement"
-    }
-
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(unsafe { &*self.child.get() }.as_ref());
     }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(unsafe { &*self.child.get() }.as_ref());
+    }
+}
+
+impl<T: Animatable + Clone + PartialEq + 'static> Element for ImplicitAnimatedElement<T> {
+    fn name(&self) -> &'static str {
+        "ImplicitAnimatedElement"
     }
 }
 
@@ -368,8 +370,10 @@ mod tests {
 
     impl Rebuildable for TestElement {}
 
-    impl VisitorElement for TestElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestElement {}
+
+    impl Element for TestElement {
+        fn name(&self) -> &'static str {
             "TestElement"
         }
     }
@@ -411,8 +415,10 @@ mod tests {
 
     impl LayoutElement for RecordingElement {}
 
-    impl VisitorElement for RecordingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for RecordingElement {}
+
+    impl Element for RecordingElement {
+        fn name(&self) -> &'static str {
             "RecordingElement"
         }
     }

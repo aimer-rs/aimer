@@ -326,12 +326,15 @@ impl VisitorElement for AnimatedBuilderElement {
         visitor(unsafe { &*self.child.get() }.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "AnimatedBuilderElement"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(unsafe { &*self.child.get() }.as_ref());
+    }
+}
+
+impl Element for AnimatedBuilderElement {
+    fn name(&self) -> &'static str {
+        "AnimatedBuilderElement"
     }
 }
 

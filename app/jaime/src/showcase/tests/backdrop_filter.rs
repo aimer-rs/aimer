@@ -30,11 +30,14 @@ struct CapturedElement {
     paints: Paints,
 }
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedBackdropFilter"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str {
+        "CapturedBackdropFilter"
     }
 }
 impl EventElement for CapturedElement {}

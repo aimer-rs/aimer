@@ -326,9 +326,6 @@ impl VisitorElement for AnimatedPaintElement {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "AnimatedPaintElement"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         if !self.inert {
@@ -345,6 +342,12 @@ impl VisitorElement for AnimatedPaintElement {
         if !self.inert {
             visitor(self.child.as_ref());
         }
+    }
+}
+
+impl Element for AnimatedPaintElement {
+    fn name(&self) -> &'static str {
+        "AnimatedPaintElement"
     }
 }
 
@@ -490,8 +493,10 @@ mod tests {
 
     impl Rebuildable for StableElement {}
 
-    impl VisitorElement for StableElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for StableElement {}
+
+    impl Element for StableElement {
+        fn name(&self) -> &'static str {
             "StableElement"
         }
     }

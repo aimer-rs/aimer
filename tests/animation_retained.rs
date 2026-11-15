@@ -60,8 +60,10 @@ impl Widget for Swatch {
     }
 }
 
-impl VisitorElement for Swatch {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for Swatch {}
+
+impl Element for Swatch {
+    fn name(&self) -> &'static str {
         "Swatch"
     }
 }

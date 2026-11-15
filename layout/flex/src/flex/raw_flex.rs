@@ -1260,9 +1260,6 @@ impl VisitorElement for RawFlex {
         self.children.visit(visitor);
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.debug_name
-    }
 
     /// The event and visual child views are the same retained source.
     #[inline]
@@ -1331,6 +1328,12 @@ impl VisitorElement for RawFlex {
         visitor: &mut dyn FnMut(&'a dyn Element),
     ) {
         self.visit_painted_children_at(pos, true, visitor);
+    }
+}
+
+impl Element for RawFlex {
+    fn name(&self) -> &'static str {
+        self.debug_name
     }
 }
 

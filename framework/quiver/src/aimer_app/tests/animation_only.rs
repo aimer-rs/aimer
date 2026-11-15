@@ -31,8 +31,10 @@ struct ProbeElement {
     updates: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for ProbeElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ProbeElement {}
+
+impl Element for ProbeElement {
+    fn name(&self) -> &'static str {
         "AnimationOnlyProbe"
     }
 }
@@ -90,7 +92,7 @@ fn looping() -> AnimationController {
 /// The rotation the spinner's render node shows, as (cos, |sin|) of its angle.
 fn shown_rotation<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> (f32, f32) {
     fn find<'a>(element: &'a dyn Element) -> Option<&'a dyn Element> {
-        if element.debug_name() == "RotationTransitionElement" {
+        if element.name() == "RotationTransitionElement" {
             return Some(element);
         }
         let mut found = None;
@@ -328,7 +330,7 @@ fn paint_page(controller: AnimationController, updates: Rc<Cell<usize>>) -> impl
 /// The opacity the child of the `AnimatedPaint` is shown with.
 fn shown_paint_opacity<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> f32 {
     fn find<'a>(element: &'a dyn Element) -> Option<&'a dyn Element> {
-        if element.debug_name() == "AnimatedPaintElement" {
+        if element.name() == "AnimatedPaintElement" {
             return Some(element);
         }
         let mut found = None;
@@ -458,7 +460,7 @@ fn an_animated_builder_keeps_rebuilding_for_as_long_as_it_animates() {
 }
 
 fn find_element<'a>(element: &'a dyn Element, name: &str) -> Option<&'a dyn Element> {
-    if element.debug_name() == name {
+    if element.name() == name {
         return Some(element);
     }
     let mut found = None;

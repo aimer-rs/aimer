@@ -267,8 +267,10 @@ mod tests {
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(&self.child);
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for FirstFieldWrapper {
+        fn name(&self) -> &'static str {
             "FirstFieldWrapper"
         }
     }
@@ -397,12 +399,14 @@ mod tests {
     }
 
     impl VisitorElement for StateLeaf {
-        fn debug_name(&self) -> &'static str {
-            "StateLeaf"
-        }
-
         fn reconciliation_key(&self) -> Option<&crate::Key> {
             self.key.as_ref()
+        }
+    }
+
+    impl Element for StateLeaf {
+        fn name(&self) -> &'static str {
+            "StateLeaf"
         }
     }
 
@@ -439,8 +443,10 @@ mod tests {
                 visitor(child.as_ref());
             }
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for Branch {
+        fn name(&self) -> &'static str {
             "Branch"
         }
     }

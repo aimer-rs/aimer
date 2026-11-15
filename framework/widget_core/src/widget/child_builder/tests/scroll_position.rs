@@ -7,8 +7,10 @@ struct ScrollLeaf {
     events: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for ScrollLeaf {
-    fn debug_name(&self) -> &'static str { "ScrollLeaf" }
+impl VisitorElement for ScrollLeaf {}
+
+impl Element for ScrollLeaf {
+    fn name(&self) -> &'static str { "ScrollLeaf" }
 }
 impl Rebuildable for ScrollLeaf {}
 impl Drawable for ScrollLeaf {}
@@ -46,10 +48,13 @@ impl Widget for ScrollPage {
 
 struct ScrollPageElement { children: [AnyElement; 2] }
 impl VisitorElement for ScrollPageElement {
-    fn debug_name(&self) -> &'static str { "ScrollPage" }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children { visitor(child.as_ref()); }
     }
+}
+
+impl Element for ScrollPageElement {
+    fn name(&self) -> &'static str { "ScrollPage" }
 }
 impl Rebuildable for ScrollPageElement {}
 impl Drawable for ScrollPageElement {}

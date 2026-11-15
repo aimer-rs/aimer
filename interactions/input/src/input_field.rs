@@ -1563,7 +1563,7 @@ mod focus_tests {
     fn focus_targets(root: &AnyElement) -> Vec<&'static str> {
         fn walk(element: &dyn Element, names: &mut Vec<&'static str>) {
             if element.focus_node().is_some() {
-                names.push(VisitorElement::debug_name(element));
+                names.push(Element::name(element));
             }
             element.focus_children(&mut |child| walk(child, names));
         }

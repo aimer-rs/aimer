@@ -133,8 +133,10 @@ fn probe_fill(ctx: &BuildContext, color: Color) {
     canvas.finish();
 }
 
-impl VisitorElement for StaticProbeElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for StaticProbeElement {}
+
+impl Element for StaticProbeElement {
+    fn name(&self) -> &'static str {
         "StaticProbeElement"
     }
 }
@@ -194,8 +196,10 @@ impl Drawable for DynamicProbeElement {
     }
 }
 
-impl VisitorElement for DynamicProbeElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for DynamicProbeElement {}
+
+impl Element for DynamicProbeElement {
+    fn name(&self) -> &'static str {
         "DynamicProbeElement"
     }
 }

@@ -80,8 +80,10 @@ mod tests {
     }
 
     impl Rebuildable for MeasuredPositionedChild {}
-    impl VisitorElement for MeasuredPositionedChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for MeasuredPositionedChild {}
+
+    impl Element for MeasuredPositionedChild {
+        fn name(&self) -> &'static str {
             "MeasuredPositionedChild"
         }
     }
@@ -528,8 +530,10 @@ mod tests {
         seen: Rc<Cell<f32>>,
     }
 
-    impl VisitorElement for MainAxisProbe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for MainAxisProbe {}
+
+    impl Element for MainAxisProbe {
+        fn name(&self) -> &'static str {
             "MainAxisProbe"
         }
     }
@@ -561,8 +565,10 @@ mod tests {
         seen: Rc<Cell<f32>>,
     }
 
-    impl VisitorElement for IntrinsicProbe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for IntrinsicProbe {}
+
+    impl Element for IntrinsicProbe {
+        fn name(&self) -> &'static str {
             "IntrinsicProbe"
         }
     }
@@ -594,8 +600,10 @@ mod tests {
         drawn_width: Rc<Cell<f32>>,
     }
 
-    impl VisitorElement for ConstraintSensitiveProbe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for ConstraintSensitiveProbe {}
+
+    impl Element for ConstraintSensitiveProbe {
+        fn name(&self) -> &'static str {
             "ConstraintSensitiveProbe"
         }
     }
@@ -632,8 +640,10 @@ mod tests {
         drawn_height: Rc<Cell<f32>>,
     }
 
-    impl VisitorElement for ConstraintSensitiveColumnProbe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for ConstraintSensitiveColumnProbe {}
+
+    impl Element for ConstraintSensitiveColumnProbe {
+        fn name(&self) -> &'static str {
             "ConstraintSensitiveColumnProbe"
         }
     }

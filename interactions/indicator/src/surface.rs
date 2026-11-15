@@ -148,8 +148,10 @@ impl VisitorElement for IndicatorSurfaceElement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for IndicatorSurfaceElement {
+    fn name(&self) -> &'static str {
         "IndicatorSurfaceElement"
     }
 }

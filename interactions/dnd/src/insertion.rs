@@ -664,12 +664,15 @@ impl<T: 'static> VisitorElement for RawInsertionGate<T> {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "InsertionList"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl<T: 'static> Element for RawInsertionGate<T> {
+    fn name(&self) -> &'static str {
+        "InsertionList"
     }
 }
 
@@ -847,12 +850,15 @@ impl VisitorElement for RawSlotProbe {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "SlotProbe"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawSlotProbe {
+    fn name(&self) -> &'static str {
+        "SlotProbe"
     }
 }
 

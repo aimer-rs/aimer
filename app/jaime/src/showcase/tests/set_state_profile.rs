@@ -65,11 +65,14 @@ struct CapturedElement {
 }
 
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedShowcase"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str {
+        "CapturedShowcase"
     }
 }
 impl EventElement for CapturedElement {}
@@ -119,7 +122,7 @@ fn collect(
     inherited: Option<(Vec2d, Vec2d)>,
 ) {
     let bounds = element.pos_start_end().or(inherited);
-    if element.debug_name() == "RawTextWidget"
+    if element.name() == "RawTextWidget"
         && let Some((start, end)) = bounds
     {
         for paint in &aimer_widget::testing::record_retained_paint(element, ctx) {

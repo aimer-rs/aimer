@@ -628,9 +628,6 @@ impl VisitorElement for RawFocusable {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Focusable"
-    }
 
     /// This wrapper exposes one child through both structural views.
     #[inline]
@@ -640,6 +637,12 @@ impl VisitorElement for RawFocusable {
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawFocusable {
+    fn name(&self) -> &'static str {
+        "Focusable"
     }
 }
 
@@ -678,8 +681,10 @@ mod tests {
     /// A leaf occupying a known rectangle, so a press can be aimed at it.
     struct Bounded;
 
-    impl VisitorElement for Bounded {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Bounded {}
+
+    impl Element for Bounded {
+        fn name(&self) -> &'static str {
             "Bounded"
         }
     }
@@ -735,8 +740,10 @@ mod tests {
     /// does.
     struct Greedy;
 
-    impl VisitorElement for Greedy {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Greedy {}
+
+    impl Element for Greedy {
+        fn name(&self) -> &'static str {
             "Greedy"
         }
     }
@@ -775,8 +782,10 @@ mod tests {
         published: Rc<Cell<bool>>,
     }
 
-    impl VisitorElement for Carrier {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Carrier {}
+
+    impl Element for Carrier {
+        fn name(&self) -> &'static str {
             "Carrier"
         }
     }
@@ -814,8 +823,10 @@ mod tests {
         layouts: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for Recorder {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Recorder {}
+
+    impl Element for Recorder {
+        fn name(&self) -> &'static str {
             "Recorder"
         }
     }

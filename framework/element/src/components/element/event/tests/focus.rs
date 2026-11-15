@@ -6,8 +6,10 @@ struct FocusTestElement {
     pub(super) autofocus: bool,
 }
 
-impl VisitorElement for FocusTestElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for FocusTestElement {}
+
+impl Element for FocusTestElement {
+    fn name(&self) -> &'static str {
         "FocusTestElement"
     }
 }
@@ -309,8 +311,10 @@ impl VisitorElement for FocusScopeElement {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for FocusScopeElement {
+    fn name(&self) -> &'static str {
         "FocusScopeElement"
     }
 }
@@ -595,8 +599,10 @@ struct PressableFocusElement {
     bounds: (Vec2d, Vec2d),
 }
 
-impl VisitorElement for PressableFocusElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for PressableFocusElement {}
+
+impl Element for PressableFocusElement {
+    fn name(&self) -> &'static str {
         "PressableFocusElement"
     }
 }
@@ -644,8 +650,10 @@ pub(super) struct FocusKeyElement {
     pub(super) consume_keys: Rc<Cell<bool>>,
 }
 
-impl VisitorElement for FocusKeyElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for FocusKeyElement {}
+
+impl Element for FocusKeyElement {
+    fn name(&self) -> &'static str {
         "FocusKeyElement"
     }
 }
@@ -744,8 +752,10 @@ struct FocusRequestingElement {
     bounds: (Vec2d, Vec2d),
 }
 
-impl VisitorElement for FocusRequestingElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for FocusRequestingElement {}
+
+impl Element for FocusRequestingElement {
+    fn name(&self) -> &'static str {
         "FocusRequestingElement"
     }
 }

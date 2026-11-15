@@ -71,8 +71,10 @@ fn a_text_key_allocates_which_is_what_the_numeric_keys_avoid() {
 
 struct Leaf;
 
-impl VisitorElement for Leaf {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for Leaf {}
+
+impl Element for Leaf {
+    fn name(&self) -> &'static str {
         "Leaf"
     }
 }

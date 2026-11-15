@@ -279,12 +279,15 @@ impl VisitorElement for RawAnchor {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Anchor"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawAnchor {
+    fn name(&self) -> &'static str {
+        "Anchor"
     }
 }
 

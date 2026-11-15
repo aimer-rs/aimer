@@ -365,7 +365,7 @@ impl<E: Element + 'static> ElementNode<E> {
         // draw) is mapped by the next sync; the frame loop reports only those
         // still unmapped afterwards.
         if render_context.is_some() {
-            record_unmapped_draw(self.id.get(), self.element.debug_name());
+            record_unmapped_draw(self.id.get(), self.element.name());
         }
         self.draw_live(ctx);
     }
@@ -400,7 +400,7 @@ impl<E: Element + 'static> ElementNode<E> {
         run();
         #[cfg(debug_assertions)]
         {
-            record_declined_paint(self.id.get(), self.element.debug_name());
+            record_declined_paint(self.id.get(), self.element.name());
         }
     }
 }
@@ -421,9 +421,6 @@ impl<E: Element + 'static> VisitorElement for ElementNode<E> {
         self.element.visit_retained_children(visitor);
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.element.debug_name()
-    }
 
     fn element_type_id(&self) -> TypeId {
         TypeId::of::<E>()
@@ -488,6 +485,12 @@ impl<E: Element + 'static> VisitorElement for ElementNode<E> {
     #[inline]
     fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.element.occlusion_children_at(pos, visitor);
+    }
+}
+
+impl<E: Element + 'static> Element for ElementNode<E> {
+    fn name(&self) -> &'static str {
+        self.element.name()
     }
 }
 
@@ -1026,9 +1029,6 @@ impl VisitorElement for AnyElement {
         self.as_ref().visit_retained_children(visitor)
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.as_ref().debug_name()
-    }
 
     fn element_type_id(&self) -> std::any::TypeId {
         self.as_ref().element_type_id()
@@ -1093,6 +1093,37 @@ impl VisitorElement for AnyElement {
     #[inline]
     fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.as_ref().occlusion_children_at(pos, visitor);
+    }
+}
+
+impl Element for AnyElement {
+    fn name(&self) -> &'static str {
+        self.as_ref().name()
+    }
+
+    /// Returns this owner unchanged.
+    ///
+    /// An [`AnyElement`] is already erased and already carries an
+    /// [`ElementId`]. Erasing it again would put the owner inside a second
+    /// [`ElementNode`]: one more allocation, one more indirection on every
+    /// borrow, and a fresh id that discards the identity reconciliation relies
+    /// on.
+    #[inline]
+    fn boxed(self) -> AnyElement
+    where
+        Self: Sized + 'static,
+    {
+        self
+    }
+
+    /// Returns this owner unchanged; its storage was already chosen when it was
+    /// first erased, so `allocator` is not used.
+    #[inline]
+    fn boxed_in(self, _allocator: &UiAllocator) -> AnyElement
+    where
+        Self: Sized + 'static,
+    {
+        self
     }
 }
 
@@ -1402,9 +1433,7 @@ impl VisitorElement for Box<dyn Element> {
     ) {
         self.as_ref().visit_retained_children(visitor)
     }
-    fn debug_name(&self) -> &'static str {
-        self.as_ref().debug_name()
-    }
+
     fn element_type_id(&self) -> std::any::TypeId {
         self.as_ref().element_type_id()
     }
@@ -1465,6 +1494,12 @@ impl VisitorElement for Box<dyn Element> {
     #[inline]
     fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.as_ref().occlusion_children_at(pos, visitor);
+    }
+}
+
+impl Element for Box<dyn Element> {
+    fn name(&self) -> &'static str {
+        self.as_ref().name()
     }
 }
 

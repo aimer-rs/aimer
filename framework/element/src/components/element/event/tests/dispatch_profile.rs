@@ -118,9 +118,6 @@ impl VisitorElement for ListBoundary {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "ListBoundary"
-    }
 
     fn hit_test_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.counters.boundary_queries.set(self.counters.boundary_queries.get() + 1);
@@ -130,6 +127,12 @@ impl VisitorElement for ListBoundary {
         {
             visitor(row.as_ref());
         }
+    }
+}
+
+impl Element for ListBoundary {
+    fn name(&self) -> &'static str {
+        "ListBoundary"
     }
 }
 
@@ -177,8 +180,10 @@ impl VisitorElement for Row {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for Row {
+    fn name(&self) -> &'static str {
         "Row"
     }
 }
@@ -223,8 +228,10 @@ impl VisitorElement for Wrapper {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for Wrapper {
+    fn name(&self) -> &'static str {
         "Wrapper"
     }
 }
@@ -254,8 +261,10 @@ struct Leaf {
 
 impl VisitorElement for Leaf {
     fn visit_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for Leaf {
+    fn name(&self) -> &'static str {
         "Leaf"
     }
 }

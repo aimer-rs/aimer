@@ -374,12 +374,15 @@ impl VisitorElement for RawDropZone {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "DropZone"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawDropZone {
+    fn name(&self) -> &'static str {
+        "DropZone"
     }
 }
 
@@ -506,8 +509,10 @@ mod tests {
 
     struct TestElement;
 
-    impl VisitorElement for TestElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestElement {}
+
+    impl Element for TestElement {
+        fn name(&self) -> &'static str {
             "TestElement"
         }
     }

@@ -41,11 +41,14 @@ struct CapturedElement {
     snapshot: Rc<RefCell<Snapshot>>,
 }
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedLightEdge"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str {
+        "CapturedLightEdge"
     }
 }
 impl EventElement for CapturedElement {}
@@ -89,7 +92,7 @@ impl Drawable for CapturedElement {
 }
 
 fn collect_elements(element: &dyn Element, sliders: &mut Vec<Rect>, text_ids: &mut Vec<ElementId>) {
-    if element.debug_name() == "RawSlider" {
+    if element.name() == "RawSlider" {
         let (start, end) = element
             .pos_start_end()
             .expect("visible slider interaction bounds");
@@ -100,7 +103,7 @@ fn collect_elements(element: &dyn Element, sliders: &mut Vec<Rect>, text_ids: &m
             end.y - start.y,
         ));
     }
-    if element.debug_name() == "RawTextWidget" {
+    if element.name() == "RawTextWidget" {
         text_ids.push(element.id());
     }
     element.visit_children(&mut |child| collect_elements(child, sliders, text_ids));

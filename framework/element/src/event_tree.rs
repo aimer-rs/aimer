@@ -471,8 +471,10 @@ mod tests {
 
     struct Probe;
 
-    impl VisitorElement for Probe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Probe {}
+
+    impl Element for Probe {
+        fn name(&self) -> &'static str {
             "EventTreeProbe"
         }
     }

@@ -127,7 +127,7 @@ fn async_handle() -> tokio::runtime::Handle {
 /// stateful widget is replaced with.
 pub fn has_error_child(element: &dyn Element) -> bool {
     let mut found = false;
-    element.visit_children(&mut |child| found |= child.debug_name() == "ErrorWidget");
+    element.visit_children(&mut |child| found |= child.name() == "ErrorWidget");
     found
 }
 

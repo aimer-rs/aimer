@@ -7,7 +7,7 @@ use aimer_space::{Positioned, Stack};
 use aimer_style::{BorderSlice, BorderStyle, BoxDecoration, BoxOutline, BoxShadow, LayoutSpacing};
 
 fn decoration_element(root: &dyn Element) -> Option<ElementId> {
-    if root.debug_name() == "DecorationBox" {
+    if root.name() == "DecorationBox" {
         return Some(root.id());
     }
     let mut found = None;
@@ -65,7 +65,7 @@ fn decoration_box_headless_preserves_placement_and_retained_child_paint() {
         .expect("headless frame mounted the root");
     let element = decoration_element(root.as_ref()).unwrap_or_else(|| {
         fn names(root: &dyn Element, out: &mut Vec<&'static str>) {
-            out.push(root.debug_name());
+            out.push(root.name());
             root.visit_retained_children(&mut |_, child| names(child, out));
         }
         let mut tree_names = Vec::new();

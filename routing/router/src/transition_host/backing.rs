@@ -20,7 +20,7 @@ use std::rc::Rc;
 use aimer_canvas::{Canvas, Mat3};
 use aimer_cupid::utilities::{Color as PaintColor, Rect};
 use aimer_widget::base::{BuildContext, Color, ResolvedSize, Size, Vec2d};
-use aimer_widget::{Drawable, EventElement, EventTreeRole, LayoutElement, Rebuildable, VisitorElement};
+use aimer_widget::{Drawable, EventElement, EventTreeRole, LayoutElement, Rebuildable, Element, VisitorElement};
 
 use crate::PaintPresentation;
 
@@ -141,8 +141,10 @@ impl EventElement for BackingLayer {
     fn event_tree_role(&self) -> EventTreeRole { EventTreeRole::Transparent }
 }
 
-impl VisitorElement for BackingLayer {
-    fn debug_name(&self) -> &'static str { "NavigationBacking" }
+impl VisitorElement for BackingLayer {}
+
+impl Element for BackingLayer {
+    fn name(&self) -> &'static str { "NavigationBacking" }
 }
 
 impl LayoutElement for BackingLayer {

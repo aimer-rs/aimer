@@ -407,9 +407,6 @@ impl<E: Element> VisitorElement for RawMouseRegion<E> {
         visitor(&self.child);
     }
 
-    fn debug_name(&self) -> &'static str {
-        "MouseRegion"
-    }
 
     fn event_children<'b>(&'b self, visitor: &mut dyn FnMut(&'b dyn Element)) {
         visitor(&self.child);
@@ -422,6 +419,12 @@ impl<E: Element> VisitorElement for RawMouseRegion<E> {
     /// still an occluder.
     fn occlusion_children_at<'b>(&'b self, _pos: Vec2d, visitor: &mut dyn FnMut(&'b dyn Element)) {
         visitor(&self.child);
+    }
+}
+
+impl<E: Element + 'static> Element for RawMouseRegion<E> {
+    fn name(&self) -> &'static str {
+        "MouseRegion"
     }
 }
 
@@ -549,8 +552,10 @@ mod tests {
         }
     }
 
-    impl VisitorElement for TestElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestElement {}
+
+    impl Element for TestElement {
+        fn name(&self) -> &'static str {
             "TestElement"
         }
     }
@@ -568,8 +573,10 @@ mod tests {
 
     struct ResultElement;
 
-    impl VisitorElement for ResultElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for ResultElement {}
+
+    impl Element for ResultElement {
+        fn name(&self) -> &'static str {
             "ResultElement"
         }
     }
@@ -594,8 +601,10 @@ mod tests {
         events: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for CapturingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for CapturingElement {}
+
+    impl Element for CapturingElement {
+        fn name(&self) -> &'static str {
             "CapturingElement"
         }
     }

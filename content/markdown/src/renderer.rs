@@ -1215,7 +1215,7 @@ mod tests {
         )
         .to_element(&ctx);
 
-        assert_eq!(element.debug_name(), "RawRichText");
+        assert_eq!(element.name(), "RawRichText");
     }
 
     #[test]

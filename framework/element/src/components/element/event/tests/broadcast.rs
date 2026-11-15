@@ -17,10 +17,6 @@ struct BroadcastProbe {
 }
 
 impl VisitorElement for BroadcastProbe {
-    fn debug_name(&self) -> &'static str {
-        "BroadcastProbe"
-    }
-
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
             visitor(child.as_ref());
@@ -39,6 +35,12 @@ impl VisitorElement for BroadcastProbe {
             self.traversal.event_visits.set(self.traversal.event_visits.get() + 1);
             visitor(child.as_ref());
         }
+    }
+}
+
+impl Element for BroadcastProbe {
+    fn name(&self) -> &'static str {
+        "BroadcastProbe"
     }
 }
 
@@ -237,12 +239,14 @@ struct ChangingBroadcastRoot {
 }
 
 impl VisitorElement for ChangingBroadcastRoot {
-    fn debug_name(&self) -> &'static str {
-        "ChangingBroadcastRoot"
-    }
-
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(if self.use_next.get() { self.next.as_ref() } else { self.first.as_ref() });
+    }
+}
+
+impl Element for ChangingBroadcastRoot {
+    fn name(&self) -> &'static str {
+        "ChangingBroadcastRoot"
     }
 }
 

@@ -61,12 +61,15 @@ impl VisitorElement for RawKeyRelay {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "CollapsibleListKeyRelay"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawKeyRelay {
+    fn name(&self) -> &'static str {
+        "CollapsibleListKeyRelay"
     }
 }
 
@@ -197,8 +200,10 @@ mod tests {
 
     struct Child;
 
-    impl VisitorElement for Child {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Child {}
+
+    impl Element for Child {
+        fn name(&self) -> &'static str {
             "KeyRelayTestChild"
         }
     }

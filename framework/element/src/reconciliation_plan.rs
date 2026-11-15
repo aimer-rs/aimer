@@ -353,7 +353,7 @@ fn collect_matches<'a>(
                 .entry((
                     old_key,
                     old_child.element_type_id(),
-                    old_child.debug_name(),
+                    old_child.name(),
                 ))
                 .or_default()
                 .push(old_index);
@@ -366,7 +366,7 @@ fn collect_matches<'a>(
             keyed_candidates
                 .as_mut()
                 .and_then(|candidates| {
-                    candidates.get_mut(&(new_key, new_child.element_type_id(), new_child.debug_name()))
+                    candidates.get_mut(&(new_key, new_child.element_type_id(), new_child.name()))
                 })
                 .and_then(|candidates: &mut KeyedCandidates| candidates.take(&claimed))
                 .map(|old_index| (old_index, ReconciliationMatchKind::Keyed))
@@ -450,8 +450,10 @@ mod tests {
                 visitor(child);
             }
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for Node {
+        fn name(&self) -> &'static str {
             "PlanNode"
         }
     }

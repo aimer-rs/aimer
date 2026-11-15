@@ -54,8 +54,10 @@ struct LeafElement {
     height: f32,
 }
 
-impl VisitorElement for LeafElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for LeafElement {}
+
+impl Element for LeafElement {
+    fn name(&self) -> &'static str {
         "CleanSkipLeaf"
     }
 }
@@ -694,8 +696,10 @@ struct PlaceLeafElement {
     reads_place: bool,
 }
 
-impl VisitorElement for PlaceLeafElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for PlaceLeafElement {}
+
+impl Element for PlaceLeafElement {
+    fn name(&self) -> &'static str {
         "CleanSkipPlaceLeaf"
     }
 }
@@ -743,8 +747,10 @@ impl Widget for Restless {
 
 struct RestlessElement;
 
-impl VisitorElement for RestlessElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RestlessElement {}
+
+impl Element for RestlessElement {
+    fn name(&self) -> &'static str {
         "CleanSkipRestless"
     }
 }

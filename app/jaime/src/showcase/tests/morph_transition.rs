@@ -42,11 +42,14 @@ struct CapturedElement {
     snapshot: Rc<RefCell<Snapshot>>,
 }
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedMorphTransition"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str {
+        "CapturedMorphTransition"
     }
 }
 impl EventElement for CapturedElement {}
@@ -79,7 +82,7 @@ impl Drawable for CapturedElement {
 }
 
 fn collect_buttons(element: &dyn Element, buttons: &mut Vec<Rect>) {
-    if element.debug_name() == "GestureDetector" {
+    if element.name() == "GestureDetector" {
         let (start, end) = element
             .pos_start_end()
             .expect("a visible control has interaction bounds");

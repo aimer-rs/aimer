@@ -88,7 +88,7 @@ async fn a_foreground_stack_paints_every_layer_in_the_node_after_the_child() {
     let mut layer = None;
     element.visit_children(&mut |child| layer = Some(child));
     let layer = layer.expect("a layer follows the child");
-    assert_eq!(layer.debug_name(), "ForegroundDecorationLayer");
+    assert_eq!(layer.name(), "ForegroundDecorationLayer");
     let layer_ctx = element
         .child_context_at(&ctx, layer, 1)
         .expect("the wrapper sizes its layer");

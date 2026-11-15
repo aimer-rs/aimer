@@ -241,8 +241,10 @@ impl<P: CanvasPainter> EventElement for RawCustomPaint<P> {
     }
 }
 
-impl<P: CanvasPainter> VisitorElement for RawCustomPaint<P> {
-    fn debug_name(&self) -> &'static str {
+impl<P: CanvasPainter> VisitorElement for RawCustomPaint<P> {}
+
+impl<P: CanvasPainter> Element for RawCustomPaint<P> {
+    fn name(&self) -> &'static str {
         "CustomPaint"
     }
 }

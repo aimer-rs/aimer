@@ -536,7 +536,7 @@ pub(super) fn dispatch_nested_event(
     debug_assert!(
         false,
         "nested dispatch into {}, which is not part of the event tree",
-        root.debug_name()
+        root.name()
     );
     RoutedEventResult {
         result: EventResult::ignored(),

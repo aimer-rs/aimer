@@ -557,8 +557,10 @@ mod tests {
         height: f32,
     }
 
-    impl VisitorElement for LeafElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for LeafElement {}
+
+    impl Element for LeafElement {
+        fn name(&self) -> &'static str {
             "Leaf"
         }
     }
@@ -825,7 +827,7 @@ mod tests {
             .builder(|height| Leaf(*height))
             .to_element(&ctx);
 
-        assert_eq!(row.debug_name(), "Row");
+        assert_eq!(row.name(), "Row");
         // A row accumulates the cross axis as a maximum, not a sum.
         assert_eq!(row.computed_size(&ctx).height, 30.0);
         assert_eq!(row.computed_size(&ctx).width, 20.0);
@@ -1298,8 +1300,10 @@ mod tests {
         height: f32,
     }
 
-    impl VisitorElement for FillingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for FillingElement {}
+
+    impl Element for FillingElement {
+        fn name(&self) -> &'static str {
             "Filling"
         }
     }

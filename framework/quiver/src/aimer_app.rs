@@ -1254,7 +1254,7 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
     /// Returns the active root's framework debug name.
     #[inline]
     pub fn active_root_name(&self) -> Option<&'static str> {
-        self.app.active_root().map(|root| root.debug_name())
+        self.app.active_root().map(|root| root.name())
     }
 
     /// The UI-thread runtime this application's frames are scheduled by.
@@ -2053,8 +2053,10 @@ mod tests {
         }
     }
 
-    impl VisitorElement for HeadlessVirtualizedRowElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for HeadlessVirtualizedRowElement {}
+
+    impl Element for HeadlessVirtualizedRowElement {
+        fn name(&self) -> &'static str {
             "HeadlessVirtualizedRow"
         }
     }
@@ -2304,8 +2306,10 @@ mod tests {
         paints: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for HeadlessHorizontalVirtualizedItemElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for HeadlessHorizontalVirtualizedItemElement {}
+
+    impl Element for HeadlessHorizontalVirtualizedItemElement {
+        fn name(&self) -> &'static str {
             "HeadlessHorizontalVirtualizedItem"
         }
     }
@@ -2340,8 +2344,10 @@ mod tests {
         paints: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for HeadlessHorizontalStatefulItemElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for HeadlessHorizontalStatefulItemElement {}
+
+    impl Element for HeadlessHorizontalStatefulItemElement {
+        fn name(&self) -> &'static str {
             "HeadlessHorizontalVirtualizedItem"
         }
     }
@@ -2424,7 +2430,7 @@ mod tests {
             .expect("headless frame built the widget root");
         let mut pending = vec![root.as_ref() as &dyn Element];
         while let Some(element) = pending.pop() {
-            if element.debug_name() == "TextField"
+            if element.name() == "TextField"
                 && element.element_type_id() != TypeId::of::<StatefulElement>()
                 && let Some(render_node) = app.app.render_node_for_element(element.id())
                 && let Some(revision) = plan.local_v2_revision(render_node)
@@ -2452,7 +2458,7 @@ mod tests {
             .expect("headless frame built the widget root");
         let mut pending = vec![root.as_ref() as &dyn Element];
         while let Some(element) = pending.pop() {
-            if element.debug_name() == name {
+            if element.name() == name {
                 return Some(element.id());
             }
             element.visit_children(&mut |child| pending.push(child));
@@ -2472,7 +2478,7 @@ mod tests {
         let mut pending = vec![root.as_ref() as &dyn Element];
         let mut ids = Vec::new();
         while let Some(element) = pending.pop() {
-            if element.debug_name() == name {
+            if element.name() == name {
                 ids.push(element.id());
             }
             element.visit_children(&mut |child| pending.push(child));
@@ -2523,7 +2529,7 @@ mod tests {
         let mut visible_rows = Vec::new();
         let mut pending = vec![root.as_ref() as &dyn Element];
         while let Some(element) = pending.pop() {
-            if element.debug_name() == "HeadlessHorizontalVirtualizedItem"
+            if element.name() == "HeadlessHorizontalVirtualizedItem"
                 && let Some(render_node) = app.app.render_node_for_element(element.id())
                 && let Ok(bounds) = app.app.render_tree().element_bounds(render_node)
                 && bounds.x < viewport.0
@@ -3117,12 +3123,14 @@ mod tests {
     }
 
     impl VisitorElement for MixedPacketElement {
-        fn debug_name(&self) -> &'static str {
-            "MixedPacketElement"
-        }
-
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
+        }
+    }
+
+    impl Element for MixedPacketElement {
+        fn name(&self) -> &'static str {
+            "MixedPacketElement"
         }
     }
 
@@ -3149,8 +3157,10 @@ mod tests {
 
     impl Rebuildable for LegacyPacketElement {}
 
-    impl VisitorElement for LegacyPacketElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for LegacyPacketElement {}
+
+    impl Element for LegacyPacketElement {
+        fn name(&self) -> &'static str {
             "LegacyPacketElement"
         }
     }
@@ -3179,8 +3189,10 @@ mod tests {
 
     impl Rebuildable for LegacyModalElement {}
 
-    impl VisitorElement for LegacyModalElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for LegacyModalElement {}
+
+    impl Element for LegacyModalElement {
+        fn name(&self) -> &'static str {
             "LegacyModalElement"
         }
     }
@@ -3757,7 +3769,7 @@ mod tests {
         let mut pending = vec![root.as_ref() as &dyn Element];
         let mut visible_row_nodes = Vec::new();
         while let Some(element) = pending.pop() {
-            if element.debug_name() == "HeadlessVirtualizedRow"
+            if element.name() == "HeadlessVirtualizedRow"
                 && let Some(render_node) = app.app.render_node_for_element(element.id())
                 && let Ok(bounds) = app.app.render_tree().element_bounds(render_node)
                 && bounds.x < 100.0
@@ -4304,7 +4316,7 @@ mod tests {
             let mut visible_rows = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "HeadlessVirtualizedRow"
+                if element.name() == "HeadlessVirtualizedRow"
                     && let Some(render_node) = app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = app.app.render_tree().element_bounds(render_node)
                     && bounds.x < 100.0
@@ -4382,7 +4394,7 @@ mod tests {
             let mut visible_rows = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "HeadlessVirtualizedRow"
+                if element.name() == "HeadlessVirtualizedRow"
                     && let Some(render_node) = app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = app.app.render_tree().element_bounds(render_node)
                     && bounds.x < 100.0
@@ -4555,7 +4567,7 @@ mod tests {
             let mut visible_rows = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "RawScrollableContainer"
+                if element.name() == "RawScrollableContainer"
                     && let Some(render_node) = app.app.render_node_for_element(element.id())
                 {
                     viewport_bounds = Some(
@@ -4565,7 +4577,7 @@ mod tests {
                             .expect("the resized scroll viewport has retained bounds"),
                     );
                 }
-                if element.debug_name() == "HeadlessVirtualizedRow"
+                if element.name() == "HeadlessVirtualizedRow"
                     && let Some(render_node) = app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = app.app.render_tree().element_bounds(render_node)
                     && bounds.x < 180.0
@@ -4708,7 +4720,7 @@ mod tests {
             let mut visible_rows = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "HeadlessVirtualizedRow"
+                if element.name() == "HeadlessVirtualizedRow"
                     && let Some(render_node) = app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = app.app.render_tree().element_bounds(render_node)
                     && bounds.x < 180.0
@@ -4784,7 +4796,7 @@ mod tests {
         let find_vertical_scroll_id = |root: &dyn Element| {
             let mut pending = vec![root];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "RawScrollableContainer" {
+                if element.name() == "RawScrollableContainer" {
                     return Some(element.id());
                 }
                 element.visit_children(&mut |child| pending.push(child));
@@ -4860,7 +4872,7 @@ mod tests {
             let mut rows = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "HeadlessVirtualizedRow"
+                if element.name() == "HeadlessVirtualizedRow"
                     && let Some(render_node) = app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = app.app.render_tree().element_bounds(render_node)
                     && bounds.x < 180.0
@@ -4959,7 +4971,7 @@ mod tests {
             let mut visible_items = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "HeadlessHorizontalVirtualizedItem"
+                if element.name() == "HeadlessHorizontalVirtualizedItem"
                     && let Some(render_node) =
                         horizontal_app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = horizontal_app.app.render_tree().element_bounds(render_node)
@@ -5047,7 +5059,7 @@ mod tests {
             let mut visible_items = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "HeadlessHorizontalVirtualizedItem"
+                if element.name() == "HeadlessHorizontalVirtualizedItem"
                     && let Some(render_node) =
                         horizontal_app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = horizontal_app.app.render_tree().element_bounds(render_node)
@@ -5151,7 +5163,7 @@ mod tests {
             let mut visible_items = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "RawScrollableContainer"
+                if element.name() == "RawScrollableContainer"
                     && let Some(render_node) =
                         horizontal_app.app.render_node_for_element(element.id())
                 {
@@ -5163,7 +5175,7 @@ mod tests {
                             .expect("the resized horizontal viewport has retained bounds"),
                     );
                 }
-                if element.debug_name() == "HeadlessHorizontalVirtualizedItem"
+                if element.name() == "HeadlessHorizontalVirtualizedItem"
                     && let Some(render_node) =
                         horizontal_app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = horizontal_app.app.render_tree().element_bounds(render_node)
@@ -5279,7 +5291,7 @@ mod tests {
         let find_scroll_element_id = |root: &dyn Element| {
             let mut pending = vec![root];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "RawScrollableContainer" {
+                if element.name() == "RawScrollableContainer" {
                     return Some(element.id());
                 }
                 element.visit_children(&mut |child| pending.push(child));
@@ -5352,7 +5364,7 @@ mod tests {
             let mut items = Vec::new();
             let mut pending = vec![root.as_ref() as &dyn Element];
             while let Some(element) = pending.pop() {
-                if element.debug_name() == "HeadlessHorizontalVirtualizedItem"
+                if element.name() == "HeadlessHorizontalVirtualizedItem"
                     && let Some(render_node) =
                         horizontal_app.app.render_node_for_element(element.id())
                     && let Ok(bounds) = horizontal_app.app.render_tree().element_bounds(render_node)
@@ -5722,8 +5734,10 @@ mod tests {
     }
     impl LayoutElement for RecordingElement {}
     impl Rebuildable for RecordingElement {}
-    impl VisitorElement for RecordingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for RecordingElement {}
+
+    impl Element for RecordingElement {
+        fn name(&self) -> &'static str {
             "RecordingElement"
         }
     }
@@ -5773,8 +5787,10 @@ mod tests {
     }
     impl LayoutElement for ObservingElement {}
     impl Rebuildable for ObservingElement {}
-    impl VisitorElement for ObservingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for ObservingElement {}
+
+    impl Element for ObservingElement {
+        fn name(&self) -> &'static str {
             "ObservingElement"
         }
     }
@@ -5968,8 +5984,10 @@ mod tests {
     }
     impl LayoutElement for OrderedElement {}
     impl Rebuildable for OrderedElement {}
-    impl VisitorElement for OrderedElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for OrderedElement {}
+
+    impl Element for OrderedElement {
+        fn name(&self) -> &'static str {
             "OrderedElement"
         }
     }
@@ -6003,8 +6021,10 @@ mod tests {
     }
     impl LayoutElement for PreeditElement {}
     impl Rebuildable for PreeditElement {}
-    impl VisitorElement for PreeditElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for PreeditElement {}
+
+    impl Element for PreeditElement {
+        fn name(&self) -> &'static str {
             "PreeditElement"
         }
     }
@@ -6146,7 +6166,7 @@ mod tests {
         app.render_frame();
 
         assert_eq!(
-            app.app.widget_root.as_ref().map(|root| root.debug_name()),
+            app.app.widget_root.as_ref().map(|root| root.name()),
             Some("ModalHost")
         );
     }
@@ -6284,8 +6304,10 @@ mod tests {
         }
     }
     impl Rebuildable for CapturingElement {}
-    impl VisitorElement for CapturingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for CapturingElement {}
+
+    impl Element for CapturingElement {
+        fn name(&self) -> &'static str {
             "CapturingElement"
         }
     }
@@ -6382,8 +6404,10 @@ mod tests {
         }
     }
     impl Rebuildable for ScrollRecordingElement {}
-    impl VisitorElement for ScrollRecordingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for ScrollRecordingElement {}
+
+    impl Element for ScrollRecordingElement {
+        fn name(&self) -> &'static str {
             "ScrollRecordingElement"
         }
     }
@@ -6581,8 +6605,10 @@ mod tests {
     }
     impl LayoutElement for CursorElement {}
     impl Rebuildable for CursorElement {}
-    impl VisitorElement for CursorElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for CursorElement {}
+
+    impl Element for CursorElement {
+        fn name(&self) -> &'static str {
             "CursorElement"
         }
     }
@@ -6736,8 +6762,10 @@ mod tests {
 
     impl Rebuildable for NoopScrollElement {}
 
-    impl VisitorElement for NoopScrollElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for NoopScrollElement {}
+
+    impl Element for NoopScrollElement {
+        fn name(&self) -> &'static str {
             "NoopScrollElement"
         }
     }
@@ -6934,8 +6962,10 @@ mod tests {
     }
     impl LayoutElement for AnimatingElement {}
     impl Rebuildable for AnimatingElement {}
-    impl VisitorElement for AnimatingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for AnimatingElement {}
+
+    impl Element for AnimatingElement {
+        fn name(&self) -> &'static str {
             "AnimatingElement"
         }
     }
@@ -7047,8 +7077,10 @@ mod tests {
     }
     impl LayoutElement for RedrawElement {}
     impl Rebuildable for RedrawElement {}
-    impl VisitorElement for RedrawElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for RedrawElement {}
+
+    impl Element for RedrawElement {
+        fn name(&self) -> &'static str {
             "RedrawElement"
         }
     }
@@ -7079,8 +7111,10 @@ mod tests {
     }
     impl LayoutElement for UiMemoryProbeElement {}
     impl Rebuildable for UiMemoryProbeElement {}
-    impl VisitorElement for UiMemoryProbeElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for UiMemoryProbeElement {}
+
+    impl Element for UiMemoryProbeElement {
+        fn name(&self) -> &'static str {
             "UiMemoryProbeElement"
         }
     }

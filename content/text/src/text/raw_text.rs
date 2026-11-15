@@ -522,8 +522,10 @@ impl EventElement for RawTextWidget {
     }
 }
 
-impl VisitorElement for RawTextWidget {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawTextWidget {}
+
+impl Element for RawTextWidget {
+    fn name(&self) -> &'static str {
         "RawTextWidget"
     }
 }

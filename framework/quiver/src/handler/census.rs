@@ -108,7 +108,7 @@ impl WindowRenderTree {
             };
             let mut children = 0usize;
             element.visit_retained_children(&mut |_, _| children += 1);
-            let count = out.by_type.entry(element.debug_name()).or_default();
+            let count = out.by_type.entry(element.name()).or_default();
             count.elements += 1;
             count.commands += commands;
             if !resolved {
@@ -216,7 +216,7 @@ impl WindowRenderTree {
                 if !parent_unresolved {
                     census.unresolved_roots.push(CensusElement {
                         element: element.id(),
-                        debug_name: element.debug_name(),
+                        debug_name: element.name(),
                     });
                 }
             }

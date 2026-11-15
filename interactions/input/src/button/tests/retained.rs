@@ -66,7 +66,7 @@ async fn hover_and_press_keep_the_mounted_button_wrappers() {
 }
 
 pub(super) fn find_element<'a>(root: &'a dyn Element, name: &str) -> Option<&'a dyn Element> {
-    if root.debug_name() == name {
+    if root.name() == name {
         return Some(root);
     }
     let mut found = None;

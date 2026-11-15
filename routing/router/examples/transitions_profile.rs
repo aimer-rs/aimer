@@ -63,7 +63,11 @@ impl Widget for Leaf {
         LeafElement.boxed()
     }
 }
-impl VisitorElement for LeafElement { fn debug_name(&self) -> &'static str { "ProfileLeaf" } }
+impl VisitorElement for LeafElement {}
+
+impl Element for LeafElement {
+ fn name(&self) -> &'static str { "ProfileLeaf" }
+}
 impl Drawable for LeafElement { fn can_paint(&self, _: &BuildContext) -> bool { true } }
 impl EventElement for LeafElement {}
 impl LayoutElement for LeafElement {}
@@ -71,7 +75,7 @@ impl Rebuildable for LeafElement {}
 fn routes(_: Page) -> AnyWidget { Leaf.boxed() }
 
 fn find_host(element: &dyn Element) -> Option<&dyn Element> {
-    if element.debug_name() == "NavigationTransitionHost" { return Some(element); }
+    if element.name() == "NavigationTransitionHost" { return Some(element); }
     let mut found = None;
     element.visit_children(&mut |child| { if found.is_none() { found = find_host(child); } });
     found

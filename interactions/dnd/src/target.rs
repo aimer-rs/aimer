@@ -339,12 +339,15 @@ impl<T: 'static> VisitorElement for RawDragTarget<T> {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "DragTarget"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl<T: 'static> Element for RawDragTarget<T> {
+    fn name(&self) -> &'static str {
+        "DragTarget"
     }
 }
 
@@ -471,8 +474,10 @@ mod tests {
 
     struct TestElement;
 
-    impl VisitorElement for TestElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestElement {}
+
+    impl Element for TestElement {
+        fn name(&self) -> &'static str {
             "TestElement"
         }
     }

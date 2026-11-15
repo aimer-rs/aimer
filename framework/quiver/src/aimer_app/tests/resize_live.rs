@@ -60,7 +60,7 @@ impl Widget for Layout {
 }
 
 fn find<'a>(element: &'a dyn Element, name: &str) -> Option<&'a dyn Element> {
-    if element.debug_name() == name {
+    if element.name() == name {
         return Some(element);
     }
     let mut found = None;
@@ -93,7 +93,7 @@ fn card_left_edge(app: &HeadlessAimerApp<impl Widget + 'static>) -> Option<f32> 
         if edge.is_some() {
             return;
         }
-        if element.debug_name() == "Container"
+        if element.name() == "Container"
             && let Some((start, _)) = element.pos_start_end()
         {
             *edge = Some(start.x);

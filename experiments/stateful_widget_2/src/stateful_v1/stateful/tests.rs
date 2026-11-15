@@ -60,11 +60,11 @@ fn stale_rebuild_after_queued_panic_reuses_the_recovery_element() {
 
     let rebuild = unsafe { (&*stateful.rebuild_fn.0.get()).clone() };
     let first = rebuild(&context);
-    assert_eq!(first.debug_name(), "ErrorWidget");
+    assert_eq!(first.name(), "ErrorWidget");
 
     let second = rebuild(&context);
     assert_eq!(
-        second.debug_name(),
+        second.name(),
         "ErrorWidget",
         "stale callbacks must not rebuild the failed state again"
     );
@@ -84,7 +84,7 @@ fn failed_keyed_reconciliation_does_not_retry_the_live_state() {
 
     let recovered = lifecycle_element(PanicPhase::None, "LifecycleWidget", Some(key), &context);
 
-    assert_eq!(recovered.debug_name(), "ErrorWidget");
+    assert_eq!(recovered.name(), "ErrorWidget");
     updater.set_state(|_| {});
     live_stateful.rebuild_if_dirty(&context);
     assert!(has_error_child(live.as_ref()));
@@ -136,7 +136,7 @@ fn stale_keyed_rebuild_reuses_the_original_recovery_diagnostic() {
     consume_state(live_stateful);
 
     let recovered = lifecycle_element(PanicPhase::None, "LifecycleWidget", Some(key), &context);
-    assert_eq!(recovered.debug_name(), "ErrorWidget");
+    assert_eq!(recovered.name(), "ErrorWidget");
 
     let rebuild = unsafe { (&*live_stateful.rebuild_fn.0.get()).clone() };
     let stale_child = rebuild(&context);

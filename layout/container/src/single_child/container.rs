@@ -836,13 +836,6 @@ impl<T: Element, D: Decoration> VisitorElement for RawContainer<T, D> {
         visitor(&self.child);
     }
 
-    fn debug_name(&self) -> &'static str {
-        if self.flags.get() & RAW != 0 {
-            "RawContainer"
-        } else {
-            "Container"
-        }
-    }
 
     /// The opaque container has one child in both structural views.
     #[inline]
@@ -852,6 +845,16 @@ impl<T: Element, D: Decoration> VisitorElement for RawContainer<T, D> {
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.child);
+    }
+}
+
+impl<T: Element + 'static, D: Decoration> Element for RawContainer<T, D> {
+    fn name(&self) -> &'static str {
+        if self.flags.get() & RAW != 0 {
+            "RawContainer"
+        } else {
+            "Container"
+        }
     }
 }
 

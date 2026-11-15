@@ -128,8 +128,10 @@ impl VisitorElement for ColumnElement {
             visitor(leaf.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for ColumnElement {
+    fn name(&self) -> &'static str {
         "Column"
     }
 }

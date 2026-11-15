@@ -14,8 +14,10 @@ impl VisitorElement for ScopeElement {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for ScopeElement {
+    fn name(&self) -> &'static str {
         "ScopeElement"
     }
 }
@@ -35,8 +37,10 @@ impl Rebuildable for ScopeElement {}
 /// A focus target that consumes every key it is offered.
 struct Greedy(FocusNode);
 
-impl VisitorElement for Greedy {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for Greedy {}
+
+impl Element for Greedy {
+    fn name(&self) -> &'static str {
         "Greedy"
     }
 }
@@ -67,8 +71,10 @@ impl Rebuildable for Greedy {}
 /// A focus target that ignores everything.
 struct Passive(FocusNode);
 
-impl VisitorElement for Passive {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for Passive {}
+
+impl Element for Passive {
+    fn name(&self) -> &'static str {
         "Passive"
     }
 }

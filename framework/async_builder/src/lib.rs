@@ -482,8 +482,17 @@ impl<F, Fut, B, T, E> VisitorElement for AsyncFrameElement<F, Fut, B, T, E> {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.current_child());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl<F, Fut, B, T, E> Element for AsyncFrameElement<F, Fut, B, T, E>
+where
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<T, E>> + 'static,
+    B: Fn(&AsyncSnapshot<T, E>) -> AnyWidget,
+    T: 'static,
+    E: 'static,
+{
+    fn name(&self) -> &'static str {
         "AsyncFrame"
     }
 }
@@ -610,8 +619,10 @@ mod tests {
 
     struct MarkerElement(&'static str, f32);
 
-    impl VisitorElement for MarkerElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for MarkerElement {}
+
+    impl Element for MarkerElement {
+        fn name(&self) -> &'static str {
             self.0
         }
     }
@@ -656,8 +667,10 @@ mod tests {
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for CachingParent {
+        fn name(&self) -> &'static str {
             "CachingParent"
         }
     }
@@ -715,7 +728,7 @@ mod tests {
     }
 
     fn contains(element: &dyn Element, name: &'static str) -> bool {
-        if element.debug_name() == name {
+        if element.name() == name {
             return true;
         }
         let found = Rc::new(Cell::new(false));
@@ -730,7 +743,7 @@ mod tests {
 
     /// Returns the first element in the tree whose debug name is `name`.
     fn find<'a>(element: &'a dyn Element, name: &'static str) -> Option<&'a dyn Element> {
-        if element.debug_name() == name {
+        if element.name() == name {
             return Some(element);
         }
         let mut found = None;

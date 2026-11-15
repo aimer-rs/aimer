@@ -204,12 +204,15 @@ impl VisitorElement for RawShortcuts {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Shortcuts"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawShortcuts {
+    fn name(&self) -> &'static str {
+        "Shortcuts"
     }
 }
 
@@ -221,8 +224,10 @@ mod tests {
 
     struct TestChild;
 
-    impl VisitorElement for TestChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestChild {}
+
+    impl Element for TestChild {
+        fn name(&self) -> &'static str {
             "TestChild"
         }
     }

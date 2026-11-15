@@ -403,6 +403,16 @@ impl Widget for AnyWidget {
         self
     }
 
+    /// Returns this owner unchanged, for the same reason as
+    /// [`Widget::boxed`].
+    #[inline]
+    fn notype(self) -> AnyWidget
+    where
+        Self: Sized + 'static,
+    {
+        self
+    }
+
     #[inline]
     fn boxed_in(self, _allocator: &UiAllocator) -> AnyWidget
     where
@@ -585,6 +595,14 @@ mod tests {
             address,
             "the payload must not be re-erased into a new allocation"
         );
+
+        let heap = heap.notype();
+        assert!(heap.is_heap());
+        assert_eq!(
+            heap.as_ref() as *const dyn DynWidget as *const u8,
+            address,
+            "`notype` on an erased widget must not re-erase it either"
+        );
     }
 
     struct DroppingWidget<const N: usize> {
@@ -660,8 +678,10 @@ mod tests {
         _label: String,
     }
 
-    impl VisitorElement for MovedElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for MovedElement {}
+
+    impl Element for MovedElement {
+        fn name(&self) -> &'static str {
             "MovedElement"
         }
     }
@@ -750,7 +770,7 @@ mod tests {
 
         let element = widget.boxed().into_element(&context());
 
-        assert_eq!(element.debug_name(), "MovedElement");
+        assert_eq!(element.name(), "MovedElement");
         assert_eq!(
             observed.get(),
             buffer,
@@ -775,7 +795,7 @@ mod tests {
         let block = payload_address(&widget);
 
         let element = widget.into_element(&context());
-        assert_eq!(element.debug_name(), "MovedElement");
+        assert_eq!(element.name(), "MovedElement");
 
         let rebuilt = Wide {
             recorder: recorder(&drops),
@@ -843,7 +863,7 @@ mod tests {
 
         let element = widget.into_element(&context());
 
-        assert_eq!(element.debug_name(), "MovedElement");
+        assert_eq!(element.name(), "MovedElement");
         assert_eq!(drops.get(), 0);
         drop(element);
         assert_eq!(

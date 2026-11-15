@@ -103,8 +103,10 @@ impl VisitorElement for ShellElement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for ShellElement {
+    fn name(&self) -> &'static str {
         "ShellScope"
     }
 }
@@ -584,8 +586,10 @@ mod tests {
         child_built: Rc<Cell<bool>>,
     }
 
-    impl VisitorElement for DeferredOutletElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for DeferredOutletElement {}
+
+    impl Element for DeferredOutletElement {
+        fn name(&self) -> &'static str {
             "DeferredOutletElement"
         }
     }

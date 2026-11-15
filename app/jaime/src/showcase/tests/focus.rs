@@ -34,11 +34,14 @@ struct CapturedElement {
     targets: Targets,
 }
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedFocus"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str {
+        "CapturedFocus"
     }
 }
 impl EventElement for CapturedElement {}

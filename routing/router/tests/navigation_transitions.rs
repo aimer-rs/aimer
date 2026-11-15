@@ -72,8 +72,10 @@ impl Drop for Leaf {
         DROPS.with(|log| log.borrow_mut().push(self.0));
     }
 }
-impl VisitorElement for Leaf {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for Leaf {}
+
+impl Element for Leaf {
+    fn name(&self) -> &'static str {
         match self.0 {
             Page::Home => "HomePage",
             Page::Detail => "DetailPage",
@@ -134,8 +136,8 @@ fn context() -> BuildContext<'static> {
 fn pages(element: &dyn Element, interactive: bool) -> Vec<&'static str> {
     let mut result = Vec::new();
     fn walk(element: &dyn Element, interactive: bool, result: &mut Vec<&'static str>) {
-        if element.debug_name().ends_with("Page") {
-            result.push(element.debug_name());
+        if element.name().ends_with("Page") {
+            result.push(element.name());
         }
         let mut visit = |child: &dyn Element| walk(child, interactive, result);
         if interactive {
@@ -1057,12 +1059,15 @@ struct BarFrameElement {
     bar: AnyElement,
 }
 impl VisitorElement for BarFrameElement {
-    fn debug_name(&self) -> &'static str {
-        "BarFrame"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.outlet.as_ref());
         visitor(self.bar.as_ref());
+    }
+}
+
+impl Element for BarFrameElement {
+    fn name(&self) -> &'static str {
+        "BarFrame"
     }
 }
 impl Drawable for BarFrameElement {
@@ -1086,8 +1091,10 @@ impl Widget for TabBar {
         Element::boxed(self)
     }
 }
-impl VisitorElement for TabBar {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for TabBar {}
+
+impl Element for TabBar {
+    fn name(&self) -> &'static str {
         "TabBar"
     }
 }
@@ -1428,8 +1435,10 @@ aimer_tls::thread_local! {
     static FOCUS_LOST: Cell<usize> = const { Cell::new(0) };
 }
 struct FocusedPage(aimer_widget::focus::FocusNode);
-impl VisitorElement for FocusedPage {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for FocusedPage {}
+
+impl Element for FocusedPage {
+    fn name(&self) -> &'static str {
         "FocusedPage"
     }
 }
@@ -1479,7 +1488,7 @@ fn outgoing_pages_lose_keyboard_focus_when_the_transition_starts() {
 }
 
 fn find_host(element: &dyn Element) -> Option<&dyn Element> {
-    if element.debug_name() == "NavigationTransitionHost" {
+    if element.name() == "NavigationTransitionHost" {
         return Some(element);
     }
     let mut found = None;

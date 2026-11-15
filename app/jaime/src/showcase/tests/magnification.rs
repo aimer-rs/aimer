@@ -40,11 +40,14 @@ struct CapturedElement {
     paints: Paints,
 }
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedMagnification"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str {
+        "CapturedMagnification"
     }
 }
 impl EventElement for CapturedElement {}
@@ -111,7 +114,7 @@ fn collect_targets(
     target: Option<Rect>,
     targets: &mut Vec<(String, Rect)>,
 ) {
-    let target = if element.debug_name() == "GestureDetector" {
+    let target = if element.name() == "GestureDetector" {
         element
             .pos_start_end()
             .map(|(start, end)| Rect::new(start.x, start.y, end.x - start.x, end.y - start.y))
@@ -157,7 +160,7 @@ fn collect_bounds(
         size.width / ctx.scale,
         size.height / ctx.scale,
     );
-    if element.debug_name() == "RawSlider" {
+    if element.name() == "RawSlider" {
         let (start, end) = element
             .pos_start_end()
             .expect("slider interaction bounds");

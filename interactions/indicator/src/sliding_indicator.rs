@@ -190,7 +190,7 @@ mod tests {
     /// The debug names of the stack's children, in paint order.
     fn children(element: &AnyElement) -> Vec<&'static str> {
         let mut names = Vec::new();
-        element.visit_children(&mut |child| names.push(child.debug_name()));
+        element.visit_children(&mut |child| names.push(child.name()));
         names
     }
 

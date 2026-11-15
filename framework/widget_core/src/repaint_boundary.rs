@@ -149,9 +149,6 @@ impl VisitorElement for RepaintBoundaryTarget {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "RepaintBoundary"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
@@ -191,6 +188,12 @@ impl VisitorElement for RepaintBoundaryTarget {
 
     fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.child.occlusion_children_at(pos, visitor);
+    }
+}
+
+impl Element for RepaintBoundaryTarget {
+    fn name(&self) -> &'static str {
+        "RepaintBoundary"
     }
 }
 
@@ -339,8 +342,10 @@ mod tests {
         }
     }
 
-    impl VisitorElement for ProbeElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for ProbeElement {}
+
+    impl Element for ProbeElement {
+        fn name(&self) -> &'static str {
             "RepaintBoundaryProbe"
         }
     }

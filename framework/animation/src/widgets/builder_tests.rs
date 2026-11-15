@@ -79,8 +79,10 @@ impl LayoutElement for StableElement {
 
 impl Rebuildable for StableElement {}
 
-impl VisitorElement for StableElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for StableElement {}
+
+impl Element for StableElement {
+    fn name(&self) -> &'static str {
         "StableElement"
     }
 }
@@ -112,8 +114,10 @@ impl LayoutElement for UnknownElement {
 
 impl Rebuildable for UnknownElement {}
 
-impl VisitorElement for UnknownElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for UnknownElement {}
+
+impl Element for UnknownElement {
+    fn name(&self) -> &'static str {
         "UnknownElement"
     }
 }

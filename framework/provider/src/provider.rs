@@ -594,8 +594,10 @@ impl<T: 'static> VisitorElement for ProviderElement<T> {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl<T: 'static> Element for ProviderElement<T> {
+    fn name(&self) -> &'static str {
         "ProviderScope"
     }
 }
@@ -866,7 +868,10 @@ impl<T: 'static, A: 'static> VisitorElement for StoreElement<T, A> {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
-    fn debug_name(&self) -> &'static str {
+}
+
+impl<T: 'static, A: 'static> Element for StoreElement<T, A> {
+    fn name(&self) -> &'static str {
         "StoreProviderScope"
     }
 }
@@ -980,8 +985,10 @@ mod tests {
 
     struct Leaf;
 
-    impl VisitorElement for Leaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Leaf {}
+
+    impl Element for Leaf {
+        fn name(&self) -> &'static str {
             "Leaf"
         }
     }
@@ -1265,7 +1272,7 @@ mod tests {
     }
 
     fn contains_error_element(element: &dyn Element) -> bool {
-        if element.debug_name() == "ErrorWidget" {
+        if element.name() == "ErrorWidget" {
             return true;
         }
 

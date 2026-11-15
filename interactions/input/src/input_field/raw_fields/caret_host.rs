@@ -133,8 +133,10 @@ impl VisitorElement for RawCaretPlacement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for RawCaretPlacement {
+    fn name(&self) -> &'static str {
         "TextFieldCaretPlacement"
     }
 }
@@ -276,9 +278,6 @@ impl VisitorElement for RawTextFieldHost {
         visitor(&self.caret);
     }
 
-    fn debug_name(&self) -> &'static str {
-        "TextField"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
         // The field is embedded and has no retained ElementId of its own.
@@ -296,6 +295,12 @@ impl VisitorElement for RawTextFieldHost {
     }
 
     fn hit_test_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
+    }
+}
+
+impl Element for RawTextFieldHost {
+    fn name(&self) -> &'static str {
+        "TextField"
     }
 }
 
@@ -396,8 +401,10 @@ mod tests {
         }
     }
 
-    impl VisitorElement for ProbeCaretElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for ProbeCaretElement {}
+
+    impl Element for ProbeCaretElement {
+        fn name(&self) -> &'static str {
             "ProbeCaret"
         }
     }

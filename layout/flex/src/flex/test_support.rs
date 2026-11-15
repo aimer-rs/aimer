@@ -90,8 +90,10 @@ pub(crate) fn replace_a_generated_subtree(ctx: &BuildContext) {
 /// [`replace_a_generated_subtree`].
 struct MarkerChild;
 
-impl VisitorElement for MarkerChild {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for MarkerChild {}
+
+impl Element for MarkerChild {
+    fn name(&self) -> &'static str {
         "MarkerChild"
     }
 }
@@ -134,8 +136,10 @@ impl CountingChild {
     }
 }
 
-impl VisitorElement for CountingChild {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for CountingChild {}
+
+impl Element for CountingChild {
+    fn name(&self) -> &'static str {
         "CountingChild"
     }
 }
@@ -182,8 +186,10 @@ impl ResizingChild {
     }
 }
 
-impl VisitorElement for ResizingChild {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ResizingChild {}
+
+impl Element for ResizingChild {
+    fn name(&self) -> &'static str {
         "ResizingChild"
     }
 }
@@ -229,8 +235,10 @@ impl VolatileChild {
     }
 }
 
-impl VisitorElement for VolatileChild {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for VolatileChild {}
+
+impl Element for VolatileChild {
+    fn name(&self) -> &'static str {
         "VolatileChild"
     }
 }
@@ -271,8 +279,10 @@ impl KeptChild {
     }
 }
 
-impl VisitorElement for KeptChild {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for KeptChild {}
+
+impl Element for KeptChild {
+    fn name(&self) -> &'static str {
         "KeptChild"
     }
 }

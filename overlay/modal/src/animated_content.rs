@@ -140,8 +140,10 @@ impl VisitorElement for AnimatedOverlayContent {
     fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         visitor(0, self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for AnimatedOverlayContent {
+    fn name(&self) -> &'static str {
         "AnimatedOverlayContent"
     }
 }
@@ -249,11 +251,11 @@ mod tests {
         let mut retained_children = Vec::new();
         wrapper
             .as_ref()
-            .visit_retained_children(&mut |_, child| retained_children.push(child.debug_name()));
+            .visit_retained_children(&mut |_, child| retained_children.push(child.name()));
         let mut event_children = Vec::new();
         wrapper
             .as_ref()
-            .event_children(&mut |child| event_children.push(child.debug_name()));
+            .event_children(&mut |child| event_children.push(child.name()));
 
         assert_eq!(retained_children, ["TestChild"]);
         assert_eq!(event_children, retained_children);
@@ -270,8 +272,10 @@ mod tests {
 
     impl LayoutElement for TestChild {}
 
-    impl VisitorElement for TestChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestChild {}
+
+    impl Element for TestChild {
+        fn name(&self) -> &'static str {
             "TestChild"
         }
     }

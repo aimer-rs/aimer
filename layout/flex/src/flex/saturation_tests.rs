@@ -29,8 +29,10 @@ struct HugeElement {
     height: f32,
 }
 
-impl VisitorElement for HugeElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for HugeElement {}
+
+impl Element for HugeElement {
+    fn name(&self) -> &'static str {
         "Huge"
     }
 }

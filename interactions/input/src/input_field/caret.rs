@@ -337,8 +337,10 @@ impl Drawable for DefaultCaretElement {
     }
 }
 
-impl VisitorElement for DefaultCaretElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for DefaultCaretElement {}
+
+impl Element for DefaultCaretElement {
+    fn name(&self) -> &'static str {
         "DefaultCaret"
     }
 }

@@ -1861,12 +1861,15 @@ impl VisitorElement for RawNavigationKeyRelay {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "NavigationKeyRelay"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawNavigationKeyRelay {
+    fn name(&self) -> &'static str {
+        "NavigationKeyRelay"
     }
 }
 

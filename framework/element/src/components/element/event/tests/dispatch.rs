@@ -14,8 +14,10 @@ impl VisitorElement for RoutedElement {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for RoutedElement {
+    fn name(&self) -> &'static str {
         "RoutedElement"
     }
 }
@@ -61,8 +63,10 @@ struct HitChainCacheLeaf {
 
 impl VisitorElement for HitChainCacheLeaf {
     fn visit_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for HitChainCacheLeaf {
+    fn name(&self) -> &'static str {
         "HitChainCacheLeaf"
     }
 }
@@ -107,9 +111,6 @@ impl VisitorElement for HitChainCacheRoot {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "HitChainCacheRoot"
-    }
 
     fn hit_test_children_at<'a>(
         &'a self,
@@ -120,6 +121,12 @@ impl VisitorElement for HitChainCacheRoot {
         if contains(self.child.as_ref(), pos) {
             visitor(self.child.as_ref());
         }
+    }
+}
+
+impl Element for HitChainCacheRoot {
+    fn name(&self) -> &'static str {
+        "HitChainCacheRoot"
     }
 }
 
@@ -152,11 +159,14 @@ impl VisitorElement for HitChainCacheForwarder {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "HitChainCacheForwarder"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl Element for HitChainCacheForwarder {
+    fn name(&self) -> &'static str {
+        "HitChainCacheForwarder"
+    }
 }
 
 impl EventElement for HitChainCacheForwarder {
@@ -197,8 +207,10 @@ struct HoverProbe {
     hovered: Rc<Cell<bool>>,
 }
 
-impl VisitorElement for HoverProbe {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for HoverProbe {}
+
+impl Element for HoverProbe {
+    fn name(&self) -> &'static str {
         "HoverProbe"
     }
 }
@@ -247,9 +259,6 @@ impl VisitorElement for HoverProbeRoot {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "HoverProbeRoot"
-    }
 
     fn hit_test_children_at<'a>(
         &'a self,
@@ -261,6 +270,12 @@ impl VisitorElement for HoverProbeRoot {
                 visitor(child.as_ref());
             }
         }
+    }
+}
+
+impl Element for HoverProbeRoot {
+    fn name(&self) -> &'static str {
+        "HoverProbeRoot"
     }
 }
 
@@ -694,8 +709,10 @@ struct CapturingLeaf {
 
 impl VisitorElement for CapturingLeaf {
     fn visit_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for CapturingLeaf {
+    fn name(&self) -> &'static str {
         "CapturingLeaf"
     }
 }
@@ -757,11 +774,14 @@ impl VisitorElement for PassThroughForwarder {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "PassThroughForwarder"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl Element for PassThroughForwarder {
+    fn name(&self) -> &'static str {
+        "PassThroughForwarder"
+    }
 }
 
 impl EventElement for PassThroughForwarder {
@@ -861,11 +881,14 @@ impl VisitorElement for TakesThePointerOnMove {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "TakesThePointerOnMove"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl Element for TakesThePointerOnMove {
+    fn name(&self) -> &'static str {
+        "TakesThePointerOnMove"
+    }
 }
 
 impl EventElement for TakesThePointerOnMove {
@@ -1058,9 +1081,6 @@ impl VisitorElement for ForwardOnlyHitTestElement {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "ForwardOnlyHitTestElement"
-    }
 
     fn hit_test_children_at<'a>(
         &'a self,
@@ -1072,6 +1092,12 @@ impl VisitorElement for ForwardOnlyHitTestElement {
 
     fn hit_test_children_reversed<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
         panic!("routed dispatch should use the shared forward hit-test scratch");
+    }
+}
+
+impl Element for ForwardOnlyHitTestElement {
+    fn name(&self) -> &'static str {
+        "ForwardOnlyHitTestElement"
     }
 }
 
@@ -1158,8 +1184,10 @@ struct DragCarrier {
 
 impl VisitorElement for DragCarrier {
     fn visit_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for DragCarrier {
+    fn name(&self) -> &'static str {
         "DragCarrier"
     }
 }
@@ -1205,8 +1233,10 @@ struct DragReceiver {
 
 impl VisitorElement for DragReceiver {
     fn visit_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for DragReceiver {
+    fn name(&self) -> &'static str {
         "DragReceiver"
     }
 }
@@ -1281,8 +1311,10 @@ impl VisitorElement for RoutedIdentityBranch {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for RoutedIdentityBranch {
+    fn name(&self) -> &'static str {
         "RoutedIdentityBranch"
     }
 }
@@ -1704,8 +1736,10 @@ impl VisitorElement for CaptureChainElement {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for CaptureChainElement {
+    fn name(&self) -> &'static str {
         "CaptureChainElement"
     }
 }

@@ -1,8 +1,9 @@
 //! Windows that remember where they were.
 //!
 //! A window built with [`WindowAttr::remember`](aimer_window::WindowAttr::remember)
-//! comes back as the user left it: at its position, at its size, maximized or
-//! full screen if it was. The state is kept in memory for the windows of this
+//! comes back as the user left it: at its position and at its size, full screen
+//! if it was. It never comes back maximized: a window that was maximized starts
+//! at the size it had before, which is also what leaving full screen returns to. The state is kept in memory for the windows of this
 //! run, and in one small text file in the application's data directory for the
 //! next one.
 //!
@@ -13,9 +14,11 @@
 //! window.
 //!
 //! A maximized, full-screen or minimized window does not describe its normal
-//! size, so none of those overwrite the rectangle that was remembered: leaving
-//! maximized later gives back the window the user had before.
+//! size, so none of those overwrite the rectangle that was remembered. Whether
+//! a window is maximized is not kept at all, since AppKit also reports a
+//! full-screen window as maximized.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
@@ -44,17 +47,15 @@ pub(crate) struct WindowGeometry {
     /// Logical inner size.
     pub(crate) width: u32,
     pub(crate) height: u32,
-    pub(crate) maximized: bool,
     pub(crate) fullscreen: bool,
 }
 
 impl WindowGeometry {
-    /// `x y width height maximized fullscreen`, the part of a line after the
-    /// name.
+    /// `x y width height fullscreen`, the part of a line after the name.
     fn encode(&self) -> String {
         format!(
-            "{} {} {} {} {} {}",
-            self.x, self.y, self.width, self.height, self.maximized as u8, self.fullscreen as u8
+            "{} {} {} {} {}",
+            self.x, self.y, self.width, self.height, self.fullscreen as u8
         )
     }
 
@@ -69,12 +70,17 @@ impl WindowGeometry {
             "1" => Some(true),
             _ => None,
         };
-        let maximized = flag(fields.next())?;
-        let fullscreen = flag(fields.next())?;
+        // Lines written before maximized was dropped carry it ahead of the
+        // full-screen flag; it is read past and forgotten.
+        let first = flag(fields.next())?;
+        let fullscreen = match fields.next() {
+            Some(second) => flag(Some(second))?,
+            None => first,
+        };
         if fields.next().is_some() || width == 0 || height == 0 {
             return None;
         }
-        Some(Self { x, y, width, height, maximized, fullscreen })
+        Some(Self { x, y, width, height, fullscreen })
     }
 
     /// What a window looks like now. A window that is maximized, full screen
@@ -88,15 +94,12 @@ impl WindowGeometry {
         previous: Option<Self>,
     ) -> Self {
         let (x, y, width, height) = current;
-        let normal = Self { x, y, width, height, maximized, fullscreen };
+        let normal = Self { x, y, width, height, fullscreen };
         match previous {
             Some(previous) if maximized || fullscreen || minimized => {
-                Self { maximized, fullscreen, ..previous }
+                Self { fullscreen, ..previous }
             }
-            // A minimized window with nothing before it has no usable
-            // rectangle either (Windows parks it far off screen); the flags
-            // are all there is to keep.
-            None if minimized => Self { maximized, fullscreen, ..normal },
+            // With nothing before it there is no better rectangle to keep.
             _ => normal,
         }
     }
@@ -132,11 +135,31 @@ impl Memory {
         self.entries.iter().find(|(key, _)| key == name).map(|(_, geometry)| *geometry)
     }
 
+    fn wants_fullscreen(&self, name: &str) -> bool {
+        self.get(name).is_some_and(|geometry| geometry.fullscreen)
+    }
+
     fn set(&mut self, name: &str, geometry: WindowGeometry) {
         match self.entries.iter_mut().find(|(key, _)| key == name) {
             Some((_, slot)) => *slot = geometry,
             None => self.entries.push((name.to_owned(), geometry)),
         }
+    }
+
+    /// Records what a window looks like now under `name`, keeping the normal
+    /// rectangle it will return to while it is maximized, full screen or
+    /// minimized. Returns the geometry that is now remembered.
+    fn note(
+        &mut self,
+        name: &str,
+        current: (i32, i32, u32, u32),
+        maximized: bool,
+        fullscreen: bool,
+        minimized: bool,
+    ) -> WindowGeometry {
+        let geometry = WindowGeometry::observe(current, maximized, fullscreen, minimized, self.get(name));
+        self.set(name, geometry);
+        geometry
     }
 
     /// One `name<TAB>fields` line per window. A name cannot hold a tab or a
@@ -169,8 +192,12 @@ impl Memory {
 }
 
 /// A name as it is stored: one line, no tab.
-fn storable(name: &str) -> String {
-    name.chars().map(|c| if c == '\t' || c.is_control() { '_' } else { c }).collect()
+fn storable(name: &str) -> Cow<'_, str> {
+    // Names are almost always clean, and `track` runs on every resize.
+    if !name.chars().any(|c| c == '\t' || c.is_control()) {
+        return Cow::Borrowed(name);
+    }
+    Cow::Owned(name.chars().map(|c| if c == '\t' || c.is_control() { '_' } else { c }).collect())
 }
 
 /// The file the state of this application is kept in. `None` where the
@@ -247,10 +274,55 @@ fn apply(
     if geometry.is_reachable(screens) {
         attributes = attributes.with_position(PhysicalPosition::new(geometry.x, geometry.y));
     }
-    if geometry.fullscreen {
-        attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
+    // Full screen is not asked for here: see `enter_remembered_fullscreen`.
+    attributes
+}
+
+/// Sends `window` to full screen if it was remembered that way.
+///
+/// Called once the window exists, not through its attributes. winit's macOS
+/// window created full screen has no frame of its own to go back to: leaving
+/// full screen zooms it to fill the screen instead of returning it to the
+/// rectangle it was given. One sent to full screen after it was created
+/// returns to that rectangle.
+pub(crate) fn enter_remembered_fullscreen(name: &str, window: &Window) {
+    if with_memory(|memory| memory.wants_fullscreen(&storable(name))) {
+        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
     }
-    attributes.with_maximized(geometry.maximized && resizable)
+}
+
+/// Reads `window` into `memory` under `name`. `false` when it has no usable
+/// position or area, in which case nothing was recorded.
+fn note_window(memory: &mut Memory, name: &str, window: &Window) -> bool {
+    let Ok(position) = window.outer_position() else {
+        return false;
+    };
+    let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+    let (width, height) = (size.width.round() as u32, size.height.round() as u32);
+    let (maximized, fullscreen) = (window.is_maximized(), window.fullscreen().is_some());
+    let minimized = window.is_minimized().unwrap_or(false);
+    // A window with no area has nothing worth keeping, and must not replace
+    // the rectangle that is.
+    if width == 0 || height == 0 {
+        return false;
+    }
+    memory.note(name, (position.x, position.y, width, height), maximized, fullscreen, minimized);
+    true
+}
+
+/// Keeps the in-memory state of `window` current while it lives, without
+/// touching the disk.
+///
+/// The rectangle a window returns to when it leaves full screen or maximized
+/// is the one it had *before*, and only the window knows it then. Reading it at
+/// close is too late: a window closed while full screen has already lost it.
+/// Called on every move and resize, so it allocates nothing and writes nothing;
+/// [`remember`] does the writing.
+pub(crate) fn track(name: &str, window: &Window) {
+    let name = storable(name);
+    with_memory(|memory| {
+        note_window(memory, &name, window);
+    });
 }
 
 /// Remembers `window` under `name`, in memory and on disk.
@@ -259,24 +331,11 @@ fn apply(
 /// write is logged and otherwise ignored: the window just opens at its default
 /// next time.
 pub(crate) fn remember(name: &str, window: &Window) {
-    let Ok(position) = window.outer_position() else {
-        return;
-    };
-    let size = window.inner_size().to_logical::<f64>(window.scale_factor());
-    let current = (position.x, position.y, size.width.round() as u32, size.height.round() as u32);
     let name = storable(name);
     with_memory(|memory| {
-        let geometry = WindowGeometry::observe(
-            current,
-            window.is_maximized(),
-            window.fullscreen().is_some(),
-            window.is_minimized().unwrap_or(false),
-            memory.get(&name),
-        );
-        if geometry.width == 0 || geometry.height == 0 {
+        if !note_window(memory, &name, window) {
             return;
         }
-        memory.set(&name, geometry);
         if let Some(path) = state_path() {
             if let Err(error) = store(&path, memory) {
                 info!("window state not saved to {}: {error}", path.display());
@@ -290,14 +349,14 @@ mod tests {
     use super::*;
 
     fn geometry(x: i32, y: i32, width: u32, height: u32) -> WindowGeometry {
-        WindowGeometry { x, y, width, height, maximized: false, fullscreen: false }
+        WindowGeometry { x, y, width, height, fullscreen: false }
     }
 
     const SCREEN: (i32, i32, u32, u32) = (0, 0, 2560, 1440);
 
     #[test]
     fn a_geometry_survives_being_written_and_read() {
-        let original = WindowGeometry { x: -120, y: 48, width: 1280, height: 800, maximized: true, fullscreen: false };
+        let original = WindowGeometry { x: -120, y: 48, width: 1280, height: 800, fullscreen: true };
         assert_eq!(WindowGeometry::decode(&original.encode()), Some(original));
     }
 
@@ -352,7 +411,7 @@ mod tests {
 
         let seen = WindowGeometry::observe((0, 0, 2560, 1400), true, false, false, Some(before));
 
-        assert_eq!(seen, WindowGeometry { maximized: true, ..before });
+        assert_eq!(seen, before, "maximized is not remembered, only the size it returns to");
     }
 
     #[test]
@@ -367,9 +426,61 @@ mod tests {
     }
 
     #[test]
+    fn a_window_that_goes_full_screen_before_it_is_ever_saved_still_returns_to_its_size() {
+        // Regression: the rectangle used to be read only when the window
+        // closed, so a window closed while full screen had no normal size to
+        // keep and saved the screen's, and leaving full screen on the next
+        // run gave back a window as big as the screen.
+        let mut memory = Memory::default();
+        let normal = geometry(300, 200, 900, 600);
+
+        memory.note("main", (300, 200, 900, 600), false, false, false);
+        memory.note("main", (0, 0, 2560, 1440), false, true, false);
+
+        assert_eq!(memory.get("main"), Some(WindowGeometry { fullscreen: true, ..normal }));
+    }
+
+    #[test]
+    fn a_window_closed_full_screen_is_not_remembered_as_maximized_too() {
+        // Regression: AppKit reports a full-screen window as zoomed, so it was
+        // saved maximized as well and every later start filled the screen.
+        let before = geometry(758, 422, 1082, 756);
+
+        let seen = WindowGeometry::observe((0, 0, 2560, 1440), true, true, false, Some(before));
+
+        assert_eq!(seen, WindowGeometry { fullscreen: true, ..before });
+    }
+
+    #[test]
+    fn a_state_written_with_a_maximized_flag_still_loads_without_it() {
+        assert_eq!(WindowGeometry::decode("758 422 1082 756 1 0"), Some(geometry(758, 422, 1082, 756)));
+        assert_eq!(
+            WindowGeometry::decode("758 422 1082 756 1 1"),
+            Some(WindowGeometry { fullscreen: true, ..geometry(758, 422, 1082, 756) })
+        );
+        assert_eq!(
+            WindowGeometry::decode("758 422 1082 756 1"),
+            Some(WindowGeometry { fullscreen: true, ..geometry(758, 422, 1082, 756) })
+        );
+    }
+
+    #[test]
+    fn the_last_normal_size_wins_over_an_older_one_when_full_screen_follows() {
+        let mut memory = Memory::default();
+        memory.note("main", (10, 10, 800, 500), false, false, false);
+        memory.note("main", (40, 60, 1100, 700), false, false, false);
+        memory.note("main", (0, 0, 2560, 1440), false, true, false);
+
+        assert_eq!(
+            memory.get("main"),
+            Some(WindowGeometry { fullscreen: true, ..geometry(40, 60, 1100, 700) })
+        );
+    }
+
+    #[test]
     fn a_maximized_window_with_no_history_is_remembered_with_what_it_has() {
         let seen = WindowGeometry::observe((0, 0, 2560, 1400), true, false, false, None);
-        assert_eq!(seen, WindowGeometry { maximized: true, ..geometry(0, 0, 2560, 1400) });
+        assert_eq!(seen, geometry(0, 0, 2560, 1400));
     }
 
     #[test]
@@ -394,14 +505,38 @@ mod tests {
     }
 
     #[test]
-    fn restoring_sets_size_position_and_maximized() {
-        let saved = WindowGeometry { maximized: true, ..geometry(40, 50, 1000, 700) };
+    fn restoring_sets_size_and_position_and_never_maximizes() {
+        let saved = geometry(40, 50, 1000, 700);
 
         let attributes = apply(WindowAttributes::default(), &saved, true, &[SCREEN]);
 
         assert_eq!(attributes.inner_size, Some(LogicalSize::new(1000, 700).into()));
         assert_eq!(attributes.position, Some(PhysicalPosition::new(40, 50).into()));
-        assert!(attributes.maximized);
+        assert!(!attributes.maximized, "a window starts at its last size, not maximized");
+    }
+
+    #[test]
+    fn a_window_is_never_created_full_screen() {
+        // Regression: winit's macOS window created full screen is zoomed when
+        // it leaves it, whatever size was saved. It is made at its remembered
+        // rectangle and sent to full screen after, which returns it there.
+        let saved = WindowGeometry { fullscreen: true, ..geometry(40, 50, 1000, 700) };
+
+        let attributes = apply(WindowAttributes::default(), &saved, true, &[SCREEN]);
+
+        assert!(attributes.fullscreen.is_none());
+        assert_eq!(attributes.inner_size, Some(LogicalSize::new(1000, 700).into()));
+    }
+
+    #[test]
+    fn full_screen_is_asked_for_only_by_a_window_remembered_that_way() {
+        let mut memory = Memory::default();
+        memory.set("a", WindowGeometry { fullscreen: true, ..geometry(0, 0, 800, 600) });
+        memory.set("b", geometry(0, 0, 800, 600));
+
+        assert!(memory.wants_fullscreen("a"));
+        assert!(!memory.wants_fullscreen("b"));
+        assert!(!memory.wants_fullscreen("unknown"));
     }
 
     #[test]
@@ -420,8 +555,8 @@ mod tests {
     }
 
     #[test]
-    fn a_fixed_size_window_is_not_resized_or_maximized() {
-        let saved = WindowGeometry { maximized: true, ..geometry(0, 0, 1000, 700) };
+    fn a_fixed_size_window_is_not_resized() {
+        let saved = geometry(0, 0, 1000, 700);
 
         let attributes = apply(WindowAttributes::default(), &saved, false, &[SCREEN]);
 

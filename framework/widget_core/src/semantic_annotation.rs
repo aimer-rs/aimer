@@ -259,12 +259,15 @@ impl VisitorElement for RawSemantics {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Semantics"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawSemantics {
+    fn name(&self) -> &'static str {
+        "Semantics"
     }
 }
 
@@ -279,8 +282,10 @@ mod tests {
 
     struct Leaf;
 
-    impl VisitorElement for Leaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Leaf {}
+
+    impl Element for Leaf {
+        fn name(&self) -> &'static str {
             "Leaf"
         }
     }

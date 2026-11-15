@@ -331,13 +331,16 @@ impl VisitorElement for RawCapture {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Capture"
-    }
 
     #[inline]
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawCapture {
+    fn name(&self) -> &'static str {
+        "Capture"
     }
 }
 

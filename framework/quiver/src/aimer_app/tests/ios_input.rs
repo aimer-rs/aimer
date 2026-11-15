@@ -18,8 +18,10 @@ impl LayoutElement for InputElement {
     }
 }
 impl Rebuildable for InputElement {}
-impl VisitorElement for InputElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for InputElement {}
+
+impl Element for InputElement {
+    fn name(&self) -> &'static str {
         "InputElement"
     }
 }

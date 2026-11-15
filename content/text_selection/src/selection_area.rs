@@ -205,8 +205,10 @@ impl VisitorElement for SelectionAreaElement {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for SelectionAreaElement {
+    fn name(&self) -> &'static str {
         "SelectionArea"
     }
 }
@@ -395,8 +397,10 @@ mod tests {
         bounds: Bounds,
     }
 
-    impl VisitorElement for StubChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for StubChild {}
+
+    impl Element for StubChild {
+        fn name(&self) -> &'static str {
             "StubChild"
         }
     }
@@ -501,8 +505,10 @@ mod tests {
                 visitor(child.as_ref());
             }
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for Page {
+        fn name(&self) -> &'static str {
             "Page"
         }
     }

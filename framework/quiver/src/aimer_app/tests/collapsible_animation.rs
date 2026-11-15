@@ -9,7 +9,7 @@ use winit::event::ElementState;
 const BODY_HEIGHT: f32 = 100.0;
 
 fn find<'a>(element: &'a dyn Element, name: &str) -> Option<&'a dyn Element> {
-    if element.debug_name() == name {
+    if element.name() == name {
         return Some(element);
     }
     let mut found = None;

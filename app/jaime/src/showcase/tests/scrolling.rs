@@ -30,11 +30,14 @@ struct CapturedShowcaseElement {
     positions: Rc<RefCell<Vec<Vec2d>>>,
 }
 impl VisitorElement for CapturedShowcaseElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedShowcase"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedShowcaseElement {
+    fn name(&self) -> &'static str {
+        "CapturedShowcase"
     }
 }
 impl EventElement for CapturedShowcaseElement {}
@@ -83,7 +86,7 @@ fn scroll_positions(root: &dyn Element) -> Vec<Vec2d> {
         position
     }
     fn visit(element: &dyn Element, positions: &mut Vec<Vec2d>) {
-        if element.debug_name() == "RawScrollableContainer" {
+        if element.name() == "RawScrollableContainer" {
             let mut child_position = None;
             element.visit_children(&mut |child| {
                 if child_position.is_none() {

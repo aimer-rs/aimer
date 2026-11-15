@@ -84,7 +84,7 @@ impl NamedWidget {
 impl Widget for NamedWidget {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self.inner.into_element(ctx);
-        if child.debug_name() == self.name {
+        if child.name() == self.name {
             return child;
         }
         // A `NamedWidget` only wraps an already-built element; it has no build
@@ -422,12 +422,15 @@ impl VisitorElement for StatelessElement {
         visitor(child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.debug_name
-    }
 
     fn reconciliation_key(&self) -> Option<&crate::Key> {
         self.key.as_ref()
+    }
+}
+
+impl Element for StatelessElement {
+    fn name(&self) -> &'static str {
+        self.debug_name
     }
 }
 
@@ -469,8 +472,10 @@ mod tests {
 
     /// Minimal leaf element for exercising the rebuild-marking traversal.
     struct Leaf;
-    impl VisitorElement for Leaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Leaf {}
+
+    impl Element for Leaf {
+        fn name(&self) -> &'static str {
             "Leaf"
         }
     }
@@ -485,8 +490,10 @@ mod tests {
         rebuilds: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for CountingLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for CountingLeaf {}
+
+    impl Element for CountingLeaf {
+        fn name(&self) -> &'static str {
             "CountingLeaf"
         }
     }
@@ -514,8 +521,10 @@ mod tests {
                 visitor(child.as_ref());
             }
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for SiblingBranch {
+        fn name(&self) -> &'static str {
             "SiblingBranch"
         }
     }
@@ -531,8 +540,10 @@ mod tests {
     /// A child whose flex factor must remain visible through transparent
     /// element wrappers, as it does for an `Expanded` inside a keyed tree.
     struct FlexibleLeaf;
-    impl VisitorElement for FlexibleLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for FlexibleLeaf {}
+
+    impl Element for FlexibleLeaf {
+        fn name(&self) -> &'static str {
             "FlexibleLeaf"
         }
     }
@@ -630,7 +641,7 @@ mod tests {
 
         let mut marked = false;
         root.visit_children(&mut |child| {
-            if child.debug_name() == "DirtySibling" {
+            if child.name() == "DirtySibling" {
                 child.mark_needs_rebuild();
                 marked = true;
             }
@@ -677,7 +688,7 @@ mod tests {
         dirty_rebuilds.set(0);
 
         root.visit_children(&mut |child| {
-            if child.debug_name() == "DirtySibling" {
+            if child.name() == "DirtySibling" {
                 child.mark_needs_rebuild();
             }
         });
@@ -721,7 +732,7 @@ mod tests {
         dirty_rebuilds.set(0);
 
         root.visit_children(&mut |child| {
-            if child.debug_name() == "DirtySibling" {
+            if child.name() == "DirtySibling" {
                 child.rebuild_if_dirty(&context);
             }
         });
@@ -729,7 +740,7 @@ mod tests {
         dirty_rebuilds.set(0);
 
         root.visit_children(&mut |child| {
-            if child.debug_name() == "DirtySibling" {
+            if child.name() == "DirtySibling" {
                 child.mark_needs_rebuild();
             }
         });
@@ -790,7 +801,7 @@ mod tests {
         second_rebuilds.set(0);
 
         root.visit_children(&mut |child| {
-            if matches!(child.debug_name(), "FirstDirtySibling" | "SecondDirtySibling") {
+            if matches!(child.name(), "FirstDirtySibling" | "SecondDirtySibling") {
                 child.mark_needs_rebuild();
             }
         });
@@ -803,7 +814,7 @@ mod tests {
         first_rebuilds.set(0);
         second_rebuilds.set(0);
         root.visit_children(&mut |child| {
-            if child.debug_name() == "FirstDirtySibling" {
+            if child.name() == "FirstDirtySibling" {
                 child.mark_needs_rebuild();
             }
         });
@@ -917,7 +928,7 @@ mod tests {
         );
 
         let child = unsafe { &*element.child.0.get() };
-        assert_eq!(child.debug_name(), "ErrorWidget");
+        assert_eq!(child.name(), "ErrorWidget");
         assert!(!element.dirty.get());
     }
 
@@ -944,7 +955,7 @@ mod tests {
         element.rebuild_if_dirty(&context);
 
         let child = unsafe { &*element.child.0.get() };
-        assert_eq!(child.debug_name(), "ErrorWidget");
+        assert_eq!(child.name(), "ErrorWidget");
         assert!(!element.dirty.get());
 
         element.rebuild_if_dirty(&context);

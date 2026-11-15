@@ -171,8 +171,10 @@ impl<E: Element> VisitorElement for RawExpanded<E> {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.child);
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl<E: Element + 'static> Element for RawExpanded<E> {
+    fn name(&self) -> &'static str {
         self.debug_name
     }
 }

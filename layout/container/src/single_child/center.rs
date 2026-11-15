@@ -284,8 +284,10 @@ impl VisitorElement for RawCenter {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for RawCenter {
+    fn name(&self) -> &'static str {
         "Center"
     }
 }
@@ -332,8 +334,10 @@ mod tests {
     impl EventElement for Probe {}
     impl Rebuildable for Probe {}
 
-    impl VisitorElement for Probe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Probe {}
+
+    impl Element for Probe {
+        fn name(&self) -> &'static str {
             "Probe"
         }
     }

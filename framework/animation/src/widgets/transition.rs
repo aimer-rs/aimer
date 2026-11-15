@@ -124,15 +124,18 @@ macro_rules! impl_transition_element {
         }
 
         impl VisitorElement for $name {
-            fn debug_name(&self) -> &'static str {
-                $debug
-            }
             fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 visitor(self.child.as_ref());
             }
 
             fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 visitor(self.child.as_ref());
+            }
+        }
+
+        impl Element for $name {
+            fn name(&self) -> &'static str {
+                $debug
             }
         }
 
@@ -317,15 +320,18 @@ impl SlideTransitionElement {
 }
 
 impl VisitorElement for SlideTransitionElement {
-    fn debug_name(&self) -> &'static str {
-        "SlideTransitionElement"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for SlideTransitionElement {
+    fn name(&self) -> &'static str {
+        "SlideTransitionElement"
     }
 }
 
@@ -480,15 +486,18 @@ impl ScaleTransitionElement {
 }
 
 impl VisitorElement for ScaleTransitionElement {
-    fn debug_name(&self) -> &'static str {
-        "ScaleTransitionElement"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for ScaleTransitionElement {
+    fn name(&self) -> &'static str {
+        "ScaleTransitionElement"
     }
 }
 
@@ -697,15 +706,18 @@ fn interpolate_turns(begin_turns: f32, end_turns: f32, progress: f32) -> f32 {
 }
 
 impl VisitorElement for RotationTransitionElement {
-    fn debug_name(&self) -> &'static str {
-        "RotationTransitionElement"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RotationTransitionElement {
+    fn name(&self) -> &'static str {
+        "RotationTransitionElement"
     }
 }
 
@@ -776,8 +788,10 @@ mod tests {
 
     impl Rebuildable for TestElement {}
 
-    impl VisitorElement for TestElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestElement {}
+
+    impl Element for TestElement {
+        fn name(&self) -> &'static str {
             "TestElement"
         }
     }
@@ -856,8 +870,10 @@ mod tests {
 
     impl Rebuildable for PlacedElement {}
 
-    impl VisitorElement for PlacedElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for PlacedElement {}
+
+    impl Element for PlacedElement {
+        fn name(&self) -> &'static str {
             "PlacedElement"
         }
     }

@@ -1048,8 +1048,10 @@ fn build_pending_subtree(root: &dyn Element, ctx: &BuildContext) {
 /// Stands where the child of a stateful element will be until its first build.
 struct PendingChild;
 
-impl VisitorElement for PendingChild {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for PendingChild {}
+
+impl Element for PendingChild {
+    fn name(&self) -> &'static str {
         "PendingChild"
     }
 }
@@ -2012,9 +2014,6 @@ impl VisitorElement for StatefulElement {
         visitor(child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.debug_name.get()
-    }
 
     fn element_type_id(&self) -> std::any::TypeId {
         std::any::TypeId::of::<StatefulElement>()
@@ -2030,6 +2029,12 @@ impl VisitorElement for StatefulElement {
         // from `on_event_with_context` would deliver every pointer event twice.
         let child = unsafe { &*self.child.0.get() };
         visitor(child.as_ref());
+    }
+}
+
+impl Element for StatefulElement {
+    fn name(&self) -> &'static str {
+        self.debug_name.get()
     }
 }
 
@@ -2231,8 +2236,10 @@ mod tests {
     }
 
     struct TestLeaf;
-    impl VisitorElement for TestLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestLeaf {}
+
+    impl Element for TestLeaf {
+        fn name(&self) -> &'static str {
             "TestLeaf"
         }
     }
@@ -2265,8 +2272,10 @@ mod tests {
         }
     }
 
-    impl VisitorElement for PaintCountElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for PaintCountElement {}
+
+    impl Element for PaintCountElement {
+        fn name(&self) -> &'static str {
             "PaintCountElement"
         }
     }
@@ -2325,8 +2334,10 @@ mod tests {
         rebuilds: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for RebuildCountLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for RebuildCountLeaf {}
+
+    impl Element for RebuildCountLeaf {
+        fn name(&self) -> &'static str {
             "RebuildCountLeaf"
         }
     }
@@ -2526,8 +2537,10 @@ mod tests {
         }
     }
 
-    impl VisitorElement for EventProbeElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for EventProbeElement {}
+
+    impl Element for EventProbeElement {
+        fn name(&self) -> &'static str {
             "EventProbeElement"
         }
     }
@@ -2586,8 +2599,10 @@ mod tests {
                 visitor(child.as_ref());
             }
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for TraversalElement {
+        fn name(&self) -> &'static str {
             "TraversalElement"
         }
     }
@@ -2712,8 +2727,10 @@ mod tests {
         }
     }
 
-    impl VisitorElement for LifecycleChildElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for LifecycleChildElement {}
+
+    impl Element for LifecycleChildElement {
+        fn name(&self) -> &'static str {
             "LifecycleChildElement"
         }
     }
@@ -2794,12 +2811,12 @@ mod tests {
             "LifecycleWidget",
             None,
         );
-        assert_eq!(element.debug_name(), "ErrorWidget");
+        assert_eq!(element.name(), "ErrorWidget");
     }
 
     fn has_error_child(element: &dyn Element) -> bool {
         let mut found = false;
-        element.visit_children(&mut |child| found |= child.debug_name() == "ErrorWidget");
+        element.visit_children(&mut |child| found |= child.name() == "ErrorWidget");
         found
     }
 
@@ -2911,11 +2928,11 @@ mod tests {
 
         let rebuild = unsafe { (&*stateful.rebuild_fn.0.get()).clone() };
         let first = rebuild(&context);
-        assert_eq!(first.debug_name(), "ErrorWidget");
+        assert_eq!(first.name(), "ErrorWidget");
 
         let second = rebuild(&context);
         assert_eq!(
-            second.debug_name(),
+            second.name(),
             "ErrorWidget",
             "stale callbacks must not rebuild the failed state again"
         );
@@ -2955,7 +2972,7 @@ mod tests {
             "LifecycleWidget",
             Some(key.clone()),
         );
-        assert_eq!(live.debug_name(), "LifecycleWidget");
+        assert_eq!(live.name(), "LifecycleWidget");
 
         let recovered = StatefulElement::from_widget::<LifecycleWidget, LifecycleState>(
             lifecycle_widget(PanicPhase::AdoptConfig),
@@ -2963,7 +2980,7 @@ mod tests {
             "LifecycleWidget",
             Some(key),
         );
-        assert_eq!(recovered.debug_name(), "ErrorWidget");
+        assert_eq!(recovered.name(), "ErrorWidget");
     }
 
     #[test]
@@ -2998,7 +3015,7 @@ mod tests {
             Some(key),
         );
 
-        assert_eq!(recovered.debug_name(), "ErrorWidget");
+        assert_eq!(recovered.name(), "ErrorWidget");
         updater.set_state(|_| {});
         live_stateful.rebuild_if_dirty(&context);
         assert!(has_error_child(live.as_ref()));
@@ -3192,7 +3209,7 @@ mod tests {
             "LifecycleWidget",
             Some(key),
         );
-        assert_eq!(recovered.debug_name(), "ErrorWidget");
+        assert_eq!(recovered.name(), "ErrorWidget");
 
         let rebuild = unsafe { (&*live_stateful.rebuild_fn.0.get()).clone() };
         let stale_child = rebuild(&context);

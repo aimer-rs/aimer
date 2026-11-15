@@ -160,6 +160,18 @@ impl HostedWindow {
         }
     }
 
+    /// Keeps the remembered rectangle current as the window moves and
+    /// resizes, so the size it returns to from full screen is known even when
+    /// it is closed while full screen. Nothing is written to disk here.
+    fn track_geometry(&self) {
+        let Some(name) = self.app.window_attr.remembered_as() else {
+            return;
+        };
+        if let Some(native) = self.app.native_window() {
+            crate::window_memory::track(name, native);
+        }
+    }
+
     /// Takes the window off the screen, drops what it held, and lets go of it.
     ///
     /// The platform window is owned by reference counting, and is destroyed by
@@ -574,12 +586,19 @@ impl ApplicationHandler<AimerNativePlatformEvent> for DesktopHost {
         }
         {
             let window = &mut self.windows[index];
+            let mut moved = matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_));
             if !window.drew && matches!(event, WindowEvent::RedrawRequested) {
                 window.drew = true;
+                // A window that is never moved or resized sends neither, and
+                // would reach full screen with no rectangle on record.
+                moved = true;
                 // info!("window {id:?} is drawing its first frame");
             }
             let _active = enter_window_scope(window.key);
             WindowEventHandler::handle_events(&mut window.app, event_loop, id, event);
+            if moved {
+                window.track_geometry();
+            }
         }
         self.reap(event_loop);
     }

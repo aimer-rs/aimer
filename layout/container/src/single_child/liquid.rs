@@ -892,9 +892,6 @@ impl VisitorElement for RawLiquid {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Liquid"
-    }
 
     #[inline]
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
@@ -904,6 +901,12 @@ impl VisitorElement for RawLiquid {
     #[inline]
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawLiquid {
+    fn name(&self) -> &'static str {
+        "Liquid"
     }
 }
 

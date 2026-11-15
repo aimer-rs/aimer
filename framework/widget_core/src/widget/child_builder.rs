@@ -333,11 +333,6 @@ impl VisitorElement for RetainedChildElement {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.child()
-            .map(VisitorElement::debug_name)
-            .unwrap_or("RetainedChild")
-    }
 
     fn element_type_id(&self) -> TypeId {
         self.child()
@@ -429,6 +424,14 @@ impl VisitorElement for RetainedChildElement {
         if let Some(child) = self.child() {
             child.occlusion_children_at(pos, visitor);
         }
+    }
+}
+
+impl Element for RetainedChildElement {
+    fn name(&self) -> &'static str {
+        self.child()
+            .map(Element::name)
+            .unwrap_or("RetainedChild")
     }
 }
 
@@ -747,8 +750,10 @@ mod tests {
         events: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for Counter {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Counter {}
+
+    impl Element for Counter {
+        fn name(&self) -> &'static str {
             "Counter"
         }
     }
@@ -895,8 +900,10 @@ mod tests {
             fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 visitor(&self.child);
             }
+        }
 
-            fn debug_name(&self) -> &'static str {
+        impl Element for Parent {
+            fn name(&self) -> &'static str {
                 "StructuralParent"
             }
         }
@@ -929,7 +936,7 @@ mod tests {
         let ctx = context();
         let placement = ChildBuilder::from_widget(ParentWidget).build(&ctx);
         let mut names = Vec::new();
-        placement.structural_children(&mut |child| names.push(child.debug_name()));
+        placement.structural_children(&mut |child| names.push(child.name()));
 
         assert_eq!(
             names,
@@ -971,7 +978,7 @@ mod tests {
         let placement = child.build(&ctx);
 
         assert_eq!(
-            placement.debug_name(),
+            placement.name(),
             "ErrorWidget",
             "diagnostics must name the child, not its holder"
         );
@@ -1037,8 +1044,10 @@ mod tests {
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(&self.child);
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for Wrapper {
+        fn name(&self) -> &'static str {
             "Wrapper"
         }
     }
@@ -1163,7 +1172,7 @@ mod tests {
 
         let element = ChildBuilder::required().build(&ctx);
 
-        assert_eq!(element.debug_name(), "ErrorWidget");
+        assert_eq!(element.name(), "ErrorWidget");
     }
 
     #[tokio::test]

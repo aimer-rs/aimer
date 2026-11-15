@@ -53,8 +53,10 @@ mod lazy_tests {
         }
     }
 
-    impl VisitorElement for HitTestChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for HitTestChild {}
+
+    impl Element for HitTestChild {
+        fn name(&self) -> &'static str {
             "HitTestChild"
         }
     }
@@ -82,8 +84,10 @@ mod lazy_tests {
         pos_start_end_calls: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for CountingHitTestChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for CountingHitTestChild {}
+
+    impl Element for CountingHitTestChild {
+        fn name(&self) -> &'static str {
             "CountingHitTestChild"
         }
     }
@@ -244,8 +248,10 @@ mod lazy_tests {
         events: Rc<RefCell<Vec<usize>>>,
     }
 
-    impl VisitorElement for DispatchProbe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for DispatchProbe {}
+
+    impl Element for DispatchProbe {
+        fn name(&self) -> &'static str {
             "DispatchProbe"
         }
     }
@@ -317,12 +323,15 @@ mod lazy_tests {
             visitor(self.child.as_ref());
         }
 
-        fn debug_name(&self) -> &'static str {
-            "TransparentDispatchWrapper"
-        }
 
         fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
+        }
+    }
+
+    impl Element for TransparentDispatchWrapper {
+        fn name(&self) -> &'static str {
+            "TransparentDispatchWrapper"
         }
     }
 

@@ -421,8 +421,10 @@ macro_rules! impl_spacing_element {
             fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 visitor(self.child.as_ref());
             }
+        }
 
-            fn debug_name(&self) -> &'static str {
+        impl Element for $raw {
+            fn name(&self) -> &'static str {
                 $name
             }
         }
@@ -489,8 +491,10 @@ mod tests {
     impl EventElement for Probe {}
     impl Rebuildable for Probe {}
 
-    impl VisitorElement for Probe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Probe {}
+
+    impl Element for Probe {
+        fn name(&self) -> &'static str {
             "Probe"
         }
     }

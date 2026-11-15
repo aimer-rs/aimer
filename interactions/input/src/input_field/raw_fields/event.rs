@@ -1,5 +1,7 @@
-impl VisitorElement for RawTextField {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawTextField {}
+
+impl Element for RawTextField {
+    fn name(&self) -> &'static str {
         "TextField"
     }
 }

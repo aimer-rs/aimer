@@ -24,7 +24,7 @@ fn retained_element_ids_named<W: Widget + 'static>(
     let mut pending = vec![root.as_ref() as &dyn Element];
     let mut ids = Vec::new();
     while let Some(element) = pending.pop() {
-        if element.debug_name() == name {
+        if element.name() == name {
             ids.push(element.id());
         }
         element.visit_children(&mut |child| pending.push(child));

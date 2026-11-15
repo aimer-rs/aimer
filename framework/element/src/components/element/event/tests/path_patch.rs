@@ -47,8 +47,10 @@ impl VisitorElement for Slot {
         // SAFETY: see `SlotHandle::replace`; the borrow ends with the visit.
         visitor(unsafe { &*self.child.get() }.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for Slot {
+    fn name(&self) -> &'static str {
         self.name
     }
 }
@@ -62,8 +64,10 @@ impl Rebuildable for Slot {}
 
 struct Leaf;
 
-impl VisitorElement for Leaf {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for Leaf {}
+
+impl Element for Leaf {
+    fn name(&self) -> &'static str {
         "PatchLeaf"
     }
 }

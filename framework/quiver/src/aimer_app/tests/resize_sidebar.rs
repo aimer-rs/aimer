@@ -157,7 +157,7 @@ impl Widget for Shell {
 }
 
 fn find<'a>(element: &'a dyn Element, name: &str) -> Option<&'a dyn Element> {
-    if element.debug_name() == name {
+    if element.name() == name {
         return Some(element);
     }
     let mut found = None;

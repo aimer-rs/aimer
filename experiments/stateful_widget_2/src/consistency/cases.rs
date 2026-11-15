@@ -20,7 +20,7 @@ use super::*;
 fn phase_recovers<B: Backend>(phase: PanicPhase) {
     let context = build_context();
     let element = B::element::<Lifecycle>(lifecycle(phase), &context, "LifecycleWidget", None);
-    assert_eq!(element.debug_name(), "ErrorWidget");
+    assert_eq!(element.name(), "ErrorWidget");
 }
 
 // -- building and rebuilding -------------------------------------------------
@@ -238,7 +238,7 @@ pub fn keyed_config_panic_becomes_error_element<B: Backend>() {
         "LifecycleWidget",
         Some(key.clone()),
     );
-    assert_eq!(live.debug_name(), "LifecycleWidget");
+    assert_eq!(live.name(), "LifecycleWidget");
 
     let recovered = B::element::<Lifecycle>(
         lifecycle(PanicPhase::AdoptConfig),
@@ -246,7 +246,7 @@ pub fn keyed_config_panic_becomes_error_element<B: Backend>() {
         "LifecycleWidget",
         Some(key),
     );
-    assert_eq!(recovered.debug_name(), "ErrorWidget");
+    assert_eq!(recovered.name(), "ErrorWidget");
 }
 
 // -- carrying state between elements -----------------------------------------

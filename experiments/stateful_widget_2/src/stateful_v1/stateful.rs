@@ -1776,9 +1776,6 @@ impl VisitorElement for StatefulElement {
         visitor(child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.debug_name.get()
-    }
 
     fn element_type_id(&self) -> std::any::TypeId {
         std::any::TypeId::of::<StatefulElement>()
@@ -1794,6 +1791,12 @@ impl VisitorElement for StatefulElement {
         // from `on_event_with_context` would deliver every pointer event twice.
         let child = unsafe { &*self.child.0.get() };
         visitor(child.as_ref());
+    }
+}
+
+impl Element for StatefulElement {
+    fn name(&self) -> &'static str {
+        self.debug_name.get()
     }
 }
 

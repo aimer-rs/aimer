@@ -27,7 +27,7 @@ impl Hash for StructuralChildPointer<'_> {
 }
 
 /// How the rest of the framework walks an element's children, and how it
-/// names the element itself.
+/// identifies the element during reconciliation.
 ///
 /// This is the base of the [`Element`] family: [`EventElement`],
 /// [`LayoutElement`], [`Rebuildable`] and [`Drawable`] are all defined in terms
@@ -37,9 +37,10 @@ impl Hash for StructuralChildPointer<'_> {
 /// other traits (invalidating layout, marking for rebuild, rebuilding dirty
 /// descendants) then work without further code.
 ///
-/// Only [`debug_name`](VisitorElement::debug_name) is required. The remaining
-/// methods are identity hooks used by reconciliation and the other views of the
-/// children; most elements keep their defaults.
+/// Every method has a default, so a leaf implements it as an empty `impl`. The
+/// methods besides the child views are identity hooks used by reconciliation;
+/// most elements keep their defaults. Naming the element is the job of
+/// [`Element::name`], not of this trait.
 ///
 /// Besides [`visit_children`](VisitorElement::visit_children), which is the
 /// visual view, the trait owns the views the input system walks:
@@ -221,18 +222,6 @@ pub trait VisitorElement {
     fn occlusion_children_at<'a>(&'a self, pos: Vec2d, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.hit_test_children_at(pos, visitor);
     }
-
-    /// Names the element's type for diagnostics and reconciliation.
-    ///
-    /// Reconciliation treats two elements as the same widget only when their
-    /// concrete type, this name and their [`reconciliation_key`] agree, so the
-    /// name must be stable for a given kind of element and distinct between
-    /// kinds that can occupy the same position. It is also what appears in
-    /// frame statistics and unmapped-draw reports; a short type name such as
-    /// `"Container"` is conventional.
-    ///
-    /// [`reconciliation_key`]: VisitorElement::reconciliation_key
-    fn debug_name(&self) -> &'static str;
 
     /// Returns the `TypeId` of the concrete element type, enabling runtime
     /// type checks without the `Reconcilable` trait. Used by the state-carrying

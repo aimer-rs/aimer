@@ -170,8 +170,10 @@ impl Rebuildable for ErrorElement {
     }
 }
 
-impl VisitorElement for ErrorElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ErrorElement {}
+
+impl Element for ErrorElement {
+    fn name(&self) -> &'static str {
         "ErrorWidget"
     }
 }
@@ -363,12 +365,15 @@ impl VisitorElement for RawOverflowIndicator {
         visitor(self.decoration.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "OverflowIndicator"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawOverflowIndicator {
+    fn name(&self) -> &'static str {
+        "OverflowIndicator"
     }
 }
 
@@ -522,8 +527,10 @@ impl Drawable for RawOverflowDecoration {
 impl EventElement for RawOverflowDecoration {}
 impl Rebuildable for RawOverflowDecoration {}
 
-impl VisitorElement for RawOverflowDecoration {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawOverflowDecoration {}
+
+impl Element for RawOverflowDecoration {
+    fn name(&self) -> &'static str {
         "OverflowDecoration"
     }
 }

@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 
 use aimer_widget::base::{ResolvedSize, WindowHandle};
-use aimer_widget::{Drawable, EventElement, LayoutElement, Rebuildable, VisitorElement};
+use aimer_widget::{Drawable, EventElement, LayoutElement, Rebuildable, Element, VisitorElement};
 
 use crate::Router;
 
@@ -48,8 +48,10 @@ impl Widget for NavigatorLookupWidget {
 
 struct NavigatorLookupElement;
 
-impl VisitorElement for NavigatorLookupElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for NavigatorLookupElement {}
+
+impl Element for NavigatorLookupElement {
+    fn name(&self) -> &'static str {
         "NavigatorLookupElement"
     }
 }
@@ -94,8 +96,10 @@ impl Widget for NavigatorControllerOperationsWidget {
 
 struct NavigatorControllerOperationsElement;
 
-impl VisitorElement for NavigatorControllerOperationsElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for NavigatorControllerOperationsElement {}
+
+impl Element for NavigatorControllerOperationsElement {
+    fn name(&self) -> &'static str {
         "NavigatorControllerOperationsElement"
     }
 }

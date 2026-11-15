@@ -71,8 +71,10 @@ mod tests {
 
     struct Leaf;
 
-    impl VisitorElement for Leaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Leaf {}
+
+    impl Element for Leaf {
+        fn name(&self) -> &'static str {
             "Leaf"
         }
     }

@@ -303,8 +303,10 @@ impl VisitorElement for OverlayFollower {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for OverlayFollower {
+    fn name(&self) -> &'static str {
         "OverlayFollower"
     }
 }
@@ -683,13 +685,16 @@ impl VisitorElement for RawModalHost {
         visitor(self.overlay.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "ModalHost"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
         visitor(self.overlay.as_ref());
+    }
+}
+
+impl Element for RawModalHost {
+    fn name(&self) -> &'static str {
+        "ModalHost"
     }
 }
 
@@ -911,15 +916,18 @@ impl VisitorElement for RawModalOverlay {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "ModalOverlay"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
     fn focus_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
     fn hit_test_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl Element for RawModalOverlay {
+    fn name(&self) -> &'static str {
+        "ModalOverlay"
+    }
 }
 
 enum ModalCommand {
@@ -1366,7 +1374,7 @@ mod tests {
 
         let mut retained = Vec::new();
         overlay.visit_retained_children(&mut |index, child| {
-            retained.push((index, child.pos(), child.debug_name()));
+            retained.push((index, child.pos(), child.name()));
         });
         assert_eq!(retained.len(), 1, "{retained:?}");
         // The element reports its place in device pixels, relative to the overlay.
@@ -1433,8 +1441,10 @@ mod tests {
         node: FocusNode,
     }
 
-    impl VisitorElement for FocusableModalContent {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for FocusableModalContent {}
+
+    impl Element for FocusableModalContent {
+        fn name(&self) -> &'static str {
             "FocusableModalContent"
         }
     }
@@ -1510,8 +1520,10 @@ mod tests {
         events: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for CapturingModalElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for CapturingModalElement {}
+
+    impl Element for CapturingModalElement {
+        fn name(&self) -> &'static str {
             "CapturingModalElement"
         }
     }

@@ -458,9 +458,6 @@ impl<E: Element> VisitorElement for RawGestureDetector<E> {
         visitor(&self.child);
     }
 
-    fn debug_name(&self) -> &'static str {
-        "GestureDetector"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         if self.behavior == GestureDetectorBehavior::PassThrough {
@@ -474,6 +471,12 @@ impl<E: Element> VisitorElement for RawGestureDetector<E> {
 
     fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.event_children(visitor);
+    }
+}
+
+impl<E: Element + 'static> Element for RawGestureDetector<E> {
+    fn name(&self) -> &'static str {
+        "GestureDetector"
     }
 }
 
@@ -724,8 +727,10 @@ mod tests {
         events: Rc<std::cell::Cell<usize>>,
     }
 
-    impl VisitorElement for RecordingElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for RecordingElement {}
+
+    impl Element for RecordingElement {
+        fn name(&self) -> &'static str {
             "RecordingElement"
         }
     }
@@ -747,8 +752,10 @@ mod tests {
     }
     impl Rebuildable for RecordingElement {}
 
-    impl VisitorElement for TestElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for TestElement {}
+
+    impl Element for TestElement {
+        fn name(&self) -> &'static str {
             "TestElement"
         }
     }

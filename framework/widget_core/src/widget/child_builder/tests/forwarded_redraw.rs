@@ -11,8 +11,10 @@ use crate::components::element::take_event_paint_invalidated;
 /// event and asks for a redraw of its own paint.
 struct RedrawLeaf;
 
-impl VisitorElement for RedrawLeaf {
-    fn debug_name(&self) -> &'static str { "RedrawLeaf" }
+impl VisitorElement for RedrawLeaf {}
+
+impl Element for RedrawLeaf {
+    fn name(&self) -> &'static str { "RedrawLeaf" }
 }
 impl Rebuildable for RedrawLeaf {}
 impl Drawable for RedrawLeaf {}
@@ -37,10 +39,13 @@ struct Page {
     child: AnyElement,
 }
 impl VisitorElement for Page {
-    fn debug_name(&self) -> &'static str { "Page" }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
+
+impl Element for Page {
+    fn name(&self) -> &'static str { "Page" }
 }
 impl Rebuildable for Page {}
 impl Drawable for Page {}

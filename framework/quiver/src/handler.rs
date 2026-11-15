@@ -358,7 +358,7 @@ impl WindowRenderTree {
         for (_, element, _, _) in &interactive {
             *self
                 .interaction_adopted_by_type
-                .entry(element.debug_name())
+                .entry(element.name())
                 .or_default() += 1;
         }
         Ok(RenderTreeSyncResult {
@@ -695,7 +695,7 @@ fn collect_render_tree_nodes<'element, 'context>(
     } else {
         invalid_bounds.push(census::CensusElement {
             element: element_id,
-            debug_name: element.debug_name(),
+            debug_name: element.name(),
         });
         (
             if bounds_valid {
@@ -2173,6 +2173,10 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
             // Owned by whoever still holds it: the window is destroyed when the
             // last handle goes, which is what lets a closed window be freed.
             let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
+            #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+            if let Some(name) = self.window_attr.remembered_as() {
+                crate::window_memory::enter_remembered_fullscreen(name, &window);
+            }
             aimer_events::window::set_window(&window);
             self.window = Some(WindowHandle::native(window));
         }
@@ -2579,8 +2583,10 @@ mod tests {
         width: Rc<Cell<f32>>,
     }
 
-    impl VisitorElement for SizedLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for SizedLeaf {}
+
+    impl Element for SizedLeaf {
+        fn name(&self) -> &'static str {
             "RenderTreeSyncLeaf"
         }
     }
@@ -2611,12 +2617,14 @@ mod tests {
     }
 
     impl VisitorElement for V2Parent {
-        fn debug_name(&self) -> &'static str {
-            "V2Parent"
-        }
-
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
+        }
+    }
+
+    impl Element for V2Parent {
+        fn name(&self) -> &'static str {
+            "V2Parent"
         }
     }
 
@@ -2652,8 +2660,10 @@ mod tests {
         child: AnyElement,
     }
 
-    impl VisitorElement for HiddenChildParent {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for HiddenChildParent {}
+
+    impl Element for HiddenChildParent {
+        fn name(&self) -> &'static str {
             "HiddenChildParent"
         }
     }
@@ -2685,8 +2695,10 @@ mod tests {
     /// rejects as invalid bounds.
     struct NonFiniteLeaf;
 
-    impl VisitorElement for NonFiniteLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for NonFiniteLeaf {}
+
+    impl Element for NonFiniteLeaf {
+        fn name(&self) -> &'static str {
             "NonFiniteLeaf"
         }
     }
@@ -2712,12 +2724,14 @@ mod tests {
     }
 
     impl VisitorElement for LegacyBranch {
-        fn debug_name(&self) -> &'static str {
-            "LegacyBranch"
-        }
-
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
+        }
+    }
+
+    impl Element for LegacyBranch {
+        fn name(&self) -> &'static str {
+            "LegacyBranch"
         }
     }
 
@@ -2740,8 +2754,10 @@ mod tests {
         paints: Rc<Cell<u32>>,
     }
 
-    impl VisitorElement for V2Grandchild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for V2Grandchild {}
+
+    impl Element for V2Grandchild {
+        fn name(&self) -> &'static str {
             "V2Grandchild"
         }
     }
@@ -2777,8 +2793,10 @@ mod tests {
         paints: Rc<Cell<u32>>,
     }
 
-    impl VisitorElement for V2PaintLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for V2PaintLeaf {}
+
+    impl Element for V2PaintLeaf {
+        fn name(&self) -> &'static str {
             "V2PaintLeaf"
         }
     }
@@ -2844,9 +2862,6 @@ mod tests {
             visitor(self.child.as_ref());
         }
 
-        fn debug_name(&self) -> &'static str {
-            "ScrollContentClipTest"
-        }
 
         fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
@@ -2854,6 +2869,12 @@ mod tests {
 
         fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
+        }
+    }
+
+    impl Element for ScrollContentClipElement {
+        fn name(&self) -> &'static str {
+            "ScrollContentClipTest"
         }
     }
 
@@ -2911,14 +2932,16 @@ mod tests {
     }
 
     impl VisitorElement for V2PaintTreeRoot {
-        fn debug_name(&self) -> &'static str {
-            "V2PaintTreeRoot"
-        }
-
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             for child in &self.children {
                 visitor(child.as_ref());
             }
+        }
+    }
+
+    impl Element for V2PaintTreeRoot {
+        fn name(&self) -> &'static str {
+            "V2PaintTreeRoot"
         }
     }
 
@@ -2956,12 +2979,14 @@ mod tests {
     }
 
     impl VisitorElement for PassThrough {
-        fn debug_name(&self) -> &'static str {
-            "PassThrough"
-        }
-
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
+        }
+    }
+
+    impl Element for PassThrough {
+        fn name(&self) -> &'static str {
+            "PassThrough"
         }
     }
 
@@ -3018,7 +3043,7 @@ mod tests {
     fn find_element_id(root: &dyn Element, debug_name: &str) -> Option<aimer_widget::ElementId> {
         let mut pending = vec![root];
         while let Some(element) = pending.pop() {
-            if element.debug_name() == debug_name {
+            if element.name() == debug_name {
                 return Some(element.id());
             }
             element.visit_children(&mut |child| pending.push(child));
@@ -3030,7 +3055,7 @@ mod tests {
         let mut found = Vec::new();
         let mut pending = vec![root];
         while let Some(element) = pending.pop() {
-            if element.debug_name() == debug_name {
+            if element.name() == debug_name {
                 found.push(element.id());
             }
             element.visit_children(&mut |child| pending.push(child));
@@ -3478,7 +3503,7 @@ mod tests {
         let mut pending = vec![root.as_ref() as &dyn Element];
         let mut leaf_y = None;
         while let Some(element) = pending.pop() {
-            if element.debug_name() == "V2PaintLeaf" {
+            if element.name() == "V2PaintLeaf" {
                 let node = window_tree
                     .node_for_element(element.id())
                     .expect("leaf is mapped");
@@ -3543,7 +3568,7 @@ mod tests {
         let mut leaf_bounds = None;
         let mut pending = vec![root.as_ref() as &dyn Element];
         while let Some(element) = pending.pop() {
-            if element.debug_name() == "V2PaintLeaf"
+            if element.name() == "V2PaintLeaf"
                 && element.pos() != Some(Vec2d { x: 70.0, y: 0.0 })
             {
                 leaf_bounds = Some(
@@ -4006,7 +4031,7 @@ mod tests {
         while let Some(element) = pending.pop() {
             if let Some(node) = window_tree.node_for_element(element.id()) {
                 render_sources.push((
-                    element.debug_name(),
+                    element.name(),
                     node,
                     window_tree.tree.paint_source(node).unwrap(),
                     window_tree.tree.element_bounds(node).unwrap(),

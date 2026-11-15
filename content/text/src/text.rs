@@ -275,7 +275,7 @@ mod tests {
 
         let element = Text::new("plain").to_element(&ctx);
 
-        assert_eq!(element.debug_name(), RAW_TEXT_NAME);
+        assert_eq!(element.name(), RAW_TEXT_NAME);
     }
 
     #[test]
@@ -374,7 +374,7 @@ mod tests {
             Text::new("selectable").to_element(ctx)
         });
 
-        assert_eq!(element.debug_name(), "SelectableText");
+        assert_eq!(element.name(), "SelectableText");
         session.select_all();
         assert_eq!(session.selected_text(), "selectable");
     }
@@ -398,6 +398,6 @@ mod tests {
         let outside = Text::new("toggled").to_element(&ctx);
         outside.adopt_runtime_state_from(inside.as_ref());
 
-        assert_eq!(outside.debug_name(), RAW_TEXT_NAME);
+        assert_eq!(outside.name(), RAW_TEXT_NAME);
     }
 }

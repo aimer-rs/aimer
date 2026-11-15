@@ -586,9 +586,6 @@ impl VisitorElement for MorphTransitionElement {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "MorphTransitionElement"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         unsafe {
@@ -596,6 +593,12 @@ impl VisitorElement for MorphTransitionElement {
                 visitor(child);
             }
         }
+    }
+}
+
+impl Element for MorphTransitionElement {
+    fn name(&self) -> &'static str {
+        "MorphTransitionElement"
     }
 }
 

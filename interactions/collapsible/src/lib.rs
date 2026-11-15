@@ -77,8 +77,10 @@ mod tests {
         events: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for EventProbeElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for EventProbeElement {}
+
+    impl Element for EventProbeElement {
+        fn name(&self) -> &'static str {
             "ListHeaderEventProbe"
         }
     }

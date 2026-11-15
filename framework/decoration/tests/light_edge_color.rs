@@ -271,8 +271,10 @@ impl Widget for BackgroundProbe {
         Element::boxed(self)
     }
 }
-impl VisitorElement for BackgroundProbe {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for BackgroundProbe {}
+
+impl Element for BackgroundProbe {
+    fn name(&self) -> &'static str {
         "BackgroundProbe"
     }
 }

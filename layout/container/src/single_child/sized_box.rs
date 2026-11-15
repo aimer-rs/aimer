@@ -200,8 +200,10 @@ impl<E: Element> VisitorElement for RawSizedBox<E> {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.child);
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl<E: Element + 'static> Element for RawSizedBox<E> {
+    fn name(&self) -> &'static str {
         self.debug_name
     }
 }
@@ -305,8 +307,10 @@ mod tests {
     impl EventElement for DrawChild {}
     impl Rebuildable for DrawChild {}
 
-    impl VisitorElement for DrawChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for DrawChild {}
+
+    impl Element for DrawChild {
+        fn name(&self) -> &'static str {
             "DrawChild"
         }
     }
@@ -329,8 +333,10 @@ mod tests {
     impl EventElement for FixedChild {}
     impl Rebuildable for FixedChild {}
 
-    impl VisitorElement for FixedChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for FixedChild {}
+
+    impl Element for FixedChild {
+        fn name(&self) -> &'static str {
             "FixedChild"
         }
     }

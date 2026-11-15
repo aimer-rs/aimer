@@ -338,8 +338,10 @@ impl RawCalendar {
         EventResult::ignored()
     }
 }
-impl VisitorElement for RawCalendar {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawCalendar {}
+
+impl Element for RawCalendar {
+    fn name(&self) -> &'static str {
         "RawCalendar"
     }
 }
@@ -816,8 +818,10 @@ impl RawDatePicker {
         EventResult::ignored()
     }
 }
-impl VisitorElement for RawDatePicker {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawDatePicker {}
+
+impl Element for RawDatePicker {
+    fn name(&self) -> &'static str {
         "RawDatePicker"
     }
 }
@@ -1618,8 +1622,10 @@ impl RawDateTimePicker {
     }
 }
 
-impl VisitorElement for RawDateTimePicker {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawDateTimePicker {}
+
+impl Element for RawDateTimePicker {
+    fn name(&self) -> &'static str {
         "RawDateTimePicker"
     }
 }

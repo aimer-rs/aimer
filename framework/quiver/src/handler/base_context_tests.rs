@@ -15,7 +15,7 @@ use aimer_container::Container;
 use aimer_style::LayoutSpacing;
 use aimer_widget::base::{BuildContext, WindowHandle};
 use aimer_widget::{
-    AnyElement, Drawable, EventElement, LayoutElement, Rebuildable, VisitorElement, Widget,
+    AnyElement, Drawable, EventElement, LayoutElement, Rebuildable, Element, VisitorElement, Widget,
 };
 
 use super::WindowRenderTree;
@@ -25,8 +25,10 @@ struct WidthProbe {
     widths: Rc<RefCell<Vec<f32>>>,
 }
 
-impl VisitorElement for WidthProbe {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for WidthProbe {}
+
+impl Element for WidthProbe {
+    fn name(&self) -> &'static str {
         "WidthProbe"
     }
 }

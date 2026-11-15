@@ -40,8 +40,10 @@ impl Drawable for ZeroSizedBox {
     }
 }
 
-impl VisitorElement for ZeroSizedBox {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ZeroSizedBox {}
+
+impl Element for ZeroSizedBox {
+    fn name(&self) -> &'static str {
         "ZeroSizedBox"
     }
 }

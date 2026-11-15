@@ -68,8 +68,10 @@ impl Drop for CountedLeafElement {
     }
 }
 
-impl VisitorElement for CountedLeafElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for CountedLeafElement {}
+
+impl Element for CountedLeafElement {
+    fn name(&self) -> &'static str {
         "CountedLeaf"
     }
 }
@@ -108,8 +110,10 @@ impl VisitorElement for GroupElement {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for GroupElement {
+    fn name(&self) -> &'static str {
         "Group"
     }
 }

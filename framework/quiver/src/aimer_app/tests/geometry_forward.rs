@@ -178,8 +178,10 @@ struct GeometryCounterElement {
     calls: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for GeometryCounterElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for GeometryCounterElement {}
+
+impl Element for GeometryCounterElement {
+    fn name(&self) -> &'static str {
         "GeometryCounter"
     }
 }
@@ -265,8 +267,10 @@ struct TransparentCounterElement {
     calls: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for TransparentCounterElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for TransparentCounterElement {}
+
+impl Element for TransparentCounterElement {
+    fn name(&self) -> &'static str {
         "TransparentCounter"
     }
 }

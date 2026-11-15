@@ -234,7 +234,7 @@ mod swipe_host {
     }
 
     use aimer_attribute::Vec2d;
-    use aimer_widget::{Drawable, EventElement, LayoutElement, Rebuildable, VisitorElement};
+    use aimer_widget::{Drawable, EventElement, LayoutElement, Rebuildable, Element, VisitorElement};
 
     /// A page 200 wide that has been presented `offset` further along, as a page is
     /// that is sliding away, and then `shift` more, as the page it uncovers is.
@@ -242,7 +242,11 @@ mod swipe_host {
     impl Widget for Sliding {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
-    impl VisitorElement for Sliding { fn debug_name(&self) -> &'static str { "Sliding" } }
+    impl VisitorElement for Sliding {}
+
+    impl Element for Sliding {
+ fn name(&self) -> &'static str { "Sliding" }
+    }
     impl Drawable for Sliding { fn update(&self, _: &BuildContext) {} }
     impl Rebuildable for Sliding {}
     impl EventElement for Sliding {}
@@ -389,7 +393,11 @@ mod swipe_touch {
     impl Widget for Probe {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
-    impl VisitorElement for Probe { fn debug_name(&self) -> &'static str { "Probe" } }
+    impl VisitorElement for Probe {}
+
+    impl Element for Probe {
+ fn name(&self) -> &'static str { "Probe" }
+    }
     impl Drawable for Probe { fn update(&self, _: &BuildContext) {} }
     impl Rebuildable for Probe {}
     impl LayoutElement for Probe {
@@ -424,7 +432,11 @@ mod swipe_touch {
     impl Widget for Scroller {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
-    impl VisitorElement for Scroller { fn debug_name(&self) -> &'static str { "Scroller" } }
+    impl VisitorElement for Scroller {}
+
+    impl Element for Scroller {
+ fn name(&self) -> &'static str { "Scroller" }
+    }
     impl Drawable for Scroller { fn update(&self, _: &BuildContext) {} }
     impl Rebuildable for Scroller {}
     impl LayoutElement for Scroller {
@@ -450,7 +462,11 @@ mod swipe_touch {
     impl Widget for Occluder {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
-    impl VisitorElement for Occluder { fn debug_name(&self) -> &'static str { "Occluder" } }
+    impl VisitorElement for Occluder {}
+
+    impl Element for Occluder {
+ fn name(&self) -> &'static str { "Occluder" }
+    }
     impl Drawable for Occluder { fn update(&self, _: &BuildContext) {} }
     impl Rebuildable for Occluder {}
     impl LayoutElement for Occluder {
@@ -474,7 +490,11 @@ mod swipe_touch {
     impl Widget for UsesOnce {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
-    impl VisitorElement for UsesOnce { fn debug_name(&self) -> &'static str { "UsesOnce" } }
+    impl VisitorElement for UsesOnce {}
+
+    impl Element for UsesOnce {
+ fn name(&self) -> &'static str { "UsesOnce" }
+    }
     impl Drawable for UsesOnce { fn update(&self, _: &BuildContext) {} }
     impl Rebuildable for UsesOnce {}
     impl LayoutElement for UsesOnce {
@@ -504,7 +524,11 @@ mod swipe_touch {
     impl Widget for Pressable {
         fn to_element(self, _: &BuildContext) -> AnyElement { aimer_widget::Element::boxed(self) }
     }
-    impl VisitorElement for Pressable { fn debug_name(&self) -> &'static str { "Pressable" } }
+    impl VisitorElement for Pressable {}
+
+    impl Element for Pressable {
+ fn name(&self) -> &'static str { "Pressable" }
+    }
     impl Drawable for Pressable { fn update(&self, _: &BuildContext) {} }
     impl Rebuildable for Pressable {}
     impl LayoutElement for Pressable {

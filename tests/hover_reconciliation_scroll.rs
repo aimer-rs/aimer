@@ -8,7 +8,7 @@ use aimer::quiver::winit::event::{DeviceId, WindowEvent};
 use aimer::{
     AimerApp, AnyElement, AnyWidget, BuildContext, Column, Drawable, EventElement, EventResult,
     EventTreeRole, LayoutElement, Rebuildable, ScrollAxis, ScrollController, Scrollable, SizedBox,
-    Vec2d, VisitorElement, Widget,
+    Vec2d, Element, VisitorElement, Widget,
 };
 
 struct PointerMoveProbe {
@@ -21,8 +21,10 @@ impl Widget for PointerMoveProbe {
     }
 }
 
-impl VisitorElement for PointerMoveProbe {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for PointerMoveProbe {}
+
+impl Element for PointerMoveProbe {
+    fn name(&self) -> &'static str {
         "PointerMoveProbe"
     }
 }

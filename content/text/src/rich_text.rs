@@ -485,8 +485,10 @@ impl RawRichText {
     }
 }
 
-impl VisitorElement for RawRichText {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawRichText {}
+
+impl Element for RawRichText {
+    fn name(&self) -> &'static str {
         "RawRichText"
     }
 }

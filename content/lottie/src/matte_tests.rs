@@ -39,7 +39,7 @@ fn mattes(element: &AnyElement) -> &RawMattes {
 
 fn names(element: &dyn Element) -> Vec<&'static str> {
     let mut out = Vec::new();
-    element.visit_children(&mut |child| out.push(child.debug_name()));
+    element.visit_children(&mut |child| out.push(child.name()));
     out
 }
 

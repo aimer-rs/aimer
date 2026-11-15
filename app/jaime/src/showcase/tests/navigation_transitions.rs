@@ -78,10 +78,13 @@ struct CapturedElement {
 }
 
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str { "CapturedNavigationTransitions" }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str { "CapturedNavigationTransitions" }
 }
 impl EventElement for CapturedElement {}
 impl Rebuildable for CapturedElement {
@@ -104,7 +107,7 @@ impl Drawable for CapturedElement {
 
 fn collect_labels(element: &dyn Element, ctx: &BuildContext, labels: &mut Vec<Label>, inherited: Option<(Vec2d, Vec2d)>) {
     let bounds = element.pos_start_end().or(inherited);
-    if element.debug_name() == "RawTextWidget" {
+    if element.name() == "RawTextWidget" {
         let paints = aimer_widget::testing::record_retained_paint(element, ctx);
         for paint in &paints {
             for command in paint.commands.iter() {
@@ -120,7 +123,7 @@ fn collect_labels(element: &dyn Element, ctx: &BuildContext, labels: &mut Vec<La
     }
     // Outgoing pages may still paint, but only the incoming page can be clicked.
     let mut visit = |child: &dyn Element| collect_labels(child, ctx, labels, bounds);
-    if element.debug_name() == "NavigationTransitionHost" {
+    if element.name() == "NavigationTransitionHost" {
         element.event_children(&mut visit);
     } else {
         element.visit_children(&mut visit);

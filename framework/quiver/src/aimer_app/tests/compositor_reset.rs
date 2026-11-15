@@ -29,8 +29,10 @@ struct ProbeElement {
     mode: Rc<Cell<Mode>>,
 }
 
-impl VisitorElement for ProbeElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ProbeElement {}
+
+impl Element for ProbeElement {
+    fn name(&self) -> &'static str {
         "CompositorProbe"
     }
 }

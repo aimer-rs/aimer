@@ -240,8 +240,10 @@ impl VisitorElement for RawMattes {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for RawMattes {
+    fn name(&self) -> &'static str {
         "Lottie"
     }
 }
@@ -362,8 +364,10 @@ impl EventElement for RawPlane {
     }
 }
 
-impl VisitorElement for RawPlane {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawPlane {}
+
+impl Element for RawPlane {
+    fn name(&self) -> &'static str {
         "LottiePlane"
     }
 }

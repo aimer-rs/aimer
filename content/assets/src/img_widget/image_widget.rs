@@ -242,8 +242,10 @@ impl<P: ImageProvider> VisitorElement for RawImageWidget<P> {
             visitor(element.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl<P: ImageProvider> Element for RawImageWidget<P> {
+    fn name(&self) -> &'static str {
         "RawImageElement"
     }
 }

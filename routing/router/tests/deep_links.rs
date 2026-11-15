@@ -36,7 +36,11 @@ struct Leaf(Screen);
 impl Widget for Leaf {
     fn to_element(self, _: &BuildContext) -> AnyElement { Element::boxed(self) }
 }
-impl VisitorElement for Leaf { fn debug_name(&self) -> &'static str { "ScreenPage" } }
+impl VisitorElement for Leaf {}
+
+impl Element for Leaf {
+ fn name(&self) -> &'static str { "ScreenPage" }
+}
 impl Drawable for Leaf { fn can_paint(&self, _: &BuildContext) -> bool { true } }
 impl LayoutElement for Leaf {}
 impl Rebuildable for Leaf {}

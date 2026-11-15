@@ -394,13 +394,16 @@ impl VisitorElement for RawModal {
         visitor(1, self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Modal"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.barrier.as_ref());
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawModal {
+    fn name(&self) -> &'static str {
+        "Modal"
     }
 }
 

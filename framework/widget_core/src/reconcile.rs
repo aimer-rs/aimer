@@ -26,11 +26,14 @@ impl crate::VisitorElement for ScrollableLikeWrapper {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
-    fn debug_name(&self) -> &'static str {
-        "ScrollableLikeWrapper"
-    }
 
     fn event_children<'a>(&'a self, _: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl crate::Element for ScrollableLikeWrapper {
+    fn name(&self) -> &'static str {
+        "ScrollableLikeWrapper"
+    }
 }
 
 impl crate::EventElement for ScrollableLikeWrapper {
@@ -55,8 +58,10 @@ mod tests {
 
     // Minimal fake elements: all trait methods except the listed ones use defaults.
     struct Leaf(&'static str);
-    impl VisitorElement for Leaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Leaf {}
+
+    impl Element for Leaf {
+        fn name(&self) -> &'static str {
             self.0
         }
     }
@@ -74,7 +79,10 @@ mod tests {
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.0.as_ref());
         }
-        fn debug_name(&self) -> &'static str {
+    }
+
+    impl Element for Wrapper {
+        fn name(&self) -> &'static str {
             "Wrapper"
         }
     }
@@ -92,7 +100,10 @@ mod tests {
                 visitor(child.as_ref());
             }
         }
-        fn debug_name(&self) -> &'static str {
+    }
+
+    impl Element for Branches {
+        fn name(&self) -> &'static str {
             "Branches"
         }
     }
@@ -111,12 +122,15 @@ mod tests {
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.visual_child.as_ref());
         }
-        fn debug_name(&self) -> &'static str {
-            "SplitTraversal"
-        }
 
         fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.event_child.as_ref());
+        }
+    }
+
+    impl Element for SplitTraversal {
+        fn name(&self) -> &'static str {
+            "SplitTraversal"
         }
     }
     impl Drawable for SplitTraversal {
@@ -135,7 +149,7 @@ mod tests {
         let wrapper = Wrapper(Leaf("Scrollable").boxed());
         let children = event_children_of(&wrapper);
         assert_eq!(children.len(), 1, "wrapper must expose its single child");
-        assert_eq!(children[0].debug_name(), "Scrollable");
+        assert_eq!(children[0].name(), "Scrollable");
     }
 
     // ─── StatefulElement state carry on reconcile ─────────────────────────
@@ -171,8 +185,10 @@ mod tests {
     }
 
     struct EmptyLeaf;
-    impl VisitorElement for EmptyLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for EmptyLeaf {}
+
+    impl Element for EmptyLeaf {
+        fn name(&self) -> &'static str {
             "EmptyLeaf"
         }
     }
@@ -472,8 +488,10 @@ mod tests {
         value: usize,
         drawn: Rc<Cell<usize>>,
     }
-    impl VisitorElement for RecordingLeaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for RecordingLeaf {}
+
+    impl Element for RecordingLeaf {
+        fn name(&self) -> &'static str {
             "RecordingLeaf"
         }
     }
@@ -493,12 +511,15 @@ mod tests {
         fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.0.as_ref());
         }
-        fn debug_name(&self) -> &'static str {
-            "DrawWrapper"
-        }
 
         fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.0.as_ref());
+        }
+    }
+
+    impl Element for DrawWrapper {
+        fn name(&self) -> &'static str {
+            "DrawWrapper"
         }
     }
     impl Drawable for DrawWrapper {
@@ -518,14 +539,17 @@ mod tests {
                 visitor(c.as_ref());
             }
         }
-        fn debug_name(&self) -> &'static str {
-            "DrawRow"
-        }
 
         fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             for c in &self.0 {
                 visitor(c.as_ref());
             }
+        }
+    }
+
+    impl Element for DrawRow {
+        fn name(&self) -> &'static str {
+            "DrawRow"
         }
     }
     impl Drawable for DrawRow {
@@ -1382,8 +1406,10 @@ mod tests {
             }
         }
 
-        impl VisitorElement for FakeLeaf {
-            fn debug_name(&self) -> &'static str {
+        impl VisitorElement for FakeLeaf {}
+
+        impl Element for FakeLeaf {
+            fn name(&self) -> &'static str {
                 self.name
             }
         }
@@ -1417,12 +1443,14 @@ mod tests {
         }
 
         impl VisitorElement for FakeContainer {
-            fn debug_name(&self) -> &'static str {
-                "FakeContainer"
-            }
-
             fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 visitor(self.child.as_ref());
+            }
+        }
+
+        impl Element for FakeContainer {
+            fn name(&self) -> &'static str {
+                "FakeContainer"
             }
         }
 
@@ -1454,14 +1482,16 @@ mod tests {
         }
 
         impl VisitorElement for FakeFlex {
-            fn debug_name(&self) -> &'static str {
-                "FakeFlex"
-            }
-
             fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 for child in &self.children {
                     visitor(child.as_ref());
                 }
+            }
+        }
+
+        impl Element for FakeFlex {
+            fn name(&self) -> &'static str {
+                "FakeFlex"
             }
         }
 
@@ -1531,8 +1561,10 @@ mod tests {
                     visitor(child.as_ref());
                 }
             }
+        }
 
-            fn debug_name(&self) -> &'static str {
+        impl Element for FakeStack {
+            fn name(&self) -> &'static str {
                 "FakeStack"
             }
         }
@@ -1575,12 +1607,15 @@ mod tests {
         impl VisitorElement for FakePositioned {
             fn visit_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
-            fn debug_name(&self) -> &'static str {
-                "FakePositioned"
-            }
 
             fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
                 visitor(self.child.as_ref());
+            }
+        }
+
+        impl Element for FakePositioned {
+            fn name(&self) -> &'static str {
+                "FakePositioned"
             }
         }
 
@@ -1629,11 +1664,14 @@ mod tests {
                 visitor(self.child.as_ref());
             }
 
-            fn debug_name(&self) -> &'static str {
-                "FakeScrollable"
-            }
 
             fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+        }
+
+        impl Element for FakeScrollable {
+            fn name(&self) -> &'static str {
+                "FakeScrollable"
+            }
         }
 
         impl Drawable for FakeScrollable {

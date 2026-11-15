@@ -1575,9 +1575,6 @@ mod tests {
                 }
             }
 
-            fn debug_name(&self) -> &'static str {
-                "EventTreeComparisonElement"
-            }
 
             fn hit_test_children_at<'a>(
                 &'a self,
@@ -1606,6 +1603,12 @@ mod tests {
                         + hits.index_bounds_checked
                         + hits.target_bounds_checked,
                 );
+            }
+        }
+
+        impl FrameworkElement for ComparisonElement {
+            fn name(&self) -> &'static str {
+                "EventTreeComparisonElement"
             }
         }
 
@@ -1721,9 +1724,6 @@ mod tests {
                 visitor(self.child.as_ref());
             }
 
-            fn debug_name(&self) -> &'static str {
-                "LegacyHitBoundary"
-            }
 
             fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn FrameworkElement)) {
                 visitor(self.child.as_ref());
@@ -1737,6 +1737,12 @@ mod tests {
                 if self.hit_region.is_inside(pos.x, pos.y) {
                     visitor(self.child.as_ref());
                 }
+            }
+        }
+
+        impl FrameworkElement for LegacyHitBoundary {
+            fn name(&self) -> &'static str {
+                "LegacyHitBoundary"
             }
         }
 

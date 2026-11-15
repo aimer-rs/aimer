@@ -70,7 +70,7 @@ fn containers<W: Widget + 'static>(
     app: &HeadlessAimerApp<W>,
     found: &mut Vec<aimer_cupid::draw_cmd::RenderNodeId>,
 ) {
-    if element.debug_name() == "Container"
+    if element.name() == "Container"
         && let Some(node) = app.app.render_node_for_element(element.id())
     {
         found.push(node);

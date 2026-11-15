@@ -386,13 +386,16 @@ impl VisitorElement for RawSharedElement {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "SharedElement"
-    }
 
     #[inline]
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawSharedElement {
+    fn name(&self) -> &'static str {
+        "SharedElement"
     }
 }
 
@@ -507,8 +510,10 @@ mod tests {
 
     impl Rebuildable for LeafElement {}
 
-    impl VisitorElement for LeafElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for LeafElement {}
+
+    impl Element for LeafElement {
+        fn name(&self) -> &'static str {
             "Leaf"
         }
     }

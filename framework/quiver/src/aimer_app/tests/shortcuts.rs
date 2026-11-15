@@ -24,8 +24,10 @@ impl LayoutElement for BlankElement {
     }
 }
 impl Rebuildable for BlankElement {}
-impl VisitorElement for BlankElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for BlankElement {}
+
+impl Element for BlankElement {
+    fn name(&self) -> &'static str {
         "BlankElement"
     }
 }

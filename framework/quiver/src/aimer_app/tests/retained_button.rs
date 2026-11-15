@@ -25,7 +25,7 @@ fn decoration_nodes<W: Widget + 'static>(
     app: &HeadlessAimerApp<W>,
 ) -> Vec<aimer_cupid::draw_cmd::RenderNodeId> {
     let mut nodes = Vec::new();
-    if root.debug_name() == "Container" {
+    if root.name() == "Container" {
         nodes.push(app.app.render_node_for_element(root.id()).unwrap());
     }
     root.visit_children(&mut |child| nodes.extend(decoration_nodes(child, app)));

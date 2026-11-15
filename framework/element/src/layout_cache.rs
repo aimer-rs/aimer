@@ -271,12 +271,14 @@ mod tests {
     use super::*;
     use crate::base::BuildContext;
     use crate::components::element::reconcile_generated_tree;
-    use crate::{Drawable, EventElement, LayoutElement, Rebuildable, VisitorElement};
+    use crate::{Drawable, EventElement, LayoutElement, Rebuildable, Element, VisitorElement};
 
     struct Leaf;
 
-    impl VisitorElement for Leaf {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for Leaf {}
+
+    impl Element for Leaf {
+        fn name(&self) -> &'static str {
             "Leaf"
         }
     }

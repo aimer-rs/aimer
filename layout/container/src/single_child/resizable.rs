@@ -568,9 +568,6 @@ impl<E: Element> VisitorElement for RawResizable<E> {
         visitor(&self.child);
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Resizable"
-    }
 
     /// Resizing changes handling, not the single-child structural shape.
     #[inline]
@@ -580,6 +577,12 @@ impl<E: Element> VisitorElement for RawResizable<E> {
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.child);
+    }
+}
+
+impl<E: Element + 'static> Element for RawResizable<E> {
+    fn name(&self) -> &'static str {
+        "Resizable"
     }
 }
 
@@ -874,8 +877,10 @@ mod tests {
 
     struct StubChild;
 
-    impl VisitorElement for StubChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for StubChild {}
+
+    impl Element for StubChild {
+        fn name(&self) -> &'static str {
             "StubChild"
         }
     }
@@ -895,8 +900,10 @@ mod tests {
         draws: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for DrawProbe {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for DrawProbe {}
+
+    impl Element for DrawProbe {
+        fn name(&self) -> &'static str {
             "DrawProbe"
         }
     }

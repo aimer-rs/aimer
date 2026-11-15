@@ -383,8 +383,10 @@ impl VisitorElement for RawColorPicker {
             }
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for RawColorPicker {
+    fn name(&self) -> &'static str {
         "RawColorPicker"
     }
 }

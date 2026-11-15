@@ -8,7 +8,7 @@ description = "The browser WebGPU backend for the Cupid rendering engine"
 workspace = true
 
 [dependencies]
-aimer_cupid_gpu.workspace = true
+
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys.workspace = true

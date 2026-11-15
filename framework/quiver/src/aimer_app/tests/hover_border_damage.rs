@@ -67,7 +67,7 @@ fn decoration_nodes<W: Widget + 'static>(
     app: &HeadlessAimerApp<W>,
     out: &mut Vec<aimer_cupid::draw_cmd::RenderNodeId>,
 ) {
-    if root.debug_name() == "Container" {
+    if root.name() == "Container" {
         if let Some(node) = app.app.render_node_for_element(root.id()) {
             out.push(node);
         }

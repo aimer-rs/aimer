@@ -12,7 +12,6 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-aimer_time.workspace = true
 aimer_animation.workspace = true
 aimer_attribute.workspace = true
 aimer_canvas.workspace = true
@@ -20,7 +19,6 @@ aimer_container.workspace = true
 aimer_decoration.workspace = true
 aimer_events.workspace = true
 aimer_flex.workspace = true
-aimer_input.workspace = true
 aimer_space.workspace = true
 aimer_style.workspace = true
 aimer_text.workspace = true

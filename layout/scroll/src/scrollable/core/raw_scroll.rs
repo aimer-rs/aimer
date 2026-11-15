@@ -488,8 +488,10 @@ mod tests {
         events: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for CapturingChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for CapturingChild {}
+
+    impl Element for CapturingChild {
+        fn name(&self) -> &'static str {
             "CapturingChild"
         }
     }
@@ -529,8 +531,10 @@ mod tests {
         size: ResolvedSize,
     }
 
-    impl VisitorElement for FixedSizeChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for FixedSizeChild {}
+
+    impl Element for FixedSizeChild {
+        fn name(&self) -> &'static str {
             "FixedSizeChild"
         }
     }
@@ -558,9 +562,6 @@ mod tests {
             visitor(self.child.as_ref());
         }
 
-        fn debug_name(&self) -> &'static str {
-            "ScrollBlockingWrapper"
-        }
 
         fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
@@ -568,6 +569,12 @@ mod tests {
 
         fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
             visitor(self.child.as_ref());
+        }
+    }
+
+    impl Element for ScrollBlockingWrapper {
+        fn name(&self) -> &'static str {
+            "ScrollBlockingWrapper"
         }
     }
 
@@ -598,8 +605,10 @@ mod tests {
         measures: Rc<Cell<usize>>,
     }
 
-    impl VisitorElement for CountingChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for CountingChild {}
+
+    impl Element for CountingChild {
+        fn name(&self) -> &'static str {
             "CountingChild"
         }
     }
@@ -624,8 +633,10 @@ mod tests {
         size: ResolvedSize,
     }
 
-    impl VisitorElement for DrawingChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for DrawingChild {}
+
+    impl Element for DrawingChild {
+        fn name(&self) -> &'static str {
             "DrawingChild"
         }
     }
@@ -654,8 +665,10 @@ mod tests {
         refined_size: ResolvedSize,
     }
 
-    impl VisitorElement for RefiningChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for RefiningChild {}
+
+    impl Element for RefiningChild {
+        fn name(&self) -> &'static str {
             "RefiningChild"
         }
     }
@@ -682,8 +695,10 @@ mod tests {
         painted_y: Rc<Cell<Option<f32>>>,
     }
 
-    impl VisitorElement for RefiningPaintChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for RefiningPaintChild {}
+
+    impl Element for RefiningPaintChild {
+        fn name(&self) -> &'static str {
             "RefiningPaintChild"
         }
     }
@@ -724,8 +739,10 @@ mod tests {
         prepared_size: ResolvedSize,
     }
 
-    impl VisitorElement for PrepareBeforeMeasureChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for PrepareBeforeMeasureChild {}
+
+    impl Element for PrepareBeforeMeasureChild {
+        fn name(&self) -> &'static str {
             "PrepareBeforeMeasureChild"
         }
     }
@@ -1888,8 +1905,10 @@ mod tests {
         hovered: Rc<Cell<bool>>,
     }
 
-    impl VisitorElement for HoverChild {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for HoverChild {}
+
+    impl Element for HoverChild {
+        fn name(&self) -> &'static str {
             "HoverChild"
         }
     }

@@ -113,8 +113,10 @@ impl VisitorElement for RowElement {
             visitor(subject.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for RowElement {
+    fn name(&self) -> &'static str {
         "Row"
     }
 }
@@ -223,10 +225,6 @@ impl Widget for Touched {
 }
 
 impl VisitorElement for TouchedElement {
-    fn debug_name(&self) -> &'static str {
-        "Touched"
-    }
-
     fn reconciliation_key(&self) -> Option<&Key> {
         self.touches.set(self.touches.get() + 1);
         None
@@ -235,6 +233,12 @@ impl VisitorElement for TouchedElement {
     fn element_id(&self) -> Option<ElementId> {
         self.touches.set(self.touches.get() + 1);
         None
+    }
+}
+
+impl Element for TouchedElement {
+    fn name(&self) -> &'static str {
+        "Touched"
     }
 }
 impl Drawable for TouchedElement {

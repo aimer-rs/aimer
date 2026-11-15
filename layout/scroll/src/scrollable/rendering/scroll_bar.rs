@@ -390,8 +390,10 @@ impl Widget for RawScrollBar {
 impl EventElement for RawScrollBar {}
 impl Rebuildable for RawScrollBar {}
 
-impl VisitorElement for RawScrollBar {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawScrollBar {}
+
+impl Element for RawScrollBar {
+    fn name(&self) -> &'static str {
         "RawScrollBar"
     }
 }

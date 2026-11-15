@@ -4,8 +4,10 @@ struct CapturingElement {
     events: Cell<usize>,
 }
 
-impl VisitorElement for CapturingElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for CapturingElement {}
+
+impl Element for CapturingElement {
+    fn name(&self) -> &'static str {
         "CapturingElement"
     }
 }
@@ -47,14 +49,16 @@ struct TreeElement {
 }
 
 impl VisitorElement for TreeElement {
-    fn debug_name(&self) -> &'static str {
-        "TreeElement"
-    }
-
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
             visitor(child.as_ref());
         }
+    }
+}
+
+impl Element for TreeElement {
+    fn name(&self) -> &'static str {
+        "TreeElement"
     }
 }
 
@@ -87,14 +91,16 @@ struct EffectTreeElement {
 }
 
 impl VisitorElement for EffectTreeElement {
-    fn debug_name(&self) -> &'static str {
-        "EffectTreeElement"
-    }
-
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
             visitor(child.as_ref());
         }
+    }
+}
+
+impl Element for EffectTreeElement {
+    fn name(&self) -> &'static str {
+        "EffectTreeElement"
     }
 }
 
@@ -281,9 +287,6 @@ impl VisitorElement for IndexedHitTestBoundaryRoot {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "IndexedHitTestBoundaryRoot"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.visit_children(visitor);
@@ -307,6 +310,12 @@ impl VisitorElement for IndexedHitTestBoundaryRoot {
     }
 }
 
+impl Element for IndexedHitTestBoundaryRoot {
+    fn name(&self) -> &'static str {
+        "IndexedHitTestBoundaryRoot"
+    }
+}
+
 impl EventElement for IndexedHitTestBoundaryRoot {
     fn event_tree_role(&self) -> EventTreeRole {
         EventTreeRole::IndexedHitTestBoundary
@@ -326,8 +335,10 @@ struct IndexedBoundaryRouteTarget {
     events: Rc<RefCell<Vec<usize>>>,
 }
 
-impl VisitorElement for IndexedBoundaryRouteTarget {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for IndexedBoundaryRouteTarget {}
+
+impl Element for IndexedBoundaryRouteTarget {
+    fn name(&self) -> &'static str {
         "IndexedBoundaryRouteTarget"
     }
 }
@@ -415,8 +426,10 @@ struct IndexedBoundaryHoverTarget {
     pointer_moves: Rc<RefCell<Vec<usize>>>,
 }
 
-impl VisitorElement for IndexedBoundaryHoverTarget {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for IndexedBoundaryHoverTarget {}
+
+impl Element for IndexedBoundaryHoverTarget {
+    fn name(&self) -> &'static str {
         "IndexedBoundaryHoverTarget"
     }
 }
@@ -494,8 +507,10 @@ struct DynamicBoundsTarget {
     visits: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for DynamicBoundsTarget {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for DynamicBoundsTarget {}
+
+impl Element for DynamicBoundsTarget {
+    fn name(&self) -> &'static str {
         "DynamicBoundsTarget"
     }
 }
@@ -656,12 +671,15 @@ impl VisitorElement for SwitchingEventRoot {
         visitor(child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "SwitchingEventRoot"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.visit_children(visitor);
+    }
+}
+
+impl Element for SwitchingEventRoot {
+    fn name(&self) -> &'static str {
+        "SwitchingEventRoot"
     }
 }
 

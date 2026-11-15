@@ -52,9 +52,6 @@ impl VisitorElement for StructuralTraversalElement {
         visitor(self.visual_child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "StructuralTraversalElement"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.event_child.as_ref());
@@ -64,6 +61,12 @@ impl VisitorElement for StructuralTraversalElement {
         self.direct_calls.set(self.direct_calls.get() + 1);
         visitor(self.event_child.as_ref());
         visitor(self.visual_child.as_ref());
+    }
+}
+
+impl Element for StructuralTraversalElement {
+    fn name(&self) -> &'static str {
+        "StructuralTraversalElement"
     }
 }
 
@@ -88,12 +91,15 @@ impl VisitorElement for DefaultStructuralTraversalElement {
         visitor(self.visual_child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "DefaultStructuralTraversalElement"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.event_child.as_ref());
+    }
+}
+
+impl Element for DefaultStructuralTraversalElement {
+    fn name(&self) -> &'static str {
+        "DefaultStructuralTraversalElement"
     }
 }
 
@@ -118,15 +124,18 @@ impl VisitorElement for IndexedStructuralChildElement {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "IndexedStructuralChildElement"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.direct_calls.set(self.direct_calls.get() + 1);
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for IndexedStructuralChildElement {
+    fn name(&self) -> &'static str {
+        "IndexedStructuralChildElement"
     }
 }
 
@@ -270,8 +279,10 @@ fn focus_dispatch_uses_structural_traversal() {
 
 struct DowncastableElement;
 
-impl VisitorElement for DowncastableElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for DowncastableElement {}
+
+impl Element for DowncastableElement {
+    fn name(&self) -> &'static str {
         "DowncastableElement"
     }
 }
@@ -300,8 +311,10 @@ fn boxed_element_delegates_runtime_downcasting() {
 
 struct StorageElement<const N: usize>([u8; N]);
 
-impl<const N: usize> VisitorElement for StorageElement<N> {
-    fn debug_name(&self) -> &'static str {
+impl<const N: usize> VisitorElement for StorageElement<N> {}
+
+impl<const N: usize> Element for StorageElement<N> {
+    fn name(&self) -> &'static str {
         "StorageElement"
     }
 }
@@ -326,7 +339,7 @@ fn erased_elements_select_inline_or_heap_storage_and_dispatch_after_moves() {
     assert!(heap.is_heap());
 
     let owners = std::hint::black_box([inline, heap]);
-    assert_eq!(owners[0].debug_name(), "StorageElement");
+    assert_eq!(owners[0].name(), "StorageElement");
     assert!(
         owners[1]
             .option_any()
@@ -342,6 +355,25 @@ fn boxed_in_uses_the_supplied_ui_memory() {
 
     assert!(element.is_heap());
     assert_eq!(allocator.committed_bytes(), 2 * 1024 * 1024);
+}
+
+#[test]
+fn erasing_an_already_erased_element_returns_the_same_owner() {
+    let element = StorageElement([0; INLINE_CAPACITY + 1]).boxed();
+    let id = element.id();
+    // A heap payload keeps its address across owner moves, so an unchanged
+    // address proves no second erasure wrapped it in another node.
+    let address = element.as_ref() as *const dyn Element as *const u8;
+
+    let element = element.boxed();
+    assert_eq!(element.id(), id, "re-erasing must keep the element's identity");
+    assert_eq!(element.as_ref() as *const dyn Element as *const u8, address);
+    assert_eq!(element.name(), "StorageElement");
+
+    let memory = UiMemory::new(2 * 1024 * 1024);
+    let element = element.boxed_in(&memory.allocator());
+    assert_eq!(element.id(), id);
+    assert_eq!(element.as_ref() as *const dyn Element as *const u8, address);
 }
 
 struct IdentityLeaf {
@@ -361,12 +393,14 @@ impl IdentityLeaf {
 }
 
 impl VisitorElement for IdentityLeaf {
-    fn debug_name(&self) -> &'static str {
-        "IdentityLeaf"
-    }
-
     fn reconciliation_key(&self) -> Option<&Key> {
         self.key.as_ref()
+    }
+}
+
+impl Element for IdentityLeaf {
+    fn name(&self) -> &'static str {
+        "IdentityLeaf"
     }
 }
 
@@ -379,8 +413,10 @@ impl Rebuildable for IdentityLeaf {}
 
 pub(super) struct ReplacementLeaf;
 
-impl VisitorElement for ReplacementLeaf {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ReplacementLeaf {}
+
+impl Element for ReplacementLeaf {
+    fn name(&self) -> &'static str {
         "ReplacementLeaf"
     }
 }
@@ -400,8 +436,10 @@ impl VisitorElement for IdentityBranch {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for IdentityBranch {
+    fn name(&self) -> &'static str {
         "IdentityBranch"
     }
 }
@@ -425,8 +463,10 @@ impl VisitorElement for StableRoot {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for StableRoot {
+    fn name(&self) -> &'static str {
         "StableRoot"
     }
 }
@@ -571,8 +611,10 @@ struct LayoutInvalidationLeaf {
     invalidations: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for LayoutInvalidationLeaf {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for LayoutInvalidationLeaf {}
+
+impl Element for LayoutInvalidationLeaf {
+    fn name(&self) -> &'static str {
         "LayoutInvalidationLeaf"
     }
 }
@@ -599,8 +641,10 @@ impl VisitorElement for LayoutInvalidationBranch {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for LayoutInvalidationBranch {
+    fn name(&self) -> &'static str {
         "LayoutInvalidationBranch"
     }
 }

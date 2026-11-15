@@ -243,13 +243,16 @@ impl VisitorElement for RawOverlayBox {
         visitor(self.layer.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        self.name
-    }
 
     #[inline]
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawOverlayBox {
+    fn name(&self) -> &'static str {
+        self.name
     }
 }
 
@@ -369,8 +372,10 @@ impl<D: Decoration> EventElement for ForegroundLayer<D> {
     }
 }
 
-impl<D: Decoration> VisitorElement for ForegroundLayer<D> {
-    fn debug_name(&self) -> &'static str {
+impl<D: Decoration> VisitorElement for ForegroundLayer<D> {}
+
+impl<D: Decoration> Element for ForegroundLayer<D> {
+    fn name(&self) -> &'static str {
         "ForegroundDecorationLayer"
     }
 }

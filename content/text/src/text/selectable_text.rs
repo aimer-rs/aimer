@@ -150,8 +150,10 @@ impl RawSelectableText {
     }
 }
 
-impl VisitorElement for RawSelectableText {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawSelectableText {}
+
+impl Element for RawSelectableText {
+    fn name(&self) -> &'static str {
         "SelectableText"
     }
 }

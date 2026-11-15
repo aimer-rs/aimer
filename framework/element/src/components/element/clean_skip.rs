@@ -792,7 +792,7 @@ pub(crate) fn fingerprint(root: &dyn Element) -> Fingerprint {
         let id = element.id();
         held.push(Held {
             element: id,
-            name: element.debug_name(),
+            name: element.name(),
             rect: element.pos_start_end().map(|(start, end)| {
                 [start.x.to_bits(), start.y.to_bits(), end.x.to_bits(), end.y.to_bits()]
             }),

@@ -136,8 +136,10 @@ impl LayoutElement for RawSliderTrack {
 
 impl Rebuildable for RawSliderTrack {}
 
-impl VisitorElement for RawSliderTrack {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawSliderTrack {}
+
+impl Element for RawSliderTrack {
+    fn name(&self) -> &'static str {
         "SliderTrack"
     }
 }
@@ -350,8 +352,10 @@ impl LayoutElement for RawSliderThumb {
 
 impl Rebuildable for RawSliderThumb {}
 
-impl VisitorElement for RawSliderThumb {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawSliderThumb {}
+
+impl Element for RawSliderThumb {
+    fn name(&self) -> &'static str {
         "SliderThumb"
     }
 }
@@ -571,8 +575,10 @@ impl LayoutElement for RawSliderTrail {
 
 impl Rebuildable for RawSliderTrail {}
 
-impl VisitorElement for RawSliderTrail {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawSliderTrail {}
+
+impl Element for RawSliderTrail {
+    fn name(&self) -> &'static str {
         "SliderTrail"
     }
 }

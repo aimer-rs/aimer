@@ -554,7 +554,6 @@ impl NavigationFrameElement {
 }
 
 impl VisitorElement for NavigationFrameElement {
-    fn debug_name(&self) -> &'static str { "NavigationTransitionHost" }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         // Stable structural order keeps the incoming page in slot zero.
         visitor(self.incoming.as_ref());
@@ -601,6 +600,10 @@ impl VisitorElement for NavigationFrameElement {
 
     /// The page that left and the copy of the item are only visual.
     fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) { visitor(self.incoming.as_ref()); }
+}
+
+impl Element for NavigationFrameElement {
+    fn name(&self) -> &'static str { "NavigationTransitionHost" }
 }
 
 impl Drawable for NavigationFrameElement {
@@ -770,9 +773,12 @@ impl Widget for ScopedPage {
 }
 struct PageElement { child: AnyElement, context: RouteChildContext, key: Key }
 impl VisitorElement for PageElement {
-    fn debug_name(&self) -> &'static str { "RouteContent" }
     fn reconciliation_key(&self) -> Option<&Key> { Some(&self.key) }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) { visitor(self.child.as_ref()); }
+}
+
+impl Element for PageElement {
+    fn name(&self) -> &'static str { "RouteContent" }
 }
 impl Drawable for PageElement {
     fn can_paint(&self, _: &BuildContext) -> bool { true }

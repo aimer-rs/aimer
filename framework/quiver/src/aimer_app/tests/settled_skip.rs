@@ -31,8 +31,10 @@ struct CountingRowElement {
     index: usize,
 }
 
-impl VisitorElement for CountingRowElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for CountingRowElement {}
+
+impl Element for CountingRowElement {
+    fn name(&self) -> &'static str {
         "CountingRow"
     }
 }

@@ -32,10 +32,13 @@ struct CapturedElement {
     capture: Rc<RefCell<Capture>>,
 }
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str { "CapturedLucideGallery" }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
     }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str { "CapturedLucideGallery" }
 }
 impl EventElement for CapturedElement {}
 impl Rebuildable for CapturedElement {

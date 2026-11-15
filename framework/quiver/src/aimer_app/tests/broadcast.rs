@@ -36,10 +36,6 @@ struct BroadcastElement {
 }
 
 impl VisitorElement for BroadcastElement {
-    fn debug_name(&self) -> &'static str {
-        "BroadcastElement"
-    }
-
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         for child in &self.children {
             visitor(child.as_ref());
@@ -62,6 +58,12 @@ impl VisitorElement for BroadcastElement {
                 .set(self.counts.event_visits.get() + 1);
             visitor(child.as_ref());
         }
+    }
+}
+
+impl Element for BroadcastElement {
+    fn name(&self) -> &'static str {
+        "BroadcastElement"
     }
 }
 

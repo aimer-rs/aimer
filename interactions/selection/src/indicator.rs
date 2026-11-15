@@ -146,8 +146,10 @@ impl Widget for Indicator {
 
 struct RawIndicator(Indicator);
 
-impl VisitorElement for RawIndicator {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawIndicator {}
+
+impl Element for RawIndicator {
+    fn name(&self) -> &'static str {
         "SelectionIndicator"
     }
 }

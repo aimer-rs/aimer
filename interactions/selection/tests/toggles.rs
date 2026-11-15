@@ -25,9 +25,9 @@ fn counter() -> (Rc<Cell<u32>>, Rc<Cell<u32>>) {
 async fn toggle_controls_are_named_widgets() {
     let ctx = context();
     assert_eq!(Widget::debug_name(&Checkbox::new()), "Checkbox");
-    assert_eq!(Checkbox::new().to_element(&ctx).debug_name(), "Checkbox");
-    assert_eq!(Switch::new().to_element(&ctx).debug_name(), "Switch");
-    assert_eq!(Radio::new(1).to_element(&ctx).debug_name(), "Radio");
+    assert_eq!(Checkbox::new().to_element(&ctx).name(), "Checkbox");
+    assert_eq!(Switch::new().to_element(&ctx).name(), "Switch");
+    assert_eq!(Radio::new(1).to_element(&ctx).name(), "Radio");
 }
 
 #[tokio::test]

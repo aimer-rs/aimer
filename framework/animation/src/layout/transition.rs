@@ -1054,16 +1054,18 @@ impl aimer_widget::Drawable for AnimatedLayoutElement {
 }
 
 impl aimer_widget::VisitorElement for AnimatedLayoutElement {
-    fn debug_name(&self) -> &'static str {
-        "AnimatedLayoutElement"
-    }
-
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn aimer_widget::Element)) {
         visitor(self.child.as_ref());
     }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn aimer_widget::Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl aimer_widget::Element for AnimatedLayoutElement {
+    fn name(&self) -> &'static str {
+        "AnimatedLayoutElement"
     }
 }
 

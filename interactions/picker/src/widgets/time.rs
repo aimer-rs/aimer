@@ -506,8 +506,10 @@ impl RawTimePicker {
     }
 }
 
-impl VisitorElement for RawTimePicker {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawTimePicker {}
+
+impl Element for RawTimePicker {
+    fn name(&self) -> &'static str {
         "RawTimePicker"
     }
 }

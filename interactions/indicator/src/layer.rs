@@ -163,9 +163,6 @@ impl VisitorElement for IndicatorLayerElement {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "IndicatorLayerElement"
-    }
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
@@ -174,6 +171,12 @@ impl VisitorElement for IndicatorLayerElement {
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 
     fn focus_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl Element for IndicatorLayerElement {
+    fn name(&self) -> &'static str {
+        "IndicatorLayerElement"
+    }
 }
 
 /// A layer is drawn over or under the content, never in the way of it, so it

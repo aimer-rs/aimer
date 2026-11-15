@@ -1545,28 +1545,25 @@ fn bounds_from_element(element: &dyn Element) -> Option<aimer_attribute::Bounds>
     })
 }
 
-impl<T> Element for T where T: VisitorElement + EventElement + LayoutElement + Rebuildable + Drawable
-{}
-
 /// A node of the retained UI tree: the object a widget's `build` produces and
 /// the framework lays out, routes input to and paints.
 ///
-/// `Element` has no methods of its own to implement. It is the combination of
-/// five capability traits, each owning one concern, and it is implemented
-/// automatically for every type that implements all five:
+/// `Element` is the combination of five capability traits, each owning one
+/// concern, plus the element's [`name`](Element::name). It is implemented by
+/// hand: a type that implements all five capability traits is not an `Element`
+/// until it also writes `impl Element for T`, which is where it names itself.
 ///
 /// | Trait | Concern |
 /// |---|---|
-/// | [`VisitorElement`] | walking the children; naming and identifying the element |
+/// | [`VisitorElement`] | walking the children; identifying the element |
 /// | [`LayoutElement`] | sizing and placement under constraints |
 /// | [`EventElement`] | pointer and keyboard routing, focus, semantics |
 /// | [`Rebuildable`] | dirty marking, rebuilding, carrying state across rebuilds |
 /// | [`Drawable`] | the per-frame walk and retained paint |
 ///
-/// Every capability trait except [`VisitorElement`] (which needs
-/// [`debug_name`](VisitorElement::debug_name)) has defaults for all of its
-/// methods, so an element implements the ones it cares about and writes empty
-/// `impl`s for the rest.
+/// Every capability trait has defaults for all of its methods, so an element
+/// implements the ones it cares about and writes empty `impl`s for the rest.
+/// [`name`](Element::name) is the only required method in the family.
 ///
 /// The framework holds elements as `dyn Element`, usually inside an
 /// [`AnyElement`], which [`boxed`](Element::boxed) produces. Erasing is what
@@ -1586,22 +1583,34 @@ impl<T> Element for T where T: VisitorElement + EventElement + LayoutElement + R
 ///
 /// struct Spacer;
 ///
-/// impl VisitorElement for Spacer {
-///     fn debug_name(&self) -> &'static str {
-///         "Spacer"
-///     }
-/// }
+/// impl VisitorElement for Spacer {}
 /// impl EventElement for Spacer {}
 /// impl LayoutElement for Spacer {}
 /// impl Rebuildable for Spacer {}
 /// impl Drawable for Spacer {}
+/// impl Element for Spacer {
+///     fn name(&self) -> &'static str {
+///         "Spacer"
+///     }
+/// }
 ///
-/// // `Spacer` is an `Element` now; erasing it gives it an identity.
+/// // Erasing a `Spacer` gives it an identity.
 /// let element = Spacer.boxed();
-/// assert_eq!(element.debug_name(), "Spacer");
+/// assert_eq!(element.name(), "Spacer");
 /// let _id = element.id();
 /// ```
 pub trait Element: VisitorElement + EventElement + LayoutElement + Rebuildable + Drawable {
+    /// Names the element's type for diagnostics and reconciliation.
+    ///
+    /// Reconciliation treats two elements as the same widget only when their
+    /// concrete type, this name and their
+    /// [`reconciliation_key`](VisitorElement::reconciliation_key) agree, so the
+    /// name must be stable for a given kind of element and distinct between
+    /// kinds that can occupy the same position. It is also what appears in
+    /// frame statistics and unmapped-draw reports; a short type name such as
+    /// `"Container"` is conventional.
+    fn name(&self) -> &'static str;
+
     /// Returns this element's stable logical identity.
     ///
     /// The identity remains unchanged when the owning [`AnyElement`] moves and
@@ -2357,7 +2366,7 @@ fn structural_child_at(element: &dyn Element, target: usize) -> Option<&dyn Elem
 /// unkeyed one.
 #[doc(hidden)]
 pub fn identities_are_compatible(old: &dyn Element, new: &dyn Element) -> bool {
-    if old.element_type_id() != new.element_type_id() || old.debug_name() != new.debug_name() {
+    if old.element_type_id() != new.element_type_id() || old.name() != new.name() {
         return false;
     }
 

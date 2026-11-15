@@ -129,8 +129,10 @@ mod tests {
                 visitor(&**child);
             }
         }
+    }
 
-        fn debug_name(&self) -> &'static str {
+    impl Element for Probe {
+        fn name(&self) -> &'static str {
             "SemanticsProbe"
         }
     }

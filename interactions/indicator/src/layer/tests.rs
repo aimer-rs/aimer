@@ -191,8 +191,10 @@ impl LayoutElement for ShadowedElement {
 
 impl Rebuildable for ShadowedElement {}
 
-impl VisitorElement for ShadowedElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ShadowedElement {}
+
+impl Element for ShadowedElement {
+    fn name(&self) -> &'static str {
         "ShadowedElement"
     }
 }

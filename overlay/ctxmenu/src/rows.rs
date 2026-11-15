@@ -665,11 +665,13 @@ impl EventElement for RawContextMenuRow {
 impl LayoutElement for RawContextMenuRow {}
 
 impl VisitorElement for RawContextMenuRow {
-    fn debug_name(&self) -> &'static str {
+    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl Element for RawContextMenuRow {
+    fn name(&self) -> &'static str {
         "ContextMenuRow"
     }
-
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
 }
 
 impl EventElement for RawContextMenuRows {
@@ -765,11 +767,14 @@ impl VisitorElement for RawContextMenuRows {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "ContextMenuRows"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn aimer_widget::Element)) {}
+}
+
+impl Element for RawContextMenuRows {
+    fn name(&self) -> &'static str {
+        "ContextMenuRows"
+    }
 }
 
 /// The device pixel ratio, never zero.

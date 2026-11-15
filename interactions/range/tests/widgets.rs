@@ -53,7 +53,7 @@ async fn range_controls_keep_composable_visual_slots_in_the_element_tree() {
     let mut slot_names = Vec::new();
     slider.visit_children(&mut |surface| {
         surface.visit_children(&mut |slot| {
-            slot.visit_children(&mut |visual| slot_names.push(visual.debug_name()));
+            slot.visit_children(&mut |visual| slot_names.push(visual.name()));
         });
     });
     assert_eq!(slot_names, ["ErrorWidget", "ErrorWidget", "ErrorWidget"]);
@@ -71,7 +71,7 @@ async fn range_controls_keep_composable_visual_slots_in_the_element_tree() {
     let mut range_slot_names = Vec::new();
     range_slider.visit_children(&mut |surface| {
         surface.visit_children(&mut |slot| {
-            slot.visit_children(&mut |visual| range_slot_names.push(visual.debug_name()));
+            slot.visit_children(&mut |visual| range_slot_names.push(visual.name()));
         });
     });
     assert_eq!(
@@ -97,7 +97,7 @@ async fn slider_materializes_default_trail_and_thumb_widgets() {
     let mut slot_names = Vec::new();
     element.visit_children(&mut |surface| {
         surface.visit_children(&mut |slot| {
-            slot.visit_children(&mut |visual| slot_names.push(visual.debug_name()));
+            slot.visit_children(&mut |visual| slot_names.push(visual.name()));
         });
     });
 
@@ -108,7 +108,7 @@ async fn slider_materializes_default_trail_and_thumb_widgets() {
     let mut range_slot_names = Vec::new();
     range_element.visit_children(&mut |surface| {
         surface.visit_children(&mut |slot| {
-            slot.visit_children(&mut |visual| range_slot_names.push(visual.debug_name()));
+            slot.visit_children(&mut |visual| range_slot_names.push(visual.name()));
         });
     });
     assert_eq!(

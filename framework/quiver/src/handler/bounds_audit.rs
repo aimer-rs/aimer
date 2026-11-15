@@ -55,7 +55,7 @@ pub struct BoundsAudit {
 pub(crate) fn interaction_rects(root: &dyn Element) -> Vec<(&'static str, Option<[f32; 4]>)> {
     fn walk(element: &dyn Element, out: &mut Vec<(&'static str, Option<[f32; 4]>)>) {
         out.push((
-            element.debug_name(),
+            element.name(),
             element
                 .pos_start_end()
                 .map(|(start, end)| [start.x, start.y, end.x, end.y]),
@@ -105,7 +105,7 @@ impl WindowRenderTree {
                     {
                         audit.mismatches.push(BoundsMismatch {
                             element: element.id(),
-                            debug_name: element.debug_name(),
+                            debug_name: element.name(),
                             cached,
                             render,
                         });

@@ -430,8 +430,10 @@ impl EventElement for RawLottie {
     }
 }
 
-impl VisitorElement for RawLottie {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawLottie {}
+
+impl Element for RawLottie {
+    fn name(&self) -> &'static str {
         "Lottie"
     }
 }

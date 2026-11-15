@@ -605,13 +605,16 @@ impl VisitorElement for RawFloating {
         visitor(1, self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Floating"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.barrier.as_ref());
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawFloating {
+    fn name(&self) -> &'static str {
+        "Floating"
     }
 }
 

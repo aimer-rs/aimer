@@ -18,8 +18,10 @@ use super::{Backend, Handle, Probe, Spec};
 
 pub struct TestLeaf;
 
-impl VisitorElement for TestLeaf {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for TestLeaf {}
+
+impl Element for TestLeaf {
+    fn name(&self) -> &'static str {
         "TestLeaf"
     }
 }
@@ -44,8 +46,10 @@ pub struct RebuildCountLeaf {
     pub rebuilds: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for RebuildCountLeaf {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RebuildCountLeaf {}
+
+impl Element for RebuildCountLeaf {
+    fn name(&self) -> &'static str {
         "RebuildCountLeaf"
     }
 }
@@ -73,8 +77,10 @@ impl VisitorElement for TraversalElement {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for TraversalElement {
+    fn name(&self) -> &'static str {
         "TraversalElement"
     }
 }
@@ -119,8 +125,10 @@ impl Widget for EventProbeChild {
     }
 }
 
-impl VisitorElement for EventProbeElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for EventProbeElement {}
+
+impl Element for EventProbeElement {
+    fn name(&self) -> &'static str {
         "EventProbeElement"
     }
 }
@@ -170,8 +178,10 @@ impl Widget for LifecycleChild {
     }
 }
 
-impl VisitorElement for LifecycleChildElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for LifecycleChildElement {}
+
+impl Element for LifecycleChildElement {
+    fn name(&self) -> &'static str {
         "LifecycleChildElement"
     }
 }

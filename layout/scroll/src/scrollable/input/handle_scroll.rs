@@ -503,9 +503,6 @@ impl<E: Element> VisitorElement for RawScrollableContainer<E> {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "RawScrollableContainer"
-    }
 
     fn event_children<'a>(&'a self, _: &mut dyn FnMut(&'a dyn Element)) {}
 
@@ -515,6 +512,12 @@ impl<E: Element> VisitorElement for RawScrollableContainer<E> {
     #[inline]
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         self.visit_children(visitor);
+    }
+}
+
+impl<E: Element + 'static> Element for RawScrollableContainer<E> {
+    fn name(&self) -> &'static str {
+        "RawScrollableContainer"
     }
 }
 

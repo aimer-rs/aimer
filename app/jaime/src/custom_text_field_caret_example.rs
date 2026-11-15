@@ -195,8 +195,10 @@ impl Drawable for ThemedCaretElement {
     }
 }
 
-impl VisitorElement for ThemedCaretElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for ThemedCaretElement {}
+
+impl Element for ThemedCaretElement {
+    fn name(&self) -> &'static str {
         "ThemedCaret"
     }
 }

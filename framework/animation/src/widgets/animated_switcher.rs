@@ -344,12 +344,15 @@ impl VisitorElement for AnimatedSwitcherElement {
         visitor(index, self.current_child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "AnimatedSwitcherElement"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.current_child.as_ref());
+    }
+}
+
+impl Element for AnimatedSwitcherElement {
+    fn name(&self) -> &'static str {
+        "AnimatedSwitcherElement"
     }
 }
 
@@ -575,7 +578,7 @@ mod tests {
                 probes += probe_count(child);
             });
             if children == 0 {
-                return usize::from(element.debug_name() == "ErrorWidget");
+                return usize::from(element.name() == "ErrorWidget");
             }
             probes
         }
@@ -709,8 +712,10 @@ mod tests {
             label: &'static str,
             drawn: Rc<RefCell<Vec<&'static str>>>,
         }
-        impl VisitorElement for RecordingLeaf {
-            fn debug_name(&self) -> &'static str {
+        impl VisitorElement for RecordingLeaf {}
+
+        impl Element for RecordingLeaf {
+            fn name(&self) -> &'static str {
                 "RecordingLeaf"
             }
         }

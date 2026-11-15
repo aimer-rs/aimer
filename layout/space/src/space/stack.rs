@@ -544,9 +544,6 @@ impl VisitorElement for RawStackElement {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "RawStackElement"
-    }
 
     /// The structural order is the retained child order; layer sorting is only
     /// a paint and hit-test concern.
@@ -615,6 +612,12 @@ impl VisitorElement for RawStackElement {
     }
 }
 
+impl Element for RawStackElement {
+    fn name(&self) -> &'static str {
+        "RawStackElement"
+    }
+}
+
 impl EventElement for RawStackElement {
     fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
         aimer_widget::EventTreeRole::IndexedHitTestBoundary
@@ -642,8 +645,10 @@ mod tests {
         fn update(&self, _ctx: &BuildContext) {}
     }
 
-    impl VisitorElement for LayeredElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for LayeredElement {}
+
+    impl Element for LayeredElement {
+        fn name(&self) -> &'static str {
             "LayeredElement"
         }
     }
@@ -675,8 +680,10 @@ mod tests {
         fn update(&self, _ctx: &BuildContext) {}
     }
 
-    impl VisitorElement for BoundedElement {
-        fn debug_name(&self) -> &'static str {
+    impl VisitorElement for BoundedElement {}
+
+    impl Element for BoundedElement {
+        fn name(&self) -> &'static str {
             self.name
         }
     }
@@ -738,9 +745,9 @@ mod tests {
         };
 
         let mut events = Vec::new();
-        stack.event_children(&mut |child| events.push(child.debug_name()));
+        stack.event_children(&mut |child| events.push(child.name()));
         let mut structure = Vec::new();
-        stack.structural_children(&mut |child| structure.push(child.debug_name()));
+        stack.structural_children(&mut |child| structure.push(child.name()));
 
         assert_eq!(events, ["bottom", "middle", "top"]);
         assert_eq!(structure, ["top", "bottom", "middle"]);
@@ -802,7 +809,7 @@ mod tests {
 
         let mut names = Vec::new();
         stack.hit_test_children_at_reversed(Vec2d { x: 5.0, y: 5.0 }, &mut |child| {
-            names.push(child.debug_name())
+            names.push(child.name())
         });
 
         assert_eq!(names, ["unknown", "inside"]);
@@ -845,7 +852,7 @@ mod tests {
 
         let mut names = Vec::new();
         stack.hit_test_children_at_reversed(Vec2d { x: 5.0, y: 5.0 }, &mut |child| {
-            names.push(child.debug_name())
+            names.push(child.name())
         });
         assert_eq!(names, ["child"]);
 
@@ -869,7 +876,7 @@ mod tests {
         );
         names.clear();
         stack.hit_test_children_at_reversed(Vec2d { x: 5.0, y: 5.0 }, &mut |child| {
-            names.push(child.debug_name())
+            names.push(child.name())
         });
         assert!(names.is_empty());
     }

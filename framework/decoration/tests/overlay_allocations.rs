@@ -135,6 +135,6 @@ async fn a_foreground_layer_reuses_its_recording_without_allocating() {
     let layer_ctx = element
         .child_context_at(&ctx, layer, 1)
         .expect("the wrapper sizes its layer");
-    assert_eq!(layer.debug_name(), "ForegroundDecorationLayer");
+    assert_eq!(layer.name(), "ForegroundDecorationLayer");
     assert_unchanged_checks_allocate_nothing(layer, &layer_ctx, "foreground layer");
 }

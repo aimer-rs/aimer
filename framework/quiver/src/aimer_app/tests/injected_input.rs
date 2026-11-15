@@ -23,8 +23,10 @@ impl LayoutElement for RecorderElement {
     }
 }
 impl Rebuildable for RecorderElement {}
-impl VisitorElement for RecorderElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RecorderElement {}
+
+impl Element for RecorderElement {
+    fn name(&self) -> &'static str {
         "RecorderElement"
     }
 }

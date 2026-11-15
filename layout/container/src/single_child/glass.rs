@@ -814,9 +814,6 @@ impl VisitorElement for RawGlass {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Glass"
-    }
 
     #[inline]
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
@@ -826,6 +823,12 @@ impl VisitorElement for RawGlass {
     #[inline]
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawGlass {
+    fn name(&self) -> &'static str {
+        "Glass"
     }
 }
 

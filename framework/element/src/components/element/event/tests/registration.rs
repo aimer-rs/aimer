@@ -20,8 +20,10 @@ impl VisitorElement for PlainParent {
             visitor(child.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for PlainParent {
+    fn name(&self) -> &'static str {
         "PlainParent"
     }
 }
@@ -41,8 +43,10 @@ struct Handler {
     events: Rc<Cell<usize>>,
 }
 
-impl VisitorElement for Handler {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for Handler {}
+
+impl Element for Handler {
+    fn name(&self) -> &'static str {
         "Handler"
     }
 }

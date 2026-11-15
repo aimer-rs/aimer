@@ -135,7 +135,7 @@ fn chevron_turn<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Option<f32> {
         element: &dyn Element,
         out: &mut Option<f32>,
     ) {
-        if element.debug_name() == "RotationTransitionElement"
+        if element.name() == "RotationTransitionElement"
             && let Some(node) = app.app.render_node_for_element(element.id())
             && let Ok((matrix, _)) = app.app.render_tree().compositor_animation(node)
         {
@@ -215,7 +215,7 @@ fn a_collapsed_list_keeps_its_chevron_turned_when_the_screen_rebuilds() {
 /// The element id of the chevron's transition, to see whether it is replaced.
 fn chevron_id<W: Widget + 'static>(app: &HeadlessAimerApp<W>) -> Option<u64> {
     fn walk(element: &dyn Element, out: &mut Option<u64>) {
-        if element.debug_name() == "RotationTransitionElement" {
+        if element.name() == "RotationTransitionElement" {
             *out = element.element_id().map(|id| id.get());
         }
         element.visit_children(&mut |child| walk(child, out));

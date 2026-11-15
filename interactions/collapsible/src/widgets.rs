@@ -322,9 +322,6 @@ impl VisitorElement for AnimatedCollapseElement {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "AnimatedCollapseElement"
-    }
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
@@ -340,6 +337,12 @@ impl VisitorElement for AnimatedCollapseElement {
         if self.is_event_visible() {
             visitor(self.child.as_ref());
         }
+    }
+}
+
+impl Element for AnimatedCollapseElement {
+    fn name(&self) -> &'static str {
+        "AnimatedCollapseElement"
     }
 }
 

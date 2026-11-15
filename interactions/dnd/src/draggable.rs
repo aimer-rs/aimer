@@ -353,12 +353,15 @@ impl VisitorElement for RawDraggable {
         visitor(0, self.visible_child());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "Draggable"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.visible_child());
+    }
+}
+
+impl Element for RawDraggable {
+    fn name(&self) -> &'static str {
+        "Draggable"
     }
 }
 

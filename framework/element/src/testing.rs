@@ -71,7 +71,7 @@ fn record(element: &dyn Element, ctx: &BuildContext<'_>, recorded: &mut Vec<Reco
         });
         if let Ok(snapshot) = tree.draw_list_snapshot(node) {
             recorded.push(RecordedPaint {
-                element: element.debug_name(),
+                element: element.name(),
                 commands: snapshot.commands,
             });
         }

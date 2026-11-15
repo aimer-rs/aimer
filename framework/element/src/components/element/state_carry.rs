@@ -310,7 +310,7 @@ fn carry_matching_state(old: &dyn Element, new: &dyn Element, ctx: &BuildContext
 /// Restricted to elements of the same concrete type, so an element is never
 /// offered state it cannot interpret.
 fn adopt_runtime_state(old: &dyn Element, new: &dyn Element) {
-    if old.element_type_id() != new.element_type_id() || old.debug_name() != new.debug_name() {
+    if old.element_type_id() != new.element_type_id() || old.name() != new.name() {
         return;
     }
 

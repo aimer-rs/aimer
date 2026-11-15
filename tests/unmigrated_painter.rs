@@ -17,8 +17,10 @@ impl Widget for LegacyPainter {
     }
 }
 
-impl VisitorElement for LegacyPainter {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for LegacyPainter {}
+
+impl Element for LegacyPainter {
+    fn name(&self) -> &'static str {
         "LegacyPainter"
     }
 }

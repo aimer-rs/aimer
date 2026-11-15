@@ -657,11 +657,14 @@ impl VisitorElement for RawSvgAsset {
         }
     }
 
-    fn debug_name(&self) -> &'static str {
-        "SvgAssetElement"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl Element for RawSvgAsset {
+    fn name(&self) -> &'static str {
+        "SvgAssetElement"
+    }
 }
 
 impl LayoutElement for RawSvgAsset {
@@ -1001,8 +1004,10 @@ impl RawSvg {
     }
 }
 
-impl VisitorElement for RawSvg {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawSvg {}
+
+impl Element for RawSvg {
+    fn name(&self) -> &'static str {
         "Svg"
     }
 }

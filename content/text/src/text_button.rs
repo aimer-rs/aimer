@@ -473,8 +473,10 @@ impl RawTextButton {
     }
 }
 
-impl VisitorElement for RawTextButton {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for RawTextButton {}
+
+impl Element for RawTextButton {
+    fn name(&self) -> &'static str {
         "TextButton"
     }
 }

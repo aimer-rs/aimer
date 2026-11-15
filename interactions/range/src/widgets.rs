@@ -396,12 +396,15 @@ impl VisitorElement for RawSliderVisualSlot {
         visitor(self.child.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "SliderVisualSlot"
-    }
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for RawSliderVisualSlot {
+    fn name(&self) -> &'static str {
+        "SliderVisualSlot"
     }
 }
 
@@ -666,13 +669,16 @@ impl<T: RangeValue> VisitorElement for RawSlider<T> {
         visitor(self.thumb.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "RawSlider"
-    }
 
     // The visual slots are composable decorations. The slider itself owns the
     // pointer gesture so an interactive child cannot steal its capture.
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl<T: RangeValue> Element for RawSlider<T> {
+    fn name(&self) -> &'static str {
+        "RawSlider"
+    }
 }
 
 impl<T: RangeValue> EventElement for RawSlider<T> {
@@ -1302,11 +1308,14 @@ impl<T: RangeValue> VisitorElement for RawRangeSlider<T> {
         visitor(self.upper_thumb.as_ref());
     }
 
-    fn debug_name(&self) -> &'static str {
-        "RawRangeSlider"
-    }
 
     fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {}
+}
+
+impl<T: RangeValue> Element for RawRangeSlider<T> {
+    fn name(&self) -> &'static str {
+        "RawRangeSlider"
+    }
 }
 
 impl<T: RangeValue> EventElement for RawRangeSlider<T> {

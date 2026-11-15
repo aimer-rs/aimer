@@ -41,8 +41,10 @@ impl VisitorElement for Window {
             visitor(row.as_ref());
         }
     }
+}
 
-    fn debug_name(&self) -> &'static str {
+impl Element for Window {
+    fn name(&self) -> &'static str {
         "LiveChildrenWindow"
     }
 }
@@ -56,8 +58,10 @@ impl Rebuildable for Window {}
 
 struct Row;
 
-impl VisitorElement for Row {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for Row {}
+
+impl Element for Row {
+    fn name(&self) -> &'static str {
         "LiveChildrenRow"
     }
 }

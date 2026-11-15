@@ -40,11 +40,14 @@ struct CapturedElement {
     snapshot: Rc<RefCell<Snapshot>>,
 }
 impl VisitorElement for CapturedElement {
-    fn debug_name(&self) -> &'static str {
-        "CapturedForegroundDecoration"
-    }
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(self.child.as_ref());
+    }
+}
+
+impl Element for CapturedElement {
+    fn name(&self) -> &'static str {
+        "CapturedForegroundDecoration"
     }
 }
 impl EventElement for CapturedElement {}
@@ -83,7 +86,7 @@ impl Drawable for CapturedElement {
 }
 
 fn collect_controls(element: &dyn Element, buttons: &mut Vec<Rect>, sliders: &mut Vec<Rect>) {
-    let target = match element.debug_name() {
+    let target = match element.name() {
         "GestureDetector" => Some(&mut *buttons),
         "RawSlider" => Some(&mut *sliders),
         _ => None,

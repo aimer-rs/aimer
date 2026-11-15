@@ -705,7 +705,7 @@ impl EventDispatcher {
                     continue;
                 };
                 if event_callback_enabled(element) {
-                    aimer_utils::pointer_trace!("exit sent to {}", element.debug_name());
+                    aimer_utils::pointer_trace!("exit sent to {}", element.name());
                     outcome.result = outcome.result.merge(element.on_event(&exit));
                 }
             }
@@ -962,7 +962,7 @@ impl EventDispatcher {
                             continue;
                         };
                         if event_callback_enabled(element) {
-                            aimer_utils::pointer_trace!("explicit exit sent to {}", element.debug_name());
+                            aimer_utils::pointer_trace!("explicit exit sent to {}", element.name());
                             let _ = element.on_event(event);
                         }
                     }

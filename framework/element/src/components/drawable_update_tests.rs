@@ -46,8 +46,10 @@ struct UpdateOnly {
     updates: Rc<Cell<u32>>,
 }
 
-impl VisitorElement for UpdateOnly {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for UpdateOnly {}
+
+impl Element for UpdateOnly {
+    fn name(&self) -> &'static str {
         "UpdateOnly"
     }
 }
@@ -66,8 +68,10 @@ struct DrawOnly {
     draws: Rc<Cell<u32>>,
 }
 
-impl VisitorElement for DrawOnly {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for DrawOnly {}
+
+impl Element for DrawOnly {
+    fn name(&self) -> &'static str {
         "DrawOnly"
     }
 }
@@ -125,8 +129,10 @@ struct LocalPainter {
     painted: Rc<Cell<u32>>,
 }
 
-impl VisitorElement for LocalPainter {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for LocalPainter {}
+
+impl Element for LocalPainter {
+    fn name(&self) -> &'static str {
         "LocalPainter"
     }
 }

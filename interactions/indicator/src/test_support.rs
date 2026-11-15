@@ -71,8 +71,10 @@ impl LayoutElement for SlotElement {
 
 impl Rebuildable for SlotElement {}
 
-impl VisitorElement for SlotElement {
-    fn debug_name(&self) -> &'static str {
+impl VisitorElement for SlotElement {}
+
+impl Element for SlotElement {
+    fn name(&self) -> &'static str {
         "SlotElement"
     }
 }
