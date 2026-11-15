@@ -959,7 +959,7 @@ mod tests {
             assert_eq!(visited, 1, "{behavior:?} must expose its child to paint");
 
             let mut retained = 0;
-            detector.visit_retained_v2_children(&mut |_, _| retained += 1);
+            detector.visit_retained_children(&mut |_, _| retained += 1);
             assert_eq!(
                 retained, 1,
                 "{behavior:?} must expose its child to the render tree"

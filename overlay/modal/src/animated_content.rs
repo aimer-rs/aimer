@@ -137,7 +137,7 @@ impl VisitorElement for AnimatedOverlayContent {
         visitor(self.child.as_ref());
     }
 
-    fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
+    fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         visitor(0, self.child.as_ref());
     }
 
@@ -249,7 +249,7 @@ mod tests {
         let mut retained_children = Vec::new();
         wrapper
             .as_ref()
-            .visit_retained_v2_children(&mut |_, child| retained_children.push(child.debug_name()));
+            .visit_retained_children(&mut |_, child| retained_children.push(child.debug_name()));
         let mut event_children = Vec::new();
         wrapper
             .as_ref()

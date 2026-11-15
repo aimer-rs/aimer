@@ -531,7 +531,7 @@ impl VisitorElement for RawStackElement {
         }
     }
 
-    fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
+    fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         let sorted_children = self.sorted_child_indices();
         if self.direction == StackDirection::Reverse {
             for &index in sorted_children.iter().rev() {

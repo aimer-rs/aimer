@@ -184,7 +184,7 @@ impl WindowRenderTree {
             let mut base = ChildBaseContext::new(element, &current_ctx, frame.size, frame.position);
             let wanted = cache.element_ids[next];
             let mut child = None;
-            element.visit_retained_v2_children(&mut |index, candidate| {
+            element.visit_retained_children(&mut |index, candidate| {
                 if child.is_none() && candidate.id() == wanted {
                     child = Some((index, candidate));
                 }

@@ -573,7 +573,7 @@ impl VisitorElement for MorphTransitionElement {
 
     /// The outgoing child comes first: the renderer reads the first child of a
     /// morph as the picture it blends away from.
-    fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
+    fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         let mut index = 0;
         if self.morph_state.get() == MorphState::Morphing
             && let Some(old) = unsafe { self.old_child.get() }

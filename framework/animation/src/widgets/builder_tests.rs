@@ -139,7 +139,7 @@ fn animated_exposes_its_child_to_the_retained_render_tree() {
     let mut retained = 0;
     element
         .as_ref()
-        .visit_retained_v2_children(&mut |_, _| retained += 1);
+        .visit_retained_children(&mut |_, _| retained += 1);
     assert_eq!(retained, 1, "the animated child must get a render node");
 }
 
@@ -170,7 +170,7 @@ fn animated_builder_updates_its_child_while_preserving_retained_identity() {
     element.update(&context);
 
     let mut rebuilt_child = None;
-    element.visit_retained_v2_children(&mut |_, child| rebuilt_child = child.element_id());
+    element.visit_retained_children(&mut |_, child| rebuilt_child = child.element_id());
     assert!(rebuilt_child.is_some());
     assert_eq!(
         original_child, rebuilt_child,
@@ -182,7 +182,7 @@ fn animated_builder_updates_its_child_while_preserving_retained_identity() {
     controller.forward_from_first_tick();
     element.update(&context);
     let mut unchanged_child = None;
-    element.visit_retained_v2_children(&mut |_, child| unchanged_child = child.element_id());
+    element.visit_retained_children(&mut |_, child| unchanged_child = child.element_id());
     assert_eq!(unchanged_child, rebuilt_child);
     assert_eq!(
         *values.borrow(),

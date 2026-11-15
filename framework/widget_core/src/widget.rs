@@ -58,6 +58,8 @@ pub trait Widget {
         "Unknown"
     }
 
+    // fn hash(&self) 
+
     /// Erases this widget into an inline-or-heap [`AnyWidget`].
     ///
     /// Values fitting the configured `Rubick` size and alignment are embedded

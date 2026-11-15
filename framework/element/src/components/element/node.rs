@@ -414,11 +414,11 @@ impl<E: Element + 'static> VisitorElement for ElementNode<E> {
         self.element.visit_children(visitor);
     }
 
-    fn visit_retained_v2_children<'a>(
+    fn visit_retained_children<'a>(
         &'a self,
         visitor: &mut dyn FnMut(usize, &'a dyn Element),
     ) {
-        self.element.visit_retained_v2_children(visitor);
+        self.element.visit_retained_children(visitor);
     }
 
     fn debug_name(&self) -> &'static str {
@@ -1019,11 +1019,11 @@ impl VisitorElement for AnyElement {
         self.as_ref().visit_children(visitor)
     }
 
-    fn visit_retained_v2_children<'a>(
+    fn visit_retained_children<'a>(
         &'a self,
         visitor: &mut dyn FnMut(usize, &'a dyn Element),
     ) {
-        self.as_ref().visit_retained_v2_children(visitor)
+        self.as_ref().visit_retained_children(visitor)
     }
 
     fn debug_name(&self) -> &'static str {
@@ -1396,11 +1396,11 @@ impl VisitorElement for Box<dyn Element> {
         self.as_ref().visit_children(visitor)
     }
 
-    fn visit_retained_v2_children<'a>(
+    fn visit_retained_children<'a>(
         &'a self,
         visitor: &mut dyn FnMut(usize, &'a dyn Element),
     ) {
-        self.as_ref().visit_retained_v2_children(visitor)
+        self.as_ref().visit_retained_children(visitor)
     }
     fn debug_name(&self) -> &'static str {
         self.as_ref().debug_name()

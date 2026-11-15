@@ -335,7 +335,7 @@ impl VisitorElement for AnimatedSwitcherElement {
         }
     }
 
-    fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
+    fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         let mut index = 0;
         if let Some(old) = unsafe { &*self.old_child.get() } {
             visitor(index, old.as_ref());

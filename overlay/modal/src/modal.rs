@@ -389,7 +389,7 @@ impl VisitorElement for RawModal {
         visitor(self.child.as_ref());
     }
 
-    fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
+    fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         visitor(0, self.barrier.as_ref());
         visitor(1, self.child.as_ref());
     }

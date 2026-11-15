@@ -554,7 +554,7 @@ fn child_base_context<'c>(
     // (a padded descendant measures smaller than the space it was given).
     let mut retained_children = 0;
     let mut only_child_size = None;
-    element.visit_retained_v2_children(&mut |_, child| {
+    element.visit_retained_children(&mut |_, child| {
         retained_children += 1;
         if retained_children == 1 {
             only_child_size = Some(child.content_size(ctx));
@@ -750,7 +750,7 @@ fn collect_render_tree_nodes<'element, 'context>(
     let mut child_base_ctx = ChildBaseContext::new(element, ctx, size, position);
 
     let mut has_new_child = false;
-    element.visit_retained_v2_children(&mut |index, child| {
+    element.visit_retained_children(&mut |index, child| {
         has_new_child |= !existing.contains_key(&child.id());
         let ChildInput {
             geometry: child_geometry,
@@ -3484,7 +3484,7 @@ mod tests {
                     .expect("leaf is mapped");
                 leaf_y = Some(window_tree.tree.element_bounds(node).unwrap().y);
             }
-            element.visit_retained_v2_children(&mut |_, child| pending.push(child));
+            element.visit_retained_children(&mut |_, child| pending.push(child));
         }
         assert_eq!(leaf_y, Some(40.0));
     }
@@ -3553,7 +3553,7 @@ mod tests {
                         .unwrap(),
                 );
             }
-            element.visit_retained_v2_children(&mut |_, child| pending.push(child));
+            element.visit_retained_children(&mut |_, child| pending.push(child));
         }
         let leaf_bounds = leaf_bounds.expect("the container's child is in the tree");
 

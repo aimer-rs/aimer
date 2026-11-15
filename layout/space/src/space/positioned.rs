@@ -653,7 +653,7 @@ impl<E: Element> VisitorElement for RawPositionedElement<E> {
         // double-rendering at (0,0).
     }
 
-    fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
+    fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         visitor(0, &self.child);
     }
 

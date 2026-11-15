@@ -2436,7 +2436,7 @@ mod tests {
                     .expect("retained text field has render bounds");
                 return (element.id(), render_node, revision, bounds);
             }
-            element.visit_retained_v2_children(&mut |_, child| pending.push(child));
+            element.visit_retained_children(&mut |_, child| pending.push(child));
         }
         panic!("retained plan has no local-v2 TextField node");
     }

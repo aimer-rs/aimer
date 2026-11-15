@@ -69,7 +69,7 @@ fn every_child_of_a_maximal_column_has_a_finite_offset() {
         .to_element(&ctx);
 
     let mut children = Vec::new();
-    column.visit_retained_v2_children(&mut |index, child| children.push((index, child)));
+    column.visit_retained_children(&mut |index, child| children.push((index, child)));
     assert_eq!(children.len(), 13);
     for (index, child) in children {
         let (rect, _) = column

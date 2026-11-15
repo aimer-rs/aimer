@@ -803,7 +803,7 @@ pub(crate) fn fingerprint(root: &dyn Element) -> Fingerprint {
                         .and_then(|node| scope.tree.node_state(node).ok())
                 }),
         });
-        element.visit_retained_v2_children(&mut |_, child| collect(child, scope, held));
+        element.visit_retained_children(&mut |_, child| collect(child, scope, held));
     }
     collect(root, scope.as_ref(), &mut held);
     Fingerprint(held)

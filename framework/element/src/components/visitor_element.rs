@@ -74,7 +74,7 @@ pub trait VisitorElement {
     /// can override this visitor while keeping `visit_children` unchanged for
     /// reconciliation and event structure.
     #[doc(hidden)]
-    fn visit_retained_v2_children<'a>(
+    fn visit_retained_children<'a>(
         &'a self,
         visitor: &mut dyn FnMut(usize, &'a dyn Element),
     ) {

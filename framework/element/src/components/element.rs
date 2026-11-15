@@ -43,33 +43,33 @@ mod animation_only;
 mod clean_skip;
 mod compositor_applied;
 mod event;
-mod paint_revision;
 #[cfg(test)]
 mod frame_instant_tests;
+mod geometry_forward;
 #[cfg(test)]
 mod keep_reachable_tests;
 mod live_children;
 mod node;
 #[cfg(test)]
 mod paint_invalidation_tests;
+mod paint_revision;
 #[cfg(test)]
 mod render_context_tests;
-mod geometry_forward;
 mod retained_window;
 mod scoped_rebuild;
 mod state_carry;
 #[cfg(test)]
 mod window_paint_state_tests;
 
-pub use animation_only::{
-    animation_only_targets, is_animation_only_frame, request_isolated_animation_frame,
-    release_window_contexts, request_isolated_subtree_animation_frame, run_animation_only_pass,
-    set_animation_only_frame, set_frame_rebuilt_roots, traversal_counts,
-    with_v2_animation_only_context,
-};
 /// Starts a full traversal, for tests of what a traversal leaves alone.
 #[cfg(test)]
 pub(crate) use animation_only::begin_full_traversal as begin_traversal_for_tests;
+pub use animation_only::{
+    animation_only_targets, is_animation_only_frame, release_window_contexts,
+    request_isolated_animation_frame, request_isolated_subtree_animation_frame,
+    run_animation_only_pass, set_animation_only_frame, set_frame_rebuilt_roots, traversal_counts,
+    with_v2_animation_only_context,
+};
 use animation_only::{
     begin_full_traversal, capture_rebuilt_root, enter_subtree_walk, finish_full_traversal,
     is_animation_only_pass, pass_skips_subtree, register_animating_element,
@@ -86,16 +86,18 @@ pub use scoped_rebuild::{
     unscoped_element_tree_generation,
 };
 use scoped_rebuild::{note_scoped_rebuild, note_unscoped_tree_change};
-pub use state_carry::{StateCarrier, carry_candidate_child_state, carry_child_state, carry_stateful};
+pub use state_carry::{
+    StateCarrier, carry_candidate_child_state, carry_child_state, carry_stateful,
+};
 
 mod any_element;
 pub use any_element::AnyElement;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use clean_skip::{note_cursor_read, note_frame_requested};
 pub use event::{
     ElementPath, EventDispatchContext, EventDispatcher, broadcast_event, dispatch_event,
     dispatch_focused_event, focus_is_settling_between_events,
 };
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) use clean_skip::{note_cursor_read, note_frame_requested};
 /// Nothing leaves a subtree alone on the web, so nothing needs to know about reads.
 #[cfg(target_arch = "wasm32")]
 #[inline]
@@ -114,9 +116,9 @@ pub use clean_skip::{
     set_clean_skip_relative_window, set_clean_skip_verify, set_clean_subtree_skip,
 };
 pub use geometry_forward::{ChildUpdateFollows, set_geometry_forward_skip};
-pub use paint_revision::{PaintRevisionSource, watch_paint_revision};
-pub(crate) use paint_revision::sync_paint_revision_watchers;
 use geometry_forward::{child_update_follows, geometry_forward_skip_enabled};
+pub(crate) use paint_revision::sync_paint_revision_watchers;
+pub use paint_revision::{PaintRevisionSource, watch_paint_revision};
 pub use retained_window::{
     VisibleWindow, may_escape_ancestor_clips, may_skip_settled_offscreen, retained_element_settled,
     retained_visible_window, retained_visible_window_of_current, set_scroll_only_frame,
@@ -180,8 +182,7 @@ aimer_tls::thread_local! {
 
     /// For each element, the children that dirty paths run through, so a
     /// container can reach them without entering its other children.
-    static DIRTY_EDGES: RefCell<HashMap<ElementId, SmallVec<[DirtyEdge; 2]>, IdBuildHasher>> =
-        RefCell::new(HashMap::default());
+    static DIRTY_EDGES: RefCell<HashMap<ElementId, SmallVec<[DirtyEdge; 2]>, IdBuildHasher>> =RefCell::new(HashMap::default());
 
     /// Advances whenever a dirty path is added, so a pass that rebuilt a
     /// snapshot of the edges can tell that the index grew underneath it.

@@ -901,7 +901,7 @@ impl VisitorElement for RawModalOverlay {
         }
     }
 
-    fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
+    fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         let entries = self.entries.entries();
         for (index, entry) in entries.iter().enumerate() {
             visitor(index, entry.element.as_ref());
@@ -1365,7 +1365,7 @@ mod tests {
         );
 
         let mut retained = Vec::new();
-        overlay.visit_retained_v2_children(&mut |index, child| {
+        overlay.visit_retained_children(&mut |index, child| {
             retained.push((index, child.pos(), child.debug_name()));
         });
         assert_eq!(retained.len(), 1, "{retained:?}");
@@ -1378,7 +1378,7 @@ mod tests {
         // is unless the tree changes shape, which a pointer moving does not do.
         position.set(Vec2d { x: 50.0, y: 60.0 });
         let mut placed = None;
-        overlay.visit_retained_v2_children(&mut |_, child| placed = child.pos());
+        overlay.visit_retained_children(&mut |_, child| placed = child.pos());
         assert_eq!(
             placed,
             Some(Vec2d { x: 30.0, y: 40.0 }),
@@ -1391,7 +1391,7 @@ mod tests {
 
         handle.remove();
         let mut left = 0;
-        overlay.visit_retained_v2_children(&mut |_, _| left += 1);
+        overlay.visit_retained_children(&mut |_, _| left += 1);
         assert_eq!(left, 0);
         let _ = ctx;
     }

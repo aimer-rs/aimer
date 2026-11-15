@@ -107,7 +107,7 @@ impl WindowRenderTree {
                 }
             };
             let mut children = 0usize;
-            element.visit_retained_v2_children(&mut |_, _| children += 1);
+            element.visit_retained_children(&mut |_, _| children += 1);
             let count = out.by_type.entry(element.debug_name()).or_default();
             count.elements += 1;
             count.commands += commands;
@@ -118,7 +118,7 @@ impl WindowRenderTree {
             } else if children == 1 {
                 count.pass_through += 1;
             }
-            element.visit_retained_v2_children(&mut |_, child| walk(tree, child, out));
+            element.visit_retained_children(&mut |_, child| walk(tree, child, out));
         }
         let mut out = PaintOwnerCensus::default();
         walk(self, root, &mut out);
@@ -221,7 +221,7 @@ impl WindowRenderTree {
                 }
             }
         }
-        element.visit_retained_v2_children(&mut |_, child| {
+        element.visit_retained_children(&mut |_, child| {
             self.census_node(child, unresolved, census);
         });
     }

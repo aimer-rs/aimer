@@ -11,7 +11,7 @@ fn decoration_element(root: &dyn Element) -> Option<ElementId> {
         return Some(root.id());
     }
     let mut found = None;
-    root.visit_retained_v2_children(&mut |_, child| {
+    root.visit_retained_children(&mut |_, child| {
         if found.is_none() {
             found = decoration_element(child);
         }
@@ -66,7 +66,7 @@ fn decoration_box_headless_preserves_placement_and_retained_child_paint() {
     let element = decoration_element(root.as_ref()).unwrap_or_else(|| {
         fn names(root: &dyn Element, out: &mut Vec<&'static str>) {
             out.push(root.debug_name());
-            root.visit_retained_v2_children(&mut |_, child| names(child, out));
+            root.visit_retained_children(&mut |_, child| names(child, out));
         }
         let mut tree_names = Vec::new();
         names(root.as_ref(), &mut tree_names);

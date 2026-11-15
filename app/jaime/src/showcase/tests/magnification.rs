@@ -175,7 +175,7 @@ fn collect_bounds(
     base.parent_size = size;
     base.set_parent_pos(origin);
     let mut child_sizes = Vec::new();
-    element.visit_retained_v2_children(&mut |_, child| child_sizes.push(child.content_size(ctx)));
+    element.visit_retained_children(&mut |_, child| child_sizes.push(child.content_size(ctx)));
     if child_sizes.as_slice() != [size] {
         base.box_constraint = aimer_attribute::BoxConstraint {
             min_width: 0.0,
@@ -186,7 +186,7 @@ fn collect_bounds(
     } else {
         base.parent_size = ctx.parent_size;
     }
-    element.visit_retained_v2_children(&mut |index, child| {
+    element.visit_retained_children(&mut |index, child| {
         let child_ctx = element
             .child_context_at(ctx, child, index)
             .unwrap_or_else(|| base.clone());

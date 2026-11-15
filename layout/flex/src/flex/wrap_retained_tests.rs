@@ -70,7 +70,7 @@ fn wrapped_children_are_placed_on_their_lines() {
     let row = wrapped_row(&ctx);
 
     let mut children = Vec::new();
-    row.visit_retained_v2_children(&mut |index, child| children.push((index, child)));
+    row.visit_retained_children(&mut |index, child| children.push((index, child)));
     assert_eq!(children.len(), 3);
 
     let rects: Vec<Rect> = children
@@ -98,7 +98,7 @@ fn a_wrapped_child_is_given_exactly_its_own_size() {
     let row = wrapped_row(&ctx);
 
     let mut children = Vec::new();
-    row.visit_retained_v2_children(&mut |index, child| children.push((index, child)));
+    row.visit_retained_children(&mut |index, child| children.push((index, child)));
     let child_ctx = row
         .child_context_at(&ctx, children[1].1, 1)
         .expect("a wrapped child gets a retained context");
@@ -165,7 +165,7 @@ fn syncing_every_wrapped_child_measures_the_list_once() {
         .to_element(&ctx);
 
     let mut children = Vec::new();
-    row.visit_retained_v2_children(&mut |index, child| children.push((index, child)));
+    row.visit_retained_children(&mut |index, child| children.push((index, child)));
     for (index, child) in &children {
         row.child_geometry_at(&ctx, *child, *index)
             .unwrap();

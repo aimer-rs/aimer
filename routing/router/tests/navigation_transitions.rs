@@ -1781,7 +1781,7 @@ fn both_transition_children_receive_the_original_viewport_constraints() {
     navigator.rebuild_if_dirty(&ctx);
     let host = find_host(navigator.as_ref()).unwrap();
     let mut children = 0;
-    host.visit_retained_v2_children(&mut |_, child| {
+    host.visit_retained_children(&mut |_, child| {
         let child_ctx = host
             .child_context(&ctx, child)
             .expect("an overlay must preserve transparent-wrapper constraints for both pages");

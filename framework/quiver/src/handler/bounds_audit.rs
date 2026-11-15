@@ -60,7 +60,7 @@ pub(crate) fn interaction_rects(root: &dyn Element) -> Vec<(&'static str, Option
                 .pos_start_end()
                 .map(|(start, end)| [start.x, start.y, end.x, end.y]),
         ));
-        element.visit_retained_v2_children(&mut |_, child| walk(child, out));
+        element.visit_retained_children(&mut |_, child| walk(child, out));
     }
     let mut out = Vec::new();
     walk(root, &mut out);
@@ -114,6 +114,6 @@ impl WindowRenderTree {
                 None => audit.unmapped += 1,
             }
         }
-        element.visit_retained_v2_children(&mut |_, child| self.audit_node(child, audit));
+        element.visit_retained_children(&mut |_, child| self.audit_node(child, audit));
     }
 }

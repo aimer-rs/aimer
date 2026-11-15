@@ -37,6 +37,11 @@
                 <string>txt</string>
                 <string>md</string>
             </array>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.plain-text</string>
+                <string>net.daringfireball.markdown</string>
+            </array>
             <key>LSHandlerRank</key>
             <string>Alternate</string>
         </dict>
@@ -48,6 +53,10 @@
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>rs</string>
+            </array>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.source-code</string>
             </array>
             <key>LSHandlerRank</key>
             <string>Alternate</string>

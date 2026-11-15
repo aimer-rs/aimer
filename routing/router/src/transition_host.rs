@@ -563,7 +563,7 @@ impl VisitorElement for NavigationFrameElement {
         if let Some(child) = self.veil() { visitor(child.as_ref()); }
         if let Some(child) = self.backing() { visitor(child.as_ref()); }
     }
-    fn visit_retained_v2_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
+    fn visit_retained_children<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn Element)) {
         // Later is painted above. The structural slot is fixed (arriving page 0,
         // departing page 1, item copy 2, veil 3, backing 4); only the paint order
         // changes: the page below, the veil, the backing, the page on top. The

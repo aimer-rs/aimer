@@ -85,7 +85,7 @@ fn record(element: &dyn Element, ctx: &BuildContext<'_>, recorded: &mut Vec<Reco
     });
     let mut retained_children = 0;
     let mut only_child_size = None;
-    element.visit_retained_v2_children(&mut |_, child| {
+    element.visit_retained_children(&mut |_, child| {
         retained_children += 1;
         if retained_children == 1 {
             only_child_size = Some(child.content_size(ctx));
@@ -102,7 +102,7 @@ fn record(element: &dyn Element, ctx: &BuildContext<'_>, recorded: &mut Vec<Reco
             max_height: size.height,
         };
     }
-    element.visit_retained_v2_children(&mut |index, child| {
+    element.visit_retained_children(&mut |index, child| {
         let child_ctx = element
             .child_context_at(ctx, child, index)
             .unwrap_or_else(|| base.clone());

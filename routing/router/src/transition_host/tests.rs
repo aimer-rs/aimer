@@ -306,7 +306,7 @@ mod swipe_host {
         // Slot 0 is the current page. Presented as the departing page, and an
         // effect that keeps the departing page on top paints slot 0 last.
         let mut order = Vec::new();
-        element.visit_retained_v2_children(&mut |index, _| order.push(index));
+        element.visit_retained_children(&mut |index, _| order.push(index));
         assert_eq!(order, [1, 0]);
 
         let (tree, root, [first, second]) = presentation::tree(Rect::new(0.0, 0.0, 100.0, 100.0));
@@ -343,7 +343,7 @@ mod swipe_host {
 
         assert_eq!(commits.get(), 1, "the pop is requested exactly once");
         let mut remaining = Vec::new();
-        element.visit_retained_v2_children(&mut |index, _| remaining.push(index));
+        element.visit_retained_children(&mut |index, _| remaining.push(index));
         assert_eq!(remaining.len(), 2, "removing the page beneath now would flash an empty frame");
     }
 
@@ -363,7 +363,7 @@ mod swipe_host {
 
         assert_eq!(commits.get(), 0);
         let mut remaining = Vec::new();
-        element.visit_retained_v2_children(&mut |index, _| remaining.push(index));
+        element.visit_retained_children(&mut |index, _| remaining.push(index));
         assert_eq!(remaining, [0]);
     }
 }
@@ -1267,7 +1267,7 @@ mod presentation {
             let element = host(fixed_effect(on_top), &context);
             let mut visited = Vec::new();
 
-            element.visit_retained_v2_children(&mut |index, _| visited.push(index));
+            element.visit_retained_children(&mut |index, _| visited.push(index));
 
             // Structural slot 0 is the arriving page, 1 the departing one;
             // later in the order is painted on top.
@@ -1334,7 +1334,7 @@ mod presentation {
             let element = host(anchored_effect(on_top), &context);
             let mut visited = Vec::new();
 
-            element.visit_retained_v2_children(&mut |index, _| visited.push(index));
+            element.visit_retained_children(&mut |index, _| visited.push(index));
 
             // Structural slot 2 is the anchor copy, always painted last.
             assert_eq!(visited, expected, "outgoing_on_top = {on_top}");
@@ -1546,7 +1546,7 @@ mod presentation {
         element.structural_children(&mut |_| structural += 1);
         assert_eq!(structural, 3, "all three still take part in reconciliation");
         let mut visited = 0;
-        element.visit_retained_v2_children(&mut |_, _| visited += 1);
+        element.visit_retained_children(&mut |_, _| visited += 1);
         assert_eq!(visited, 3);
 
         // The transition ends: the next frame removes both the page that left and the copy.
@@ -1554,7 +1554,7 @@ mod presentation {
         element.update(&context);
 
         let mut remaining = Vec::new();
-        element.visit_retained_v2_children(&mut |index, _| remaining.push(index));
+        element.visit_retained_children(&mut |index, _| remaining.push(index));
         assert_eq!(remaining, [0]);
     }
 
@@ -1579,7 +1579,7 @@ mod presentation {
             let element = host(backed_effect(crate::TransitionPage::Incoming, on_top), &context);
             let mut visited = Vec::new();
 
-            element.visit_retained_v2_children(&mut |index, _| visited.push(index));
+            element.visit_retained_children(&mut |index, _| visited.push(index));
 
             // Structural slot 4 is the backing: above the page below, below the page on top.
             assert_eq!(visited, expected, "outgoing_on_top = {on_top}");
@@ -1615,7 +1615,7 @@ mod presentation {
         let element = host(backed_effect(crate::TransitionPage::Incoming, false), &context);
         let mut geometry = Vec::new();
 
-        element.visit_retained_v2_children(&mut |index, child| {
+        element.visit_retained_children(&mut |index, child| {
             geometry.push((index, element.child_geometry_at(&context, child, index)));
         });
 
@@ -1711,7 +1711,7 @@ mod presentation {
         element.update(&context);
 
         let mut remaining = Vec::new();
-        element.visit_retained_v2_children(&mut |index, _| remaining.push(index));
+        element.visit_retained_children(&mut |index, _| remaining.push(index));
         assert_eq!(remaining, [0]);
     }
 }

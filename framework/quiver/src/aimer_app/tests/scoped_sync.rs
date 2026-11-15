@@ -173,7 +173,7 @@ impl Scene {
                 .and_then(|node| app.app.render_tree().element_bounds(node).ok())
                 .map(|r| (r.x, r.y, r.width, r.height));
             out.push((element.debug_name(), bounds));
-            element.visit_retained_v2_children(&mut |_, child| walk(child, app, out));
+            element.visit_retained_children(&mut |_, child| walk(child, app, out));
         }
         let mut out = Vec::new();
         walk(
