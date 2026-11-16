@@ -174,7 +174,7 @@ impl RawTextField {
     /// Reuses the double-click path: the offset under a position is only
     /// reachable with a canvas, and pre-paint sync resolves one for drawing.
     pub(super) fn select_word_under(&self, pos: Vec2d) {
-        self.pending_click.set(Some(pos));
+        self.queue_click(pos);
         self.click_count.set(2);
     }
 }

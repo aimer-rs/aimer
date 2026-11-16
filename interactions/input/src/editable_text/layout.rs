@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use aimer_cupid::font::{FontStyle, TextLanguage};
-use aimer_cupid::text_layout::{CaretGeometry, SelectionRect, TextInteractionLayout};
+use aimer_cupid::text_layout::{CaretGeometry, SelectionRect, TextInteractionLayout, TextLine};
 use aimer_style::{TextAlign, TextTransform};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -31,6 +31,35 @@ pub(crate) struct EditableGeometryKey {
     pub language: Option<TextLanguage>,
     /// Identity of the highlighter whose ranges shaped the layout; zero for none.
     pub highlighter: u64,
+    /// The lines a cursor-aware highlighter styled for, so the layout is shaped
+    /// again when the cursor reaches another line; `usize::MAX` for both when
+    /// the highlighter does not look at the cursor or the field has no focus.
+    pub active_start: usize,
+    pub active_end: usize,
+    /// What the embedder asked for and the boxes it was given: the layout holds a
+    /// box per embed, so it is shaped again when they differ. Zero for none.
+    pub embeds: u64,
+}
+
+/// A range of the text an embedded widget stands in for, with the size of the
+/// box that was reserved for it, in physical pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct EmbedBox {
+    pub key: u64,
+    pub range: Range<usize>,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Where an embed's box sits in the laid-out text, in physical pixels from the
+/// text's own origin.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct EmbedRect {
+    pub key: u64,
+    pub x: f32,
+    pub top: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 pub(crate) struct EditableGeometry {
@@ -43,6 +72,8 @@ pub(crate) struct EditableGeometry {
     /// painter must hand to its text so the glyphs it draws are the glyphs the
     /// caret and selection were measured on.
     pub ranges: Option<Rc<[aimer_text::StyledRange]>>,
+    /// The boxes reserved for embedded widgets.
+    pub embeds: Vec<EmbedBox>,
     line_offsets: Vec<f32>,
 }
 
@@ -108,6 +139,7 @@ impl EditableGeometry {
             interaction: Some(Rc::new(interaction)),
             source_ranges,
             ranges: None,
+            embeds: Vec::new(),
             line_offsets,
         }
     }
@@ -117,6 +149,37 @@ impl EditableGeometry {
     pub(crate) fn with_ranges(mut self, ranges: Option<Rc<[aimer_text::StyledRange]>>) -> Self {
         self.ranges = ranges;
         self
+    }
+
+    /// Records the boxes reserved for embedded widgets.
+    #[inline]
+    pub(crate) fn with_embeds(mut self, embeds: Vec<EmbedBox>) -> Self {
+        self.embeds = embeds;
+        self
+    }
+
+    /// Where each embed's box was laid out, from the cluster that stands for its
+    /// range: the box sits on the baseline of its line, `height` above it.
+    pub(crate) fn embed_rects(&self) -> Vec<EmbedRect> {
+        let Some(layout) = self.interaction.as_ref() else {
+            return Vec::new();
+        };
+        self.embeds
+            .iter()
+            .filter_map(|embed| {
+                let cluster = layout
+                    .clusters
+                    .iter()
+                    .find(|cluster| cluster.text_range.start == embed.range.start)?;
+                Some(EmbedRect {
+                    key: embed.key,
+                    x: cluster.start_x.min(cluster.end_x),
+                    top: cluster.start_y - embed.height,
+                    width: embed.width,
+                    height: embed.height,
+                })
+            })
+            .collect()
     }
 
     /// Converts a displayed grapheme offset into the byte offset consumed by
@@ -230,6 +293,38 @@ impl EditableGeometry {
         let start = grapheme_count(&self.display[..range.start.min(self.display.len())]);
         let end = grapheme_count(&self.display[..range.end.min(self.display.len())]);
         self.source_range_for_display_range(start, end)
+    }
+
+    /// The height the laid-out lines stack to.
+    ///
+    /// Lines differ in height when ranges change the font size, so this is the
+    /// paragraph's own height and never `lines * line_height`, which counts
+    /// every line as tall as the tallest. `line_height` is that tallest line,
+    /// used only when the text has no layout to measure.
+    #[inline]
+    pub(crate) fn content_height(&self, line_height: f32) -> f32 {
+        self.interaction
+            .as_ref()
+            .map(|layout| layout.metrics.height + layout.metrics.line_gap)
+            .filter(|height| height.is_finite() && *height > 0.0)
+            .unwrap_or_else(|| self.visual_lines.len().max(1) as f32 * line_height)
+    }
+
+    /// The top and bottom of visual line `line`, in the coordinates of the
+    /// stacked lines. A line without a layout is placed `line_height` apart.
+    pub(crate) fn line_span(&self, line: usize, line_height: f32) -> (f32, f32) {
+        let Some(layout) = self.interaction.as_ref() else {
+            return (line as f32 * line_height, (line + 1) as f32 * line_height);
+        };
+        let top_of = |line: &TextLine| line.baseline - line.ascent;
+        let Some(this) = layout.lines.get(line) else {
+            return (line as f32 * line_height, (line + 1) as f32 * line_height);
+        };
+        let bottom = layout
+            .lines
+            .get(line + 1)
+            .map_or_else(|| self.content_height(line_height), top_of);
+        (top_of(this), bottom)
     }
 
     /// Returns the visual line containing an editing cursor offset.
@@ -421,6 +516,9 @@ mod tests {
             word_spacing_bits: 0,
             language: None,
             highlighter: 0,
+            active_start: usize::MAX,
+            active_end: usize::MAX,
+            embeds: 0,
         };
         let build = || {
             builds.set(builds.get() + 1);
@@ -431,6 +529,7 @@ mod tests {
                 interaction: None,
                 source_ranges: Vec::new(),
                 ranges: None,
+                embeds: Vec::new(),
                 line_offsets: Vec::new(),
             }
         };

@@ -195,6 +195,8 @@ impl EventElement for RawTextField {
                         }
 
                         self.mouse_held.set(Some(PointerKey::new(info.source, info.id)));
+                        self.drag_origin.set(None);
+                        self.pending_press.borrow_mut().take();
                         self.cursor.clear_selection();
 
                         if let Some(selection) = self.selection.borrow().as_ref().cloned()
@@ -228,7 +230,7 @@ impl EventElement for RawTextField {
                         self.last_click_pos.set(Some(*pos));
 
                         // Defer cursor placement to draw() where canvas is available
-                        self.pending_click.set(Some(*pos));
+                        self.queue_click(*pos);
                         self.cursor.reset_blink();
 
 
@@ -496,7 +498,7 @@ impl EventElement for RawTextField {
 
                     // Drag-to-select: when mouse is held, defer position resolution to draw()
                     if owns_selection_pointer(self.mouse_held.get(), event) {
-                        self.pending_click.set(Some(*pos));
+                        self.queue_drag_position(*pos);
                         return true;
                     }
 

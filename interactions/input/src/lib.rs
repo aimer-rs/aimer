@@ -21,8 +21,9 @@ pub mod input {
     pub use crate::input_field::caret::*;
     pub use crate::input_field::raw_fields::*;
     pub use crate::input_field::chrome::TextFieldVisualState;
-    pub use crate::input_field::highlight::TextHighlighter;
-    pub use aimer_text::{SpanStyle, StyledRange};
+    pub use crate::input_field::embed::{EmbedHeight, TextEmbed, TextEmbedder};
+    pub use crate::input_field::highlight::{HighlightContext, TextHighlighter};
+    pub use aimer_text::{InlineBox, SpanStyle, StyledRange};
     pub use crate::input_field::{TextField, TextFieldState};
     pub use crate::{TextArea, TextEditingController, TextEditingValue, TextRange, TextSelection};
 }

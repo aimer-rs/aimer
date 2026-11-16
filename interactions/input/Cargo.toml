@@ -46,3 +46,4 @@ web-sys = { workspace = true, features = ["Window", "Document", "Element", "Html
 
 [dev-dependencies]
 aimer_flex.workspace = true
+aimer_text_selection.workspace = true

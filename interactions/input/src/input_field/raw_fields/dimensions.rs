@@ -36,11 +36,6 @@ impl RawTextField {
         let font_size = self.scaled_font_size(&self.text_style, scale);
         let geometry = self.editable_geometry(ctx, content_width);
         let min_lines = self.min_lines.unwrap_or(1).max(1);
-        let line_count = geometry
-            .visual_lines
-            .len()
-            .max(min_lines)
-            .min(self.max_lines.unwrap_or(usize::MAX).max(min_lines));
         let style = self.field_text_style();
         let line_height = geometry
             .interaction
@@ -59,7 +54,15 @@ impl RawTextField {
                     )
                     .line_height
             });
-        let desired_height = line_count as f32 * line_height + pad_top + pad_bottom;
+        // The lines' real stacked height, held between the configured limits.
+        // `max_lines` is counted in lines of the field's own height, so a
+        // larger styled line still fits under it.
+        let lowest = min_lines as f32 * line_height;
+        let highest = self
+            .max_lines
+            .map_or(f32::INFINITY, |max| max.max(min_lines) as f32 * line_height);
+        let content = geometry.content_height(line_height).max(lowest).min(highest);
+        let desired_height = content + pad_top + pad_bottom;
         (width, desired_height.min(constraint.max_height))
     }
 }

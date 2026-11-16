@@ -7,7 +7,7 @@ mod value;
 pub(crate) use controller::ControllerAttachment;
 pub use controller::TextEditingController;
 pub(crate) use layout::{
-    DisplayText, EditableGeometry, EditableGeometryCache, EditableGeometryKey, vertical_target,
+    DisplayText, EditableGeometry, EditableGeometryCache, EditableGeometryKey, EmbedBox, vertical_target,
     wrap_visual_lines,
 };
 pub(crate) use platform::adapt_native_delta;

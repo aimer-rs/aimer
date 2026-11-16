@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
-use aimer_animation::{AnimInstant, AnimationController, curves};
+use aimer_animation::AnimInstant;
 use aimer_canvas::Canvas;
 use aimer_cupid::draw_cmd::Rect;
 use aimer_widget::base::{BuildContext, Color};
@@ -349,10 +349,25 @@ impl EventElement for DefaultCaretElement {}
 impl LayoutElement for DefaultCaretElement {}
 impl Rebuildable for DefaultCaretElement {}
 
+/// What every clone of a [`CaretBlink`] shares.
+#[derive(Debug)]
+struct BlinkState {
+    /// When the current cycle began: the first [`CaretBlink::tick`] after the
+    /// timeline was created or reset. The phase is measured from here and the
+    /// origin is never moved again, see [`CaretBlink::tick`].
+    origin: Cell<Option<AnimInstant>>,
+    visible: Cell<bool>,
+    /// The Venus task ticking the blink's half periods, while one runs.
+    task: Cell<Option<aimer_venus::TaskId>>,
+    /// Set when the host had no timer to tick with, which leaves the field to
+    /// ask for its frames itself.
+    timerless: Cell<bool>,
+}
+
 /// The blink timeline of a text field caret.
 ///
-/// A `CaretBlink` is a cheap, cloneable handle over a repeating
-/// [`AnimationController`]. Every clone observes the same phase, so the state
+/// A `CaretBlink` is a cheap, cloneable handle over one shared phase. Every
+/// clone observes the same phase, so the state
 /// of a stateful field can own the timeline while the element it builds reads
 /// the caret visibility from it. Because the phase lives in the state, a
 /// rebuild no longer restarts the blink.
@@ -381,16 +396,10 @@ impl Rebuildable for DefaultCaretElement {}
 /// blink.tick(start + CaretBlink::DEFAULT_PERIOD / 2);
 /// assert!(!blink.is_visible());
 /// ```
-#[derive(Debug, Default)]
-struct CaretWakeState {
-    generation: Cell<u64>,
-    scheduled: Cell<bool>,
-}
-
 #[derive(Clone, Debug)]
 pub struct CaretBlink {
-    controller: AnimationController,
-    wake: Rc<CaretWakeState>,
+    period: Duration,
+    state: Rc<BlinkState>,
 }
 
 impl CaretBlink {
@@ -411,78 +420,115 @@ impl CaretBlink {
     /// Creates a blink timeline that completes one on-off cycle per `period`.
     ///
     /// A zero `period` keeps the caret permanently visible instead of dividing
-    /// by zero, because the controller resolves a zero duration as an
-    /// immediately wrapping cycle.
+    /// by zero.
     #[inline]
     pub fn with_period(period: Duration) -> Self {
-        let controller = AnimationController::new(period, curves::LINEAR);
-        controller.set_repeat(true);
-        controller.forward_from_first_tick();
         Self {
-            controller,
-            wake: Rc::new(CaretWakeState::default()),
+            period,
+            state: Rc::new(BlinkState {
+                origin: Cell::new(None),
+                visible: Cell::new(true),
+                task: Cell::new(None),
+                timerless: Cell::new(false),
+            }),
         }
     }
 
     /// Returns the duration of one full on-off cycle.
     #[inline]
     pub fn period(&self) -> Duration {
-        self.controller.duration()
+        self.period
     }
 
     /// Returns whether the caret should be painted at the current phase.
     #[inline]
     pub fn is_visible(&self) -> bool {
-        self.controller.value() < 0.5
+        self.state.visible.get()
     }
 
     /// Advances the timeline to `now` and reports whether the caret changed
     /// visibility.
     ///
-    /// Call this once per frame while the field owns focus. The phase is
-    /// derived from the elapsed time, so a dropped frame delays a toggle by at
-    /// most that frame instead of shifting the whole rhythm.
+    /// Call this once per frame while the field owns focus. The phase is the
+    /// time since the cycle began, modulo the period, so a dropped or late frame
+    /// delays a toggle by at most that frame and never shifts the ones after it.
+    /// That matters because the toggle wakes tick on a fixed grid of half
+    /// periods: a phase that was re-anchored to the frame that noticed each wrap
+    /// would slide off that grid, and a frame would arrive before its toggle and
+    /// leave the caret stuck for another half period.
     pub fn tick(&self, now: AnimInstant) -> bool {
         let was_visible = self.is_visible();
-        self.controller.tick(now);
-        was_visible != self.is_visible()
+        let origin = match self.state.origin.get() {
+            Some(origin) => origin,
+            None => {
+                self.state.origin.set(Some(now));
+                now
+            }
+        };
+        let period = self.period.as_nanos();
+        let visible = period == 0
+            || now.duration_since(origin).as_nanos() % period < period / 2;
+        self.state.visible.set(visible);
+        was_visible != visible
     }
 
-    /// Schedules the next visibility transition on the mounted field's scope.
+    /// Starts the ticker that wakes the field at every visibility transition,
+    /// unless one is already running.
     ///
-    /// At most one timer is armed for a blink handle. The timer only requests a
-    /// frame; the next draw remains responsible for advancing the timeline and
-    /// painting the new state. A missing Venus runtime leaves the handle
-    /// unarmed so isolated raw-field users can retain their frame-driven path.
+    /// One Venus [`interval`](aimer_venus::Venus::interval) per focused field,
+    /// owned by `scope`, ticks every half period on the host's own timer. A tick
+    /// only requests a frame; that frame remains responsible for advancing the
+    /// timeline and painting the new state. The interval does not drift and one
+    /// task serves every blink, where re-arming a sleep after each toggle spawned
+    /// a task per half period.
+    ///
+    /// The interval is started on the frame that restarts the timeline, so its
+    /// ticks land on the toggles. [`reset`](Self::reset) stops it for that
+    /// reason, and the next frame starts it again.
+    ///
+    /// Without a Venus runtime or a host timer nothing can wake the caret from
+    /// here: [`timer_unavailable`](Self::timer_unavailable) then reports it, and
+    /// the field falls back to asking for a frame on every frame, as isolated
+    /// raw-field users already do.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn schedule_next_toggle(&self, scope: aimer_venus::ScopeId) {
-        let delay =
-            Duration::from_nanos((self.period().as_nanos() / 2).min(u64::MAX as u128) as u64);
-        if delay.is_zero() || self.wake.scheduled.replace(true) {
+    pub(crate) fn run_toggle_ticker(&self, scope: aimer_venus::ScopeId) {
+        let half = self.period() / 2;
+        if half.is_zero() || self.state.timerless.get() || self.state.task.get().is_some() {
             return;
         }
-
-        let generation = self.wake.generation.get();
-        let wake = Rc::clone(&self.wake);
         let Some(venus) = aimer_venus::Venus::current() else {
-            self.wake.scheduled.set(false);
+            self.state.timerless.set(true);
             return;
         };
-        venus.spawn_in(scope, async move {
-            tokio::time::sleep(delay).await;
-            if wake.generation.get() == generation {
-                wake.scheduled.set(false);
+        let state = Rc::clone(&self.state);
+        let mut ticker = venus.interval(half);
+        let task = venus.spawn_in(scope, async move {
+            while ticker.tick().await.is_ok() {
                 aimer_events::window::request_animation_frame();
             }
+            // Only a host without timers ends the loop on its own: aborting the
+            // task drops it before it gets here.
+            state.task.set(None);
+            state.timerless.set(true);
         });
+        self.state.task.set(Some(task));
     }
 
-    /// Invalidates a pending native wake, if any.
+    /// Returns whether the host has no timer to tick the blink with, so the
+    /// owning field must request its own frames.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[inline]
+    pub(crate) fn timer_unavailable(&self) -> bool {
+        self.state.timerless.get()
+    }
+
+    /// Stops the ticker, if one runs, and releases its host timer.
     pub(crate) fn cancel_scheduled_toggle(&self) {
-        self.wake
-            .generation
-            .set(self.wake.generation.get().wrapping_add(1));
-        self.wake.scheduled.set(false);
+        if let Some(task) = self.state.task.take()
+            && let Some(venus) = aimer_venus::Venus::current()
+        {
+            venus.abort(task);
+        }
     }
 
     /// Restarts the timeline at the beginning of its visible half.
@@ -492,8 +538,8 @@ impl CaretBlink {
     /// The new period begins at the next [`CaretBlink::tick`].
     pub fn reset(&self) {
         self.cancel_scheduled_toggle();
-        self.controller.reset();
-        self.controller.forward_from_first_tick();
+        self.state.origin.set(None);
+        self.state.visible.set(true);
     }
 }
 
@@ -580,6 +626,30 @@ mod tests {
         assert!(blink.is_visible());
         assert!(!blink.tick(resumed + Duration::from_millis(499)));
         assert!(blink.tick(resumed + HALF));
+    }
+
+    #[test]
+    fn a_late_frame_does_not_move_the_toggles_that_follow() {
+        // The toggle wakes come from a fixed grid of half periods. A frame that
+        // runs late must not drag the blink's phase after it, or the frames on
+        // the grid land before their toggle and the caret sticks.
+        let blink = CaretBlink::new();
+        let start = AnimInstant::now();
+        blink.tick(start);
+
+        let mut visible = true;
+        for step in 1..=24u32 {
+            let late = if step == 2 {
+                Duration::from_millis(30)
+            } else {
+                Duration::from_millis(2)
+            };
+            let toggled = blink.tick(start + HALF * step + late);
+
+            visible = !visible;
+            assert!(toggled, "the frame on grid step {step} flips the caret");
+            assert_eq!(blink.is_visible(), visible, "at grid step {step}");
+        }
     }
 
     #[test]
@@ -742,6 +812,8 @@ mod tests {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_scheduling_tests {
     use std::cell::Cell;
+    use std::future::Future;
+    use std::pin::Pin;
     use std::rc::Rc;
     use std::time::Duration;
 
@@ -751,43 +823,141 @@ mod native_scheduling_tests {
 
     use super::CaretBlink;
 
-    struct TokioPollContext(Handle);
+    /// A host with a runtime-backed timer, like the application's.
+    struct TimedHost(Handle);
 
-    impl PollContext for TokioPollContext {
+    impl PollContext for TimedHost {
         fn enter(&self, poll: &mut dyn FnMut()) {
             let _guard = self.0.enter();
             poll();
         }
+
+        fn sleep(&self, duration: Duration) -> Option<Pin<Box<dyn Future<Output = ()>>>> {
+            let _guard = self.0.enter();
+            Some(Box::pin(tokio::time::sleep(duration)))
+        }
+    }
+
+    /// A host that can poll tasks but has no timer.
+    struct TimerlessHost;
+
+    impl PollContext for TimerlessHost {
+        fn enter(&self, poll: &mut dyn FnMut()) {
+            poll();
+        }
+    }
+
+    /// Counts the frames asked for while it lives.
+    struct Redraws {
+        count: Rc<Cell<u32>>,
+        previous: Option<Rc<dyn Fn()>>,
+    }
+
+    impl Redraws {
+        fn count() -> Self {
+            let count = Rc::new(Cell::new(0));
+            let counted = count.clone();
+            let previous = aimer_events::window::set_thread_redraw_requester(move || {
+                counted.set(counted.get() + 1);
+            });
+            Self { count, previous }
+        }
+
+        fn get(&self) -> u32 {
+            self.count.get()
+        }
+    }
+
+    impl Drop for Redraws {
+        fn drop(&mut self) {
+            aimer_events::window::restore_thread_redraw_requester(self.previous.take());
+        }
+    }
+
+    fn timed_venus(runtime: &Runtime) -> Rc<Venus> {
+        let venus = Venus::new();
+        venus.set_poll_context(TimedHost(runtime.handle().clone()));
+        venus.install();
+        venus
     }
 
     #[test]
-    fn schedules_one_redraw_at_the_next_visibility_transition() {
+    fn one_interval_keeps_asking_for_the_frame_of_every_toggle() {
         let runtime = Runtime::new().expect("a timer runtime");
-        let venus = Venus::new();
-        venus.set_poll_context(TokioPollContext(runtime.handle().clone()));
-        venus.install();
+        let venus = timed_venus(&runtime);
         let scope = venus.scope();
-
-        let redraws = Rc::new(Cell::new(0));
-        let counted = redraws.clone();
-        let previous = aimer_events::window::set_thread_redraw_requester(move || {
-            counted.set(counted.get() + 1);
-        });
+        let redraws = Redraws::count();
 
         let blink = CaretBlink::with_period(Duration::from_millis(4));
         blink.tick(AnimInstant::now());
-        blink.schedule_next_toggle(scope.id());
-        blink.schedule_next_toggle(scope.id());
+        blink.run_toggle_ticker(scope.id());
+        blink.run_toggle_ticker(scope.id());
+        assert!(!blink.timer_unavailable());
 
         venus.run_microtasks();
-        assert_eq!(redraws.get(), 0);
+        assert_eq!(redraws.get(), 0, "nothing is due before the first half period");
 
         std::thread::sleep(Duration::from_millis(12));
         venus.run_microtasks();
-        assert_eq!(redraws.get(), 1);
+        let first = redraws.get();
+        assert!(first >= 1, "the first transition asked for a frame");
+
+        // The same ticker is still running: no frame has to arm it again.
+        std::thread::sleep(Duration::from_millis(12));
+        venus.run_microtasks();
+        assert!(redraws.get() > first, "the interval kept ticking on its own");
 
         scope.cancel();
-        aimer_events::window::restore_thread_redraw_requester(previous);
+        Venus::uninstall();
+    }
+
+    #[test]
+    fn a_reset_stops_the_ticker_until_the_next_frame_arms_it_again() {
+        let runtime = Runtime::new().expect("a timer runtime");
+        let venus = timed_venus(&runtime);
+        let scope = venus.scope();
+        let redraws = Redraws::count();
+
+        let blink = CaretBlink::with_period(Duration::from_millis(4));
+        blink.tick(AnimInstant::now());
+        blink.run_toggle_ticker(scope.id());
+        venus.run_microtasks();
+
+        // Typing restarts the blink, so the old rhythm must not wake anything.
+        blink.reset();
+        std::thread::sleep(Duration::from_millis(12));
+        venus.run_microtasks();
+        assert_eq!(redraws.get(), 0, "an aborted ticker asks for nothing");
+
+        blink.tick(AnimInstant::now());
+        blink.run_toggle_ticker(scope.id());
+        venus.run_microtasks();
+        std::thread::sleep(Duration::from_millis(12));
+        venus.run_microtasks();
+        assert!(redraws.get() >= 1, "the next frame armed a new ticker");
+
+        scope.cancel();
+        Venus::uninstall();
+    }
+
+    #[test]
+    fn a_host_without_a_timer_hands_the_blink_back_to_the_frame_loop() {
+        let venus = Venus::new();
+        venus.set_poll_context(TimerlessHost);
+        venus.install();
+        let scope = venus.scope();
+        let redraws = Redraws::count();
+
+        let blink = CaretBlink::with_period(Duration::from_millis(4));
+        blink.tick(AnimInstant::now());
+        blink.run_toggle_ticker(scope.id());
+        venus.run_microtasks();
+
+        assert!(blink.timer_unavailable(), "the field must keep asking for frames itself");
+        venus.run_microtasks();
+        assert_eq!(redraws.get(), 0, "and the failed ticker does not spin");
+
+        scope.cancel();
         Venus::uninstall();
     }
 }

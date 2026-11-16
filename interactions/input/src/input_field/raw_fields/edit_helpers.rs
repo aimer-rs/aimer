@@ -65,8 +65,8 @@ fn presentation_preedit<'a>(
 }
 
 #[inline]
-fn vertical_scroll_extent(line_count: usize, line_height: f32, viewport_height: f32) -> f32 {
-    (line_count as f32 * line_height - viewport_height).max(0.0)
+fn vertical_scroll_extent(content_height: f32, viewport_height: f32) -> f32 {
+    (content_height - viewport_height).max(0.0)
 }
 
 #[inline]
@@ -77,13 +77,10 @@ fn vertical_scroll_target(current: f32, delta_y: f32, extent: f32) -> f32 {
 #[inline]
 fn scroll_to_reveal_line(
     current: f32,
-    line_index: usize,
-    line_height: f32,
+    (line_top, line_bottom): (f32, f32),
     viewport_height: f32,
     extent: f32,
 ) -> f32 {
-    let line_top = line_index as f32 * line_height;
-    let line_bottom = line_top + line_height;
     if line_top < current {
         line_top
     } else if line_bottom > current + viewport_height {
@@ -212,15 +209,15 @@ mod vertical_scroll_tests {
 
     #[test]
     fn vertical_scroll_extent_is_the_overflow_below_the_viewport() {
-        assert_eq!(vertical_scroll_extent(6, 20.0, 50.0), 70.0);
-        assert_eq!(vertical_scroll_extent(2, 20.0, 50.0), 0.0);
+        assert_eq!(vertical_scroll_extent(120.0, 50.0), 70.0);
+        assert_eq!(vertical_scroll_extent(40.0, 50.0), 0.0);
     }
 
     #[test]
     fn caret_visibility_scrolls_only_far_enough_to_reveal_its_line() {
-        assert_eq!(scroll_to_reveal_line(0.0, 3, 20.0, 40.0, 80.0), 40.0);
-        assert_eq!(scroll_to_reveal_line(50.0, 1, 20.0, 40.0, 80.0), 20.0);
-        assert_eq!(scroll_to_reveal_line(20.0, 2, 20.0, 40.0, 80.0), 20.0);
+        assert_eq!(scroll_to_reveal_line(0.0, (60.0, 80.0), 40.0, 80.0), 40.0);
+        assert_eq!(scroll_to_reveal_line(50.0, (20.0, 40.0), 40.0, 80.0), 20.0);
+        assert_eq!(scroll_to_reveal_line(20.0, (40.0, 60.0), 40.0, 80.0), 20.0);
     }
 
     #[test]

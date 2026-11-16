@@ -11,6 +11,10 @@ pub(crate) struct CaretSlot {
     child: RefCell<Option<ChildBuilder>>,
     custom: Cell<Option<bool>>,
     builtin_color: Rc<Cell<Color>>,
+    /// The field's embedded widgets. They are retained children like the caret,
+    /// and live in the same slot for the same reason: the state owns them, and
+    /// every element the field is rebuilt into finds them here.
+    pub(crate) embeds: Rc<EmbedStore>,
 }
 
 impl CaretSlot {
@@ -20,6 +24,7 @@ impl CaretSlot {
             child: RefCell::new(None),
             custom: Cell::new(None),
             builtin_color: Rc::new(Cell::new(Color::default())),
+            embeds: Rc::new(EmbedStore::default()),
         }
     }
 
@@ -28,7 +33,7 @@ impl CaretSlot {
         &self,
         builder: Option<&CaretBuilder>,
         context: CaretContext,
-        color: Colors,
+        color: impl Into<Color>,
         ctx: &BuildContext,
     ) -> AnyElement {
         let custom = builder.is_some();
@@ -67,6 +72,9 @@ pub(crate) struct RawTextFieldHost {
     pub(crate) field: RawTextField,
     pub(crate) caret: AnyElement,
     caret_placement: Rc<Cell<CaretPlacement>>,
+    /// Moves the drawn caret to where the cursor went; see [`CaretGlide`].
+    glide: RefCell<CaretGlide>,
+    smooth: bool,
 }
 
 impl RawTextFieldHost {
@@ -82,7 +90,16 @@ impl RawTextFieldHost {
             field,
             caret,
             caret_placement,
+            glide: RefCell::new(CaretGlide::default()),
+            smooth: true,
         }
+    }
+
+    /// Chooses whether the caret glides to a moved cursor or jumps to it.
+    #[inline]
+    pub(crate) fn smooth(mut self, smooth: bool) -> Self {
+        self.smooth = smooth;
+        self
     }
 
     fn sync_caret_placement(&self, ctx: &BuildContext) {
@@ -91,17 +108,40 @@ impl RawTextFieldHost {
         let scale = if ctx.scale > 0.0 { ctx.scale } else { 1.0 };
         let available = context.is_focused() && context.is_available();
         let placement = if available {
+            let mut rect = CaretRect {
+                x: geometry.x,
+                y: geometry.y,
+                width: geometry.width,
+                height: geometry.height,
+            };
+            if self.smooth {
+                let (drawn, moving) =
+                    self.glide
+                        .borrow_mut()
+                        .advance(rect, context.offset(), self.field.now());
+                if moving {
+                    // The caret is on its way: nothing else changes while it
+                    // travels, so it has to ask for the frames it moves on. A frame
+                    // alone does not re-run a field nothing marked dirty, so the
+                    // caret marks itself, as a blink toggle does.
+                    context.request_repaint();
+                    aimer_events::window::request_animation_frame();
+                }
+                rect = drawn;
+            }
             CaretPlacement {
                 offset: Vec2d {
-                    x: geometry.x * scale,
-                    y: geometry.y * scale,
+                    x: rect.x * scale,
+                    y: rect.y * scale,
                 },
                 size: ResolvedSize {
-                    width: geometry.width * scale,
-                    height: geometry.height * scale,
+                    width: rect.width * scale,
+                    height: rect.height * scale,
                 },
             }
         } else {
+            // A caret that was not shown has no place to travel from.
+            self.glide.borrow_mut().reset();
             CaretPlacement::default()
         };
         let previous = self.caret_placement.replace(placement);
@@ -113,6 +153,20 @@ impl RawTextFieldHost {
             // caret would stay where the previous edit left it. Nothing is laid
             // out differently: the caret is out of flow, so retiring the layout
             // caches would only make the next pass measure the window again.
+            aimer_widget::notify_retained_render_structure_changed();
+        }
+    }
+}
+
+impl RawTextFieldHost {
+    /// Moves the embedded widgets to where the field laid their boxes out, and
+    /// drops the ones it no longer shows.
+    fn sync_embed_placement(&self, ctx: &BuildContext) {
+        let scale = if ctx.scale > 0.0 { ctx.scale } else { 1.0 };
+        if self.field.embeds.sync(scale) {
+            // The render tree reads each placement when it synchronises, and a
+            // synchronisation is skipped while nothing it depends on has moved,
+            // as for the caret.
             aimer_widget::notify_retained_render_structure_changed();
         }
     }
@@ -223,7 +277,9 @@ impl Drawable for RawTextFieldHost {
     fn update(&self, ctx: &BuildContext) {
         self.field.update(ctx);
         self.sync_caret_placement(ctx);
+        self.sync_embed_placement(ctx);
         self.caret.update(ctx);
+        self.field.embeds.update(ctx);
     }
 
     fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
@@ -231,13 +287,16 @@ impl Drawable for RawTextFieldHost {
             return false;
         }
         self.sync_caret_placement(ctx);
+        self.sync_embed_placement(ctx);
         true
     }
 
     fn update_retained(&self, ctx: &BuildContext) {
         self.field.update_retained(ctx);
         self.sync_caret_placement(ctx);
+        self.sync_embed_placement(ctx);
         self.caret.update(ctx);
+        self.field.embeds.update(ctx);
     }
 
     fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
@@ -276,25 +335,31 @@ impl Drawable for RawTextFieldHost {
 impl VisitorElement for RawTextFieldHost {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.caret);
+        self.field.embeds.visit(visitor);
     }
 
 
-    fn event_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
+    fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         // The field is embedded and has no retained ElementId of its own.
         // Its callbacks are forwarded directly by this host, so it must not be
-        // registered as a separate indexed event target.
+        // registered as a separate indexed event target. The embedded widgets
+        // are real children: a press on one belongs to it.
+        self.field.embeds.visit(visitor);
     }
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.field);
         visitor(&self.caret);
+        self.field.embeds.visit(visitor);
     }
 
     fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.field);
     }
 
-    fn hit_test_children<'a>(&'a self, _visitor: &mut dyn FnMut(&'a dyn Element)) {
+    fn hit_test_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
+        // The caret is not a target; the embedded widgets are.
+        self.field.embeds.visit(visitor);
     }
 }
 
@@ -328,6 +393,34 @@ impl EventElement for RawTextFieldHost {
         event: &ElementEvent,
         _context: &mut EventDispatchContext<'_, '_>,
     ) -> EventResult {
+        // A press or release over an embedded widget belongs to the widget. It has
+        // had its turn by the time the event gets here, because children go first,
+        // and a widget that acts on the tap, such as a copy button, does not
+        // consume the press. Letting it fall through would put the cursor in the
+        // block, which swaps the widget for its source before the tap completes.
+        //
+        // A click the widget has no use for is the user asking to edit what it
+        // shows: a widget that handles its own tap, such as the copy button,
+        // consumes the release, and one that does not lets the click through to
+        // here, where it moves the cursor into the block.
+        match event {
+            ElementEvent::PointerDown(info) if self.field.embed_at(info.pos) => {
+                self.field.embeds.set_pressed(true);
+                return EventResult::consumed();
+            }
+            // Only a release that ends a press made on an embedded widget is the
+            // host's. Any other release, even one that happens to land over an
+            // embed, ends a press the text field took, and must reach it: a field
+            // that never sees its release believes the button is still down and
+            // extends a selection wherever the pointer goes next.
+            ElementEvent::PointerUp(info) if self.field.embeds.take_pressed() => {
+                if self.field.embed_at(info.pos) {
+                    self.field.edit_embed_at(info.pos);
+                }
+                return EventResult::consumed();
+            }
+            _ => {}
+        }
         // `field` is embedded and therefore has no retained ElementId. The
         // host is the indexed event target and owns pointer capture for its
         // editing logic, so forward directly instead of indexing it as a
@@ -366,6 +459,14 @@ impl Rebuildable for RawTextFieldHost {
         true
     }
 
+    /// Lets a rebuilt host find this one to take its state over; without it
+    /// [`adopt_runtime_state_from`](Rebuildable::adopt_runtime_state_from) cannot
+    /// tell what it was offered and carries nothing.
+    #[inline]
+    fn option_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn adopt_runtime_state_from(&self, old: &dyn Element) {
         let Some(old) = old
             .option_any()
@@ -374,6 +475,10 @@ impl Rebuildable for RawTextFieldHost {
             return;
         };
         self.field.adopt_runtime_state_from(&old.field);
+        // The caret is mid-motion, or about to be, across a rebuild: typing reports
+        // the change to the app, which rebuilds the field. A new glide would have
+        // nowhere to travel from and would draw the caret in place.
+        *self.glide.borrow_mut() = std::mem::take(&mut *old.glide.borrow_mut());
     }
 }
 
@@ -515,5 +620,196 @@ mod tests {
         assert!(caret_context.geometry().y > 4.0);
         assert_eq!(caret_context.geometry().width, 1.5);
         assert!(caret_context.geometry().height > 0.0);
+    }
+
+    #[test]
+    fn a_caret_with_no_configured_colour_follows_the_text_colour() {
+        let text = Color::Rgba(236, 238, 242, 255);
+        let mut config = field_config(crate::input_field::controller::TextFieldController::new());
+        config.text_style = config.text_style.color(text);
+        config.cursor_color = None;
+
+        // Text is always drawn in a colour that reads against its background,
+        // so a caret that follows it does too: light on dark, dark on light.
+        assert_eq!(config.caret_color(), text);
+
+        config.cursor_color = Some(Colors::Red);
+        assert_eq!(config.caret_color(), Colors::Red.into());
+    }
+
+    /// A host over a focused field holding `hello world`, with the field's clock
+    /// fixed at `start` so the test steps time itself.
+    fn glide_host(start: aimer_animation::AnimInstant) -> (RawTextFieldHost, BuildContext<'static>) {
+        let field = RawTextField::new(
+            field_config(TextEditingController::with_text("hello world")),
+            CaretBlink::new(),
+            FocusNode::new(),
+        );
+        let _ = field.on_event(&ElementEvent::FocusGained);
+        field.test_clock.set(Some(start));
+        let context = dummy_build_context(240.0, 60.0);
+        let caret = ProbeCaret(Rc::new(Cell::new((0.0, 0.0)))).to_element(&context);
+        (RawTextFieldHost::new(field, caret), context)
+    }
+
+    #[test]
+    fn the_host_glides_the_caret_to_a_moved_cursor() {
+        let start = aimer_animation::AnimInstant::now();
+        let (host, context) = glide_host(start);
+        host.field.cursor.set_offset(0);
+        host.update(&context);
+        let from = host.caret_placement.get().offset.x;
+
+        host.field.cursor.set_offset(5);
+        host.update(&context);
+        assert_eq!(host.caret_placement.get().offset.x, from, "it leaves from where it was");
+
+        host.field.test_clock.set(Some(start + CaretGlide::DURATION / 2));
+        host.update(&context);
+        let midway = host.caret_placement.get().offset.x;
+
+        host.field.test_clock.set(Some(start + CaretGlide::DURATION * 2));
+        host.update(&context);
+        let arrived = host.caret_placement.get().offset.x;
+
+        assert!(arrived > from + 10.0, "the cursor moved right: {from} -> {arrived}");
+        assert!(midway > from && midway < arrived, "{from} < {midway} < {arrived}");
+        assert_eq!(arrived, host.field.caret_context().geometry().x, "it ends on the published caret");
+    }
+
+    /// Typing moves the caret as surely as an arrow key does, so it travels too:
+    /// the caret leaves from where it was and arrives at the glyph's far side.
+    #[test]
+    fn the_host_glides_the_caret_while_typing() {
+        let start = aimer_animation::AnimInstant::now();
+        let (host, context) = glide_host(start);
+        host.field.cursor.set_offset(11);
+        host.update(&context);
+        let from = host.caret_placement.get().offset.x;
+
+        assert!(host.field.insert_text("W"));
+        host.update(&context);
+        assert_eq!(host.caret_placement.get().offset.x, from, "it leaves from where it was");
+
+        host.field.test_clock.set(Some(start + CaretGlide::DURATION / 2));
+        host.update(&context);
+        let midway = host.caret_placement.get().offset.x;
+
+        host.field.test_clock.set(Some(start + CaretGlide::DURATION * 2));
+        host.update(&context);
+        let arrived = host.caret_placement.get().offset.x;
+
+        assert!(arrived > from + 3.0, "the caret moved past the typed letter: {from} -> {arrived}");
+        assert!(midway > from && midway < arrived, "{from} < {midway} < {arrived}");
+    }
+
+    /// A frame that follows an edit synchronises the host before it draws it, and
+    /// the field has just started laying out: its caret is unavailable until it is
+    /// painted. That passing state must not make the caret forget where it was, or
+    /// every typed letter appears in place instead of gliding.
+    #[test]
+    fn typing_glides_when_the_frame_syncs_before_the_caret_is_published() {
+        let start = aimer_animation::AnimInstant::now();
+        let (host, context) = glide_host(start);
+        host.field.cursor.set_offset(11);
+        host.sync_paint_state(&context);
+        host.update(&context);
+        let from = host.caret_placement.get().offset.x;
+
+        assert!(host.field.insert_text("W"));
+        host.sync_paint_state(&context);
+        host.update(&context);
+        assert_eq!(host.caret_placement.get().offset.x, from, "it leaves from where it was");
+
+        host.field.test_clock.set(Some(start + CaretGlide::DURATION / 2));
+        host.sync_paint_state(&context);
+        host.update(&context);
+        let midway = host.caret_placement.get().offset.x;
+
+        host.field.test_clock.set(Some(start + CaretGlide::DURATION * 2));
+        host.sync_paint_state(&context);
+        host.update(&context);
+        let arrived = host.caret_placement.get().offset.x;
+
+        assert!(arrived > from + 3.0, "the caret moved past the typed letter: {from} -> {arrived}");
+        assert!(midway > from && midway < arrived, "{from} < {midway} < {arrived}");
+    }
+
+    /// Typing reports the change to the app, which rebuilds the field, so a typed
+    /// letter arrives at a new host that has to carry on the old one's caret. A host
+    /// that starts its glide afresh has nowhere to glide from and draws the caret in
+    /// place, which is why typing did not glide while arrow keys, which rebuild
+    /// nothing, did.
+    #[test]
+    fn a_rebuilt_host_carries_the_caret_glide_on() {
+        let start = aimer_animation::AnimInstant::now();
+        let controller = TextEditingController::with_text("hello world");
+        let make = || {
+            let field = RawTextField::new(field_config(controller.clone()), CaretBlink::new(), FocusNode::new());
+            let _ = field.on_event(&ElementEvent::FocusGained);
+            field.test_clock.set(Some(start));
+            let context = dummy_build_context(240.0, 60.0);
+            let caret = ProbeCaret(Rc::new(Cell::new((0.0, 0.0)))).to_element(&context);
+            (RawTextFieldHost::new(field, caret), context)
+        };
+        let (old, context) = make();
+        old.field.cursor.set_offset(11);
+        old.update(&context);
+        let from = old.caret_placement.get().offset.x;
+        assert!(from > 10.0, "the old host drew the caret at the end of the text: {from}");
+
+        // The rebuild: a new host takes over from the old, then the letter arrives.
+        let (new, context) = make();
+        new.adopt_runtime_state_from(&old);
+        assert!(new.field.insert_text("W"));
+        new.update(&context);
+        assert_eq!(new.caret_placement.get().offset.x, from, "the caret leaves from where it was");
+
+        new.field.test_clock.set(Some(start + CaretGlide::DURATION * 2));
+        new.update(&context);
+        assert!(new.caret_placement.get().offset.x > from + 3.0, "and arrives past the new letter");
+    }
+
+    #[test]
+    fn a_host_that_does_not_smooth_the_caret_jumps() {
+        let start = aimer_animation::AnimInstant::now();
+        let (host, context) = glide_host(start);
+        let host = host.smooth(false);
+        host.field.cursor.set_offset(0);
+        host.update(&context);
+        let from = host.caret_placement.get().offset.x;
+
+        host.field.cursor.set_offset(5);
+        host.update(&context);
+
+        assert!(host.caret_placement.get().offset.x > from + 10.0);
+    }
+
+    /// A frame asked for with nothing marked dirty does not re-run the field, so a
+    /// glide that only asked for frames would stop where the last event-driven
+    /// frame left it. The caret has to mark itself dirty, as a blink toggle does,
+    /// for every frame it still has to move in.
+    #[test]
+    fn a_moving_caret_asks_for_a_repaint_of_itself_until_it_arrives() {
+        let start = aimer_animation::AnimInstant::now();
+        let (host, context) = glide_host(start);
+        let repaints = Rc::new(Cell::new(0_u32));
+        let counted = Rc::clone(&repaints);
+        host.field.caret_context().set_repaint_callback(Rc::new(move || counted.set(counted.get() + 1)));
+        host.field.cursor.set_offset(0);
+        host.update(&context);
+
+        host.field.cursor.set_offset(5);
+        host.update(&context);
+        host.field.test_clock.set(Some(start + CaretGlide::DURATION / 2));
+        let before = repaints.get();
+        host.update(&context);
+        assert!(repaints.get() > before, "still moving, so it asks for another frame of itself");
+
+        host.field.test_clock.set(Some(start + CaretGlide::DURATION * 2));
+        host.update(&context);
+        let arrived = repaints.get();
+        host.update(&context);
+        assert_eq!(repaints.get(), arrived, "and stops asking once it has arrived");
     }
 }

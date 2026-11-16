@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -30,6 +31,8 @@ static NEXT_HIGHLIGHTER_ID: AtomicU64 = AtomicU64::new(1);
 /// The function runs again only when the displayed text changes, not when the
 /// caret moves, so it may do real work such as tokenising. It must be pure: the
 /// same text has to give the same ranges, or the field would show stale styling.
+/// A highlighter that needs to know where the cursor is, to show markup only on
+/// the line being edited, is made with [`TextHighlighter::with_selection`].
 ///
 /// # Reuse the handle
 ///
@@ -73,7 +76,8 @@ static NEXT_HIGHLIGHTER_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone)]
 pub struct TextHighlighter {
     id: u64,
-    highlight: Rc<dyn Fn(&str) -> Vec<StyledRange>>,
+    highlight: Rc<dyn Fn(&str, &HighlightContext) -> Vec<StyledRange>>,
+    by_selection: bool,
 }
 
 impl TextHighlighter {
@@ -87,20 +91,147 @@ impl TextHighlighter {
     {
         Self {
             id: NEXT_HIGHLIGHTER_ID.fetch_add(1, Ordering::Relaxed),
-            highlight: Rc::new(highlight),
+            highlight: Rc::new(move |text, _| highlight(text)),
+            by_selection: false,
         }
     }
 
-    /// Runs the highlighter over `text`.
+    /// Creates a highlighter that also knows where the cursor is.
+    ///
+    /// The function receives a [`HighlightContext`] next to the text, so it can
+    /// style a line one way while the cursor is on it and another way while it
+    /// is not. That is how a markdown editor shows `# Title` as a heading, and
+    /// the `# ` itself only while the cursor is on the line.
+    ///
+    /// It runs again when the text changes and when the cursor moves to another
+    /// *line*, or when the field gains or loses focus, since those change which
+    /// lines are active. Moving within a line costs nothing. It must still be
+    /// pure: the same text and context have to give the same ranges.
+    ///
+    /// Ranges that change width, such as one styled with
+    /// [`SpanStyle::concealed`], reflow the text when the cursor reaches the
+    /// line, and a click on collapsed text puts the cursor there before the
+    /// line widens.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::{SpanStyle, StyledRange, TextHighlighter};
+    ///
+    /// // Hides the `# ` of a heading while the cursor is somewhere else.
+    /// let headings = TextHighlighter::with_selection(|text, context| {
+    ///     let end = text.find('\n').unwrap_or(text.len());
+    ///     if text.starts_with("# ") && !context.is_active(&(0..end)) {
+    ///         vec![StyledRange::new(0..2, SpanStyle::concealed())]
+    ///     } else {
+    ///         Vec::new()
+    ///     }
+    /// });
+    ///
+    /// assert_eq!(headings.highlight("# Hello").len(), 1, "no cursor, no active line");
+    /// ```
+    #[inline]
+    pub fn with_selection<F>(highlight: F) -> Self
+    where
+        F: Fn(&str, &HighlightContext) -> Vec<StyledRange> + 'static,
+    {
+        Self {
+            id: NEXT_HIGHLIGHTER_ID.fetch_add(1, Ordering::Relaxed),
+            highlight: Rc::new(highlight),
+            by_selection: true,
+        }
+    }
+
+    /// Runs the highlighter over `text` with no cursor, as in a field that does
+    /// not have focus.
     #[inline]
     pub fn highlight(&self, text: &str) -> Vec<StyledRange> {
-        (self.highlight)(text)
+        (self.highlight)(text, &HighlightContext::default())
+    }
+
+    /// Runs the highlighter over `text` for a cursor described by `context`.
+    #[inline]
+    pub(crate) fn highlight_in(&self, text: &str, context: &HighlightContext) -> Vec<StyledRange> {
+        (self.highlight)(text, context)
+    }
+
+    /// Whether the ranges depend on the cursor, which is what decides if a move
+    /// of the cursor can change them.
+    #[inline]
+    pub(crate) fn depends_on_selection(&self) -> bool {
+        self.by_selection
     }
 
     /// The identity shared by this highlighter and its clones.
     #[inline]
     pub(crate) fn id(&self) -> u64 {
         self.id
+    }
+}
+
+/// Where the cursor is, handed to a [`TextHighlighter::with_selection`] function.
+///
+/// Offsets are byte offsets into the text the function receives, like the ranges
+/// it returns. A field without focus has no cursor: [`selection`](Self::selection)
+/// and [`active_lines`](Self::active_lines) are `None` and nothing is active, so
+/// everything shows its rendered form.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HighlightContext {
+    selection: Option<Range<usize>>,
+    active_lines: Option<Range<usize>>,
+}
+
+impl HighlightContext {
+    /// The context of a cursor or selection `selection` in `text`.
+    ///
+    /// A field builds this itself; it is public so a highlighter can be tested
+    /// without one. A selection that is not on character boundaries of `text`
+    /// panics, and one past its end is clamped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::HighlightContext;
+    ///
+    /// let context = HighlightContext::new("one\ntwo", 5..5);
+    /// assert_eq!(context.active_lines(), Some(4..7));
+    /// assert!(context.is_active(&(4..7)));
+    /// assert!(!context.is_active(&(0..3)));
+    /// ```
+    pub fn new(text: &str, selection: Range<usize>) -> Self {
+        let start = selection.start.min(text.len());
+        let end = selection.end.clamp(start, text.len());
+        let first = text[..start].rfind('\n').map_or(0, |newline| newline + 1);
+        let last = text[end..].find('\n').map_or(text.len(), |newline| end + newline);
+        Self {
+            selection: Some(start..end),
+            active_lines: Some(first..last),
+        }
+    }
+
+    /// The selected bytes, empty for a plain caret, or `None` without focus.
+    #[inline]
+    pub fn selection(&self) -> Option<Range<usize>> {
+        self.selection.clone()
+    }
+
+    /// The whole lines the cursor or selection touches, from the start of the
+    /// first to the end of the last, not counting the line break, or `None`
+    /// without focus.
+    #[inline]
+    pub fn active_lines(&self) -> Option<Range<usize>> {
+        self.active_lines.clone()
+    }
+
+    /// Whether any part of `range` lies on a line the cursor is on.
+    ///
+    /// This is the question a renderer asks to decide between a line's rendered
+    /// form and its source.
+    #[inline]
+    pub fn is_active(&self, range: &Range<usize>) -> bool {
+        self.active_lines
+            .as_ref()
+            .is_some_and(|lines| range.start <= lines.end && range.end >= lines.start)
     }
 }
 
@@ -132,6 +263,9 @@ pub(crate) struct HighlightCache {
 struct CachedHighlight {
     highlighter: u64,
     text: Arc<str>,
+    /// The lines the ranges were computed for; `None` for a highlighter that
+    /// does not look at the cursor, whose ranges stay valid wherever it is.
+    active: Option<Range<usize>>,
     ranges: Rc<[StyledRange]>,
 }
 
@@ -139,26 +273,47 @@ impl HighlightCache {
     /// Returns the ranges for `text`, running `highlighter` only when it or the
     /// text differs from what the last call saw. `None` when there is no
     /// highlighter or it styled nothing, which is the plain-text fast path.
+    ///
+    /// This asks as a field without focus would. See [`Self::resolve_in`].
+    #[inline]
     pub(crate) fn resolve(
         &self,
         highlighter: Option<&TextHighlighter>,
         text: &Arc<str>,
     ) -> Option<Rc<[StyledRange]>> {
+        self.resolve_in(highlighter, text, &HighlightContext::default())
+    }
+
+    /// Like [`Self::resolve`], for a cursor described by `context`. A
+    /// highlighter that depends on the cursor also runs again when the active
+    /// lines differ from the last call's; one that does not never looks at it.
+    pub(crate) fn resolve_in(
+        &self,
+        highlighter: Option<&TextHighlighter>,
+        text: &Arc<str>,
+        context: &HighlightContext,
+    ) -> Option<Rc<[StyledRange]>> {
         let highlighter = highlighter?;
         if text.is_empty() {
             return None;
         }
+        let active = highlighter
+            .depends_on_selection()
+            .then(|| context.active_lines())
+            .flatten();
         let mut cached = self.cached.borrow_mut();
         if let Some(hit) = cached.as_ref()
             && hit.highlighter == highlighter.id()
+            && hit.active == active
             && (Arc::ptr_eq(&hit.text, text) || hit.text == *text)
         {
             return (!hit.ranges.is_empty()).then(|| Rc::clone(&hit.ranges));
         }
-        let ranges: Rc<[StyledRange]> = highlighter.highlight(text).into();
+        let ranges: Rc<[StyledRange]> = highlighter.highlight_in(text, context).into();
         *cached = Some(CachedHighlight {
             highlighter: highlighter.id(),
             text: Arc::clone(text),
+            active,
             ranges: Rc::clone(&ranges),
         });
         (!ranges.is_empty()).then_some(ranges)
@@ -334,6 +489,80 @@ mod tests {
         let kept = new.resolve(Some(&highlighter), &text("let x"));
 
         assert!(kept.is_some());
+        assert_eq!(runs.get(), 1);
+    }
+
+    /// A selection-aware highlighter that counts its runs.
+    fn counting_by_selection() -> (TextHighlighter, Rc<Cell<u32>>) {
+        let runs = Rc::new(Cell::new(0));
+        let counted = Rc::clone(&runs);
+        let highlighter = TextHighlighter::with_selection(move |text, context| {
+            counted.set(counted.get() + 1);
+            // Styles the first line, but only while the cursor is elsewhere.
+            let end = text.find('\n').unwrap_or(text.len());
+            if context.is_active(&(0..end)) {
+                Vec::new()
+            } else {
+                vec![StyledRange::new(0..end, SpanStyle::new())]
+            }
+        });
+        (highlighter, runs)
+    }
+
+    #[test]
+    fn the_active_lines_are_the_whole_lines_a_selection_touches() {
+        const TEXT: &str = "one\ntwo\nthree";
+
+        assert_eq!(HighlightContext::new(TEXT, 5..5).active_lines(), Some(4..7));
+        assert_eq!(HighlightContext::new(TEXT, 3..3).active_lines(), Some(0..3), "the end of a line is on it");
+        assert_eq!(HighlightContext::new(TEXT, 4..4).active_lines(), Some(4..7), "and the start of the next is on that one");
+        assert_eq!(HighlightContext::new(TEXT, 5..9).active_lines(), Some(4..13));
+        assert_eq!(HighlightContext::new(TEXT, 5..9).selection(), Some(5..9));
+        assert_eq!(HighlightContext::new("", 0..0).active_lines(), Some(0..0));
+    }
+
+    #[test]
+    fn a_range_is_active_when_it_shares_a_line_with_the_cursor() {
+        let context = HighlightContext::new("one\ntwo\nthree", 5..5);
+
+        assert!(context.is_active(&(4..7)));
+        assert!(context.is_active(&(5..6)));
+        assert!(!context.is_active(&(0..3)));
+        assert!(!context.is_active(&(8..13)));
+        assert!(!HighlightContext::default().is_active(&(0..3)), "an unfocused field has no active line");
+    }
+
+    #[test]
+    fn a_selection_aware_highlighter_runs_again_only_when_the_active_lines_change() {
+        let (highlighter, runs) = counting_by_selection();
+        let cache = HighlightCache::default();
+        let source = text("title\nbody text");
+
+        let on_body = cache.resolve_in(Some(&highlighter), &source, &HighlightContext::new(&source, 8..8));
+        assert!(on_body.is_some(), "the title is styled while the cursor is on the body");
+
+        cache.resolve_in(Some(&highlighter), &source, &HighlightContext::new(&source, 11..11));
+        assert_eq!(runs.get(), 1, "moving within a line asks nothing new of it");
+
+        let on_title = cache.resolve_in(Some(&highlighter), &source, &HighlightContext::new(&source, 2..2));
+        assert_eq!(runs.get(), 2);
+        assert!(on_title.is_none(), "the cursor on the title takes its styling off");
+
+        let unfocused = cache.resolve_in(Some(&highlighter), &source, &HighlightContext::default());
+        assert_eq!(runs.get(), 3, "losing focus changes what is active too");
+        assert!(unfocused.is_some());
+    }
+
+    #[test]
+    fn a_plain_highlighter_ignores_where_the_cursor_is() {
+        let (highlighter, runs) = counting("let");
+        let cache = HighlightCache::default();
+        let source = text("let x\nlet y");
+
+        cache.resolve_in(Some(&highlighter), &source, &HighlightContext::new(&source, 1..1));
+        cache.resolve_in(Some(&highlighter), &source, &HighlightContext::new(&source, 8..8));
+        cache.resolve_in(Some(&highlighter), &source, &HighlightContext::default());
+
         assert_eq!(runs.get(), 1);
     }
 }

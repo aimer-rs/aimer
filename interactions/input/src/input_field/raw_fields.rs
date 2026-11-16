@@ -28,15 +28,17 @@ use aimer_widget::{
 
 use crate::editable_text::{
     ControllerAttachment, DisplayText, EditableGeometry, EditableGeometryCache,
-    EditableGeometryKey, adapt_native_delta, vertical_target, wrap_visual_lines,
+    EditableGeometryKey, EmbedBox, adapt_native_delta, vertical_target, wrap_visual_lines,
 };
 use crate::input_field::caret::{
     CaretBlink, CaretBuilder, CaretContext, CaretGeometry, DefaultCaret,
 };
+use crate::input_field::caret_glide::{CaretGlide, CaretRect};
 use crate::input_field::chrome::{Chrome, VisualFlags};
+use crate::input_field::embed::{EmbedHeight, TextEmbed, TextEmbedder, embedder_id};
 use crate::input_field::context_menu::{FieldAction, HoldOutcome, TouchHold};
 use crate::input_field::highlight::{
-    HighlightCache, RetainedDisplay, TextHighlighter, highlighter_id,
+    HighlightCache, HighlightContext, RetainedDisplay, TextHighlighter, highlighter_id,
 };
 use crate::{TextEditingController, TextEditingValue};
 
@@ -60,6 +62,7 @@ macro_rules! ime_trace {
 include!("raw_fields/callback.rs");
 include!("raw_fields/field.rs");
 include!("raw_fields/caret_host.rs");
+include!("raw_fields/embed_host.rs");
 include!("raw_fields/composition.rs");
 include!("raw_fields/edit_helpers.rs");
 include!("raw_fields/dimensions.rs");
@@ -73,6 +76,10 @@ include!("raw_fields/layout.rs");
 
 #[cfg(test)]
 mod highlight_tests;
+#[cfg(test)]
+mod embed_tests;
+#[cfg(test)]
+mod area_selection_tests;
 
 /// Fixtures shared by the test modules living beside the logic they cover.
 #[cfg(test)]

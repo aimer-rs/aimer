@@ -9,7 +9,7 @@ use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
 use aimer_style::TextOverflow;
 use aimer_text::{SpanStyle, StyledRange};
 use aimer_widget::base::{BuildContext, Color};
-use aimer_widget::Drawable;
+use aimer_widget::{Drawable, LayoutElement};
 
 use super::test_support::{dummy_build_context, focused_multiline_field};
 use super::RawTextField;
@@ -403,4 +403,341 @@ fn highlight_cost_profile() {
 
     measure("plain", None);
     measure("highlighted", Some(tokens));
+}
+
+/// Makes the first line 24 px while the field's own text is 16 px, the way a
+/// note editor sets its title apart.
+fn headline() -> TextHighlighter {
+    TextHighlighter::new(|text| {
+        let end = text.find('\n').unwrap_or(text.len());
+        let mut style = SpanStyle::new();
+        style.font_size = Some(24);
+        vec![StyledRange::new(0..end, style)]
+    })
+}
+
+/// A field that grows without a line limit, the shape of a `TextArea`.
+fn growing_field(text: &str, highlighter: TextHighlighter) -> RawTextField {
+    let mut field = focused_multiline_field(TextFieldController::with_initial(text), 1);
+    field.text_style = field.text_style.text_overflow(TextOverflow::Wrap).font_size(16);
+    field.highlighter = Some(highlighter);
+    field
+}
+
+/// The height the laid-out lines really stack to; `metrics.line_height` is only
+/// the tallest of them.
+fn stacked_height(field: &RawTextField, ctx: &BuildContext<'_>, width: f32) -> f32 {
+    field
+        .editable_geometry(ctx, width)
+        .interaction
+        .as_ref()
+        .expect("the text is laid out")
+        .metrics
+        .height
+}
+
+const TEXT: &str = "Title\nb\nc\nd\ne\nf";
+
+#[test]
+fn a_larger_first_line_does_not_inflate_the_height_a_growing_field_asks_for() {
+    let field = growing_field(TEXT, headline());
+    let mut ctx = dummy_build_context(400.0, 600.0);
+    // A scroll view hands its child an unbounded height.
+    ctx.box_constraint.max_height = 1_000_000.0;
+    let stacked = stacked_height(&field, &ctx, 392.0);
+
+    let asked = field.computed_size(&ctx).height;
+
+    // Four logical pixels of padding on each side.
+    assert!(
+        (asked - (stacked + 8.0)).abs() < 1.0,
+        "asked for {asked}, the lines stack to {stacked} plus padding"
+    );
+}
+
+#[test]
+fn the_scroll_extent_of_a_mixed_size_field_is_the_overflow_of_its_real_height() {
+    let field = growing_field(TEXT, headline());
+    let ctx = dummy_build_context(400.0, 100.0);
+    let stacked = stacked_height(&field, &ctx, 392.0);
+
+    field.update(&ctx);
+
+    let viewport = 100.0 - 8.0;
+    assert!(
+        (field.scroll_y_extent.get() - (stacked - viewport)).abs() < 1.0,
+        "extent {} for lines stacking to {stacked} in a {viewport} viewport",
+        field.scroll_y_extent.get()
+    );
+}
+
+#[test]
+fn the_caret_is_as_tall_as_the_line_it_stands_on() {
+    let field = growing_field(TEXT, headline());
+    let ctx = dummy_build_context(400.0, 600.0);
+    let caret_height = |offset: usize| {
+        field.cursor.set_offset(offset);
+        field.update(&ctx);
+        field
+            .ime_cursor_area
+            .get()
+            .expect("a focused field publishes the caret it painted")
+            .height
+    };
+
+    let on_title = caret_height(5);
+    let on_body = caret_height(TEXT.len());
+
+    // A 24 px line is one and a half times as tall as a 16 px one.
+    assert!(
+        on_title > on_body * 1.3,
+        "caret is {on_title} tall on the title line and {on_body} on a body line"
+    );
+}
+
+/// Hides the `# ` of a heading line while the cursor is not on it, the way a
+/// markdown editor shows the rendered page and the source only under the cursor.
+fn concealing_headings() -> TextHighlighter {
+    TextHighlighter::with_selection(|text, context| {
+        let mut ranges = Vec::new();
+        let mut start = 0;
+        for line in text.split('\n') {
+            let end = start + line.len();
+            if line.starts_with("# ") && !context.is_active(&(start..end)) {
+                ranges.push(StyledRange::new(start..start + 2, SpanStyle::concealed()));
+            }
+            start = end + 1;
+        }
+        ranges
+    })
+}
+
+/// The width of the first visual line of `field`.
+fn first_line_width(field: &RawTextField, ctx: &BuildContext<'_>) -> f32 {
+    field.editable_geometry(ctx, 380.0).visual_lines[0].width
+}
+
+#[test]
+fn a_heading_marker_collapses_while_the_cursor_is_on_another_line() {
+    let field = field("# Hello\nbody", Some(concealing_headings()));
+    let ctx = dummy_build_context(400.0, 200.0);
+
+    field.cursor.set_offset(3);
+    let on_the_heading = first_line_width(&field, &ctx);
+    field.cursor.set_offset(10);
+    let on_the_body = first_line_width(&field, &ctx);
+
+    assert!(
+        on_the_body < on_the_heading - 8.0,
+        "the marker takes {on_the_heading} - {on_the_body} px only under the cursor"
+    );
+}
+
+#[test]
+fn a_heading_marker_comes_back_when_the_cursor_returns() {
+    let field = field("# Hello\nbody", Some(concealing_headings()));
+    let ctx = dummy_build_context(400.0, 200.0);
+    field.cursor.set_offset(3);
+    let before = first_line_width(&field, &ctx);
+
+    field.cursor.set_offset(10);
+    field.cursor.set_offset(3);
+
+    assert!((first_line_width(&field, &ctx) - before).abs() < 0.01);
+}
+
+#[test]
+fn every_marker_collapses_in_a_field_that_is_not_focused() {
+    let field = field("# Hello\nbody", Some(concealing_headings()));
+    let ctx = dummy_build_context(400.0, 200.0);
+    field.cursor.set_offset(3);
+    let focused = first_line_width(&field, &ctx);
+
+    field.set_focused(false);
+
+    assert!(first_line_width(&field, &ctx) < focused - 8.0);
+}
+
+#[test]
+fn the_caret_stands_where_the_collapsed_text_is() {
+    let field = field("# Hello\nbody", Some(concealing_headings()));
+    let ctx = dummy_build_context(400.0, 200.0);
+    field.cursor.set_offset(10);
+
+    let geometry = field.editable_geometry(&ctx, 380.0);
+    let start_of_hello = geometry.caret_geometry(2).unwrap();
+    let start_of_line = geometry.caret_geometry(0).unwrap();
+
+    assert!(
+        start_of_hello.x - start_of_line.x < 3.0,
+        "`Hello` begins {} px from the line start once the marker is hidden",
+        start_of_hello.x - start_of_line.x
+    );
+}
+
+/// Whether the `#` of the heading is painted in a visible colour by the frame
+/// the framework would run for `field`: apply input, then record if the state
+/// says so. Also returns whether that frame records again.
+fn heading_marker_visible(field: &RawTextField, ctx: &BuildContext<'_>) -> (bool, bool) {
+    assert!(field.sync_paint_state(ctx));
+    let recorded = field.paint_needs_recording(ctx);
+    let visible = painted_runs(field, ctx)
+        .into_iter()
+        .any(|(text, rgba)| text.contains('#') && rgba[3] > 0);
+    (recorded, visible)
+}
+
+#[test]
+fn a_click_that_moves_the_cursor_to_another_line_repaints_in_the_same_frame() {
+    use aimer_attribute::Vec2d;
+    use aimer_events::element::ElementEvent;
+    use aimer_events::pointer::{PointerButton, PointerInfo};
+    use aimer_widget::EventElement;
+
+    let field = field("# Hello\nbody\nlast", Some(concealing_headings()));
+    let ctx = dummy_build_context(400.0, 200.0);
+    field.cursor.set_offset(14);
+    heading_marker_visible(&field, &ctx);
+    let (_, visible) = heading_marker_visible(&field, &ctx);
+    assert!(!visible, "collapsed while the cursor is elsewhere");
+
+    // A click on the first line, where the heading is.
+    let _ = field.on_event(&ElementEvent::PointerDown(PointerInfo::mouse(
+        Vec2d { x: 24.0, y: 12.0 },
+        PointerButton::Primary,
+    )));
+    let (recorded, visible) = heading_marker_visible(&field, &ctx);
+
+    assert!(field.cursor.offset() <= 7, "the click put the cursor on the heading");
+    assert!(recorded, "the frame that moved the cursor records again");
+    assert!(visible, "the heading shows its marker in the frame of the click");
+}
+
+/// A heading that grows to 28 px and loses its `# ` while the cursor is on
+/// another line, so moving the cursor shifts every line below it.
+fn growing_headings() -> TextHighlighter {
+    TextHighlighter::with_selection(|text, context| {
+        let mut ranges = Vec::new();
+        let mut start = 0;
+        for line in text.split('\n') {
+            let end = start + line.len();
+            if line.starts_with("# ") && !context.is_active(&(start..end)) {
+                ranges.push(StyledRange::new(start..start + 2, SpanStyle::concealed()));
+                let mut style = SpanStyle::new();
+                style.font_size = Some(28);
+                ranges.push(StyledRange::new(start + 2..end, style));
+            }
+            start = end + 1;
+        }
+        ranges
+    })
+}
+
+#[test]
+fn a_click_lands_on_the_line_the_user_clicked_even_when_it_reflows_the_text() {
+    use aimer_attribute::Vec2d;
+    use aimer_events::element::ElementEvent;
+    use aimer_events::pointer::{PointerButton, PointerInfo};
+    use aimer_widget::EventElement;
+
+    // The cursor starts on the heading, which then shows as plain 16 px text.
+    let field = field("# Hello\nbody\nlast", Some(growing_headings()));
+    let ctx = dummy_build_context(400.0, 200.0);
+    field.cursor.set_offset(3);
+    assert!(field.sync_paint_state(&ctx));
+    assert!(field.sync_paint_state(&ctx));
+    let seen = field.editable_geometry(&ctx, 392.0);
+    let body_top = seen.line_span(1, 18.0).0;
+    let body_offset = 8;
+
+    // The user clicks the `body` line as it is drawn.
+    let _ = field.on_event(&ElementEvent::PointerDown(PointerInfo::mouse(
+        Vec2d { x: 24.0, y: 4.0 + body_top + 6.0 },
+        PointerButton::Primary,
+    )));
+    // The shared selection area has already moved the cursor there by the time
+    // the frame applies the click, which is what makes the heading grow.
+    field.cursor.set_offset(body_offset);
+    assert!(field.sync_paint_state(&ctx));
+
+    assert!(
+        (body_offset..=12).contains(&field.cursor.offset()),
+        "the click was on the body line but the cursor is at {}: it was hit-tested against the layout the click itself produced",
+        field.cursor.offset()
+    );
+}
+
+#[test]
+fn the_highlight_context_follows_the_cursor_and_the_text() {
+    let field = field("one\ntwo\nthree", Some(concealing_headings()));
+
+    field.cursor.set_offset(5);
+    let on_two = field.highlight_context("one\ntwo\nthree");
+    assert_eq!(on_two.active_lines(), Some(4..7));
+    assert_eq!(field.highlight_context("one\ntwo\nthree"), on_two, "asked again, it is the same");
+
+    field.cursor.set_offset(9);
+    assert_eq!(field.highlight_context("one\ntwo\nthree").active_lines(), Some(8..13), "a moved cursor is not served from the memo");
+
+    field.cursor.set_selection_anchor(Some(1));
+    assert_eq!(field.highlight_context("one\ntwo\nthree").active_lines(), Some(0..13), "nor a new selection");
+
+    field.set_focused(false);
+    assert_eq!(field.highlight_context("one\ntwo\nthree").active_lines(), None, "nor a lost focus");
+}
+
+/// Reserves a 48 px tall, 18 px wide box over the first `[ ]`, the way an
+/// embedded checkbox would.
+fn checkbox_embed() -> TextHighlighter {
+    TextHighlighter::new(|text| {
+        text.find("[ ]")
+            .map(|start| {
+                StyledRange::new(start..start + 3, SpanStyle::new().inline_box(aimer_text::InlineBox::new(18.0, 48.0)))
+            })
+            .into_iter()
+            .collect()
+    })
+}
+
+#[test]
+fn a_reserved_box_makes_the_field_as_tall_as_the_box_asks() {
+    let plain = growing_field("- [ ] task\nnext", TextHighlighter::new(|_| Vec::new()));
+    let boxed = growing_field("- [ ] task\nnext", checkbox_embed());
+    let mut ctx = dummy_build_context(400.0, 600.0);
+    ctx.box_constraint.max_height = 1_000_000.0;
+
+    let plain_height = plain.computed_size(&ctx).height;
+    let boxed_height = boxed.computed_size(&ctx).height;
+
+    assert!(boxed_height >= plain_height + 25.0, "{plain_height} -> {boxed_height}");
+    let stacked = stacked_height(&boxed, &ctx, 392.0);
+    assert!((boxed_height - (stacked + 8.0)).abs() < 1.0, "the field asks for the real stacked height");
+}
+
+#[test]
+fn the_box_is_not_painted_as_text_and_the_caret_jumps_across_it() {
+    let field = growing_field("- [ ] task\nnext", checkbox_embed());
+    let ctx = dummy_build_context(400.0, 600.0);
+    field.update(&ctx);
+
+    let runs = painted_runs(&field, &ctx);
+    assert!(!runs.iter().any(|run| run.0.contains('[') || run.0.contains(']')), "the source of the box is not drawn: {runs:?}");
+
+    let geometry = field.editable_geometry(&ctx, 392.0);
+    let before = geometry.caret_geometry(2).expect("the caret can stand before the box");
+    let after = geometry.caret_geometry(5).expect("and after it");
+    assert!((after.x - before.x - 18.0).abs() < 0.5, "{} -> {}", before.x, after.x);
+}
+
+#[test]
+fn the_scroll_extent_counts_the_height_of_a_box() {
+    let field = growing_field("- [ ] task\nnext", checkbox_embed());
+    let ctx = dummy_build_context(400.0, 40.0);
+    let stacked = stacked_height(&field, &ctx, 392.0);
+
+    field.update(&ctx);
+
+    let viewport = 40.0 - 8.0;
+    assert!(stacked > 48.0);
+    assert!((field.scroll_y_extent.get() - (stacked - viewport)).abs() < 1.0, "{} for {stacked} in {viewport}", field.scroll_y_extent.get());
 }

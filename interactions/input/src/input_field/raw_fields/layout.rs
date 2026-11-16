@@ -330,11 +330,10 @@ impl RawTextField {
             return None;
         }
         let multiline = self.wraps_text();
-        let line_count = geometry.visual_lines.len().max(1);
-        let total_height = line_count as f32 * line_height;
+        let total_height = geometry.content_height(line_height);
         let base_y = vertical_block_offset(self.text_align, content_height, total_height);
         let (scroll_x, scroll_y) = if multiline {
-            let scroll_extent = vertical_scroll_extent(line_count, line_height, content_height);
+            let scroll_extent = vertical_scroll_extent(total_height, content_height);
             let current = self.scroll_y.get();
             if !scroll_extent.is_finite() {
                 return None;
@@ -347,8 +346,7 @@ impl RawTextField {
             if self.reveal_caret.get() {
                 scroll = scroll_to_reveal_line(
                     scroll,
-                    geometry.line_for_offset(self.cursor.offset()),
-                    line_height,
+                    geometry.line_span(geometry.line_for_offset(self.cursor.offset()), line_height),
                     content_height,
                     scroll_extent,
                 );
@@ -561,7 +559,7 @@ impl Drawable for RawTextField {
         }
 
         let is_multiline = self.max_lines != Some(1);
-        let initial_total_height = geometry.visual_lines.len().max(1) as f32 * line_height;
+        let initial_total_height = geometry.content_height(line_height);
         let initial_base_y = vertical_block_offset(
             self.text_align,
             content_height,
@@ -584,9 +582,20 @@ impl Drawable for RawTextField {
                 } else {
                     0.0
                 };
-            let click_offset = geometry
+            let seen = self
+                .pending_click_geometry
+                .borrow_mut()
+                .take()
+                .unwrap_or_else(|| Rc::clone(&geometry));
+            let click_offset = seen
                 .hit_test(click_x, click_y)
-                .unwrap_or_else(|| geometry.display.graphemes(true).count());
+                .unwrap_or_else(|| seen.display.graphemes(true).count());
+            self.resolve_pending_press(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
+            // The first click of a held gesture is the press: remember where, since
+            // the cursor will not (see `drag_origin`).
+            if self.mouse_held.get().is_some() && self.drag_origin.get().is_none() {
+                self.drag_origin.set(Some(click_offset));
+            }
             let click_count = self.click_count.get();
             match click_count {
                 2 => self.select_word_at(click_offset),
@@ -650,8 +659,7 @@ impl Drawable for RawTextField {
         }
 
         let is_empty = self.controller.text().is_empty();
-        let line_count = geometry.visual_lines.len().max(1);
-        let total_height = line_count as f32 * line_height;
+        let total_height = geometry.content_height(line_height);
         if !total_height.is_finite() {
             return false;
         }
@@ -664,7 +672,7 @@ impl Drawable for RawTextField {
                 self.reveal_caret.set(false);
             }
         } else if is_multiline {
-            let scroll_extent = vertical_scroll_extent(line_count, line_height, content_height);
+            let scroll_extent = vertical_scroll_extent(total_height, content_height);
             let current_scroll = self.scroll_y.get();
             if !scroll_extent.is_finite() || !current_scroll.is_finite() || current_scroll < 0.0 {
                 return false;
@@ -674,8 +682,7 @@ impl Drawable for RawTextField {
             if self.reveal_caret.replace(false) {
                 scroll = scroll_to_reveal_line(
                     scroll,
-                    geometry.line_for_offset(self.cursor.offset()),
-                    line_height,
+                    geometry.line_span(geometry.line_for_offset(self.cursor.offset()), line_height),
                     content_height,
                     scroll_extent,
                 );
@@ -733,20 +740,21 @@ impl Drawable for RawTextField {
         self.scroll_y.set(layout.scroll_y);
         if is_multiline {
             self.scroll_y_extent
-                .set(vertical_scroll_extent(line_count, line_height, content_height));
+                .set(vertical_scroll_extent(total_height, content_height));
             self.reveal_caret.set(false);
         }
+        self.publish_embeds(&layout.geometry, is_multiline, layout.base_y, layout.scroll_y, scale);
 
         if self.is_focused() {
             self.cursor.blink().tick(self.now());
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(scope) = self.caret_scope {
-                self.cursor.blink().schedule_next_toggle(scope);
+                self.cursor.blink().run_toggle_ticker(scope);
             }
             #[cfg(target_arch = "wasm32")]
             aimer_events::window::request_animation_frame();
             #[cfg(not(target_arch = "wasm32"))]
-            if self.caret_scope.is_none() {
+            if self.caret_scope.is_none() || self.cursor.blink().timer_unavailable() {
                 aimer_events::window::request_animation_frame();
             }
         }
@@ -772,7 +780,7 @@ impl Drawable for RawTextField {
                     layout.base_y + caret.y,
                 )
             };
-            let (cursor_top, cursor_height) = caret_band(line_y, line_height);
+            let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
             let content_origin = (abs_x + padding_left, abs_y + padding_top);
             self.publish_ime_caret(
                 cursor_x,
@@ -810,14 +818,15 @@ impl Drawable for RawTextField {
             self.cursor.blink().tick(self.now());
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(scope) = self.caret_scope {
-                self.cursor.blink().schedule_next_toggle(scope);
+                self.cursor.blink().run_toggle_ticker(scope);
             }
             #[cfg(target_arch = "wasm32")]
             aimer_events::window::request_animation_frame();
             #[cfg(not(target_arch = "wasm32"))]
-            if self.caret_scope.is_none() {
-                // Isolated/raw fields without an installed Venus runtime retain
-                // the frame-driven path used by their direct callers.
+            if self.caret_scope.is_none() || self.cursor.blink().timer_unavailable() {
+                // Isolated/raw fields without an installed Venus runtime, or on a
+                // host with no timer, retain the frame-driven path used by their
+                // direct callers.
                 aimer_events::window::request_animation_frame();
             }
         }
@@ -914,7 +923,7 @@ impl Drawable for RawTextField {
                     )
                     .line_height
             });
-        let total_height = geometry.visual_lines.len() as f32 * line_height;
+        let total_height = geometry.content_height(line_height);
         let base_y = vertical_block_offset(self.text_align, content_height, total_height);
         let is_multiline = self.max_lines != Some(1);
 
@@ -928,11 +937,22 @@ impl Drawable for RawTextField {
                 } else {
                     0.0
                 };
-            let click_offset = geometry
+            let seen = self
+                .pending_click_geometry
+                .borrow_mut()
+                .take()
+                .unwrap_or_else(|| Rc::clone(&geometry));
+            let click_offset = seen
                 .hit_test(click_x, click_y)
-                .unwrap_or_else(|| geometry.display.graphemes(true).count());
+                .unwrap_or_else(|| seen.display.graphemes(true).count());
 
             // Apply double/triple-click selection
+            self.resolve_pending_press(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
+            // The first click of a held gesture is the press: remember where, since
+            // the cursor will not (see `drag_origin`).
+            if self.mouse_held.get().is_some() && self.drag_origin.get().is_none() {
+                self.drag_origin.set(Some(click_offset));
+            }
             let click_count = self.click_count.get();
             match click_count {
                 2 => self.select_word_at(click_offset),
@@ -1031,7 +1051,7 @@ impl Drawable for RawTextField {
                     .expect("an empty interaction layout always has a caret");
                 let cursor_x = caret.x;
                 let line_y = base_y + caret.y;
-                let (cursor_top, cursor_height) = caret_band(line_y, line_height);
+                let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
 
                 self.publish_ime_caret(
                     cursor_x,
@@ -1064,13 +1084,8 @@ impl Drawable for RawTextField {
 
             if is_multiline {
                 // --- Multi-line rendering ---
-                let line_count = geometry.visual_lines.len().max(1);
-                let total_text_height = line_count as f32 * line_height;
-                let scroll_extent = vertical_scroll_extent(
-                    line_count,
-                    line_height,
-                    content_height,
-                );
+                let total_text_height = geometry.content_height(line_height);
+                let scroll_extent = vertical_scroll_extent(total_text_height, content_height);
                 self.scroll_y_extent.set(scroll_extent);
 
                 let cursor_line = geometry.line_for_offset(self.cursor.offset());
@@ -1078,8 +1093,7 @@ impl Drawable for RawTextField {
                 if self.reveal_caret.replace(false) {
                     scroll = scroll_to_reveal_line(
                         scroll,
-                        cursor_line,
-                        line_height,
+                        geometry.line_span(cursor_line, line_height),
                         content_height,
                         scroll_extent,
                     );
@@ -1106,6 +1120,8 @@ impl Drawable for RawTextField {
                     scroll,
                 );
 
+                self.publish_embeds(&geometry, true, base_y, scroll, scale);
+
                 // Draw cursor / composition from the same canonical caret.
                 if self.is_focused() {
                     let caret = geometry
@@ -1113,7 +1129,7 @@ impl Drawable for RawTextField {
                         .expect("a non-empty interaction layout has a caret");
                     let cursor_x = caret.x;
                     let line_y = base_y + caret.y - scroll;
-                    let (cursor_top, cursor_height) = caret_band(line_y, line_height);
+                    let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
 
                     self.publish_ime_caret(
                         cursor_x,
@@ -1180,7 +1196,7 @@ impl Drawable for RawTextField {
                         .expect("a non-empty interaction layout has a caret");
                     let cursor_x = caret.x - scroll;
                     let line_y = base_y + caret.y;
-                    let (cursor_top, cursor_height) = caret_band(line_y, line_height);
+                    let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
 
                     self.publish_ime_caret(
                         cursor_x,
@@ -1479,7 +1495,7 @@ impl Drawable for RawTextField {
                 assert!(recorded, "preedit v2 support must be checked before painting");
 
                 let underline_y = origin_y + layout.line_height * 0.85;
-                let caret_color: Color = self.caret_color.into();
+                let caret_color: Color = self.caret_color.map_or(self.text_style.color, Into::into);
                 let (red, green, blue, alpha) = caret_color.to_rgba();
                 canvas.fill_rect(
                     Rect::new(
@@ -1566,6 +1582,16 @@ fn vertical_block_offset(align: TextAlign, content_height: f32, block_height: f3
 fn caret_band(line_y: f32, line_height: f32) -> (f32, f32) {
     let height = line_height * CARET_LINE_FRACTION;
     (line_y + (line_height - height) / 2.0, height)
+}
+
+/// The height of the line a caret stands on.
+///
+/// Lines differ in height when a highlighter sizes ranges differently, so the
+/// caret takes the height its own line was laid out with, and the paragraph's
+/// tallest line only when the layout reports none.
+#[inline]
+fn line_box_height(line: f32, tallest: f32) -> f32 {
+    if line.is_finite() && line > 0.0 { line } else { tallest }
 }
 
 #[cfg(test)]

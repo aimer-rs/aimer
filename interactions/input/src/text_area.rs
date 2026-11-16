@@ -247,11 +247,24 @@ impl TextArea {
 
     /// Sets the color of the builtin insertion cursor.
     ///
+    /// Without it the cursor takes the text color, which already contrasts with
+    /// the background behind the text: light on a dark page, dark on a light one.
+    ///
     /// This has no effect on a custom caret builder. Custom carets receive the
     /// live [`CaretContext`] and choose their own visual style.
     #[inline]
     pub fn cursor_color(mut self, cursor_color: Colors) -> Self {
         self.field = self.field.cursor_color(cursor_color);
+        self
+    }
+
+    /// Sets whether the caret glides to where the cursor moved, as in modern
+    /// editors, or jumps there. The default is `true`.
+    ///
+    /// See [`TextField::smooth_caret`](crate::input::TextField::smooth_caret).
+    #[inline]
+    pub fn smooth_caret(mut self, smooth_caret: bool) -> Self {
+        self.field = self.field.smooth_caret(smooth_caret);
         self
     }
 
@@ -298,6 +311,21 @@ impl TextArea {
     #[inline]
     pub fn highlighter(mut self, highlighter: TextHighlighter) -> Self {
         self.field = self.field.highlighter(highlighter);
+        self
+    }
+
+    /// Shows ranges of the text as widgets, such as the table or code block of a
+    /// markdown note; see [`TextField::embedder`](crate::input::TextField::embedder).
+    #[inline]
+    pub fn embedder(mut self, embedder: crate::input::TextEmbedder) -> Self {
+        self.field = self.field.embedder(embedder);
+        self
+    }
+
+    /// Removes the embedder, so every range is drawn as text again.
+    #[inline]
+    pub fn no_embedder(mut self) -> Self {
+        self.field = self.field.no_embedder();
         self
     }
 
@@ -675,14 +703,15 @@ mod tests {
         const TEXT: &str = "first line\nsecond line";
         let length = TEXT.chars().count();
 
-        // The range is reported in order: the press is its end, the drag its start.
-        let (start, end) = drag_along(
+        // The selection keeps its direction: it is anchored where the press was and
+        // its focus, where the caret goes, is the start the drag reached.
+        let (anchor, focus) = drag_along(
             TEXT,
             Vec2d { x: 150.0, y: 12.0 },
             &[Vec2d { x: 60.0, y: 12.0 }, Vec2d { x: -400.0, y: -300.0 }],
         );
 
-        assert_eq!(start, 0, "the selection stopped at the field's edge");
-        assert!(end > 0 && end <= length, "selected {start}..{end}");
+        assert_eq!(focus, 0, "the selection stopped at the field's edge");
+        assert!(anchor > 0 && anchor <= length, "selected {focus}..{anchor}");
     }
 }

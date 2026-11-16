@@ -1,6 +1,8 @@
 pub mod caret;
+pub(crate) mod caret_glide;
 pub(crate) mod chrome;
 pub mod context_menu;
+pub mod embed;
 pub mod highlight;
 #[cfg(test)]
 mod controller {
@@ -492,6 +494,7 @@ use aimer_widget::{
 use crate::TextEditingController;
 use aimer_events::element::{Modifiers, NamedKey};
 use crate::input_field::caret::{CaretBlink, CaretBuilder, CaretContext};
+use crate::input_field::embed::TextEmbedder;
 use crate::input_field::highlight::TextHighlighter;
 use crate::input_field::chrome::{Chrome, TextFieldVisualState, VisualBuilder, VisualFlags};
 use crate::input_field::raw_fields::{
@@ -553,8 +556,8 @@ use crate::input_field::raw_fields::{
 ///   is disabled. Defaults to `None`.
 ///
 /// * `cursor_color` - Color of the builtin insertion cursor and IME underline.
-///   It does not style a custom caret. Defaults to a default `Colors`
-///   implementation.
+///   It does not style a custom caret. Defaults to `None`, which follows the
+///   text color so the caret reads against the background the text does.
 ///
 /// * `caret` - A factory for a retained custom caret. The factory
 ///   receives live geometry, focus, composition, and blink state through
@@ -618,10 +621,15 @@ pub struct TextField {
     /// The caller-built frame; see [`TextField::builder`].
     visual_builder: Option<VisualBuilder>,
     pub selection_color: Color,
-    pub cursor_color: Colors,
+    /// The builtin caret's colour; `None`, the default, follows the text colour.
+    pub cursor_color: Option<Colors>,
+    /// Whether the caret glides to a moved cursor; see [`TextField::smooth_caret`].
+    pub smooth_caret: bool,
     pub caret_builder: Option<CaretBuilder>,
     /// Styles ranges of the text; see [`TextField::highlighter`].
     pub highlighter: Option<TextHighlighter>,
+    /// Shows ranges of the text as widgets; see [`TextField::embedder`].
+    pub embedder: Option<TextEmbedder>,
     pub on_changed: TextFieldCallback,
     pub on_submitted: TextFieldCallback,
     pub on_focus: TextFieldCallback,
@@ -855,9 +863,11 @@ impl TextField {
             custom_decorations: [None, None, None, None],
             visual_builder: None,
             selection_color: Color::Rgba(66, 133, 244, 100),
-            cursor_color: Colors::default(),
+            cursor_color: None,
+            smooth_caret: true,
             caret_builder: None,
             highlighter: None,
+            embedder: None,
             on_changed: TextFieldCallback::default(),
             on_submitted: TextFieldCallback::default(),
             on_focus: TextFieldCallback::default(),
@@ -904,8 +914,10 @@ impl TextField {
             disabled_decoration: self.disabled_decoration.clone(),
             selection_color: self.selection_color,
             cursor_color: self.cursor_color,
+            smooth_caret: self.smooth_caret,
             caret_builder: self.caret_builder.clone(),
             highlighter: self.highlighter.clone(),
+            embedder: self.embedder.clone(),
             on_changed: self.on_changed.clone(),
             on_submitted: self.on_submitted.clone(),
             on_focus: self.on_focus.clone(),
@@ -1171,11 +1183,28 @@ impl TextField {
 
     /// Sets the color of the builtin insertion cursor.
     ///
+    /// Without it the cursor takes the text color, which already contrasts with
+    /// the background behind the text: light on a dark page, dark on a light one.
+    ///
     /// This has no effect on a custom caret builder. Custom carets receive the
     /// live [`CaretContext`] and choose their own visual style.
     #[inline]
     pub fn cursor_color(mut self, cursor_color: Colors) -> Self {
-        self.cursor_color = cursor_color;
+        self.cursor_color = Some(cursor_color);
+        self
+    }
+
+    /// Sets whether the caret glides to where the cursor moved, as in modern
+    /// editors, or jumps there. The default is `true`.
+    ///
+    /// The glide takes under a tenth of a second and redirects from wherever the
+    /// caret has got to, so fast typing stays one continuous motion. A caret that
+    /// moves because its text scrolled or reflowed never lags: only a cursor
+    /// move glides. A custom caret widget is moved the same way, and turning
+    /// this off hands it the exact rectangle of every frame.
+    #[inline]
+    pub fn smooth_caret(mut self, smooth_caret: bool) -> Self {
+        self.smooth_caret = smooth_caret;
         self
     }
 
@@ -1235,6 +1264,29 @@ impl TextField {
     #[inline]
     pub fn no_highlighter(mut self) -> Self {
         self.highlighter = None;
+        self
+    }
+
+    /// Shows ranges of the text as widgets, such as the table or code block of a
+    /// markdown note.
+    ///
+    /// Each range is replaced by a full-width box that is as tall as its widget,
+    /// and the widget is drawn over the box. The text itself stays the string the
+    /// field edits, so undo, selection and copy work on the source. See
+    /// [`TextEmbedder`]. Make the embedder once and clone it into each build.
+    ///
+    /// Embeds take whole lines, so they belong in a multi-line field, and a secure
+    /// field ignores them.
+    #[inline]
+    pub fn embedder(mut self, embedder: TextEmbedder) -> Self {
+        self.embedder = Some(embedder);
+        self
+    }
+
+    /// Removes the embedder, so every range is drawn as text again.
+    #[inline]
+    pub fn no_embedder(mut self) -> Self {
+        self.embedder = None;
         self
     }
 
