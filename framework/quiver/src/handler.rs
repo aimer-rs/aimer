@@ -1929,6 +1929,8 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
             {
                 // After the performance overlay, so the badge paints above it.
                 self.attach_overlay.refresh_names();
+                // The virtual mouse looks like the real one would.
+                self.attach_overlay.note_cursor(aimer_utils::cursor::requested_icon());
                 if let Err(error) = self.attach_overlay.prepare(
                     &self.window_render_tree.tree,
                     width,

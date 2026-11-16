@@ -265,7 +265,7 @@ fn the_pointer_is_drawn_at_its_configured_size_and_opacity_with_its_tip_scaled_t
 fn the_pointer_is_the_cursor_icon_from_the_assets_folder_with_its_own_colours() {
     // The file opens with a DOCTYPE, which the SVG parser does not accept; the
     // overlay parses from the `<svg` element on.
-    assert!(POINTER_SVG.starts_with("<svg"), "{:?}", &POINTER_SVG[..30.min(POINTER_SVG.len())]);
+    assert!(crate::attach_cursor::ARROW_SVG.starts_with("<svg"), "{:?}", &crate::attach_cursor::ARROW_SVG[..30.min(crate::attach_cursor::ARROW_SVG.len())]);
     let scene = pointer_scene();
     assert_eq!(scene.geometries.len(), 1, "one arrow");
     let drawn: Vec<_> = scene.nodes.iter().filter(|n| n.geometry.is_some()).collect();
@@ -696,4 +696,89 @@ fn a_settled_overlay_does_not_repaint() {
     tree.take_damage();
     prepare(&mut overlay, &tree, t + PRESENCE_FADE * 2);
     assert!(tree.take_damage().is_empty(), "fully shown and unchanged: nothing to repaint");
+}
+
+#[test]
+fn the_mouse_is_drawn_as_the_cursor_the_app_asked_for_with_its_hotspot_on_the_position() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    overlay.set_names(names(&["aimer-cli"]));
+    let t = AnimInstant::now();
+    mouse_at(&mut overlay, 300.0, 200.0, t);
+    let later = t + PRESENCE_FADE + Duration::from_millis(1);
+    prepare(&mut overlay, &tree, later);
+    let arrow = svg_in(&pointer_commands(&overlay, &tree)).unwrap().0;
+
+    overlay.note_cursor(CursorIcon::Pointer);
+    prepare(&mut overlay, &tree, later);
+    let node = overlay.pointer_node().unwrap();
+    let (hand, overrides) = svg_in(&commands(&tree, node)).unwrap();
+    let glyph = Look::PointingHand.glyph();
+    assert!(Arc::ptr_eq(&glyph.scene, &match &commands(&tree, node)[..] {
+        [.., DrawCommand::Svg { scene, .. }] => scene.clone(),
+        other => panic!("{other:?}"),
+    }));
+    assert!(overrides.len() > 1, "the hand has its own parts");
+    let (ox, oy) = origin(&tree, node);
+    let (hx, hy) = glyph.hotspot;
+    assert!((ox + hand.x - (300.0 - hx * ICON_SCALE)).abs() < 0.01 && (oy + hand.y - (200.0 - hy * ICON_SCALE)).abs() < 0.01);
+    assert_ne!((hand.x, hand.y), (arrow.x, arrow.y), "the fingertip is not where the arrow's tip is");
+    assert_eq!((hand.width, hand.height), (ICON_SIZE, ICON_SIZE));
+}
+
+#[test]
+fn a_change_of_cursor_repaints_the_pointers_and_the_same_cursor_does_not() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    overlay.set_names(names(&["aimer-cli"]));
+    let t = AnimInstant::now();
+    // Held down, so nothing idles and the only reason to repaint is the cursor.
+    overlay.note_pointer(pointer(false, 0, MarkerPhase::Pressed, 100.0, 100.0), t);
+    // Past the fade-in and the press's ripple, so nothing animates.
+    let settled = t + RIPPLE + PRESENCE_FADE;
+    prepare(&mut overlay, &tree, settled);
+    let node = overlay.pointer_node().unwrap();
+    let before = tree.draw_list_snapshot(node).unwrap().commands.len();
+    tree.take_damage();
+
+    overlay.note_cursor(CursorIcon::Default);
+    prepare(&mut overlay, &tree, settled);
+    assert!(tree.take_damage().is_empty(), "the arrow stays the arrow");
+
+    overlay.note_cursor(CursorIcon::Text);
+    prepare(&mut overlay, &tree, settled);
+    assert!(!tree.take_damage().is_empty(), "an I-beam repaints");
+    assert_eq!(tree.draw_list_snapshot(node).unwrap().commands.len(), before, "one icon for one icon");
+
+    overlay.note_cursor(CursorIcon::Default);
+    prepare(&mut overlay, &tree, settled);
+    assert!(!tree.take_damage().is_empty(), "and back to the arrow repaints again");
+}
+
+#[test]
+fn a_finger_is_not_drawn_as_the_cursor() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    overlay.set_names(names(&["aimer-cli"]));
+    let t = AnimInstant::now();
+    overlay.note_cursor(CursorIcon::Pointer);
+    overlay.note_pointer(pointer(true, 1, MarkerPhase::Pressed, 100.0, 120.0), t);
+    prepare(&mut overlay, &tree, t + Duration::from_millis(50));
+    let recorded = commands(&tree, overlay.pointer_node().unwrap());
+    assert!(!recorded.iter().any(|c| matches!(c, DrawCommand::Svg { .. })));
+}
+
+#[test]
+fn a_turned_cursor_still_sways_about_its_hotspot() {
+    let tree = RenderTree::new();
+    let mut overlay = AttachOverlay::default();
+    overlay.set_names(names(&["aimer-cli"]));
+    let t = AnimInstant::now();
+    mouse_at(&mut overlay, 100.0, 100.0, t);
+    overlay.note_cursor(CursorIcon::EwResize);
+    // A quarter of a sway period after idling begins: the lean is at its widest.
+    prepare(&mut overlay, &tree, t + IDLE_AFTER + IDLE_PERIOD / 4);
+    let tilt = tilt_of(&pointer_commands(&overlay, &tree));
+    let upright = Look::ResizeHorizontal.glyph().turn;
+    assert!((tilt - (upright + SWAY_DEGREES.to_radians())).abs() < 1e-3, "{tilt} vs {upright}");
 }

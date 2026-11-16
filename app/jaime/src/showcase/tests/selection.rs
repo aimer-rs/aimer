@@ -20,13 +20,14 @@ struct Scene<W: Widget + 'static> {
 
 fn scene() -> Scene<impl Widget + 'static> {
     let labels = Rc::new(Labels::default());
-    // Tall enough that every sidebar row is laid out and clickable.
+    // Tall enough that every sidebar row is laid out and clickable. The sidebar
+    // grows with every example: raise this when the last row falls off the bottom.
     let mut app = AimerApp::start_headless_with(
         theme::provide(Captured {
             labels: labels.clone(),
         }),
         HeadlessOptions {
-            size: PhysicalSize::new(1280, 4200),
+            size: PhysicalSize::new(1280, 4400),
             scale_factor: 1.0,
         },
     );

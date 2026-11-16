@@ -2,6 +2,7 @@ mod cache;
 pub mod copy_button;
 mod custom;
 mod document;
+mod live;
 mod markdown_theme;
 mod renderer;
 mod syntax;
@@ -29,6 +30,7 @@ pub use custom::{
     CustomInline, CustomInlineBuilder, CustomInlineData, InlineRule, InlineSyntax,
 };
 pub use document::{Alignment, Block, Document, Inline, ListItem, MarkdownError, TableRow};
+pub use live::{LivePreview, live_preview};
 pub use markdown_theme::MarkdownTheme;
 pub use renderer::{ImageResolver, LinkHandler, MarkdownImage, default_image_resolver};
 pub use syntax::{CaptureSpan, highlight};

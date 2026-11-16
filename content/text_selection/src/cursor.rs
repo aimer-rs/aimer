@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use aimer_events::element::ElementEvent;
 use aimer_events::pointer::PointerSource;
-use aimer_utils::cursor::CursorIcon;
+use aimer_utils::cursor::{CursorClaim, CursorIcon};
 use aimer_widget::base::WindowHandle;
 
 /// The hover cursor policy of one selectable text element.
@@ -25,6 +25,9 @@ use aimer_widget::base::WindowHandle;
 #[derive(Default)]
 pub struct HoverCursor {
     current: Cell<Option<CursorIcon>>,
+    /// Taken with the shape, so the default is only given back by the element
+    /// whose shape is still showing.
+    claim: CursorClaim,
 }
 
 impl HoverCursor {
@@ -33,6 +36,7 @@ impl HoverCursor {
     pub fn new() -> Self {
         Self {
             current: Cell::new(None),
+            claim: CursorClaim::new(),
         }
     }
 
@@ -90,7 +94,10 @@ impl HoverCursor {
             return false;
         };
         if desired == CursorIcon::Default {
-            if self.current.take().is_some() {
+            // Leaving is reported late when the pointer moved straight onto
+            // another element: its shape is showing then, and not this one's to
+            // take down.
+            if self.current.take().is_some() && self.claim.release() {
                 window.reset_cursor();
             }
             return false;
@@ -98,6 +105,7 @@ impl HoverCursor {
         if self.current.get() != Some(desired) {
             self.current.set(Some(desired));
             window.set_cursor(desired);
+            self.claim.take();
         }
         true
     }
@@ -236,5 +244,33 @@ mod tests {
 
         assert_eq!(window.headless_cursor(), Some(CursorIcon::Text));
         assert_eq!(neighbour.owned(), Some(CursorIcon::Text));
+    }
+
+    #[test]
+    fn text_left_late_does_not_take_back_the_cursor_its_neighbour_just_set() {
+        let window = window();
+        let text = HoverCursor::new();
+        let link = HoverCursor::new();
+        // The pointer crosses from text onto a link: the link is entered, and asks
+        // for the hand, before the text is told it left.
+        text.apply(&window, &moved(PointerSource::Mouse), true, false, true);
+        link.apply(&window, &moved(PointerSource::Mouse), true, true, true);
+        assert_eq!(window.headless_cursor(), Some(CursorIcon::Pointer));
+
+        text.apply(&window, &ElementEvent::PointerExited(PointerSource::Mouse, 0), true, false, false);
+
+        assert_eq!(window.headless_cursor(), Some(CursorIcon::Pointer));
+    }
+
+    #[test]
+    fn text_that_holds_the_cursor_gives_the_default_back_when_left() {
+        let window = window();
+        let text = HoverCursor::new();
+        text.apply(&window, &moved(PointerSource::Mouse), true, false, true);
+        assert_eq!(window.headless_cursor(), Some(CursorIcon::Text));
+
+        text.apply(&window, &ElementEvent::PointerExited(PointerSource::Mouse, 0), true, false, false);
+
+        assert_eq!(window.headless_cursor(), Some(CursorIcon::Default));
     }
 }

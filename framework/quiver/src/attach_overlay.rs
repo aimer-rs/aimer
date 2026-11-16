@@ -9,9 +9,9 @@
 //! performance overlay it allocates nothing and draws nothing while nobody is
 //! attached, and a debug build is the only one that has it.
 //!
-//! The mouse is drawn as the cursor icon in the repository's `.assets` folder, a
-//! fifth bigger than the file draws it and at 90% opacity, with its tip on the
-//! position the driver gave. A finger is a circle, and a press sends a ripple out
+//! The mouse is drawn as the cursor the app asks for — see [`crate::attach_cursor`]:
+//! the arrow from `curosrs/` until a widget asks for a hand, an I-beam or a resize
+//! arrow. Its hotspot is on the position the driver gave. A finger is a circle, and a press sends a ripple out
 //! from either. A mouse that has rested for a moment idles: it sways a few degrees
 //! either side, pivoting on its tip, so a driven app that is waiting still looks
 //! alive.
@@ -21,10 +21,13 @@ use std::time::Duration;
 
 use aimer_attribute::position::Vec2d;
 use aimer_cupid::draw_cmd::{Color, DrawCommand, Rect, RenderNodeId, RenderPaintSource, RenderTree, RenderTreeError};
-use aimer_cupid::svg::{SvgNodeStyleOverride, SvgTransform};
+use aimer_cupid::svg::SvgNodeStyleOverride;
 use aimer_platform::attachment::{self, MarkerPhase, SyntheticPointer};
 use aimer_utils::AnimInstant;
+use aimer_utils::cursor::CursorIcon;
 use aimer_widget::SafeAreaInsets;
+
+use crate::attach_cursor::Look;
 
 /// Gap between the badge and the window's (safe) edge.
 const BADGE_MARGIN: f32 = 8.0;
@@ -43,14 +46,14 @@ const ICON_SCALE: f32 = 0.95;
 /// itself reaches (3.75, 3.66), and the white outline around it adds about half
 /// a unit more, so the visible tip — the cursor's hotspot — is at about (3.3, 3.3)
 /// of that box. Retune it if the outline of the file changes.
-const ICON_VIEWBOX: f32 = 24.0;
-const ICON_TIP_UNITS: f32 = 3.3;
+pub(crate) const ICON_VIEWBOX: f32 = 24.0;
+pub(crate) const ICON_TIP_UNITS: f32 = 3.3;
 /// The pointer icon's size, and how far its tip is from the icon's top-left
 /// corner, in logical pixels.
 const ICON_SIZE: f32 = ICON_VIEWBOX * ICON_SCALE;
 pub(crate) const ICON_TIP: f32 = ICON_TIP_UNITS * ICON_SCALE;
 /// How opaque the pointer is.
-const POINTER_OPACITY: f32 = 1.0;
+pub(crate) const POINTER_OPACITY: f32 = 1.0;
 
 /// How long a mouse rests before it idles, and how long one sway takes, to one
 /// side and back to the other and home.
@@ -242,6 +245,8 @@ pub(crate) struct AttachOverlay {
     /// Events that arrive late are ignored, and the pointers are forgotten once
     /// they are gone.
     detaching: bool,
+    /// How the mouse is drawn: the cursor icon the app last asked for.
+    look: Look,
     /// Width, height, scale and safe area the recorded commands were laid out for.
     geometry: Option<(u32, u32, u32, [u32; 4])>,
 }
@@ -278,6 +283,16 @@ impl AttachOverlay {
         if names != self.names {
             self.names = names;
             self.badge_dirty = true;
+        }
+    }
+
+    /// Follows the cursor icon the app is asking its window for: the virtual mouse
+    /// is drawn as that icon. Repaints the pointers when it changed.
+    pub(crate) fn note_cursor(&mut self, icon: CursorIcon) {
+        let look = Look::of(icon);
+        if look != self.look {
+            self.look = look;
+            self.pointers_dirty = true;
         }
     }
 
@@ -457,7 +472,7 @@ impl AttachOverlay {
         let origin = Vec2d { x: bounds.x, y: bounds.y };
         let mut commands = Vec::with_capacity(self.markers.len() * 4);
         for marker in &self.markers {
-            marker.record(&mut commands, now, origin, alpha);
+            marker.record(&mut commands, now, origin, alpha, self.look);
         }
         tree.context(node)?.begin_recording()?.commit(commands)?;
         self.pointers.painted = true;
@@ -488,8 +503,9 @@ impl Marker {
     /// cursor icon on top.
     ///
     /// `fade` is how visible the whole layer is, from 0 to 1, as a driver attaches
-    /// or leaves: everything drawn is that much more transparent.
-    fn record(&self, commands: &mut Vec<DrawCommand>, now: AnimInstant, origin: Vec2d, fade: f32) {
+    /// or leaves: everything drawn is that much more transparent. `look` is how the
+    /// mouse is drawn, which is what the real cursor would be.
+    fn record(&self, commands: &mut Vec<DrawCommand>, now: AnimInstant, origin: Vec2d, fade: f32, look: Look) {
         let (r, g, b) = ACCENT;
         let accent = |alpha: f32| Color::rgba8(r, g, b, (alpha.clamp(0.0, 1.0) * fade.clamp(0.0, 1.0) * 255.0) as u8);
         let at = Vec2d { x: self.pos.x - origin.x, y: self.pos.y - origin.y };
@@ -505,19 +521,17 @@ impl Marker {
         if self.down {
             commands.push(disc(at, HALO_RADIUS, accent(0.35), None));
         }
-        // Idling: the arrow leans to one side and then the other, pivoting on its
-        // tip so the tip stays on the position. It starts and ends upright, so the
+        // Idling: the cursor leans to one side and then the other, pivoting on its
+        // hotspot so that stays on the position. It starts and ends upright, so the
         // loop has no seam.
-        let overrides = match (self.idle_phase(now), fade < 1.0) {
-            (Some(phase), _) => swayed_overrides(SWAY_DEGREES.to_radians() * (2.0 * std::f32::consts::PI * phase).sin(), fade),
-            // Fully visible and upright, the common case: the overrides are built once.
-            (None, false) => pointer_overrides().clone(),
-            (None, true) => overrides_with(None, POINTER_OPACITY * fade),
-        };
+        let glyph = look.glyph();
+        let sway = self.idle_phase(now).map(|phase| SWAY_DEGREES.to_radians() * (2.0 * std::f32::consts::PI * phase).sin());
+        let (hot_x, hot_y) = glyph.hotspot;
         commands.push(DrawCommand::Svg {
-            scene: pointer_scene().clone(),
-            destination: Rect::new(at.x - ICON_TIP, at.y - ICON_TIP, ICON_SIZE, ICON_SIZE),
-            overrides,
+            scene: glyph.scene.clone(),
+            destination: Rect::new(at.x - hot_x * ICON_SCALE, at.y - hot_y * ICON_SCALE, ICON_SIZE, ICON_SIZE),
+            // Fully visible and upright, the common case, shares one list.
+            overrides: glyph.overrides(sway, fade),
         });
     }
 }
@@ -550,22 +564,6 @@ fn circle_or_pill(rect: Rect, radius: f32, fill: Color, ring: Option<(f32, Color
     }
 }
 
-/// The cursor icon, from the repository's `.assets` folder.
-///
-/// The file opens with a DOCTYPE, which the SVG parser rejects, so it is parsed
-/// from its `<svg` element on; the file itself is left as it was given.
-const POINTER_SVG: &str = {
-    let full = include_str!("../../../.assets/cursor-alt-svgrepo-com.svg");
-    // `str::find` is not const, so the DOCTYPE is skipped by hand.
-    let bytes = full.as_bytes();
-    let mut at = 0;
-    while at + 4 <= bytes.len() && !(bytes[at] == b'<' && bytes[at + 1] == b's' && bytes[at + 2] == b'v' && bytes[at + 3] == b'g') {
-        at += 1;
-    }
-    // SAFETY-free: `at` is the index of an ASCII `<`, so it is a char boundary.
-    full.split_at(at).1
-};
-
 /// The badge's icon: Lucide's `square-mouse-pointer`.
 ///
 /// Lucide draws in `currentColor`, which a retained scene has no text colour to
@@ -588,57 +586,10 @@ pub(crate) fn badge_scene() -> &'static Arc<aimer_cupid::svg::SvgScene> {
     })
 }
 
-/// The retained scene of [`POINTER_SVG`], parsed on first use.
+/// The retained scene of the arrow, parsed on first use.
+#[cfg(test)]
 fn pointer_scene() -> &'static Arc<aimer_cupid::svg::SvgScene> {
-    static SCENE: OnceLock<Arc<aimer_cupid::svg::SvgScene>> = OnceLock::new();
-    SCENE.get_or_init(|| {
-        Arc::new(aimer_cupid::svg::parse_svg(POINTER_SVG).expect("the bundled cursor icon parses"))
-    })
-}
-
-/// What is overridden on each part of the arrow that is drawn: only its opacity,
-/// because the icon has its own colours — a dark body with a white outline, which
-/// reads over a dark page and a light one alike.
-fn pointer_overrides() -> &'static Arc<[SvgNodeStyleOverride]> {
-    static OVERRIDES: OnceLock<Arc<[SvgNodeStyleOverride]>> = OnceLock::new();
-    OVERRIDES.get_or_init(|| overrides_with(None, POINTER_OPACITY))
-}
-
-/// The same, with the arrow turned by `angle` radians about its tip.
-fn swayed_overrides(angle: f32, fade: f32) -> Arc<[SvgNodeStyleOverride]> {
-    // The tip, in the units of the scene's viewport: the icon's own 24-unit box is
-    // scaled to the width the file declares.
-    let pivot = ICON_TIP_UNITS * pointer_scene().viewport.width / ICON_VIEWBOX;
-    let (sin, cos) = angle.sin_cos();
-    overrides_with(
-        Some(SvgTransform {
-            sx: cos,
-            ky: sin,
-            kx: -sin,
-            sy: cos,
-            // `turn(p) + t = p` for `p` at the pivot, so the pivot does not move.
-            tx: pivot - cos * pivot + sin * pivot,
-            ty: pivot - sin * pivot - cos * pivot,
-        }),
-        POINTER_OPACITY * fade,
-    )
-}
-
-fn overrides_with(turn: Option<SvgTransform>, opacity: f32) -> Arc<[SvgNodeStyleOverride]> {
-    pointer_scene()
-        .nodes
-        .iter()
-        .filter(|node| node.geometry.is_some() && !node.is_definition)
-        .map(|node| SvgNodeStyleOverride {
-            node_id: node.node_id,
-            fill: None,
-            stroke: None,
-            opacity: Some(opacity),
-            // A node's own transform carries the viewBox scaling, so the turn is
-            // applied after it, in the viewport's units.
-            transform: turn.map(|turn| turn.mul(node.transform)),
-        })
-        .collect()
+    &Look::Arrow.glyph().scene
 }
 
 /// The badge icon's overrides at `alpha`: none at all when it is fully visible,

@@ -28,6 +28,7 @@ use crate::file_picker_example::file_picker_example;
 use crate::opened_files_example::opened_files_example;
 use crate::fire_button_example::fire_button_example;
 use crate::floating::FloatingShowcase;
+use crate::cursors_example::CursorsExample;
 use crate::focus_node_example::FocusNodeExample;
 use crate::foreground_decoration_example::foreground_decoration_example;
 use crate::form_example::form_example;
@@ -706,6 +707,7 @@ fn build_example(example: ExampleId, app_theme: ThemeData) -> AnyWidget {
         ExampleId::TextProperties => text_properties_example().boxed(),
         ExampleId::Window => WindowShowcase::new().boxed(),
         ExampleId::Resizable => ResizableShowcase::new().boxed(),
+        ExampleId::Cursors => CursorsExample::new().boxed(),
         ExampleId::FileDrop => FileDropShowcase::new().boxed(),
         ExampleId::Floating => FloatingShowcase::new().boxed(),
         ExampleId::FocusNode => FocusNodeExample::new().boxed(),

@@ -1,7 +1,7 @@
 //! A field's frame — a builder, or a decoration that is not a `BoxDecoration` —
 //! follows its state while the editing surface inside it stays mounted.
 
-use super::text_field_caret::{caret_x, click, type_text};
+use super::text_field_caret::{caret_x, click, settle_caret, type_text};
 use super::*;
 
 use aimer_attribute::{ResolvedSize, Vec2d};
@@ -94,9 +94,11 @@ fn a_builder_sees_focus_and_emptiness_and_keeps_the_editor_mounted() {
     type_text(&mut app, "hello");
     app.pump_frames(3);
     assert!(!seen.borrow().last().unwrap().2, "typing reaches the builder");
+    settle_caret(&mut app);
     let after_hello = caret_x(&app);
     type_text(&mut app, " and more");
     app.pump_frames(3);
+    settle_caret(&mut app);
     assert!(
         caret_x(&app) > after_hello + 20.0,
         "the editor kept its caret across the chrome's rebuilds"

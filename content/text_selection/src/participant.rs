@@ -108,6 +108,14 @@ impl SelectionParticipant {
         self.slot.selected_range()
     }
 
+    /// The selected part of this participant's text as `(anchor, focus)`, so a
+    /// caret can go where the pointer is; see
+    /// [`SelectionSlot::selected_endpoints`](crate::session::SelectionSlot::selected_endpoints).
+    #[inline]
+    pub fn selected_endpoints(&self) -> Option<(usize, usize)> {
+        self.slot.selected_endpoints()
+    }
+
     /// Resolves an absolute pointer position to a byte offset.
     #[inline]
     pub fn offset_at(&self, x: f32, y: f32) -> Option<usize> {

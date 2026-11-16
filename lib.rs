@@ -72,8 +72,8 @@ pub use aimer_markdown::{
     CustomInlineData as MarkdownCustomInlineData, Document as MarkdownDocument,
     ImageResolver as MarkdownImageResolver, Inline as MarkdownInline,
     InlineRule as MarkdownInlineRule, InlineSyntax as MarkdownInlineSyntax,
-    LinkHandler as MarkdownLinkHandler, MarkdownError, MarkdownImage, MarkdownTheme,
-    MarkdownViewer,
+    LinkHandler as MarkdownLinkHandler, LivePreview as MarkdownLivePreview, MarkdownError,
+    MarkdownImage, MarkdownTheme, MarkdownViewer, live_preview as markdown_live_preview,
 };
 pub use aimer_media as media;
 pub use aimer_navigation as navigation;

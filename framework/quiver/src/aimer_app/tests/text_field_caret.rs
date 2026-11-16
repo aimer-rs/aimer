@@ -30,6 +30,17 @@ pub(super) fn type_text(app: &mut HeadlessAimerApp<impl Widget + 'static>, text:
     app.send_user_event(AimerNativePlatformEvent::InsertText(text.to_owned()));
 }
 
+/// Lets a gliding caret arrive, then draws the frames that show it there.
+///
+/// A caret glides to the cursor's new place by default, so right after an edit it is
+/// on its way, and what these tests check is where it ends up: that it follows the
+/// text. The wait is longer than the glide, which the caret itself keeps frames
+/// coming for.
+pub(super) fn settle_caret(app: &mut HeadlessAimerApp<impl Widget + 'static>) {
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    app.pump_frames(3);
+}
+
 /// The left edge of the painted caret, in window coordinates.
 pub(super) fn caret_x(app: &HeadlessAimerApp<impl Widget + 'static>) -> f32 {
     let tree = app.app.render_tree();
@@ -73,6 +84,7 @@ fn the_caret_follows_text_typed_into_a_field() {
 
     type_text(&mut app, " and a longer tail");
     app.pump_frames(3);
+    settle_caret(&mut app);
     let after = caret_x(&app);
 
     assert!(
@@ -108,6 +120,7 @@ fn moving_the_caret_leaves_the_layout_caches_alone() {
 
     type_text(&mut app, " and a longer tail");
     app.pump_frames(3);
+    settle_caret(&mut app);
 
     assert!(caret_x(&app) > before + 40.0, "the caret did not follow the text");
     assert_eq!(

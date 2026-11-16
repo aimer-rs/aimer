@@ -259,10 +259,15 @@ seconds after it.
 
 An injected event moves no real cursor and touches no real screen, so each
 pointer or touch command also tells the app where it landed. The overlay draws
-the mouse as the cursor icon in the repository's `.assets` folder
-(`cursor-alt-svgrepo-com.svg`, in its own colours; its size and opacity are
-constants in `aimer_quiver`'s `attach_overlay.rs`) with its tip on the injected position, a finger as a
-ring, and a press as a ripple. A mouse that has rested for 0.7 s idles: it sways
+the mouse as the cursor the app is asking for: the arrow icon in
+`framework/quiver/curosrs/` (`cursor-alt-svgrepo-com.svg`, in its own colours) by
+default, and whichever of a hand, an I-beam, resize arrows (the vertical one,
+turned for horizontal and diagonal), move, crosshair, busy, forbidden or zoom
+matches the `CursorIcon` a widget last set on the window, so it changes shape
+over a link, a text field or a splitter as a real cursor would. Its hotspot is on
+the injected position; its size and opacity are constants in `aimer_quiver`'s
+`attach_overlay.rs` and the shapes live in `attach_cursor.rs`. A finger is a
+ring, and a press a ripple. A mouse that has rested for 0.7 s idles: it sways
 a few degrees either side, pivoting on its tip, at about 30 frames a second
 while it lasts. The badge and the pointers fade in over about 0.3 s when a client attaches and fade out when the last one disconnects (a driver that returns mid-fade fades back from where it was); a pointer that leaves goes at once. Both live in `aimer_quiver`'s debug builds only; a
 release build has no overlay and starts no server.

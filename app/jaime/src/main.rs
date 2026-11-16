@@ -19,6 +19,7 @@ mod backdrop_filter_example;
 mod collapsible_list_example;
 mod color_sync;
 mod container_transform_example;
+mod cursors_example;
 mod custom_animated_theme;
 mod custom_font;
 mod color_melt_example;

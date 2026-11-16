@@ -81,6 +81,18 @@ impl SelectionSlot {
         self.session()?.range_of(self)
     }
 
+    /// The selected part of this participant's text as `(anchor, focus)`: where the
+    /// gesture went down and where the pointer is now, each as an offset into this
+    /// participant's text.
+    ///
+    /// [`selected_range`](Self::selected_range) is ordered and cannot say which end
+    /// the pointer is at, which an editor needs to put its caret there. When an end
+    /// of the selection lies in another participant, the end that stands for it here
+    /// is the edge of this participant's range that faces it.
+    pub fn selected_endpoints(&self) -> Option<(usize, usize)> {
+        self.session()?.endpoints_of(self)
+    }
+
     /// Draw order of the last completed frame; participants that never painted
     /// come last.
     fn order(&self) -> u64 {
@@ -618,6 +630,26 @@ impl SelectionSession {
         None
     }
 
+    /// `(anchor, focus)` of the current selection as seen from `slot`; see
+    /// [`SelectionSlot::selected_endpoints`].
+    pub fn endpoints_of(&self, slot: &SelectionSlot) -> Option<(usize, usize)> {
+        let range = self.range_of(slot)?;
+        let state = self.state.borrow();
+        let selection = state.selection()?;
+        let length = slot.text().len();
+        let here = |point: &SelectionPoint| std::ptr::eq(Rc::as_ptr(&point.slot), slot);
+        // An end in another participant is the edge of this range that faces it: a
+        // drag that goes back through the text has its pointer at the start.
+        let (anchor_side, focus_side) = if is_before(&selection.focus, &selection.anchor) {
+            (range.end, range.start)
+        } else {
+            (range.start, range.end)
+        };
+        let anchor = if here(&selection.anchor) { selection.anchor.offset.min(length) } else { anchor_side };
+        let focus = if here(&selection.focus) { selection.focus.offset.min(length) } else { focus_side };
+        Some((anchor, focus))
+    }
+
     fn document_order<'a>(
         &self,
         selection: &'a PointSelection,
@@ -877,6 +909,66 @@ mod tests {
         assert_eq!(first.selected_range(), Some(3..5));
         assert_eq!(second.selected_range(), Some(0..6));
         assert_eq!(third.selected_range(), Some(0..3));
+    }
+
+    #[test]
+    fn a_participant_reports_which_end_of_its_range_is_the_pointer() {
+        let window = window();
+        let session = session(&window);
+        let (_geometry, text) = participant(&session, &window, "hello", 0.0);
+        text.stamp();
+        session.begin_frame();
+
+        // Down on offset 4, pointer now at offset 2: a backwards drag.
+        session.begin(SelectionPoint::new(Rc::clone(&text), 4), mouse());
+        assert!(session.extend_to_position(15.0, 5.0, mouse()));
+        assert_eq!(text.selected_range(), Some(2..4));
+        assert_eq!(text.selected_endpoints(), Some((4, 2)), "anchor first, then focus");
+
+        // The same range dragged forwards.
+        session.begin(SelectionPoint::new(Rc::clone(&text), 1), mouse());
+        assert!(session.extend_to_position(35.0, 5.0, mouse()));
+        assert_eq!(text.selected_range(), Some(1..4));
+        assert_eq!(text.selected_endpoints(), Some((1, 4)));
+    }
+
+    #[test]
+    fn a_backwards_drag_across_participants_keeps_the_pointer_end_for_each() {
+        let window = window();
+        let session = session(&window);
+        let (_first_geometry, first) = participant(&session, &window, "first", 0.0);
+        let (_second_geometry, second) = participant(&session, &window, "second", 20.0);
+        let (_third_geometry, third) = participant(&session, &window, "third", 40.0);
+        for slot in [&first, &second, &third] {
+            slot.stamp();
+        }
+        session.begin_frame();
+
+        session.begin(SelectionPoint::new(Rc::clone(&third), 3), mouse());
+        assert!(session.extend_to_position(25.0, 5.0, mouse()));
+
+        // The pointer is in the first, at offset 3; the press is in the third, at 3.
+        assert_eq!(first.selected_endpoints(), Some((5, 3)), "the pointer end is where the drag is");
+        assert_eq!(second.selected_endpoints(), Some((6, 0)), "a middle one is read against the drag");
+        assert_eq!(third.selected_endpoints(), Some((3, 0)), "the press end is where it went down");
+        assert_eq!(first.selected_range(), Some(3..5));
+    }
+
+    #[test]
+    fn a_participant_outside_the_selection_has_no_endpoints() {
+        let window = window();
+        let session = session(&window);
+        let (_first_geometry, first) = participant(&session, &window, "first", 0.0);
+        let (_second_geometry, second) = participant(&session, &window, "second", 20.0);
+        for slot in [&first, &second] {
+            slot.stamp();
+        }
+        session.begin_frame();
+
+        session.begin(SelectionPoint::new(Rc::clone(&first), 1), mouse());
+        assert!(session.extend_to_position(35.0, 5.0, mouse()));
+
+        assert_eq!(second.selected_endpoints(), None);
     }
 
     #[test]

@@ -386,6 +386,7 @@ impl<W: Widget + 'static> Widget for Resizable<W> {
             active: Cell::new(None),
             grab: Cell::new(Grab::IDLE),
             hovered: Cell::new(None),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
             child: self.child.to_element(ctx),
         }
         .boxed()
@@ -426,6 +427,8 @@ pub struct RawResizable<E: Element> {
     active: Cell<Option<ResizeHandle>>,
     grab: Cell<Grab>,
     hovered: Cell<Option<ResizeHandle>>,
+    /// Taken while a resize shape is up, so it is only taken down by the element that put it up.
+    cursor_claim: aimer_utils::cursor::CursorClaim,
     child: E,
 }
 
@@ -470,6 +473,7 @@ impl<E: Element> RawResizable<E> {
             Some(handle) => {
                 self.enter_zone(Some(handle));
                 set_cursor(handle.cursor());
+                self.cursor_claim.take();
                 true
             }
             None => {
@@ -478,7 +482,11 @@ impl<E: Element> RawResizable<E> {
                 // down.
                 if self.hovered.get().is_some() {
                     self.enter_zone(None);
-                    reset_cursor();
+                    // The pointer may have moved straight onto a neighbour that set
+                    // its own icon before this element was told it left.
+                    if self.cursor_claim.release() {
+                        reset_cursor();
+                    }
                 }
                 false
             }
@@ -956,6 +964,7 @@ mod tests {
             active: Cell::new(None),
             grab: Cell::new(Grab::IDLE),
             hovered: Cell::new(None),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
             child: DrawProbe { draws },
         }
     }
@@ -1036,6 +1045,7 @@ mod tests {
             active: Cell::new(None),
             grab: Cell::new(Grab::IDLE),
             hovered: Cell::new(None),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
             child: StubChild,
         };
         element.bounds.save(1.0, 0.0, 0.0, 200.0, 100.0);
@@ -1188,6 +1198,41 @@ mod tests {
                 Cursor::Icon(CursorIcon::NwseResize),
                 Cursor::Icon(CursorIcon::Default),
             ]
+        );
+    }
+
+    // The pointer can move from an edge straight onto a neighbour that asks for its
+    // own icon, and this element is told it left only afterwards: giving the
+    // default back then would wipe the neighbour's icon.
+    #[test]
+    fn an_edge_left_late_does_not_take_back_the_cursor_its_neighbour_just_set() {
+        let requests = Rc::new(RefCell::new(Vec::new()));
+        let recorded = requests.clone();
+        let previous = set_thread_cursor_handler(move |cursor| recorded.borrow_mut().push(cursor));
+
+        let element = resizable(Callback::default());
+        let _ = element.on_event(&ElementEvent::PointerMove(mouse_at(198.0, 50.0)));
+        aimer_utils::cursor::set_cursor(CursorIcon::Pointer);
+        let _ = element.on_event(&ElementEvent::PointerExited(PointerSource::Mouse, 0));
+
+        restore_thread_cursor_handler(previous);
+        assert_eq!(requests.borrow().last(), Some(&Cursor::Icon(CursorIcon::Pointer)));
+    }
+
+    #[test]
+    fn leaving_an_edge_that_holds_the_cursor_gives_the_default_back() {
+        let requests = Rc::new(RefCell::new(Vec::new()));
+        let recorded = requests.clone();
+        let previous = set_thread_cursor_handler(move |cursor| recorded.borrow_mut().push(cursor));
+
+        let element = resizable(Callback::default());
+        let _ = element.on_event(&ElementEvent::PointerMove(mouse_at(198.0, 50.0)));
+        let _ = element.on_event(&ElementEvent::PointerExited(PointerSource::Mouse, 0));
+
+        restore_thread_cursor_handler(previous);
+        assert_eq!(
+            *requests.borrow(),
+            vec![Cursor::Icon(CursorIcon::EwResize), Cursor::Icon(CursorIcon::Default)]
         );
     }
 

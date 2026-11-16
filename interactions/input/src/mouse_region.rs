@@ -164,6 +164,7 @@ impl<W: Widget + 'static> Widget for MouseRegion<W> {
             current_state: self.current_state.clone(),
             cached_bounds: seeded_interaction_bounds(&self.cached_bounds),
             window: ctx.window().clone(),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
             child,
         }
         .boxed()
@@ -191,6 +192,10 @@ pub struct RawMouseRegion<E: Element> {
     pub(crate) cached_bounds: InteractionBounds,
     pub(crate) child: E,
     pub(crate) window: WindowHandle,
+    /// Taken when this region set its icon. Leaving gives the default cursor
+    /// back only if the claim is still the latest, so a neighbour that set its
+    /// own icon first is not undone by this region being told it left late.
+    pub(crate) cursor_claim: aimer_utils::cursor::CursorClaim,
 }
 
 impl<E: Element> RawMouseRegion<E> {
@@ -222,12 +227,25 @@ impl<E: Element> RawMouseRegion<E> {
     /// click triggers a parent `set_state`, the region is rebuilt with a
     /// fresh `Outside` state and, without a new pointer event, would
     /// otherwise stay un-hovered until the mouse moved again.
+    /// Restores the default cursor if this region's icon is still the one showing.
+    ///
+    /// The pointer can move straight onto another region, which is entered, and
+    /// sets its icon, before this one is told it left; the default is not
+    /// restored over that icon.
+    #[inline]
+    fn give_cursor_back(&self) {
+        if self.cursor_claim.release() {
+            self.window.set_cursor(winit::window::CursorIcon::Default);
+        }
+    }
+
     #[inline]
     fn sync_hover(&self, is_inside: bool) {
         if is_inside {
             if matches!(self.current_state.get(), PointerState::Outside) {
                 if let Some(icon) = self.cursor {
                     self.window.set_cursor(icon);
+                    self.cursor_claim.take();
                 }
                 aimer_utils::pointer_trace!(
                     "region enter, bounds {:?}",
@@ -238,9 +256,7 @@ impl<E: Element> RawMouseRegion<E> {
                 request_animation_frame()
             }
         } else if matches!(self.current_state.get(), PointerState::Inside) {
-            if self.cursor.is_some() {
-                self.window.set_cursor(winit::window::CursorIcon::Default);
-            }
+            self.give_cursor_back();
             aimer_utils::pointer_trace!(
                 "region exit, bounds {:?}",
                 self.cached_bounds.get_bounds()
@@ -296,9 +312,7 @@ impl<E: Element> RawMouseRegion<E> {
         });
 
         if matches!(event, ElementEvent::PointerExited(PointerSource::Mouse, _)) {
-            if self.cursor.is_some() {
-                self.window.set_cursor(winit::window::CursorIcon::Default);
-            }
+            self.give_cursor_back();
             self.sync_hover(false);
         }
 
@@ -399,6 +413,8 @@ impl<E: Element + 'static> Rebuildable for RawMouseRegion<E> {
         if !Rc::ptr_eq(&self.current_state, &old.current_state) {
             self.current_state.set(old.current_state.get());
         }
+        // The icon this region's predecessor set is still the one showing.
+        self.cursor_claim.inherit(&old.cursor_claim);
     }
 }
 
@@ -678,6 +694,7 @@ mod tests {
             cached_bounds: bounds,
             child: TestElement,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         };
         let at = |x: f32, source: PointerSource| {
             PointerInfo::new(aimer_attribute::position::Vec2d { x, y: 10.0 }, source, 1, PointerButton::Primary)
@@ -703,6 +720,7 @@ mod tests {
             cached_bounds: InteractionBounds::new(),
             child: TestElement,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         };
         region.cached_bounds.save(1.0, 0.0, 0.0, 50.0, 50.0);
         region
@@ -753,6 +771,7 @@ mod tests {
             cached_bounds: InteractionBounds::new(),
             child: TestElement,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         };
 
         let _ = region.on_event(&ElementEvent::PointerExited(PointerSource::Mouse, 0));
@@ -773,6 +792,7 @@ mod tests {
             cached_bounds: bounds,
             child: ResultElement.boxed(),
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         }
         .boxed();
 
@@ -810,6 +830,7 @@ mod tests {
             cached_bounds: bounds,
             child: ResultElement.boxed(),
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         }
         .boxed();
 
@@ -847,6 +868,7 @@ mod tests {
             cached_bounds: bounds,
             child: TestElement,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         };
 
         let result = region.on_event(&ElementEvent::PointerMove(PointerInfo::new(
@@ -863,6 +885,59 @@ mod tests {
         assert!(
             !result.needs_redraw(),
             "claiming the cursor repaints nothing"
+        );
+    }
+
+    // The pointer can move straight from one region to the next, and the first is
+    // then told it left only after the second has entered and set its icon. Its
+    // reset to the default cursor must not undo the second's icon.
+    #[test]
+    fn a_region_left_late_does_not_take_back_the_cursor_its_neighbour_just_set() {
+        let window = WindowHandle::headless(PhysicalSize::new(200, 100), 1.0);
+        let region = |x: f32, icon| {
+            let bounds = InteractionBounds::new();
+            bounds.save(1.0, x, 0.0, 100.0, 100.0);
+            RawMouseRegion {
+                on_hover_enter: VoidCallback::default(),
+                on_hover_exit: VoidCallback::default(),
+                on_pointer_activity: None,
+                cursor: Some(icon),
+                current_state: Rc::new(Cell::new(PointerState::Outside)),
+                cached_bounds: bounds,
+                child: TestElement,
+                window: window.clone(),
+                cursor_claim: aimer_utils::cursor::CursorClaim::new(),
+            }
+        };
+        let mouse_at = |x: f32| {
+            ElementEvent::PointerMove(PointerInfo::new(
+                aimer_attribute::position::Vec2d { x, y: 10.0 },
+                PointerSource::Mouse,
+                7,
+                PointerButton::Primary,
+            ))
+        };
+        let left = ElementEvent::PointerExited(PointerSource::Mouse, 7);
+        let first = region(0.0, winit::window::CursorIcon::Pointer);
+        let second = region(100.0, winit::window::CursorIcon::Text);
+
+        first.on_event(&mouse_at(10.0));
+        assert_eq!(window.headless_cursor(), Some(winit::window::CursorIcon::Pointer));
+        second.on_event(&mouse_at(110.0));
+        assert_eq!(window.headless_cursor(), Some(winit::window::CursorIcon::Text));
+
+        first.on_event(&left);
+        assert_eq!(
+            window.headless_cursor(),
+            Some(winit::window::CursorIcon::Text),
+            "the first region was left after the second was entered"
+        );
+
+        second.on_event(&left);
+        assert_eq!(
+            window.headless_cursor(),
+            Some(winit::window::CursorIcon::Default),
+            "leaving the region that holds the cursor still gives the default back"
         );
     }
 
@@ -891,6 +966,7 @@ mod tests {
             cached_bounds: bounds,
             child: TestElement,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         };
 
         region.on_event(&ElementEvent::PointerExited(PointerSource::Mouse, 0));
@@ -919,6 +995,7 @@ mod tests {
             cached_bounds: bounds,
             child: TestElement,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         };
         let tree = RenderTree::new();
         let node = tree.add_root(Rect::new(200.0, 200.0, 10.0, 10.0)).unwrap();
@@ -956,6 +1033,7 @@ mod tests {
             cached_bounds: InteractionBounds::new(),
             child: TestElement,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         };
         let canvas = aimer_canvas::InnerCanvas::new();
         let ctx = aimer_widget::base::BuildContext::new(
@@ -993,6 +1071,7 @@ mod tests {
             cached_bounds: bounds,
             child: TestElement,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         };
         let move_inside = |x: f32, y: f32| {
             ElementEvent::PointerMove(PointerInfo::new(
@@ -1029,6 +1108,7 @@ mod tests {
             }
             .boxed(),
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         }
         .boxed();
         let pointer = PointerKey::new(PointerSource::Touch, 2);
@@ -1074,6 +1154,7 @@ mod tests {
             cached_bounds: bounds,
             child: inner,
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         }
         .boxed();
         let pointer = PointerKey::new(PointerSource::Touch, 3);
@@ -1135,6 +1216,7 @@ mod tests {
             cached_bounds,
             child: CapturingElement { events }.boxed(),
             window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
         }
     }
 

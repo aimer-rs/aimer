@@ -5,6 +5,8 @@ mod android_storage;
 #[cfg(not(target_arch = "wasm32"))]
 mod debug_input;
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+mod attach_cursor;
+#[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 mod attach_overlay;
 #[cfg(target_os = "android")]
 pub use android_storage::register_android_app;

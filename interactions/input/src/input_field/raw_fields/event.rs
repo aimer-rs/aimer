@@ -469,7 +469,10 @@ impl EventElement for RawTextField {
                     let was_hovered = self.is_hovered();
                     if is_inside || self.mouse_held.get().is_some() {
                         aimer_utils::cursor::set_cursor(aimer_utils::cursor::CursorIcon::Text);
-                    } else {
+                        self.cursor_claim.take();
+                    } else if self.cursor_claim.release() {
+                        // Only the field that put the I-beam up takes it down: a
+                        // neighbour may have set its own icon since.
                         aimer_utils::cursor::reset_cursor();
                     }
                     self.set_hovered(is_inside);
@@ -528,7 +531,11 @@ impl EventElement for RawTextField {
                 ElementEvent::PointerExited(_, _) => {
                     if self.hovered.get() {
                         self.set_hovered(false);
-                        aimer_utils::cursor::reset_cursor();
+                        // The pointer may have moved straight onto a neighbour that set
+                        // its own icon before this field was told it left.
+                        if self.cursor_claim.release() {
+                            aimer_utils::cursor::reset_cursor();
+                        }
                         true
                     } else {
                         false
@@ -569,6 +576,15 @@ impl EventElement for RawTextField {
 
         let result = if consumed {
             EventResult::consumed().with_redraw()
+        } else if self.enable
+            && let ElementEvent::PointerMove(info) = event
+            && self.cached_bounds.is_inside(info.pos.x, info.pos.y)
+        {
+            // The field owns the cursor icon over it (the I-beam is set above).
+            // The framework resets the icon to the default after any move nobody
+            // consumed, so an ignored move would end the I-beam one move after it
+            // began. Consuming asks for no frame: nothing changed.
+            EventResult::consumed()
         } else {
             EventResult::ignored()
         };
@@ -635,6 +651,124 @@ mod hover_tests {
         rebuilt.adopt_runtime_state_from(&old as &dyn Element);
 
         assert!(!rebuilt.is_hovered());
+    }
+
+    /// The framework resets the cursor to the default after a move nothing
+    /// consumed, so a field that sets the I-beam on a move must consume it, or the
+    /// I-beam lasts until the next move.
+    #[test]
+    fn every_move_over_a_field_is_consumed_so_the_i_beam_is_not_reset() {
+        let field = focused_field(TextEditingController::new());
+        field.cached_bounds.save(1.0, 0.0, 0.0, 200.0, 32.0);
+        let move_to = |x: f32, y: f32| {
+            field.on_event(&ElementEvent::PointerMove(PointerInfo::mouse(
+                Vec2d { x, y },
+                PointerButton::Primary,
+            )))
+        };
+
+        let entering = move_to(10.0, 10.0);
+        assert!(entering.is_consumed() && entering.needs_redraw(), "the hover changed: repaint");
+        for x in [20.0, 21.0, 40.0] {
+            let within = move_to(x, 10.0);
+            assert!(within.is_consumed(), "a move at x={x} inside the field is consumed");
+            assert!(!within.needs_redraw(), "and costs no frame: nothing changed");
+        }
+        let leaving = move_to(300.0, 10.0);
+        assert!(leaving.is_consumed() && leaving.needs_redraw(), "the hover ended: the field resets its own cursor");
+        let outside = move_to(310.0, 10.0);
+        assert!(!outside.is_consumed(), "outside the field, the framework resets the cursor");
+    }
+
+    #[test]
+    fn a_disabled_field_does_not_claim_the_cursor() {
+        let mut config = field_config(TextEditingController::new());
+        config.enable = false;
+        let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+        field.cached_bounds.save(1.0, 0.0, 0.0, 200.0, 32.0);
+        let result = field.on_event(&ElementEvent::PointerMove(PointerInfo::mouse(
+            Vec2d { x: 10.0, y: 10.0 },
+            PointerButton::Primary,
+        )));
+        assert!(!result.is_consumed());
+    }
+
+    /// The pointer can move straight from this field onto a neighbour that asks for
+    /// its own icon, and this field is told it left only afterwards. Giving the
+    /// default back then would wipe the neighbour's icon.
+    #[test]
+    fn a_field_left_late_does_not_take_back_the_cursor_its_neighbour_just_set() {
+        use aimer_utils::cursor::{
+            restore_thread_cursor_handler, set_cursor, set_thread_cursor_handler, Cursor, CursorIcon,
+        };
+        use std::{cell::RefCell, rc::Rc};
+
+        let requests = Rc::new(RefCell::new(Vec::new()));
+        let recorded = requests.clone();
+        let previous = set_thread_cursor_handler(move |cursor| recorded.borrow_mut().push(cursor));
+
+        let field = focused_field(TextEditingController::new());
+        field.cached_bounds.save(1.0, 0.0, 0.0, 200.0, 32.0);
+        let _ = field.on_event(&ElementEvent::PointerMove(PointerInfo::mouse(
+            Vec2d { x: 10.0, y: 10.0 },
+            PointerButton::Primary,
+        )));
+        set_cursor(CursorIcon::Pointer);
+        let _ = field.on_event(&ElementEvent::PointerExited(PointerSource::Mouse, 0));
+
+        restore_thread_cursor_handler(previous);
+        assert_eq!(requests.borrow().last(), Some(&Cursor::Icon(CursorIcon::Pointer)));
+    }
+
+    /// A move the field is offered outside its bounds is none of its business
+    /// unless the field put an icon up.
+    #[test]
+    fn a_move_outside_a_field_that_set_nothing_leaves_the_cursor_alone() {
+        use aimer_utils::cursor::{
+            restore_thread_cursor_handler, set_cursor, set_thread_cursor_handler, Cursor, CursorIcon,
+        };
+        use std::{cell::RefCell, rc::Rc};
+
+        let requests = Rc::new(RefCell::new(Vec::new()));
+        let recorded = requests.clone();
+        let previous = set_thread_cursor_handler(move |cursor| recorded.borrow_mut().push(cursor));
+
+        let field = focused_field(TextEditingController::new());
+        field.cached_bounds.save(1.0, 0.0, 0.0, 200.0, 32.0);
+        set_cursor(CursorIcon::Pointer);
+        let _ = field.on_event(&ElementEvent::PointerMove(PointerInfo::mouse(
+            Vec2d { x: 300.0, y: 10.0 },
+            PointerButton::Primary,
+        )));
+
+        restore_thread_cursor_handler(previous);
+        assert_eq!(requests.borrow().last(), Some(&Cursor::Icon(CursorIcon::Pointer)));
+    }
+
+    #[test]
+    fn leaving_a_field_that_holds_the_cursor_gives_the_default_back() {
+        use aimer_utils::cursor::{
+            restore_thread_cursor_handler, set_thread_cursor_handler, Cursor, CursorIcon,
+        };
+        use std::{cell::RefCell, rc::Rc};
+
+        let requests = Rc::new(RefCell::new(Vec::new()));
+        let recorded = requests.clone();
+        let previous = set_thread_cursor_handler(move |cursor| recorded.borrow_mut().push(cursor));
+
+        let field = focused_field(TextEditingController::new());
+        field.cached_bounds.save(1.0, 0.0, 0.0, 200.0, 32.0);
+        let _ = field.on_event(&ElementEvent::PointerMove(PointerInfo::mouse(
+            Vec2d { x: 10.0, y: 10.0 },
+            PointerButton::Primary,
+        )));
+        let _ = field.on_event(&ElementEvent::PointerExited(PointerSource::Mouse, 0));
+
+        restore_thread_cursor_handler(previous);
+        assert_eq!(
+            *requests.borrow(),
+            vec![Cursor::Icon(CursorIcon::Text), Cursor::Icon(CursorIcon::Default)]
+        );
     }
 }
 

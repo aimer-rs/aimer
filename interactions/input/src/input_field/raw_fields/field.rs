@@ -477,6 +477,8 @@ pub(crate) struct RawTextField {
     pub focus_node: FocusNode,
     pub focused: Cell<bool>,
     pub hovered: Cell<bool>,
+    /// Taken while the field has its I-beam up; see [`aimer_utils::cursor::CursorClaim`].
+    pub cursor_claim: aimer_utils::cursor::CursorClaim,
     pub(super) retained_v2_paint_state: Cell<Option<RetainedFieldPaintState>>,
     pub cached_bounds: aimer_widget::InteractionBounds,
     pub on_changed: TextFieldCallback,
@@ -729,6 +731,7 @@ impl RawTextField {
             focus_node,
             focused: Cell::new(false),
             hovered: Cell::new(false),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
             retained_v2_paint_state: Cell::new(None),
             cached_bounds: aimer_widget::InteractionBounds::new(),
             on_changed: config.on_changed,

@@ -20,54 +20,6 @@ pub struct HeadlessWindowState {
     fullscreen: AtomicBool,
 }
 
-#[inline]
-const fn cursor_id(cursor: winit::window::CursorIcon) -> usize {
-    cursor as usize
-}
-
-#[inline]
-fn cursor_from_id(id: usize) -> winit::window::CursorIcon {
-    match id {
-        0 => winit::window::CursorIcon::Default,
-        1 => winit::window::CursorIcon::ContextMenu,
-        2 => winit::window::CursorIcon::Help,
-        3 => winit::window::CursorIcon::Pointer,
-        4 => winit::window::CursorIcon::Progress,
-        5 => winit::window::CursorIcon::Wait,
-        6 => winit::window::CursorIcon::Cell,
-        7 => winit::window::CursorIcon::Crosshair,
-        8 => winit::window::CursorIcon::Text,
-        9 => winit::window::CursorIcon::VerticalText,
-        10 => winit::window::CursorIcon::Alias,
-        11 => winit::window::CursorIcon::Copy,
-        12 => winit::window::CursorIcon::Move,
-        13 => winit::window::CursorIcon::NoDrop,
-        14 => winit::window::CursorIcon::NotAllowed,
-        15 => winit::window::CursorIcon::Grab,
-        16 => winit::window::CursorIcon::Grabbing,
-        17 => winit::window::CursorIcon::EResize,
-        18 => winit::window::CursorIcon::NResize,
-        19 => winit::window::CursorIcon::NeResize,
-        20 => winit::window::CursorIcon::NwResize,
-        21 => winit::window::CursorIcon::SResize,
-        22 => winit::window::CursorIcon::SeResize,
-        23 => winit::window::CursorIcon::SwResize,
-        24 => winit::window::CursorIcon::WResize,
-        25 => winit::window::CursorIcon::EwResize,
-        26 => winit::window::CursorIcon::NsResize,
-        27 => winit::window::CursorIcon::NeswResize,
-        28 => winit::window::CursorIcon::NwseResize,
-        29 => winit::window::CursorIcon::ColResize,
-        30 => winit::window::CursorIcon::RowResize,
-        31 => winit::window::CursorIcon::AllScroll,
-        32 => winit::window::CursorIcon::ZoomIn,
-        33 => winit::window::CursorIcon::ZoomOut,
-        34 => winit::window::CursorIcon::DndAsk,
-        35 => winit::window::CursorIcon::AllResize,
-        _ => winit::window::CursorIcon::Default,
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum WindowHandle {
     /// A platform window, owned by whoever holds a handle to it: the window is
@@ -90,7 +42,7 @@ impl WindowHandle {
             redraw_request_count: AtomicU64::new(0),
             coalesced_redraw_count: AtomicU64::new(0),
             display_tick_count: AtomicU64::new(0),
-            cursor: AtomicUsize::new(cursor_id(winit::window::CursorIcon::Default)),
+            cursor: AtomicUsize::new(aimer_utils::cursor::icon_id(winit::window::CursorIcon::Default)),
             fullscreen: AtomicBool::new(false),
         }))
     }
@@ -210,10 +162,15 @@ impl WindowHandle {
     }
 
     pub fn set_cursor(&self, cursor: winit::window::CursorIcon) {
+        aimer_utils::cursor::note_set();
         match self {
-            Self::Native(window) => window.set_cursor(cursor),
+            Self::Native(window) => {
+                // So a virtual pointer drawn by a driving tool can follow it.
+                aimer_utils::cursor::note_requested(&winit::window::Cursor::Icon(cursor));
+                window.set_cursor(cursor);
+            }
             Self::Headless(state) => {
-                state.cursor.store(cursor_id(cursor), Ordering::Relaxed);
+                state.cursor.store(aimer_utils::cursor::icon_id(cursor), Ordering::Relaxed);
             }
         }
     }
@@ -222,7 +179,7 @@ impl WindowHandle {
     pub fn headless_cursor(&self) -> Option<winit::window::CursorIcon> {
         match self {
             Self::Native(_) => None,
-            Self::Headless(state) => Some(cursor_from_id(state.cursor.load(Ordering::Relaxed))),
+            Self::Headless(state) => Some(aimer_utils::cursor::icon_from_id(state.cursor.load(Ordering::Relaxed))),
         }
     }
 
