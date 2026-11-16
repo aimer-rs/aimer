@@ -212,3 +212,32 @@ fn a_range_background_is_painted_behind_the_text() {
         .expect("text is drawn");
     assert!(fill < first_text, "the background goes under the glyphs");
 }
+
+/// A range that reserves a box: the widget's height and interaction layout
+/// follow the box, and the source under it stays addressable.
+#[test]
+fn a_range_with_an_inline_box_resolves_the_height_of_its_line() {
+    use aimer_widget::LayoutElement;
+
+    const TEXT: &str = "- [ ] task\nnext";
+    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let ctx = context(&runtime);
+    let plain = widget(TEXT, None);
+    let embed = StyledRange::new(2..5, SpanStyle::new().inline_box(crate::InlineBox::new(18.0, 60.0)));
+    let boxed = widget(TEXT, Some(Rc::from(vec![embed])));
+
+    let plain_height = plain.computed_size(&ctx).height;
+    let boxed_height = boxed.computed_size(&ctx).height;
+    let interaction = boxed.interaction_layout(&ctx);
+
+    assert!(boxed.uses_paragraph_layout());
+    assert!(boxed_height >= plain_height + 30.0, "the 60 px box makes the first line taller: {plain_height} -> {boxed_height}");
+    assert!(interaction.lines[0].ascent + (-interaction.lines[0].descent) >= 60.0 - 0.01);
+    assert!(interaction.lines[1].ascent < 30.0, "the line after it is unaffected");
+    let cluster = interaction.clusters.iter().find(|cluster| cluster.text_range == (2..5)).expect("the box is one cluster");
+    assert!((cluster.end_x - cluster.start_x - 18.0).abs() < 0.01);
+    let before = interaction.caret_geometry(2).unwrap();
+    let after = interaction.caret_geometry(5).unwrap();
+    assert!((after.x - before.x - 18.0).abs() < 0.01, "the caret jumps across the box");
+    assert_eq!(interaction.text, TEXT, "the string itself is untouched");
+}

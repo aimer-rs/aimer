@@ -110,6 +110,10 @@ fn prepare_decorations(
         .enumerate()
         .filter_map(|(fragment_index, fragment)| {
             let span = &spans[fragment.span_index];
+            if span.inline_box.is_some() {
+                // A box paints nothing of its own; whoever owns it draws there.
+                return None;
+            }
             let font_size = span.style.font_size.max(1) as f32 * scale;
             let paint = prepare_decoration_paint(span.style.text_decoration, font_size, scale)?;
             Some(PreparedDecoration {
@@ -582,7 +586,9 @@ impl Paragraph {
             return None;
         };
         let style = span.style;
-        if self.text_indent != 0.0
+        // The shaped run would shape the source of a box as text.
+        if span.inline_box.is_some()
+            || self.text_indent != 0.0
             || !matches!(self.line_height, LineHeight::Normal)
             || !matches!(self.text_align, TextAlign::TopLeft)
             || !matches!(self.overflow, TextOverflow::Clip | TextOverflow::Wrap)
@@ -641,6 +647,27 @@ impl Paragraph {
         let mut clusters = Vec::with_capacity(graphemes.len() + line_breaks.len());
         let mut grapheme_cursor = 0;
         for (fragment_index, fragment) in fragments.iter().enumerate() {
+            if self.spans[fragment.span_index].inline_box.is_some() {
+                // One cluster for the whole source of the box: the caret can stand
+                // before it or after it, and a click on it lands on the nearer end.
+                if let Some(source_range) = fragment.source_range.clone() {
+                    push_composed_cluster(
+                        &mut clusters,
+                        TextCluster {
+                            text_range: source_range,
+                            line_index: fragment.line,
+                            level: unicode_bidi::Level::ltr(),
+                            start_x: fragment.x,
+                            end_x: fragment.x + fragment.width,
+                            start_y: baseline_for_line(fragment.line),
+                            end_y: baseline_for_line(fragment.line),
+                            y: line_top[fragment.line],
+                            height: line_heights[fragment.line],
+                        },
+                    );
+                }
+                continue;
+            }
             if fragment.text.is_empty() {
                 continue;
             }
@@ -863,8 +890,24 @@ impl Paragraph {
         } else {
             0.0
         }) * ctx.scale;
+        // Boxes are given in logical pixels; the layout works in device pixels.
+        let scaled_spans;
+        let spans: &[ResolvedTextSpan] = if self.spans.iter().any(|span| span.inline_box.is_some()) {
+            scaled_spans = self
+                .spans
+                .iter()
+                .map(|span| {
+                    let mut span = span.clone();
+                    span.inline_box = span.inline_box.map(|inline_box| inline_box.scaled(ctx.scale));
+                    span
+                })
+                .collect::<Vec<_>>();
+            &scaled_spans
+        } else {
+            &self.spans
+        };
         let mut layout = layout_resolved_spans_with_indent(
-            &self.spans,
+            spans,
             wrap_width,
             first_line_indent,
             |text, style| {
@@ -879,7 +922,7 @@ impl Paragraph {
             },
         );
         if matches!(self.overflow, TextOverflow::Ellipsis) {
-            ellipsize_first_line(&mut layout, &self.spans, wrap_width, |text, style| {
+            ellipsize_first_line(&mut layout, spans, wrap_width, |text, style| {
                 adjusted_width(text, style, &mut |text, style| {
                     ctx.canvas.measure_text_styled(
                         text,
@@ -898,6 +941,16 @@ impl Paragraph {
         let mut line_font_size = vec![0.0_f32; layout.line_count];
         let mut line_width = vec![0.0_f32; layout.line_count];
         for fragment in &layout.fragments {
+            if let Some(inline_box) = spans[fragment.span_index].inline_box {
+                // A box sits `baseline` above the text baseline and hangs the
+                // rest of its height below it, so it raises the line instead of
+                // being measured as text.
+                line_ascent[fragment.line] = line_ascent[fragment.line].max(inline_box.baseline);
+                line_descent[fragment.line] =
+                    line_descent[fragment.line].max(inline_box.height - inline_box.baseline);
+                line_width[fragment.line] = line_width[fragment.line].max(fragment.x + fragment.width);
+                continue;
+            }
             let style = self.spans[fragment.span_index].style;
             let metrics = ctx.canvas.measure_text_metrics_styled(
                 &fragment.text,
@@ -1210,6 +1263,7 @@ mod tests {
             text: crate::TextSource::from("Aimer"),
             style: TextStyle::new().color(Color::Hex(0x0969DA)),
             link: Some(hovered.clone()),
+            inline_box: None,
         };
         let plain = ResolvedTextSpan::plain(Rc::from(" docs"), TextStyle::default());
 
@@ -1406,6 +1460,7 @@ mod tests {
                 style: TextStyle::new()
                     .text_decoration(TextDecoration::new().line(TextDecorationLine::UNDERLINE)),
                 link: Some(target.clone()),
+                inline_box: None,
             }],
             TextAlign::TopLeft,
             TextOverflow::Wrap,
@@ -1857,5 +1912,178 @@ mod tests {
             .map(|grapheme| grapheme.width)
             .sum::<f32>();
         assert!((measured - fragment.width).abs() < 1.0);
+    }
+
+    mod inline_boxes {
+        //! A box reserved in a line: the paragraph resolves its height.
+
+        use std::rc::Rc;
+
+        use aimer_attribute::{ResolvedSize, Vec2d};
+        use aimer_canvas::{FrameCanvas, InnerCanvas};
+        use aimer_style::{TextAlign, TextOverflow, TextStyle};
+        use aimer_widget::base::{BuildContext, WindowHandle};
+
+        use super::super::Paragraph;
+        use crate::text_span::{InlineBox, ResolvedTextSpan};
+
+        /// Runs `check` with a headless context at device scale `scale`.
+        fn with_context<R>(scale: f32, check: impl FnOnce(&BuildContext) -> R) -> R {
+            let inner = InnerCanvas::new();
+            let canvas = FrameCanvas::new(&inner);
+            let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let context = BuildContext::new(
+                canvas,
+                ResolvedSize { width: 400.0, height: 200.0 },
+                scale,
+                Vec2d::default(),
+                Vec2d::default(),
+                WindowHandle::headless(winit::dpi::PhysicalSize::new(400, 200), 1.0),
+                runtime.handle().clone(),
+            );
+            check(&context)
+        }
+
+        fn text(source: &str) -> ResolvedTextSpan {
+            ResolvedTextSpan::plain(Rc::from(source), TextStyle::new().font_size(16))
+        }
+
+        fn boxed(source: &str, inline_box: InlineBox) -> ResolvedTextSpan {
+            let mut span = text(source);
+            span.inline_box = Some(inline_box);
+            span
+        }
+
+        fn paragraph(spans: Vec<ResolvedTextSpan>) -> Paragraph {
+            Paragraph::new(spans, TextAlign::TopLeft, TextOverflow::Wrap)
+        }
+
+        #[test]
+        fn a_box_taller_than_the_text_raises_its_line_and_the_paragraph() {
+            with_context(1.0, |context| {
+                let natural = paragraph(vec![text("abcd")]).prepare(context).line_heights[0];
+
+                let layout = paragraph(vec![text("ab"), boxed("XYZ", InlineBox::new(20.0, 40.0)), text("cd")]).prepare(context);
+
+                assert_eq!(layout.line_heights.len(), 1);
+                assert!(layout.line_heights[0] >= 40.0, "the line is as tall as the box: {}", layout.line_heights[0]);
+                assert!(layout.line_heights[0] > natural + 10.0);
+                assert_eq!(layout.size.height, layout.line_heights[0]);
+            });
+        }
+
+        #[test]
+        fn the_box_takes_its_width_in_the_line_and_draws_no_text() {
+            with_context(1.0, |context| {
+                let layout = paragraph(vec![text("ab"), boxed("XYZ", InlineBox::new(20.0, 40.0)), text("cd")]).prepare(context);
+
+                let (before, boxed, after) = (&layout.fragments[0], &layout.fragments[1], &layout.fragments[2]);
+                assert!(boxed.text.is_empty(), "the source of a box is not painted");
+                assert_eq!(boxed.width, 20.0);
+                assert!((boxed.x - before.width).abs() < 0.01);
+                assert!((after.x - (boxed.x + 20.0)).abs() < 0.01);
+            });
+        }
+
+        #[test]
+        fn a_box_on_the_baseline_rises_above_it_and_text_sits_on_it() {
+            with_context(1.0, |context| {
+                let layout = paragraph(vec![text("ab"), boxed("XYZ", InlineBox::new(20.0, 40.0))]).prepare(context);
+
+                assert!(layout.fragments[0].baseline >= 40.0 - 0.01, "the text baseline is below the box top: {}", layout.fragments[0].baseline);
+            });
+        }
+
+        #[test]
+        fn a_baseline_offset_lets_the_box_hang_below_the_text() {
+            with_context(1.0, |context| {
+                // 40 tall, 30 above the baseline and 10 below it.
+                let layout = paragraph(vec![text("ab"), boxed("XYZ", InlineBox::new(20.0, 40.0).baseline(30.0))]).prepare(context);
+
+                let baseline = layout.fragments[0].baseline;
+                assert!((baseline - 30.0).abs() < 0.5 || baseline > 30.0, "{baseline}");
+                assert!(layout.line_heights[0] >= 40.0 - 0.01, "30 above and 10 below the baseline is at least 40");
+                assert!(layout.line_heights[0] < 40.0 + 12.0, "and no taller than the text's own descent allows");
+            });
+        }
+
+        #[test]
+        fn a_box_scales_with_the_device() {
+            with_context(2.0, |context| {
+                let layout = paragraph(vec![text("ab"), boxed("XYZ", InlineBox::new(20.0, 40.0))]).prepare(context);
+
+                assert_eq!(layout.fragments[1].width, 40.0);
+                assert!(layout.line_heights[0] >= 80.0);
+            });
+        }
+
+        #[test]
+        fn a_box_the_line_cannot_hold_moves_to_the_next_line_whole() {
+            with_context(1.0, |context| {
+                let mut spans = vec![text("some words to fill the line "), boxed("XYZ", InlineBox::new(390.0, 30.0))];
+                spans.push(text("end"));
+                let layout = paragraph(spans).prepare(context);
+
+                let boxed = &layout.fragments[1];
+                assert_eq!(boxed.line, 1);
+                assert_eq!(boxed.x, 0.0);
+                assert_eq!(layout.line_heights.len(), 3, "the box has a line of its own");
+            });
+        }
+
+        #[test]
+        fn the_interaction_layout_covers_a_box_with_one_cluster() {
+            with_context(1.0, |context| {
+                let layout = paragraph(vec![text("ab"), boxed("XYZ", InlineBox::new(20.0, 40.0)), text("cd")]).prepare(context);
+                let interaction = layout.aimer_interaction.as_ref().expect("the paragraph is interactive");
+                let boxed = &layout.fragments[1];
+
+                let cluster = interaction.clusters.iter().find(|cluster| cluster.text_range == (2..5)).expect("one cluster for the whole box");
+                assert!((cluster.start_x - boxed.x).abs() < 0.01 && (cluster.end_x - (boxed.x + 20.0)).abs() < 0.01);
+                assert_eq!(interaction.text, "abXYZcd");
+
+                let start = interaction.caret_geometry(2).expect("the caret can stand before the box");
+                let end = interaction.caret_geometry(5).expect("and after it");
+                assert!((start.x - boxed.x).abs() < 0.01);
+                assert!((end.x - (boxed.x + 20.0)).abs() < 0.01);
+                assert_eq!(interaction.caret_geometry(3).map(|caret| caret.offset), None, "but not inside it");
+            });
+        }
+
+        #[test]
+        fn a_click_on_a_box_lands_on_the_nearer_end() {
+            with_context(1.0, |context| {
+                let layout = paragraph(vec![text("ab"), boxed("XYZ", InlineBox::new(20.0, 40.0)), text("cd")]).prepare(context);
+                let interaction = layout.aimer_interaction.as_ref().unwrap();
+                let boxed = &layout.fragments[1];
+                let y = interaction.lines[0].baseline - 4.0;
+
+                assert_eq!(interaction.hit_test(boxed.x + 3.0, y), Some(2));
+                assert_eq!(interaction.hit_test(boxed.x + 17.0, y), Some(5));
+            });
+        }
+
+        #[test]
+        fn a_paragraph_that_is_only_a_box_is_still_laid_out_as_one() {
+            with_context(1.0, |context| {
+                let layout = paragraph(vec![boxed("XYZ", InlineBox::new(20.0, 40.0))]).prepare(context);
+
+                assert_eq!(layout.fragments.len(), 1);
+                assert_eq!(layout.fragments[0].width, 20.0);
+                assert!(layout.size.height >= 40.0);
+                let interaction = layout.aimer_interaction.as_ref().unwrap();
+                assert!(interaction.clusters.iter().any(|cluster| cluster.text_range == (0..3)));
+            });
+        }
+
+        #[test]
+        fn unusable_numbers_are_repaired() {
+            with_context(1.0, |context| {
+                let layout = paragraph(vec![text("a"), boxed("X", InlineBox::new(f32::NAN, -5.0)), text("b")]).prepare(context);
+
+                assert_eq!(layout.fragments[1].width, 0.0);
+                assert!(layout.size.height.is_finite() && layout.size.height > 0.0);
+            });
+        }
     }
 }

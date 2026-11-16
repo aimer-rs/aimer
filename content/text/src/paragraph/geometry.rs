@@ -139,6 +139,9 @@ pub(crate) fn prepare_background_runs(
 
     let mut runs: Vec<PreparedBackground> = Vec::new();
     for fragment in fragments {
+        if spans[fragment.span_index].inline_box.is_some() {
+            continue;
+        }
         let Some(color) = spans[fragment.span_index].style.background_color else {
             continue;
         };

@@ -11,6 +11,83 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::TextSource;
 
+/// A box a paragraph reserves in a line instead of drawing glyphs.
+///
+/// Put on the span of a source range through [`SpanStyle::inline_box`], it makes
+/// the range one unbreakable atom `width` wide whose height raises the line it
+/// stands on, the way a tall inline image would. The range's text is not drawn,
+/// but it stays in the string: the caret can stand before or after the box and a
+/// selection covers it. What to draw there is left to whoever owns the box, which
+/// finds its rectangle in the paragraph's interaction layout, in the cluster
+/// whose text range is the span's.
+///
+/// All lengths are logical pixels.
+///
+/// # Examples
+///
+/// ```
+/// use aimer_text::InlineBox;
+///
+/// // A 20 x 24 box sitting on the baseline, and one centred on a 16 px line.
+/// let on_baseline = InlineBox::new(20.0, 24.0);
+/// let centred = InlineBox::new(20.0, 24.0).baseline(16.0);
+/// assert_eq!(on_baseline.baseline, 24.0);
+/// assert_eq!(centred.baseline, 16.0);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InlineBox {
+    /// The width the box takes in the line.
+    pub width: f32,
+    /// The height of the box.
+    pub height: f32,
+    /// The distance from the top of the box down to the text baseline it sits
+    /// on. The box rises this far above the baseline and hangs `height -
+    /// baseline` below it. It is `height` for a box standing on the baseline.
+    pub baseline: f32,
+}
+
+impl InlineBox {
+    /// A box standing on the baseline.
+    #[inline]
+    pub const fn new(width: f32, height: f32) -> Self {
+        Self {
+            width,
+            height,
+            baseline: height,
+        }
+    }
+
+    /// Sets how far the box's top is above the baseline.
+    #[inline]
+    #[must_use]
+    pub const fn baseline(mut self, baseline: f32) -> Self {
+        self.baseline = baseline;
+        self
+    }
+
+    /// The box with unusable numbers repaired: lengths are finite and not
+    /// negative, and the baseline lies within the height.
+    pub(crate) fn sanitized(self) -> Self {
+        let finite = |value: f32| if value.is_finite() { value.max(0.0) } else { 0.0 };
+        let height = finite(self.height);
+        Self {
+            width: finite(self.width),
+            height,
+            baseline: finite(self.baseline).min(height),
+        }
+    }
+
+    /// The box in device pixels at `scale`.
+    pub(crate) fn scaled(self, scale: f32) -> Self {
+        let this = self.sanitized();
+        Self {
+            width: this.width * scale,
+            height: this.height * scale,
+            baseline: this.baseline * scale,
+        }
+    }
+}
+
 /// Optional run-level overrides for a [`TextSpan`].
 ///
 /// Values left as `None` inherit from the parent span or the [`TextStyle`]
@@ -41,6 +118,9 @@ pub struct SpanStyle {
     pub word_spacing: Option<f32>,
     /// Optional glyph shadow override inherited from the parent span.
     pub text_shadow: Option<TextShadow>,
+    /// Replaces the span's text with a reserved box; see [`InlineBox`]. The text
+    /// stays in the string and out of the picture.
+    pub inline_box: Option<InlineBox>,
 }
 
 impl SpanStyle {
@@ -57,7 +137,44 @@ impl SpanStyle {
             letter_spacing: None,
             word_spacing: None,
             text_shadow: None,
+            inline_box: None,
         }
+    }
+
+    /// Replaces the text of the range with a reserved box; see [`InlineBox`].
+    #[inline]
+    #[must_use]
+    pub const fn inline_box(mut self, inline_box: InlineBox) -> Self {
+        self.inline_box = Some(inline_box);
+        self
+    }
+
+    /// Collapses the text it styles to a sliver that paints nothing.
+    ///
+    /// The characters stay in the string, so editing, selection and copying see
+    /// them, but each takes about half a pixel of width and draws no glyph and no
+    /// background. A text field uses it to hide markup such as the `# ` of a
+    /// markdown heading until the cursor reaches the line.
+    ///
+    /// The line it sits on keeps the height of its other text, and the caret can
+    /// still stand inside the collapsed run, only it moves in sub-pixel steps.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_text::SpanStyle;
+    ///
+    /// let hidden = SpanStyle::concealed();
+    /// assert_eq!(hidden.font_size, Some(1));
+    /// ```
+    pub const fn concealed() -> Self {
+        let mut style = Self::new();
+        style.font_size = Some(1);
+        style.color = Some(Color::Rgba(0, 0, 0, 0));
+        style.background_color = Some(Color::Rgba(0, 0, 0, 0));
+        style.letter_spacing = Some(0.0);
+        style.word_spacing = Some(0.0);
+        style
     }
 
     pub const fn font_size(mut self, font_size: u32) -> Self {
@@ -238,6 +355,7 @@ impl TextSpan {
                 text: self.text.clone(),
                 style,
                 link: link.clone(),
+                inline_box: self.style.inline_box,
             });
         }
         for child in &self.children {
@@ -251,6 +369,8 @@ pub struct ResolvedTextSpan {
     pub text: TextSource,
     pub style: TextStyle,
     pub link: Option<TextSource>,
+    /// Set when the span's text is replaced by a reserved box.
+    pub inline_box: Option<InlineBox>,
 }
 
 impl ResolvedTextSpan {
@@ -272,6 +392,7 @@ impl ResolvedTextSpan {
             text,
             style,
             link: None,
+            inline_box: None,
         }
     }
 }
@@ -409,6 +530,21 @@ pub(crate) fn adjusted_width(
 
 
 
+/// The width of `text` set in span `span_index`: the box's own width when the
+/// span is a reserved box, whose text is not drawn, and the measured width of the
+/// text otherwise.
+pub(crate) fn span_width(
+    spans: &[ResolvedTextSpan],
+    span_index: usize,
+    text: &str,
+    measure: &mut dyn FnMut(&str, &TextStyle) -> f32,
+) -> f32 {
+    match spans[span_index].inline_box {
+        Some(inline_box) => inline_box.width,
+        None => adjusted_width(text, &spans[span_index].style, measure),
+    }
+}
+
 #[allow(unused)]
 pub(crate) fn layout_resolved_spans(
     spans: &[ResolvedTextSpan],
@@ -481,7 +617,7 @@ pub(crate) fn layout_resolved_spans_with_indent(
         let unit_width = runs
             .iter_mut()
             .map(|run| {
-                run.width = adjusted_width(&run.text, &spans[run.span_index].style, measure);
+                run.width = span_width(spans, run.span_index, &run.text, measure);
                 run.width
             })
             .sum::<f32>();
@@ -514,7 +650,7 @@ pub(crate) fn layout_resolved_spans_with_indent(
                 line_runs
                     .iter()
                     .map(|(span_index, text)| {
-                        adjusted_width(text, &spans[*span_index].style, measure)
+                        span_width(spans, *span_index, text, measure)
                     })
                     .sum::<f32>(),
             );
@@ -578,8 +714,7 @@ pub(crate) fn layout_resolved_spans_with_indent(
                     width: 0.0,
                 }
             };
-            candidate.width =
-                adjusted_width(&candidate.text, &spans[candidate.span_index].style, measure);
+            candidate.width = span_width(spans, candidate.span_index, &candidate.text, measure);
 
             if !same_span
                 && max_width > 0.0
@@ -604,8 +739,7 @@ pub(crate) fn layout_resolved_spans_with_indent(
                 );
                 candidate.source_range =
                     source_range_from_rendered(&candidate.rendered_source_ranges);
-                candidate.width =
-                    adjusted_width(&candidate.text, &spans[candidate.span_index].style, measure);
+                candidate.width = span_width(spans, candidate.span_index, &candidate.text, measure);
                 fragments.push(candidate);
                 *line += 1;
                 *x = 0.0;
@@ -617,11 +751,7 @@ pub(crate) fn layout_resolved_spans_with_indent(
                     rendered_source_ranges: grapheme.rendered_source_ranges.clone(),
                     line: *line,
                     x: 0.0,
-                    width: adjusted_width(
-                        &grapheme.text,
-                        &spans[grapheme.span_index].style,
-                        measure,
-                    ),
+                    width: span_width(spans, grapheme.span_index, &grapheme.text, measure),
                 });
             } else {
                 candidate.line = *line;
@@ -637,6 +767,29 @@ pub(crate) fn layout_resolved_spans_with_indent(
     };
 
     for (span_index, span) in spans.iter().enumerate() {
+        if span.inline_box.is_some() && !span.text.is_empty() {
+            // A reserved box is one atom, however much source it stands for: the
+            // text before it and the text after it may wrap away from it, and it
+            // is never cut.
+            let flush = |unit: &mut Vec<PendingGrapheme>,
+                         fragments: &mut Vec<SpanLayoutFragment>,
+                         line: &mut usize,
+                         x: &mut f32,
+                         line_has_content: &mut bool,
+                         measure: &mut dyn FnMut(&str, &TextStyle) -> f32| {
+                place_unit(unit, fragments, line, x, line_has_content, measure);
+            };
+            flush(&mut unit, &mut fragments, &mut line, &mut x, &mut line_has_content, &mut measure);
+            unit.push(PendingGrapheme {
+                span_index,
+                rendered_source_ranges: Vec::new(),
+                text: String::new(),
+                source_range: span_start..span_start + span.text.len(),
+            });
+            flush(&mut unit, &mut fragments, &mut line, &mut x, &mut line_has_content, &mut measure);
+            span_start += span.text.len();
+            continue;
+        }
         for (grapheme_start, grapheme) in span.text.grapheme_indices(true) {
             let source_range =
                 span_start + grapheme_start..span_start + grapheme_start + grapheme.len();
@@ -726,11 +879,7 @@ pub(crate) fn layout_resolved_spans_with_indent(
             };
         }
         fragment.x = measured_x;
-        fragment.width = adjusted_width(
-            &fragment.text,
-            &spans[fragment.span_index].style,
-            &mut measure,
-        );
+        fragment.width = span_width(spans, fragment.span_index, &fragment.text, &mut measure);
         measured_x += fragment.width;
     }
 
@@ -758,6 +907,15 @@ pub(crate) fn ellipsize_first_line(
         .last()
         .map(|fragment| fragment.span_index)
         .unwrap_or(0);
+    // The ellipsis is appended to the text of the last fragment, and a box has no
+    // text to take it: a box that ends the line is dropped.
+    while layout
+        .fragments
+        .last()
+        .is_some_and(|fragment| spans[fragment.span_index].inline_box.is_some())
+    {
+        layout.fragments.pop();
+    }
     loop {
         let too_wide = layout.fragments.last().is_some_and(|fragment| {
             let mut text = fragment.text.clone();
@@ -1366,5 +1524,103 @@ mod tests {
                 .sum::<f32>()
                 <= 20.0
         );
+    }
+
+    fn boxed(text: &str, width: f32, height: f32) -> ResolvedTextSpan {
+        let mut span = ResolvedTextSpan::plain(Rc::from(text), TextStyle::default());
+        span.inline_box = Some(InlineBox::new(width, height));
+        span
+    }
+
+    fn word(text: &str) -> ResolvedTextSpan {
+        ResolvedTextSpan::plain(Rc::from(text), TextStyle::default())
+    }
+
+    #[test]
+    fn a_box_takes_its_own_width_and_draws_no_text() {
+        let spans = [word("ab"), boxed("XYZ", 5.0, 9.0), word("cd")];
+
+        let layout = layout_resolved_spans(&spans, 0.0, |text, _| text.graphemes(true).count() as f32);
+
+        let placed: Vec<_> = layout
+            .fragments
+            .iter()
+            .map(|fragment| (fragment.text.as_str(), fragment.x, fragment.width))
+            .collect();
+        assert_eq!(placed, [("ab", 0.0, 2.0), ("", 2.0, 5.0), ("cd", 7.0, 2.0)]);
+        assert_eq!(layout.fragments[1].source_range, Some(2..5), "the box keeps its source range");
+        assert_eq!(layout.fragments[2].source_range, Some(5..7));
+    }
+
+    #[test]
+    fn a_box_wraps_whole_to_the_next_line() {
+        let spans = [word("ab"), boxed("XYZ", 5.0, 9.0), word("cd")];
+
+        let layout = layout_resolved_spans(&spans, 6.0, |text, _| text.graphemes(true).count() as f32);
+
+        let lines: Vec<_> = layout.fragments.iter().map(|fragment| (fragment.line, fragment.x)).collect();
+        assert_eq!(lines, [(0, 0.0), (1, 0.0), (2, 0.0)], "2 + 5 > 6, then 5 + 2 > 6");
+        assert_eq!(layout.fragments[1].width, 5.0, "the box was not cut");
+    }
+
+    #[test]
+    fn a_box_wider_than_the_line_stays_whole_on_a_line_of_its_own() {
+        let spans = [word("ab"), boxed("XYZ", 5.0, 9.0), word("cd")];
+
+        let layout = layout_resolved_spans(&spans, 3.0, |text, _| text.graphemes(true).count() as f32);
+
+        assert_eq!(layout.fragments.len(), 3);
+        assert_eq!((layout.fragments[1].line, layout.fragments[1].x, layout.fragments[1].width), (1, 0.0, 5.0));
+        assert_eq!(layout.fragments[2].line, 2);
+    }
+
+    #[test]
+    fn a_box_sits_in_the_flow_between_words_on_one_line() {
+        let spans = [word("go "), boxed("[ ]", 3.0, 9.0), word(" on")];
+
+        let layout = layout_resolved_spans(&spans, 20.0, |text, _| text.graphemes(true).count() as f32);
+
+        assert_eq!(layout.line_count, 1);
+        let xs: Vec<_> = layout.fragments.iter().map(|fragment| fragment.x).collect();
+        assert_eq!(xs, [0.0, 3.0, 6.0]);
+    }
+
+    #[test]
+    fn a_hard_break_beside_a_box_still_breaks() {
+        let spans = [word("a\n"), boxed("XYZ", 5.0, 9.0), word("\nb")];
+
+        let layout = layout_resolved_spans(&spans, 0.0, |text, _| text.graphemes(true).count() as f32);
+
+        assert_eq!(layout.line_count, 3);
+        assert_eq!(layout.fragments[1].line, 1);
+        assert_eq!(layout.fragments.last().unwrap().line, 2);
+    }
+
+    #[test]
+    fn the_source_ranges_of_a_paragraph_with_boxes_stay_contiguous() {
+        let spans = [word("ab "), boxed("XYZ", 5.0, 9.0), word("cd"), boxed("Q", 2.0, 9.0)];
+
+        let layout = layout_resolved_spans(&spans, 7.0, |text, _| text.graphemes(true).count() as f32);
+
+        let mut end = 0;
+        for fragment in &layout.fragments {
+            let range = fragment.source_range.clone().expect("every fragment has a source");
+            assert_eq!(range.start, end, "no gap or overlap before {range:?}");
+            end = range.end;
+        }
+        assert_eq!(end, 3 + 3 + 2 + 1);
+    }
+
+    #[test]
+    fn a_box_at_the_end_of_an_ellipsized_line_is_dropped_and_never_gets_the_ellipsis() {
+        let spans = [word("abcd"), boxed("XYZ", 3.0, 9.0), word("efgh")];
+        let mut layout = layout_resolved_spans(&spans, 8.0, |text, _| text.graphemes(true).count() as f32);
+        assert_eq!(layout.line_count, 2, "the second word wraps away");
+
+        ellipsize_first_line(&mut layout, &spans, 8.0, |text, _| text.graphemes(true).count() as f32);
+
+        assert_eq!(layout.line_count, 1);
+        assert!(layout.fragments.iter().all(|fragment| fragment.span_index != 1), "the box is gone");
+        assert_eq!(layout.fragments.last().unwrap().text, "abcd…");
     }
 }

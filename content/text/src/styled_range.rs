@@ -119,7 +119,9 @@ pub(crate) fn resolve_ranges(
         if start > cursor {
             spans.push(plain_slice(source, cursor..start, base));
         }
-        spans.push(plain_slice(source, start..end, style.resolve(base)));
+        let mut span = plain_slice(source, start..end, style.resolve(base));
+        span.inline_box = style.inline_box;
+        spans.push(span);
         cursor = end;
     }
     if cursor < source.len() {

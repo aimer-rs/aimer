@@ -1843,6 +1843,7 @@ mod tests {
                         text: TextSource::from("link"),
                         style: TextStyle::default(),
                         link: Some(link_target.clone()),
+                        inline_box: None,
                     },
                     ResolvedTextSpan::plain(Rc::from("tail"), TextStyle::default()),
                 ],
@@ -1917,6 +1918,7 @@ mod tests {
             text: TextSource::from("linked"),
             style: TextStyle::new().background_color(aimer_widget::base::Color::RED),
             link: Some(TextSource::from("https://aimer.dev")),
+            inline_box: None,
         };
         let highlighted = RawRichText {
             paragraph: Paragraph::new(

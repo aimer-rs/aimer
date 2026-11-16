@@ -20,4 +20,4 @@ pub use aimer_text_selection::{
 pub use text_button::TextButton;
 pub use aimer_text_selection::TextSource;
 pub use styled_range::StyledRange;
-pub use text_span::{SpanStyle, TextSpan};
+pub use text_span::{InlineBox, SpanStyle, TextSpan};
