@@ -213,7 +213,10 @@ pub mod render_ctx {
             }
             // Someone asked for a picture of the window. Taken only now that an image is
             // in hand: a frame that could not be drawn leaves the request waiting.
-            let capture = capture_readback::take_request(can_capture);
+            let capture = capture_readback::take_request(
+                can_capture,
+                capture_readback::can_answer_capture(packet.metadata().damage()),
+            );
             let encode = PhaseTimer::start();
             if capture.is_none() && (width, height) == (frame.width, frame.height) {
                 renderer.render_packet(backend, drawable.view(), packet, is_srgb);

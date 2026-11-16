@@ -11,6 +11,7 @@ use aimer_cupid::backend::{
     BufferDescriptor, BufferUsage, Extent3d, GpuBackend, Origin3d, TexelCopyBufferInfo, TexelCopyBufferLayout,
     TexelCopyTextureInfo, TextureAspect,
 };
+use aimer_cupid::damage_region::DamageSet;
 use aimer_platform::capture;
 
 /// A copy of a frame on its way to the CPU.
@@ -20,14 +21,35 @@ pub(super) struct Readback<B: GpuBackend> {
     size: u64,
 }
 
+/// Whether a frame with `damage` can answer a request for a picture.
+///
+/// The picture is a copy of the frame redrawn whole, which draws what the frame
+/// carries. The app builds a frame with full damage, and the whole plan with it,
+/// whenever a request is waiting; a frame built before the request arrived carries
+/// only the slice that changed, and redrawing it whole leaves the rest of the
+/// window black, in the picture and on screen.
+#[inline]
+pub(super) fn can_answer_capture(damage: &DamageSet) -> bool {
+    damage.is_full()
+}
+
+/// Whether a frame should take the request waiting for a picture: there is one, and
+/// the frame is whole. A request that finds a partial frame stays waiting for the
+/// full frame its wake-up has asked for.
+#[inline]
+pub(super) fn should_take_request(pending: bool, complete: bool) -> bool {
+    pending && complete
+}
+
 /// Takes the request for a picture that is waiting, if any, to answer with the
 /// frame being drawn now. A renderer that cannot copy this frame out refuses it
 /// instead, so the asker is told at once and is not left waiting for a timeout.
 ///
 /// Called only once a frame can really be drawn: a request that finds no frame to
-/// copy stays waiting for one that can.
-pub(super) fn take_request(can_capture: bool) -> Option<capture::Pending> {
-    if !capture::is_pending() {
+/// copy stays waiting for one that can. `complete` is whether the frame carries
+/// the whole window; see [`can_answer_capture`].
+pub(super) fn take_request(can_capture: bool, complete: bool) -> Option<capture::Pending> {
+    if !should_take_request(capture::is_pending(), complete) {
         return None;
     }
     if can_capture {
@@ -101,5 +123,26 @@ mod tests {
         assert_eq!(padded_row_bytes(64), 256, "64 pixels are exactly 256 bytes");
         assert_eq!(padded_row_bytes(65), 512);
         assert_eq!(padded_row_bytes(1120), 4608);
+    }
+
+    /// A picture is a copy of the frame being drawn, redrawn whole. A frame built
+    /// before the request arrived carries only the slice that changed, so redrawing
+    /// it whole leaves the rest of the window black, in the picture and on screen.
+    #[test]
+    fn a_frame_built_for_only_part_of_the_window_does_not_answer_a_picture() {
+        let partial = DamageSet::new(800, 600);
+        let mut whole = DamageSet::new(800, 600);
+        whole.mark_full();
+
+        assert!(!can_answer_capture(&partial));
+        assert!(can_answer_capture(&whole));
+        assert!(can_answer_capture(&DamageSet::full(800, 600)));
+    }
+
+    #[test]
+    fn a_waiting_request_is_taken_only_by_a_frame_that_can_answer_it() {
+        assert!(!should_take_request(false, true), "nobody asked");
+        assert!(!should_take_request(true, false), "a partial frame leaves the request waiting");
+        assert!(should_take_request(true, true));
     }
 }

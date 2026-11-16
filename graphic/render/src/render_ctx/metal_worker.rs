@@ -313,9 +313,12 @@ impl WorkerPresenter for MetalPresenter {
             // Someone asked for a picture of the window. Taken only now that a
             // drawable of the right size is in hand: a frame that could not be drawn
             // leaves the request waiting for one that can.
-            let capture = aimer_platform::capture::is_pending()
-                .then(aimer_platform::capture::take_pending)
-                .flatten();
+            let capture = super::capture_readback::should_take_request(
+                aimer_platform::capture::is_pending(),
+                super::capture_readback::can_answer_capture(packet.metadata().damage()),
+            )
+            .then(aimer_platform::capture::take_pending)
+            .flatten();
             let encode = PhaseTimer::start();
             // Decided once so begin and end always pair, even if the overlay is
             // toggled mid-frame. Without a reader the capture costs nothing.

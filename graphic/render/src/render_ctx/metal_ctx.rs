@@ -371,9 +371,12 @@ pub mod render_ctx {
             // Someone asked for a picture of the window. Taken only now that a
             // drawable is in hand: a frame that could not be drawn leaves the request
             // waiting for one that can.
-            let capture = aimer_platform::capture::is_pending()
-                .then(aimer_platform::capture::take_pending)
-                .flatten();
+            let capture = crate::render_ctx::capture_readback::should_take_request(
+                aimer_platform::capture::is_pending(),
+                crate::render_ctx::capture_readback::can_answer_capture(packet.metadata().damage()),
+            )
+            .then(aimer_platform::capture::take_pending)
+            .flatten();
 
             let encode = PhaseTimer::start();
             // Decided once so begin and end always pair, even if the overlay is
