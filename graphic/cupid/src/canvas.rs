@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::render_list::{DrawList, TextureRegistry};
 use crate::font::{FontFamily, FontStyle, FontWeight, TextLanguage};
 use crate::frame::RetainedRenderPlan;
+use crate::large_shaping::{LARGE_TEXT_BYTES, LargeShapings, ShapeStyle};
 use crate::lru_map::LruMap;
 use crate::text_pipeline::glyph_rasterizer::{GlyphRasterizer, RunAdvances};
 use crate::text_pipeline::text_layout::{for_each_char, line_break_opportunities_into};
@@ -197,6 +198,8 @@ pub struct CupidCanvas {
     shaping_cache: Rc<RefCell<LruMap<TextShapeKey, Rc<crate::text_layout::ShapedText>>>>,
     unwrapped_layout_cache:
         Rc<RefCell<LruMap<TextShapeKey, Rc<crate::text_layout::TextInteractionLayout>>>>,
+    /// The shaping of the few long texts seen last, which an edit starts from.
+    large_shapings: Rc<RefCell<LargeShapings>>,
     /// The language subsequent text is written in — see
     /// [`CupidCanvas::set_text_language`].
     ///
@@ -232,6 +235,7 @@ impl CupidCanvas {
             unwrapped_layout_cache: Rc::new(RefCell::new(LruMap::new(
                 UNWRAPPED_LAYOUT_CACHE_CAPACITY,
             ))),
+            large_shapings: Rc::new(RefCell::new(LargeShapings::default())),
             text_language: Rc::new(Cell::new(None)),
             #[cfg(debug_assertions)]
             metrics_cache_hits: Rc::new(Cell::new(0)),
@@ -258,6 +262,7 @@ impl CupidCanvas {
             break_scratch: self.break_scratch.clone(),
             shaping_cache: self.shaping_cache.clone(),
             unwrapped_layout_cache: self.unwrapped_layout_cache.clone(),
+            large_shapings: self.large_shapings.clone(),
             text_language: Rc::new(Cell::new(self.text_language.get())),
             #[cfg(debug_assertions)]
             metrics_cache_hits: self.metrics_cache_hits.clone(),
@@ -324,6 +329,7 @@ impl CupidCanvas {
         self.recent_metrics.borrow_mut().iter_mut().for_each(|slot| *slot = None);
         self.shaping_cache.borrow_mut().clear();
         self.unwrapped_layout_cache.borrow_mut().clear();
+        self.large_shapings.borrow_mut().clear();
         Some(font_id)
     }
 
@@ -501,6 +507,11 @@ impl CupidCanvas {
         font_weight: u16,
         language: Option<TextLanguage>,
     ) -> Rc<crate::text_layout::ShapedText> {
+        if text.len() >= LARGE_TEXT_BYTES {
+            return self.shape_large_text_styled_cached(
+                text, font_size, font_family, font_style, font_weight, language,
+            );
+        }
         let lookup = TextShapeKeyRef {
             text,
             font_size_bits: font_size.to_bits(),
@@ -543,6 +554,66 @@ impl CupidCanvas {
         self.shaping_cache
             .borrow_mut()
             .insert(key, Rc::clone(&shaped));
+        shaped
+    }
+
+    /// [`Self::shape_text_styled_cached`] for a long text, which is kept apart from
+    /// the short ones and, when it differs little from one shaped before, shaped
+    /// from that one rather than in full.
+    #[allow(clippy::too_many_arguments)]
+    fn shape_large_text_styled_cached(
+        &self,
+        text: &str,
+        font_size: f32,
+        font_family: FontFamily,
+        font_style: FontStyle,
+        font_weight: u16,
+        language: Option<TextLanguage>,
+    ) -> Rc<crate::text_layout::ShapedText> {
+        let style = ShapeStyle {
+            font_size_bits: font_size.to_bits(),
+            font_family,
+            font_style,
+            font_weight,
+            language,
+            font_revision: crate::font::FontRegistry::revision(),
+        };
+        if let Some(cached) = self.large_shapings.borrow_mut().exact(text, &style) {
+            return cached;
+        }
+        let previous = self.large_shapings.borrow_mut().take_similar(text, &style);
+        let weight = FontWeight::Value(u32::from(font_weight));
+        let shaped = {
+            let mut rasterizer = self.rasterizer.borrow_mut();
+            let edited = previous.map(|previous| {
+                aimer_cupid_font::shape_text_styled_after_edit(
+                    &mut rasterizer,
+                    previous,
+                    text,
+                    font_size,
+                    font_family,
+                    weight,
+                    font_style,
+                    language,
+                )
+            });
+            match edited {
+                Some(Ok(shaped)) => shaped,
+                _ => crate::text_layout::shape_text_styled(
+                    &mut rasterizer,
+                    text,
+                    font_size,
+                    font_family,
+                    weight,
+                    font_style,
+                    language,
+                ),
+            }
+        };
+        let shaped = Rc::new(shaped);
+        self.large_shapings
+            .borrow_mut()
+            .insert(style, Rc::clone(&shaped));
         shaped
     }
 
@@ -895,6 +966,93 @@ impl CupidCanvas {
 impl Default for CupidCanvas {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod large_text_shaping_tests {
+    use super::*;
+
+    fn note(lines: usize) -> String {
+        (0..lines)
+            .map(|index| format!("Line {index} of a long note, with some words to shape.\n"))
+            .collect()
+    }
+
+    fn shape_calls(canvas: &CupidCanvas) -> usize {
+        canvas.rasterizer.borrow().shape_call_count()
+    }
+
+    fn layout(canvas: &CupidCanvas, text: &str) -> Rc<crate::text_layout::TextInteractionLayout> {
+        canvas.layout_text_styled_shared(
+            text,
+            16.0,
+            300.0,
+            FontFamily::SANS_SERIF,
+            FontStyle::Normal,
+            FontWeight::Normal.numeric(),
+        )
+    }
+
+    #[test]
+    fn an_edit_to_a_long_text_shapes_only_the_lines_it_touched() {
+        let canvas = CupidCanvas::new();
+        let text = note(200);
+        assert!(text.len() >= LARGE_TEXT_BYTES);
+        layout(&canvas, &text);
+        let first = shape_calls(&canvas);
+        assert!(first >= 200, "the first layout shapes every line: {first}");
+
+        let mut edited = text.clone();
+        edited.insert(text.len() / 2, 'x');
+        let spliced = layout(&canvas, &edited);
+        assert!(
+            shape_calls(&canvas) - first <= 2,
+            "the edit reshaped {} lines",
+            shape_calls(&canvas) - first
+        );
+
+        // And what it gives is what a canvas with nothing to start from gives.
+        let fresh = layout(&CupidCanvas::new(), &edited);
+        assert_eq!(*spliced, *fresh);
+
+        // Asked for the same text again, nothing is shaped at all.
+        let before = shape_calls(&canvas);
+        layout(&canvas, &edited);
+        assert_eq!(shape_calls(&canvas), before);
+    }
+
+    #[test]
+    fn a_text_that_is_not_close_to_one_seen_is_shaped_in_full() {
+        let canvas = CupidCanvas::new();
+        layout(&canvas, &note(200));
+        let before = shape_calls(&canvas);
+        let other = "something else entirely\n".repeat(150);
+        layout(&canvas, &other);
+        assert!(shape_calls(&canvas) - before >= 150);
+    }
+
+    #[test]
+    fn two_long_texts_edited_in_turn_each_start_from_their_own() {
+        let canvas = CupidCanvas::new();
+        let first = note(200);
+        let second = "another note, another line of it\n".repeat(150);
+        layout(&canvas, &first);
+        layout(&canvas, &second);
+        let before = shape_calls(&canvas);
+        for round in 0..3 {
+            let mut edited = first.clone();
+            edited.insert(100 + round, 'x');
+            layout(&canvas, &edited);
+            let mut edited = second.clone();
+            edited.insert(100 + round, 'y');
+            layout(&canvas, &edited);
+        }
+        assert!(
+            shape_calls(&canvas) - before <= 12,
+            "six edits reshaped {} lines",
+            shape_calls(&canvas) - before
+        );
     }
 }
 

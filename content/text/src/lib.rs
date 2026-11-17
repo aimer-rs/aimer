@@ -6,6 +6,7 @@ mod text_button;
 pub mod text_span;
 
 pub use aimer_rubick::ShareRef;
+pub use paragraph::with_chunking_min_bytes;
 pub use rich_text::{LinkCallback, RawRichText, RichText};
 pub(crate) use aimer_text_selection as selection;
 pub use aimer_text_selection::{

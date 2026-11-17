@@ -1188,6 +1188,9 @@ impl EventDispatcher {
             action: KeyAction::Pressed | KeyAction::Repeat,
             modifiers,
         } = event
+            // A focus owner that takes Tab for itself is sent it, below, and keeps focus.
+            // Shift+Tab is still the way out.
+            && (modifiers.shift || !self.focus.owner().is_some_and(|owner| owner.node.claims_tab()))
             && let Some(traversal_result) = self.traverse_focus(root, modifiers.shift)
         {
             return focus_result

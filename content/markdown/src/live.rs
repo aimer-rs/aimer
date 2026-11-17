@@ -29,6 +29,7 @@ use markdown::mdast::{Blockquote, Heading, Node, Table};
 use markdown::{Constructs, ParseOptions};
 
 use crate::MarkdownTheme;
+use crate::live_segments::{Piece, SegmentCache, segment_cuts};
 
 /// The parse of the last text a highlighter saw. The tree does not depend on
 /// where the cursor is, so moving it between lines costs a walk and not a parse.
@@ -78,6 +79,8 @@ pub struct LivePreview {
     styles: Rc<Styles>,
     theme: MarkdownTheme,
     parsed: Parsed,
+    /// What was read of each piece of the notes read lately; see [`crate::live_segments`].
+    segments: Rc<RefCell<SegmentCache>>,
     title: Option<SpanStyle>,
     image_height: f32,
 }
@@ -89,6 +92,7 @@ impl LivePreview {
             styles: Rc::new(Styles::new(theme)),
             theme: *theme,
             parsed: Parsed::default(),
+            segments: Rc::new(RefCell::new(SegmentCache::new())),
             title: None,
             image_height: DEFAULT_IMAGE_HEIGHT,
         }
@@ -124,6 +128,16 @@ impl LivePreview {
     /// The ranges never overlap. An unfocused field is a
     /// [`HighlightContext::default`], where nothing is active.
     pub fn ranges(&self, text: &str, context: &HighlightContext) -> Vec<StyledRange> {
+        if let Some(cuts) = segment_cuts(text)
+            && let Some(ranges) = self.ranges_in_pieces(text, context, &cuts)
+        {
+            return ranges;
+        }
+        self.ranges_whole(text, context)
+    }
+
+    /// [`ranges`](Self::ranges) from a parse of the whole text.
+    fn ranges_whole(&self, text: &str, context: &HighlightContext) -> Vec<StyledRange> {
         let Some(root) = parse_cached(&self.parsed, text) else {
             return Vec::new();
         };
@@ -132,6 +146,57 @@ impl LivePreview {
             Some(title) => with_title(ranges, text, title),
             None => ranges,
         }
+    }
+
+    /// The pieces `text` is cut into at `cuts`, each with what was read of it: the bytes it spans,
+    /// and the reading, which is kept for as long as the piece is the same.
+    fn pieces(&self, text: &str, cuts: &[usize]) -> Option<Vec<(Range<usize>, Rc<Piece>)>> {
+        let mut cache = self.segments.borrow_mut();
+        let mut start = 0;
+        cuts.iter()
+            .copied()
+            .chain(std::iter::once(text.len()))
+            .map(|end| {
+                let piece = cache.piece(&text[start..end], parse)?;
+                let span = start..end;
+                start = end;
+                Some((span, piece))
+            })
+            .collect()
+    }
+
+    /// [`ranges`](Self::ranges) from the pieces of the text, each read and painted apart.
+    ///
+    /// The ranges of a piece are what the whole text's would be for its bytes, because a piece
+    /// is cut where nothing after it changes what is before. What the cursor is on is the part of
+    /// the whole's that touches the piece.
+    fn ranges_in_pieces(&self, text: &str, context: &HighlightContext, cuts: &[usize]) -> Option<Vec<StyledRange>> {
+        let pieces = self.pieces(text, cuts)?;
+        let mut ranges = Vec::new();
+        for (index, (span, piece)) in pieces.iter().enumerate() {
+            let local = context.shifted_back(span.start);
+            let length = span.len();
+            // The active lines that reach the piece, which is all the painting of it can tell of the cursor.
+            let active = local
+                .active_lines()
+                .filter(|lines| lines.start <= length)
+                .map(|lines| (lines.start, lines.end.min(length)));
+            let painted = piece.ranges(active, |root| paint(&text[span.clone()], &local, &self.styles, root));
+            let shifted = painted.iter().map(|range| {
+                StyledRange::new(range.range.start + span.start..range.range.end + span.start, range.style)
+            });
+            match (index, self.title) {
+                // The title is the first line, which the first piece holds.
+                (0, Some(title)) => {
+                    let first = with_title(painted.to_vec(), &text[span.clone()], title);
+                    ranges.extend(first.into_iter().map(|range| {
+                        StyledRange::new(range.range.start..range.range.end, range.style)
+                    }));
+                }
+                _ => ranges.extend(shifted),
+            }
+        }
+        Some(ranges)
     }
 
     /// A [`TextHighlighter`] for a text field, sharing this preview's parse.
@@ -153,14 +218,43 @@ impl LivePreview {
     /// blocks are two widgets: editing a block builds a new widget for it, and
     /// leaves the others as they are.
     pub fn embeds(&self, text: &str, context: &HighlightContext) -> Vec<TextEmbed> {
+        let mut seen: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+        let mut embeds = Vec::new();
+        if let Some(cuts) = segment_cuts(text)
+            && let Some(pieces) = self.pieces(text, &cuts)
+        {
+            for (span, piece) in &pieces {
+                self.embeds_of(&text[span.clone()], span.start, &piece.root, context, &mut seen, &mut embeds);
+            }
+            return embeds;
+        }
+        self.embeds_whole(text, context)
+    }
+
+    /// [`embeds`](Self::embeds) from a parse of the whole text.
+    fn embeds_whole(&self, text: &str, context: &HighlightContext) -> Vec<TextEmbed> {
         let Some(root) = parse_cached(&self.parsed, text) else {
             return Vec::new();
         };
-        let Node::Root(root) = &*root else {
-            return Vec::new();
-        };
-        let mut seen: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
         let mut embeds = Vec::new();
+        self.embeds_of(text, 0, &root, context, &mut std::collections::HashMap::new(), &mut embeds);
+        embeds
+    }
+
+    /// The embeds of one parse: `text` is what `root` was parsed from, `base` is where it starts
+    /// in the note, and the embeds' ranges are the note's.
+    fn embeds_of(
+        &self,
+        text: &str,
+        base: usize,
+        root: &Node,
+        context: &HighlightContext,
+        seen: &mut std::collections::HashMap<u64, u64>,
+        embeds: &mut Vec<TextEmbed>,
+    ) {
+        let Node::Root(root) = root else {
+            return;
+        };
         for node in &root.children {
             let Some(range) = range_of(node) else {
                 continue;
@@ -179,11 +273,11 @@ impl LivePreview {
                 continue;
             }
             let start = text[..range.start].rfind('\n').map_or(0, |newline| newline + 1);
-            let range = start..range.end;
+            let range = base + start..base + range.end;
             if context.is_active(&range) {
                 continue;
             }
-            let source: Rc<str> = Rc::from(&text[range.clone()]);
+            let source: Rc<str> = Rc::from(&text[start..range.end - base]);
             let source_key = hash_of(&*source, 0);
             let occurrence = seen.entry(source_key).and_modify(|count| *count += 1).or_insert(0);
             let key = hash_of(&*source, *occurrence);
@@ -199,7 +293,6 @@ impl LivePreview {
             });
             embeds.push(if picture { embed.fixed_height(self.image_height) } else { embed });
         }
-        embeds
     }
 
     /// A [`TextEmbedder`] for a text field, showing the blocks [`embeds`](Self::embeds)
@@ -1310,5 +1403,211 @@ mod tests {
 
         // Unfocused: the heading is rendered.
         assert!(highlighter.highlight(text).iter().any(|range| range.style.font_size == Some(1)));
+    }
+
+    // ── Reading a note in pieces ─────────────────────────────────────────────────
+
+    /// A small deterministic generator, so the tests are the same on every run.
+    struct Random(u64);
+    impl Random {
+        fn next(&mut self, below: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % below as u64) as usize
+        }
+    }
+
+    /// One block of markdown, and the blank lines that follow it. The blocks are the ones that
+    /// make cutting hard: lists with blank lines in them, fences that hold blank lines, HTML
+    /// that a closing tag ends, indented lines after a blank line, and the rest.
+    fn block(random: &mut Random, index: usize) -> String {
+        let words = |count: usize| (0..count).map(|n| format!("w{}x{n}", random_word(index, n))).collect::<Vec<_>>().join(" ");
+        let long = |random: &mut Random, count: usize| words(count + random.next(20));
+        let body = match random.next(16) {
+            0 => format!("# Heading {index}\n"),
+            1 => format!("## Section {index} {}\n", long(random, 4)),
+            2 => format!("{} **bold {index}** and `code` and [a link](https://example.com/{index}) and _em_.\n", long(random, 60)),
+            3 => format!("- one {}\n- two {}\n  - nested {}\n", long(random, 8), long(random, 8), long(random, 8)),
+            4 => format!("- loose {}\n\n- items {}\n\n  continued {}\n\n- end {}\n", long(random, 20), long(random, 20), long(random, 20), long(random, 20)),
+            5 => format!("1. first {}\n\n2. second {}\n\n3. third {}\n", long(random, 20), long(random, 20), long(random, 20)),
+            6 => format!("```rust\nfn demo_{index}() {{\n    let a = {index};\n\n    a + 1 // {}\n}}\n```\n", long(random, 6)),
+            7 => format!("~~~\nplain {}\n\n\nafter two blanks\n~~~\n", long(random, 10)),
+            8 => format!("| a | b |\n|---|---|\n| {index} | {} |\n| x | y |\n", long(random, 3)),
+            9 => format!("> quoted {}\n> more {}\n", long(random, 20), long(random, 20)),
+            10 => format!("<!--\nA comment {}\n\nwith a blank line in it\n-->\n", long(random, 5)),
+            11 => format!("<pre>\nraw {}\n\nraw again\n</pre>\n", long(random, 5)),
+            12 => format!("    indented code {}\n\n    more of it {}\n", long(random, 10), long(random, 10)),
+            13 => format!("Setext {index}\n===\n"),
+            14 => "---\n".to_owned(),
+            _ => format!("{}\n", long(random, 40)),
+        };
+        let blanks = "\n".repeat(1 + random.next(3));
+        format!("{body}{blanks}")
+    }
+
+    fn random_word(index: usize, n: usize) -> usize {
+        (index * 31 + n * 17) % 97
+    }
+
+    fn document(random: &mut Random, blocks: usize) -> String {
+        let mut text = String::new();
+        for index in 0..blocks {
+            text.push_str(&block(random, index));
+        }
+        text
+    }
+
+    fn contexts(text: &str, random: &mut Random) -> Vec<HighlightContext> {
+        let mut contexts = vec![HighlightContext::default()];
+        for _ in 0..6 {
+            let mut at = random.next(text.len() + 1);
+            while !text.is_char_boundary(at) {
+                at += 1;
+            }
+            let end = (at + random.next(2000)).min(text.len());
+            let mut end = end;
+            while !text.is_char_boundary(end) {
+                end += 1;
+            }
+            contexts.push(HighlightContext::new(text, at..at));
+            contexts.push(HighlightContext::new(text, at..end));
+        }
+        contexts
+    }
+
+    #[test]
+    fn reading_a_note_in_pieces_gives_what_reading_it_whole_gives() {
+        let preview = LivePreview::new(&theme()).title(SpanStyle::new().font_size(24).font_weight(FontWeight::Bold));
+        let mut random = Random(0x9E37_79B9_7F4A_7C15);
+        let mut cut_notes = 0;
+        for round in 0..120 {
+            let blocks = 12 + random.next(40);
+            let text = document(&mut random, blocks);
+            if segment_cuts(&text).is_some() {
+                cut_notes += 1;
+            }
+            for context in contexts(&text, &mut random) {
+                let pieces = preview.ranges(&text, &context);
+                let whole = preview.ranges_whole(&text, &context);
+                assert_eq!(
+                    format!("{pieces:?}"),
+                    format!("{whole:?}"),
+                    "round {round}: ranges, with the cursor on {:?}\n{text}",
+                    context.active_lines()
+                );
+                let embeds = |embeds: Vec<TextEmbed>| embeds.iter().map(|embed| (embed.range(), embed.key())).collect::<Vec<_>>();
+                assert_eq!(
+                    embeds(preview.embeds(&text, &context)),
+                    embeds(preview.embeds_whole(&text, &context)),
+                    "round {round}: embeds, with the cursor on {:?}",
+                    context.active_lines()
+                );
+            }
+        }
+        assert!(cut_notes > 80, "the notes were cut in {cut_notes} of 120 rounds");
+    }
+
+    #[test]
+    fn a_note_with_a_definition_is_read_whole_and_reads_as_before() {
+        let preview = LivePreview::new(&theme());
+        let mut random = Random(0x1234_5678_9ABC_DEF1);
+        let mut text = document(&mut random, 30);
+        text.push_str("\nSee [the site][site].\n\n[site]: https://example.com\n");
+        assert!(segment_cuts(&text).is_none());
+        let context = HighlightContext::default();
+        assert_eq!(format!("{:?}", preview.ranges(&text, &context)), format!("{:?}", preview.ranges_whole(&text, &context)));
+    }
+
+    #[test]
+    fn an_edit_reads_again_only_the_piece_it_was_typed_in() {
+        let preview = LivePreview::new(&theme());
+        let mut random = Random(0xDEAD_BEEF_CAFE_F00D);
+        let text = document(&mut random, 60);
+        let cuts = segment_cuts(&text).expect("a long note is cut");
+        let pieces = cuts.len() + 1;
+        assert!(pieces >= 8, "{pieces} pieces");
+
+        let context = HighlightContext::default();
+        let before = crate::live_segments::pieces_parsed();
+        let _ = preview.ranges(&text, &context);
+        let first = crate::live_segments::pieces_parsed() - before;
+        assert!(first >= pieces - 1 && first <= pieces, "the first reading parses every piece: {first} of {pieces}");
+
+        // A character typed in the middle of the note, in a piece that is a paragraph.
+        let middle = cuts[cuts.len() / 2] + 3;
+        let mut edited = text.clone();
+        edited.insert(middle, 'x');
+        let before = crate::live_segments::pieces_parsed();
+        let ranges = preview.ranges(&edited, &context);
+        assert!(crate::live_segments::pieces_parsed() - before <= 2, "the edit read {} pieces", crate::live_segments::pieces_parsed() - before);
+        assert_eq!(format!("{ranges:?}"), format!("{:?}", preview.ranges_whole(&edited, &context)));
+
+        // A line added above: every piece after it moved, and none of them is read again.
+        let mut shifted = edited.clone();
+        shifted.insert_str(0, "A new first line\n\n");
+        let before = crate::live_segments::pieces_parsed();
+        let ranges = preview.ranges(&shifted, &context);
+        assert!(crate::live_segments::pieces_parsed() - before <= 3, "a line above read {} pieces", crate::live_segments::pieces_parsed() - before);
+        assert_eq!(format!("{ranges:?}"), format!("{:?}", preview.ranges_whole(&shifted, &context)));
+
+        // Moving the cursor between pieces paints the two that changed, and parses nothing.
+        let before = crate::live_segments::pieces_parsed();
+        for at in [cuts[1] + 2, cuts[4] + 2, cuts[1] + 2] {
+            let _ = preview.ranges(&shifted, &HighlightContext::new(&shifted, at..at));
+        }
+        assert_eq!(crate::live_segments::pieces_parsed(), before, "a cursor move does not parse");
+    }
+
+    /// What a keystroke costs the preview of a long note: the ranges and the embeds after a
+    /// character typed in the middle, read in pieces and read whole.
+    ///
+    /// ```text
+    /// cargo nextest run -p aimer_markdown --run-ignored only -E 'test(bench_a_keystroke)' --no-capture
+    /// ```
+    #[test]
+    #[ignore = "a timing, not a check"]
+    fn bench_a_keystroke() {
+        use std::time::Instant;
+
+        let mut random = Random(0xABCD_EF01_2345_6789);
+        for kilobytes in [30, 100, 300] {
+            let mut text = String::new();
+            let mut index = 0;
+            while text.len() < kilobytes * 1000 {
+                text.push_str(&block(&mut random, index));
+                index += 1;
+            }
+            let context = HighlightContext::default();
+            let cursor = HighlightContext::new(&text, text.len() / 2..text.len() / 2);
+            for pieces in [false, true] {
+                let preview = LivePreview::new(&theme());
+                let run = |preview: &LivePreview, text: &str, context: &HighlightContext| {
+                    if pieces {
+                        let _ = preview.ranges(text, context);
+                        let _ = preview.embeds(text, context);
+                    } else {
+                        let _ = preview.ranges_whole(text, context);
+                        let _ = preview.embeds_whole(text, context);
+                    }
+                };
+                let started = Instant::now();
+                run(&preview, &text, &context);
+                let first = started.elapsed();
+                let mut edited = text.clone();
+                let mut total = std::time::Duration::ZERO;
+                for step in 0..10 {
+                    edited.insert(text.len() / 2 + step, 'x');
+                    let started = Instant::now();
+                    run(&preview, &edited, &cursor);
+                    total += started.elapsed();
+                }
+                println!(
+                    "{kilobytes:>4} KB {:<6} first {first:>10.2?}   each keystroke {:>10.2?}",
+                    if pieces { "pieces" } else { "whole" },
+                    total / 10,
+                );
+            }
+        }
     }
 }

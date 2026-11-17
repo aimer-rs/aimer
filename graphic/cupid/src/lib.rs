@@ -47,6 +47,7 @@ pub use aimer_primitives as utilities;
 pub use aimer_scene::v2_frame_adapter;
 
 pub mod canvas;
+mod large_shaping;
 mod lru_map;
 mod pipeline;
 #[cfg(feature = "wgpu")]

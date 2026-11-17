@@ -34,6 +34,8 @@ pub mod glyph_rasterizer;
 #[doc(hidden)]
 pub mod system_fallback;
 pub mod text_layout;
+mod incremental_shaping;
+pub use incremental_shaping::{shape_text_styled_after_edit, shared_edge_bytes};
 #[doc(hidden)]
 pub mod unicode_script;
 

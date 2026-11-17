@@ -31,6 +31,9 @@ impl EventElement for FocusTestElement {
         match event {
             ElementEvent::FocusGained => self.lifecycle.borrow_mut().push("focus"),
             ElementEvent::FocusLost => self.lifecycle.borrow_mut().push("blur"),
+            ElementEvent::KeyInput { key: NamedKey::Tab, .. } if self.node.claims_tab() => {
+                self.lifecycle.borrow_mut().push("tab")
+            }
             _ => {}
         }
         EventResult::ignored()
@@ -298,6 +301,54 @@ fn tab_and_shift_tab_traverse_focusable_elements_in_structural_order() {
     assert!(backward.is_consumed());
     assert!(first_node.has_focus());
     assert!(!second_node.has_focus());
+}
+
+#[test]
+fn a_focus_owner_that_claims_tab_receives_it_and_keeps_focus() {
+    let first_node = FocusNode::new();
+    let second_node = FocusNode::new();
+    let first_lifecycle = Rc::new(RefCell::new(Vec::new()));
+    let root = IdentityBranch(vec![
+        FocusTestElement {
+            node: first_node.clone(),
+            lifecycle: Rc::clone(&first_lifecycle),
+            autofocus: false,
+        }
+        .boxed(),
+        focusable(&second_node),
+    ])
+    .boxed();
+    let mut dispatcher = EventDispatcher::new();
+    first_node.request_focus();
+    let _ = dispatcher.dispatch(root.as_ref(), Vec2d::default(), &ElementEvent::Cancel);
+    assert!(first_node.has_focus());
+
+    // A text area that indents with Tab claims it: the key goes to the field, and focus stays.
+    first_node.set_claims_tab(true);
+    let result = tab(&mut dispatcher, root.as_ref());
+    assert!(first_node.has_focus() && !second_node.has_focus(), "focus did not move");
+    assert!(first_lifecycle.borrow().contains(&"tab"), "the field was sent the key");
+    let _ = result;
+
+    // Shift+Tab is still the way out of it.
+    let _ = dispatcher.dispatch(
+        root.as_ref(),
+        Vec2d::default(),
+        &ElementEvent::KeyInput {
+            key: NamedKey::Tab,
+            action: KeyAction::Pressed,
+            modifiers: Modifiers { shift: true, ..Modifiers::default() },
+        },
+    );
+    assert!(second_node.has_focus(), "Shift+Tab moves focus on");
+
+    // And a node that stops claiming it is traversed again.
+    let _ = dispatcher.dispatch(root.as_ref(), Vec2d::default(), &ElementEvent::Cancel);
+    first_node.request_focus();
+    let _ = dispatcher.dispatch(root.as_ref(), Vec2d::default(), &ElementEvent::Cancel);
+    first_node.set_claims_tab(false);
+    let _ = tab(&mut dispatcher, root.as_ref());
+    assert!(second_node.has_focus() && !first_node.has_focus(), "Tab traverses when not claimed");
 }
 
 struct FocusScopeElement {

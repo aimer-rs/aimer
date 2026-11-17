@@ -35,6 +35,9 @@ struct FocusNodeState {
     /// Whether this node has already told the framework that its element wants
     /// focus on arrival; see [`FocusNode::announce_autofocus`].
     announced: Cell<bool>,
+    /// Whether the element holding this node wants the Tab key for itself; see
+    /// [`FocusNode::set_claims_tab`].
+    claims_tab: Cell<bool>,
 }
 
 impl Drop for FocusNodeState {
@@ -95,6 +98,7 @@ impl FocusNode {
                 focused: Cell::new(false),
                 request: Cell::new(None),
                 announced: Cell::new(false),
+                claims_tab: Cell::new(false),
             }),
         }
     }
@@ -125,6 +129,24 @@ impl FocusNode {
         if !self.state.announced.replace(true) {
             request_focus_resolution();
         }
+    }
+
+    /// Sets whether the element holding this node takes the Tab key for itself while it has
+    /// focus, as a text area that indents with it does.
+    ///
+    /// Tab moves focus to the next target, and Shift+Tab to the one before, unless the
+    /// focus owner claims it: then the key is sent to that element and focus stays.
+    /// Shift+Tab is not claimed, so a field that takes Tab can still be left from the
+    /// keyboard.
+    #[inline]
+    pub fn set_claims_tab(&self, claims: bool) {
+        self.state.claims_tab.set(claims);
+    }
+
+    /// Returns whether the element holding this node takes the Tab key for itself.
+    #[inline]
+    pub fn claims_tab(&self) -> bool {
+        self.state.claims_tab.get()
     }
 
     /// Requests that this node relinquish keyboard focus.

@@ -30,6 +30,18 @@ use crate::system_fallback::{
 use crate::system_fallback::{system_monospace_font, system_primary_font};
 use crate::unicode_script::Script;
 
+/// What a table of horizontal-metric deltas is for: a face at one weight and
+/// variation instance.
+type HorizontalDeltaKey = (FontId, u16, u32);
+
+/// How many styles' delta tables a rasterizer keeps; past it all are dropped,
+/// which only costs the next runs reading their glyphs' deltas again.
+const MAX_HORIZONTAL_DELTA_TABLES: usize = 16;
+
+/// Marks a glyph whose delta has not been read. A delta is a font-unit offset,
+/// never this far from zero.
+const DELTA_UNREAD: i32 = i32::MIN;
+
 // Counts the glyph lookups made for characters, so tests can show that
 // measuring a run resolves each distinct character once. Compiled out of every
 // non-test build.
@@ -41,6 +53,18 @@ aimer_tls::thread_local! {
 #[cfg(test)]
 pub(crate) fn key_lookups() -> usize {
     KEY_LOOKUPS.with(std::cell::Cell::get)
+}
+
+// Counts the horizontal-metric deltas read from the font's variation tables, so
+// tests can show that shaping reads each glyph's delta once per style.
+#[cfg(test)]
+aimer_tls::thread_local! {
+    static HVAR_DELTA_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn hvar_delta_reads() -> usize {
+    HVAR_DELTA_READS.with(std::cell::Cell::get)
 }
 
 /// The bundled primary face is compiled for the opt-in deterministic profile,
@@ -517,6 +541,14 @@ pub struct GlyphRasterizer {
     /// Owned and kept in step with the faces by [`run_advances`]; every site
     /// that drops or changes what a face answers must clear it.
     ascii_advances: Vec<(run_advances::AsciiAdvanceKey, [f32; 128])>,
+    /// Horizontal-metric deltas of glyphs, remembered per face, weight and
+    /// variation instance, indexed by glyph id.
+    ///
+    /// Reading one walks the font's variation store, which is most of what
+    /// shaping a long run costs; the deltas of one style never change, so a run
+    /// reads each distinct glyph once. Every site that drops or changes what a
+    /// face answers must clear it, as it does [`Self::ascii_advances`].
+    horizontal_deltas: HashMap<HorizontalDeltaKey, Vec<i32>>,
     /// Lazy cmap and script-coverage answers, partitioned by face.
     coverage_index_cache: HashMap<FontId, CoverageIndex>,
     /// Whether the fixed primary face covers the printable ASCII range.
@@ -665,6 +697,7 @@ impl GlyphRasterizer {
             retained_bitmap_bytes: 0,
             advance_cache: HashMap::default(),
             ascii_advances: Vec::new(),
+            horizontal_deltas: HashMap::default(),
             coverage_index_cache: HashMap::default(),
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
@@ -709,6 +742,7 @@ impl GlyphRasterizer {
             retained_bitmap_bytes: 0,
             advance_cache: HashMap::default(),
             ascii_advances: Vec::new(),
+            horizontal_deltas: HashMap::default(),
             coverage_index_cache: HashMap::default(),
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
@@ -947,6 +981,7 @@ impl GlyphRasterizer {
             retained_bitmap_bytes: 0,
             advance_cache: HashMap::default(),
             ascii_advances: Vec::new(),
+            horizontal_deltas: HashMap::default(),
             coverage_index_cache: HashMap::default(),
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
@@ -1191,6 +1226,7 @@ impl GlyphRasterizer {
         // A new face of an already known family can change which face answers
         // for it without any old id changing, so no remembered advance survives.
         self.ascii_advances.clear();
+        self.horizontal_deltas.clear();
         let (family_faces, revision) = registered_family_faces();
         let changed_ids = self
             .family_faces
@@ -1218,6 +1254,7 @@ impl GlyphRasterizer {
     /// answer after a registration was replaced or removed.
     fn invalidate_face_caches(&mut self, invalidated_ids: &HashSet<FontId>) {
         self.ascii_advances.clear();
+        self.horizontal_deltas.clear();
         if invalidated_ids.is_empty() {
             return;
         }
@@ -1414,6 +1451,7 @@ impl GlyphRasterizer {
         self.retained_bitmap_bytes = 0;
         self.advance_cache.clear();
         self.ascii_advances.clear();
+        self.horizontal_deltas.clear();
         self.coverage_index_cache.clear();
         self.resolved_codepoint_cache.clear();
         self.platform_only_cache.clear();
@@ -3113,15 +3151,37 @@ impl GlyphRasterizer {
                 {
                     self.shape_call_count += 1;
                 }
+                // One table for the whole run: the weight and instance are fixed, so
+                // the map is asked once and each glyph is an index.
+                let delta_key = (font_id, glyph_weight, variation_id);
+                let mut deltas = if has_horizontal_metric_variations {
+                    if self.horizontal_deltas.len() >= MAX_HORIZONTAL_DELTA_TABLES
+                        && !self.horizontal_deltas.contains_key(&delta_key)
+                    {
+                        self.horizontal_deltas.clear();
+                    }
+                    self.horizontal_deltas.remove(&delta_key).unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
                 output.extend(shaped_glyphs.iter().map(|glyph| {
                     let horizontal_delta = if has_horizontal_metric_variations {
-                        state
-                            .horizontal_advance_delta_at_variation(
-                                glyph.glyph_id,
-                                glyph_weight,
-                                variation_id,
-                            )
-                            .unwrap_or(0)
+                        let index = usize::from(glyph.glyph_id);
+                        if deltas.len() <= index {
+                            deltas.resize(index + 1, DELTA_UNREAD);
+                        }
+                        if deltas[index] == DELTA_UNREAD {
+                            #[cfg(test)]
+                            HVAR_DELTA_READS.with(|count| count.set(count.get() + 1));
+                            deltas[index] = state
+                                .horizontal_advance_delta_at_variation(
+                                    glyph.glyph_id,
+                                    glyph_weight,
+                                    variation_id,
+                                )
+                                .unwrap_or(0);
+                        }
+                        deltas[index]
                     } else {
                         0
                     };
@@ -3136,6 +3196,9 @@ impl GlyphRasterizer {
                         cluster: glyph.cluster,
                     }
                 }));
+                if has_horizontal_metric_variations {
+                    self.horizontal_deltas.insert(delta_key, deltas);
+                }
                 crate::aimer_font::recycle_shaped_glyphs(shaped_glyphs);
                 return;
             }
@@ -4362,6 +4425,42 @@ mod tests {
             "this test needs a regular primary face, got a face designed at {design}"
         );
         assert!(rasterizer.glyph_needs_synthetic_bold(key, FontWeight::Bold.numeric()));
+    }
+
+    #[test]
+    fn shaping_reads_each_glyphs_weight_delta_once_per_style() {
+        let mut rasterizer = GlyphRasterizer::primary_only();
+        let id = rasterizer.primary_font_id();
+        let text = "the quick brown fox jumps over the lazy dog, the quick brown fox";
+
+        let before = hvar_delta_reads();
+        let bold = rasterizer.shape_run_with_font_id_reusing(text, 16.0, id, FontWeight::Bold);
+        let distinct = bold
+            .iter()
+            .map(|glyph| glyph.glyph_key.glyph_id)
+            .collect::<HashSet<_>>()
+            .len();
+        assert!(distinct > 10 && distinct < bold.len());
+        assert_eq!(
+            hvar_delta_reads() - before,
+            distinct,
+            "a glyph's delta is read once, however often it repeats"
+        );
+
+        let before = hvar_delta_reads();
+        let again = rasterizer.shape_run_with_font_id_reusing(text, 16.0, id, FontWeight::Bold);
+        assert_eq!(hvar_delta_reads() - before, 0, "a later run of the style reads none");
+        let advances = |run: &[ShapedRunGlyph]| run.iter().map(|glyph| glyph.advance).collect::<Vec<_>>();
+        assert_eq!(advances(&bold), advances(&again));
+
+        // Another weight has other deltas: it must not be answered from the bold ones.
+        let regular = rasterizer.shape_run_with_font_id_reusing(text, 16.0, id, FontWeight::Normal);
+        assert_ne!(advances(&bold), advances(&regular));
+        let regular_again =
+            rasterizer.shape_run_with_font_id_reusing(text, 16.0, id, FontWeight::Normal);
+        assert_eq!(advances(&regular), advances(&regular_again));
+        let bold_after = rasterizer.shape_run_with_font_id_reusing(text, 16.0, id, FontWeight::Bold);
+        assert_eq!(advances(&bold), advances(&bold_after));
     }
 
     #[test]

@@ -13,6 +13,13 @@ use crate::unicode_script::Script;
 
 pub type FontId = u32;
 
+/// Whether a cluster ends a line: a line feed, or a carriage return and a line feed, which
+/// is one grapheme and ends it the same.
+#[inline]
+fn is_hard_break(cluster: &str) -> bool {
+    cluster == "\n" || cluster == "\r\n"
+}
+
 #[derive(Default)]
 struct UnicodeLayoutScratch {
     cluster_plans: Vec<UnicodeClusterPlan>,
@@ -712,6 +719,29 @@ pub struct TextInteractionLayout {
 }
 
 impl TextInteractionLayout {
+    /// The caret at `offset`, which is the start of `cluster` when `at_start` and
+    /// its end otherwise.
+    ///
+    /// For a caller that has found the cluster by some quicker way than
+    /// [`caret_geometry`](Self::caret_geometry)'s search over all of them, which on
+    /// a long text is the cost of every caret lookup.
+    pub fn caret_geometry_at_cluster(
+        &self,
+        cluster: &TextCluster,
+        offset: usize,
+        at_start: bool,
+    ) -> CaretGeometry {
+        let (x, y, width, height) = self.caret_coordinates(cluster, at_start);
+        CaretGeometry {
+            offset,
+            line_index: cluster.line_index,
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
     /// Returns the caret geometry for a valid UTF-8 source boundary.
     ///
     /// Offsets inside a grapheme or ligature are rejected. This keeps cursor
@@ -727,30 +757,14 @@ impl TextInteractionLayout {
             .iter()
             .find(|cluster| cluster.text_range.start == offset)
         {
-            let (x, y, width, height) = self.caret_coordinates(cluster, true);
-            return Some(CaretGeometry {
-                offset,
-                line_index: cluster.line_index,
-                x,
-                y,
-                width,
-                height,
-            });
+            return Some(self.caret_geometry_at_cluster(cluster, offset, true));
         }
         if let Some(cluster) = self
             .clusters
             .iter()
             .find(|cluster| cluster.text_range.end == offset)
         {
-            let (x, y, width, height) = self.caret_coordinates(cluster, false);
-            return Some(CaretGeometry {
-                offset,
-                line_index: cluster.line_index,
-                x,
-                y,
-                width,
-                height,
-            });
+            return Some(self.caret_geometry_at_cluster(cluster, offset, false));
         }
 
         if self.text.is_empty() && self.lines.len() == 1 {
@@ -908,7 +922,7 @@ impl TextInteractionLayout {
     fn is_hard_break(&self, cluster: &TextCluster) -> bool {
         self.text
             .get(cluster.text_range.clone())
-            .is_some_and(|text| text == "\n" || text == "\r\n")
+            .is_some_and(|text| is_hard_break(text))
     }
 
     fn caret_coordinates(&self, cluster: &TextCluster, start: bool) -> (f32, f32, f32, f32) {
@@ -1328,7 +1342,7 @@ fn collect_shaping_runs<'a>(
             let (relative_start, cluster) = graphemes[grapheme_index];
             let start = range.start + relative_start;
 
-            if cluster == "\n" {
+            if is_hard_break(cluster) {
                 logical_runs.push(ShapingRun {
                     text: cluster,
                     start,
@@ -1345,7 +1359,7 @@ fn collect_shaping_runs<'a>(
             grapheme_index += 1;
             while grapheme_index < graphemes.len() {
                 let next_cluster = graphemes[grapheme_index].1;
-                if next_cluster == "\n" {
+                if is_hard_break(next_cluster) {
                     break;
                 }
                 if leading_neutral_run && cluster_script(next_cluster).is_some() {
@@ -1385,7 +1399,7 @@ fn collect_shaping_runs<'a>(
             // them in place while reversing the runs on either side.
             let mut segment_start = 0;
             for index in 0..logical_runs.len() {
-                if logical_runs[index].text != "\n" {
+                if !is_hard_break(logical_runs[index].text) {
                     continue;
                 }
                 result.extend(logical_runs[segment_start..index].iter().rev().cloned());
@@ -1494,7 +1508,7 @@ where
         let is_rtl = level.is_rtl();
 
         // Handle newline runs.
-        if run_text == "\n" {
+        if is_hard_break(run_text) {
             finish_line(
                 &mut lines,
                 line_start_text..run_start,
@@ -1811,7 +1825,7 @@ where
         let level = shaping_run.level;
         let script = shaping_run.script;
 
-        if run_text == "\n" {
+        if is_hard_break(run_text) {
             finish_line(
                 &mut lines,
                 line_start_text..run_start,
@@ -2396,7 +2410,7 @@ fn append_simple_ltr_line<I>(
     rasterizer.recycle_shaped_run(shaped_glyphs);
 }
 
-fn shape_simple_ltr_text(
+pub(crate) fn shape_simple_ltr_text(
     rasterizer: &mut GlyphRasterizer,
     text: &str,
     font_size: f32,
@@ -2449,7 +2463,7 @@ fn shape_simple_ltr_text(
     let mut max_line_width = 0.0_f32;
     let mut line_width = 0.0_f32;
     for cluster in &clusters {
-        if cluster.text == "\n" {
+        if is_hard_break(&cluster.text) {
             line_width = 0.0;
         } else {
             line_width += cluster.width;
@@ -2468,6 +2482,26 @@ fn shape_simple_ltr_text(
         writing_mode: TextWritingMode::HorizontalTb,
         clusters,
     }
+}
+
+/// Whether `text` is printable ASCII and line feeds only, which is what the simple
+/// left-to-right path shapes: one cluster per byte, and every hard line on its own.
+pub(crate) fn is_simple_ltr_text(text: &str) -> bool {
+    text.bytes()
+        .all(|byte| byte == b'\n' || (b' '..=b'~').contains(&byte))
+}
+
+/// The face the simple left-to-right path shapes `text` with, when it applies:
+/// horizontal text in the generic family, of characters the primary face covers.
+pub(crate) fn simple_ltr_font(
+    rasterizer: &mut GlyphRasterizer,
+    text: &str,
+    font_family: FontFamily,
+) -> Option<FontId> {
+    (font_family == FontFamily::SANS_SERIF
+        && is_simple_ltr_text(text)
+        && rasterizer.primary_covers_printable_ascii())
+    .then(|| rasterizer.primary_font_id())
 }
 
 /// Shapes `text`, choosing faces for the run as a whole.
@@ -2519,13 +2553,11 @@ pub fn shape_text_styled_with_writing_mode(
         rasterizer.line_metrics_for_family(font_size, font_family, font_weight, font_style);
     let line_height = ascent - _descent + line_gap;
 
-    let primary_ascii_font = (writing_mode == TextWritingMode::HorizontalTb
-        && font_family == FontFamily::SANS_SERIF
-        && text
-            .bytes()
-            .all(|byte| byte == b'\n' || (b' '..=b'~').contains(&byte))
-        && rasterizer.primary_covers_printable_ascii())
-    .then(|| rasterizer.primary_font_id());
+    let primary_ascii_font = if writing_mode == TextWritingMode::HorizontalTb {
+        simple_ltr_font(rasterizer, text, font_family)
+    } else {
+        None
+    };
 
     if let Some(font_id) = primary_ascii_font {
         let shaped = shape_simple_ltr_text(
@@ -2551,7 +2583,7 @@ pub fn shape_text_styled_with_writing_mode(
         for (start, cluster) in text.grapheme_indices(true) {
             let end = start + cluster.len();
             let script = cluster_script(cluster);
-            let font_id = if cluster.is_empty() || cluster == "\n" {
+            let font_id = if cluster.is_empty() || is_hard_break(cluster) {
                 None
             } else {
                 primary_ascii_font.or_else(|| {
@@ -2581,7 +2613,7 @@ pub fn shape_text_styled_with_writing_mode(
             let cluster_start = cluster_plan.start;
             let cluster_end = cluster_plan.end;
             let cluster = &text[cluster_start..cluster_end];
-            if cluster == "\n" {
+            if is_hard_break(cluster) {
                 clusters.push(ShapedCluster {
                     text: cluster.to_string(),
                     text_range: cluster_start..cluster_end,
@@ -2613,7 +2645,7 @@ pub fn shape_text_styled_with_writing_mode(
                 let next_start = next_plan.start;
                 let next_end = next_plan.end;
                 let next_cluster = &text[next_start..next_end];
-                if next_cluster == "\n"
+                if is_hard_break(next_cluster)
                     || next_plan.font_id != Some(font_id)
                     || (leading_neutral_run && next_plan.script.is_some())
                     || (script_requires_neutral_boundary(run_script)
@@ -2794,7 +2826,7 @@ pub fn shape_text_styled_with_writing_mode(
     let mut max_line_width = 0.0_f32;
     let mut line_width = 0.0_f32;
     for cluster in &clusters {
-        if cluster.text == "\n" {
+        if is_hard_break(&cluster.text) {
             line_width = 0.0;
         } else {
             line_width += cluster.width;
@@ -2888,7 +2920,7 @@ fn layout_horizontal_shaped_text(
     let mut last_break_pen_x: f32 = origin_x;
 
     for cluster in &shaped_text.clusters {
-        if cluster.text == "\n" {
+        if is_hard_break(&cluster.text) {
             pen_x = origin_x;
             pen_y += line_height;
             line_index += 1;
@@ -2970,7 +3002,7 @@ fn layout_vertical_shaped_text(
     let mut column_x = vertical_column_x(origin_x, max_width, column_width, column_index);
 
     for cluster in &shaped_text.clusters {
-        if cluster.text == "\n" {
+        if is_hard_break(&cluster.text) {
             column_index += 1;
             pen_y = origin_y;
             column_x = vertical_column_x(origin_x, max_width, column_width, column_index);
@@ -3118,6 +3150,28 @@ pub fn layout_shaped_text_result_with_bounds(
     }
 }
 
+/// The glyphs each of `line_count` lines spans, from the line every glyph is on.
+///
+/// A line's range runs from its first glyph to its last, and is empty (`0..0`) for
+/// a line with none. One walk over the glyphs answers every line: asking each line
+/// for its own glyphs by searching the whole list costs lines times glyphs, which
+/// for a long note is billions of comparisons.
+fn line_glyph_ranges(
+    glyph_lines: impl Iterator<Item = usize>,
+    line_count: usize,
+) -> Vec<std::ops::Range<usize>> {
+    let mut ranges: Vec<Option<std::ops::Range<usize>>> = vec![None; line_count];
+    for (glyph, line) in glyph_lines.enumerate() {
+        if let Some(range) = ranges.get_mut(line) {
+            match range {
+                Some(range) => range.end = glyph + 1,
+                None => *range = Some(glyph..glyph + 1),
+            }
+        }
+    }
+    ranges.into_iter().map(|range| range.unwrap_or(0..0)).collect()
+}
+
 fn build_shaped_text_interaction(
     shaped_text: &ShapedText,
     glyphs: &[PositionedGlyph],
@@ -3153,7 +3207,7 @@ fn build_shaped_text_interaction(
     let mut last_break_pen_x = origin_x;
 
     for source_cluster in &shaped_text.clusters {
-        if source_cluster.text == "\n" {
+        if is_hard_break(&source_cluster.text) {
             clusters.push(TextCluster {
                 text_range: source_cluster.text_range.clone(),
                 line_index,
@@ -3249,6 +3303,7 @@ fn build_shaped_text_interaction(
         true
     });
 
+    let glyph_ranges = line_glyph_ranges(glyphs.iter().map(|glyph| glyph.line_index), line_ranges.len());
     let lines = line_ranges
         .into_iter()
         .enumerate()
@@ -3258,17 +3313,9 @@ fn build_shaped_text_interaction(
                 .checked_sub(1)
                 .and_then(|end| shaped_text.text.as_bytes().get(end))
                 .is_some_and(|byte| *byte == b'\n');
-            let glyph_start = glyphs
-                .iter()
-                .position(|glyph| glyph.line_index == index)
-                .unwrap_or(0);
-            let glyph_end = glyphs
-                .iter()
-                .rposition(|glyph| glyph.line_index == index)
-                .map_or(glyph_start, |last| last + 1);
             TextLine {
                 text_range,
-                glyph_range: glyph_start..glyph_end,
+                glyph_range: glyph_ranges[index].clone(),
                 baseline: origin_y + index as f32 * line_height,
                 width: line_widths.get(index).copied().unwrap_or(0.0),
                 ascent,
@@ -3324,7 +3371,7 @@ fn build_vertical_shaped_text_interaction(
     let mut column_x = vertical_column_x(origin_x, max_width, column_width, line_index);
 
     for source_cluster in &shaped_text.clusters {
-        if source_cluster.text == "\n" {
+        if is_hard_break(&source_cluster.text) {
             clusters.push(TextCluster {
                 text_range: source_cluster.text_range.clone(),
                 line_index,
@@ -3389,6 +3436,7 @@ fn build_vertical_shaped_text_interaction(
         true
     });
 
+    let glyph_ranges = line_glyph_ranges(glyphs.iter().map(|glyph| glyph.line_index), line_ranges.len());
     let lines = line_ranges
         .into_iter()
         .enumerate()
@@ -3398,17 +3446,9 @@ fn build_vertical_shaped_text_interaction(
                 .checked_sub(1)
                 .and_then(|end| shaped_text.text.as_bytes().get(end))
                 .is_some_and(|byte| *byte == b'\n');
-            let glyph_start = glyphs
-                .iter()
-                .position(|glyph| glyph.line_index == index)
-                .unwrap_or(0);
-            let glyph_end = glyphs
-                .iter()
-                .rposition(|glyph| glyph.line_index == index)
-                .map_or(glyph_start, |last| last + 1);
             TextLine {
                 text_range,
-                glyph_range: glyph_start..glyph_end,
+                glyph_range: glyph_ranges[index].clone(),
                 baseline: vertical_column_x(origin_x, max_width, column_width, index),
                 width: line_extents.get(index).copied().unwrap_or(0.0),
                 ascent,
@@ -3457,6 +3497,17 @@ pub fn layout_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_glyph_ranges_span_the_first_to_the_last_glyph_of_each_line() {
+        // Lines 0 and 2 have glyphs, line 1 has none, and line 3 is past the glyphs.
+        let ranges = line_glyph_ranges([0, 0, 0, 2, 2].into_iter(), 4);
+
+        assert_eq!(ranges, vec![0..3, 0..0, 3..5, 0..0]);
+        // A glyph on a line that does not exist is ignored, as the search was.
+        assert_eq!(line_glyph_ranges([0, 7].into_iter(), 1), vec![0..1]);
+        assert!(line_glyph_ranges(std::iter::empty(), 0).is_empty());
+    }
 
     #[test]
     fn center_alignment_offsets_each_visual_line_independently() {
@@ -3740,6 +3791,36 @@ mod tests {
             vec!["C", "a", "f", "e\u{301}", "\n", "n", "e", "x", "t"]
         );
         assert_eq!(rasterizer.shape_call_count(), 2);
+    }
+
+    /// A carriage return and a line feed end a line as a line feed alone does: the text of a
+    /// file from another platform is not one long line.
+    #[test]
+    fn a_carriage_return_line_feed_is_a_hard_break() {
+        let mut rasterizer = GlyphRasterizer::new();
+        let lines = |text: &str, rasterizer: &mut GlyphRasterizer| {
+            let shaped = shape_text_styled(
+                rasterizer,
+                text,
+                16.0,
+                FontFamily::SANS_SERIF,
+                FontWeight::Normal,
+                FontStyle::Normal,
+                None,
+            );
+            let layout = layout_shaped_text_with_interaction(&shaped, 0.0, 12.0, 0.0);
+            (layout.lines.len(), layout.lines.iter().filter(|line| line.hard_break).count())
+        };
+
+        let unix = lines("one\ntwo\nthree", &mut rasterizer);
+        let windows = lines("one\r\ntwo\r\nthree", &mut rasterizer);
+        assert_eq!(unix, (3, 2));
+        assert_eq!(windows, unix, "the same lines with the other line ending");
+        // Mixed endings, a blank line and a last line break give the lines of the same text with line feeds.
+        assert_eq!(
+            lines("a\r\n\r\nb\nc\r\n", &mut rasterizer),
+            lines("a\n\nb\nc\n", &mut rasterizer)
+        );
     }
 
     #[test]

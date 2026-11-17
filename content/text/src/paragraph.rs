@@ -1,4 +1,6 @@
 pub(crate) mod geometry;
+mod chunks;
+pub use chunks::with_chunking_min_bytes;
 
 use std::cell::RefCell;
 use std::ops::Range;
@@ -135,6 +137,20 @@ struct PreparedLayoutKey {
     scale_bits: u32,
     layout_generation: u64,
     include_graphemes: bool,
+}
+
+impl PreparedLayoutKey {
+    /// Whether a layout made for `self` is the one `wanted` asks for.
+    ///
+    /// The per-grapheme boxes only add to what a layout carries, so a layout that
+    /// has them also answers a request that does not need them. Laying a long text
+    /// out again for the other kind of request costs as much as the first time.
+    fn answers(&self, wanted: &Self) -> bool {
+        self.width_bits == wanted.width_bits
+            && self.scale_bits == wanted.scale_bits
+            && self.layout_generation == wanted.layout_generation
+            && (self.include_graphemes || !wanted.include_graphemes)
+    }
 }
 
 /// Resolves the color a span is painted with, letting a hovered link override
@@ -554,7 +570,7 @@ impl Paragraph {
             include_graphemes,
         };
         if let Some((cached_key, layout)) = self.layout_cache.borrow().as_ref()
-            && *cached_key == key
+            && cached_key.answers(&key)
         {
             return Rc::clone(layout);
         }
@@ -783,14 +799,20 @@ impl Paragraph {
             }
         }
 
+        // Where the text of each line ends: the end of the last cluster on it that has
+        // any width. Searching the clusters backwards for it, line by line, walks past
+        // every cluster of the lines after it, which for a long note is quadratic.
+        let mut text_end = Vec::<Option<f32>>::new();
+        for cluster in &clusters {
+            record_text_end(&mut text_end, cluster);
+        }
         for line_break in line_breaks {
-            let x = clusters
-                .iter()
-                .rev()
-                .find(|cluster| {
-                    cluster.line_index == line_break.line && cluster.start_x != cluster.end_x
-                })
-                .map_or(line_break.x, |cluster| cluster.end_x);
+            let x = text_end
+                .get(line_break.line)
+                .copied()
+                .flatten()
+                .unwrap_or(line_break.x);
+            let before = clusters.len();
             push_composed_cluster(
                 &mut clusters,
                 TextCluster {
@@ -805,6 +827,12 @@ impl Paragraph {
                     height: line_break.height,
                 },
             );
+            // A break that merged into the cluster before it can have moved its end.
+            if clusters.len() == before
+                && let Some(merged) = clusters.last()
+            {
+                record_text_end(&mut text_end, merged);
+            }
         }
 
         let line_count = line_heights.len().max(1);
@@ -884,6 +912,26 @@ impl Paragraph {
     }
 
     fn compute_layout(&self, ctx: &BuildContext, include_graphemes: bool) -> PreparedLayout {
+        // A long paragraph is laid out in chunks of hard lines, most of which an edit
+        // leaves as they were: see [`chunks`].
+        if let Some(layout) = self.compute_chunked(ctx, include_graphemes) {
+            return layout;
+        }
+        self.compute_layout_whole(ctx, include_graphemes, false)
+    }
+
+    /// Lays the whole paragraph out in one pass.
+    ///
+    /// `force_composed` builds the interaction geometry from the paragraph's own
+    /// fragments even when a single span could use the shared shaper's: a chunk of a
+    /// many-span paragraph is laid out as the paragraph would lay it out, whatever
+    /// share of the spans it holds.
+    fn compute_layout_whole(
+        &self,
+        ctx: &BuildContext,
+        include_graphemes: bool,
+        force_composed: bool,
+    ) -> PreparedLayout {
         let wrap_width = self.wrap_width(ctx);
         let first_line_indent = (if self.text_indent.is_finite() {
             self.text_indent
@@ -1034,7 +1082,11 @@ impl Paragraph {
             })
             .collect::<Vec<_>>();
         let decorations = prepare_decorations(&fragments, &self.spans, ctx.scale);
-        let aimer_interaction = self.aimer_interaction_layout(ctx);
+        let aimer_interaction = if force_composed {
+            None
+        } else {
+            self.aimer_interaction_layout(ctx)
+        };
         let needs_graphemes = include_graphemes
             || fragments.iter().any(|fragment| {
                 let style = self.spans[fragment.span_index].style;
@@ -1204,6 +1256,18 @@ fn source_range_for_rendered_range(
     (source_start != usize::MAX).then_some(source_start..source_end)
 }
 
+/// Notes where `cluster` ends its line, if it has any width, so that the last such
+/// cluster of a line is the one remembered. See where the line breaks are placed.
+fn record_text_end(text_end: &mut Vec<Option<f32>>, cluster: &aimer_cupid::text_layout::TextCluster) {
+    if cluster.start_x == cluster.end_x {
+        return;
+    }
+    if text_end.len() <= cluster.line_index {
+        text_end.resize(cluster.line_index + 1, None);
+    }
+    text_end[cluster.line_index] = Some(cluster.end_x);
+}
+
 fn push_composed_cluster(
     clusters: &mut Vec<aimer_cupid::text_layout::TextCluster>,
     cluster: aimer_cupid::text_layout::TextCluster,
@@ -1252,8 +1316,25 @@ mod tests {
     };
     use aimer_widget::base::{BuildContext, Color};
 
-    use super::{Paragraph, display_color};
+    use super::{Paragraph, PreparedLayoutKey, display_color};
     use crate::text_span::ResolvedTextSpan;
+
+    #[test]
+    fn a_layout_with_grapheme_boxes_answers_a_request_that_does_not_need_them() {
+        let key = |include_graphemes| PreparedLayoutKey {
+            width_bits: 100f32.to_bits(),
+            scale_bits: 1f32.to_bits(),
+            layout_generation: 7,
+            include_graphemes,
+        };
+
+        assert!(key(true).answers(&key(true)));
+        assert!(key(true).answers(&key(false)), "the boxes only add to the layout");
+        assert!(key(false).answers(&key(false)));
+        assert!(!key(false).answers(&key(true)), "the boxes are missing");
+        assert!(!key(true).answers(&PreparedLayoutKey { width_bits: 90f32.to_bits(), ..key(true) }));
+        assert!(!key(true).answers(&PreparedLayoutKey { layout_generation: 8, ..key(true) }));
+    }
 
     #[test]
     fn hovered_link_uses_the_configured_color_only_for_its_spans() {
