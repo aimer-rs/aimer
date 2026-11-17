@@ -31,6 +31,44 @@ struct LocalFieldLayout {
     decoration: LocalFieldDecoration,
 }
 
+impl LocalFieldLayout {
+    /// The height of the box the field's text is recorded in, in physical pixels.
+    ///
+    /// The text is painted shifted up by how far the field has scrolled, and the
+    /// renderer judges from the box a run declares whether it can show a pixel at
+    /// all. A box the height of the viewport, shifted that way, leaves the screen
+    /// while the run's glyphs are still on it, and the field draws no text. The box
+    /// is the text's own when that is taller than the viewport; what shows is still
+    /// bounded by the clip the field pushes around its content.
+    fn text_box_height(&self) -> f32 {
+        // A windowed geometry's text is its window: the box is the window's, not the
+        // height of the whole text, which is mostly lines nobody laid out.
+        match window_box_height(&self.geometry) {
+            Some(window) => window,
+            None => self.content_height.max(self.geometry.content_height(self.line_height)),
+        }
+    }
+
+    /// The height of the box the text is built in: the window's when the text is windowed,
+    /// and the field's content otherwise.
+    fn text_context_height(&self) -> f32 {
+        window_box_height(&self.geometry).unwrap_or(self.content_height)
+    }
+}
+
+/// The height of the box a windowed text is laid out and recorded in: its window's, which is
+/// all of the text there is, and not the height of the whole note.
+///
+/// A note a scrolling page shows whole is taller than a text widget accepts as the box of
+/// one (a million physical pixels, far beyond any screen), and a field that gave the widget
+/// that box would draw nothing at all. `None` for a text that is not windowed.
+fn window_box_height(geometry: &EditableGeometry) -> Option<f32> {
+    match (geometry.window.as_ref(), geometry.interaction.as_ref()) {
+        (Some(_), Some(layout)) => Some(layout.metrics.height + layout.metrics.line_gap),
+        _ => None,
+    }
+}
+
 fn local_stroke_widths(
     sides: [aimer_style::BorderSlice; 4],
     physical_widths: [f32; 4],
@@ -159,6 +197,11 @@ fn publish_selection_geometry(
     base_y: f32,
     scroll_y: f32,
 ) {
+    // A windowed text has no layout of the lines outside its window to give a selection
+    // area; selecting stays inside the field.
+    if geometry.window.is_some() {
+        return;
+    }
     let selection = field.selection.borrow().as_ref().cloned();
     let Some(selection) = selection else {
         return;
@@ -258,6 +301,13 @@ fn transformed_bounds(
     )
 }
 
+/// The tallest a field may be, in logical pixels. A note a scrolling page shows whole is as tall
+/// as its text, which a long one makes far taller than the million pixels other boxes are held
+/// to; its window is all that is ever laid out and drawn. Eight million is where a 32-bit
+/// float still tells half a pixel apart, which the scroll offsets and the positions of the
+/// window's lines are kept in.
+const MAX_FIELD_HEIGHT: f32 = 8_000_000.0;
+
 fn field_text_context<'a>(
     ctx: &BuildContext<'a>,
     width: f32,
@@ -292,7 +342,7 @@ impl RawTextField {
             || box_width < 0.0
             || box_height < 0.0
             || box_width / scale > 1_000_000.0
-            || box_height / scale > 1_000_000.0
+            || box_height / scale > MAX_FIELD_HEIGHT
         {
             return None;
         }
@@ -346,7 +396,7 @@ impl RawTextField {
             if self.reveal_caret.get() {
                 scroll = scroll_to_reveal_line(
                     scroll,
-                    geometry.line_span(geometry.line_for_offset(self.cursor.offset()), line_height),
+                    geometry.reveal_span(self.cursor.offset(), line_height),
                     content_height,
                     scroll_extent,
                 );
@@ -363,8 +413,12 @@ impl RawTextField {
             (scroll_x, 0.0)
         };
 
-        let text_ctx = field_text_context(ctx, content_width, content_height);
-        if self.controller.text().is_empty() {
+        let text_ctx = field_text_context(
+            ctx,
+            content_width,
+            window_box_height(&geometry).unwrap_or(content_height),
+        );
+        if self.controller.is_text_empty() {
             let placeholder = if self.placeholder_visible() {
                 if !self.prompt.is_empty() {
                     Some((self.prompt.as_ref(), self.prompt_style))
@@ -438,6 +492,7 @@ impl RawTextField {
             focused: self.is_focused(),
             composing: self.is_composing(),
             highlighter: highlighter_id(self.effective_highlighter()),
+            window: self.window_signature(),
         }
     }
 }
@@ -514,6 +569,7 @@ impl Drawable for RawTextField {
         {
             return false;
         }
+        self.caret_viewport.set(Some((content_width, content_height)));
         let outer_transform = ctx.canvas.get_transform();
         let (abs_x, abs_y) = outer_transform.transform_point(outline_left, outline_top);
         if !abs_x.is_finite() || !abs_y.is_finite() {
@@ -589,7 +645,7 @@ impl Drawable for RawTextField {
                 .unwrap_or_else(|| Rc::clone(&geometry));
             let click_offset = seen
                 .hit_test(click_x, click_y)
-                .unwrap_or_else(|| seen.display.graphemes(true).count());
+                .unwrap_or_else(|| seen.grapheme_count());
             self.resolve_pending_press(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
             // The first click of a held gesture is the press: remember where, since
             // the cursor will not (see `drag_origin`).
@@ -658,7 +714,7 @@ impl Drawable for RawTextField {
             return false;
         }
 
-        let is_empty = self.controller.text().is_empty();
+        let is_empty = self.controller.is_text_empty();
         let total_height = geometry.content_height(line_height);
         if !total_height.is_finite() {
             return false;
@@ -682,7 +738,7 @@ impl Drawable for RawTextField {
             if self.reveal_caret.replace(false) {
                 scroll = scroll_to_reveal_line(
                     scroll,
-                    geometry.line_span(geometry.line_for_offset(self.cursor.offset()), line_height),
+                    geometry.reveal_span(self.cursor.offset(), line_height),
                     content_height,
                     scroll_extent,
                 );
@@ -707,7 +763,8 @@ impl Drawable for RawTextField {
             return false;
         }
 
-        let text = self.controller.text();
+        // The text is copied for a selection area to hold; a windowed field gives it none.
+        let text = if geometry.window.is_some() { String::new() } else { self.controller.text() };
         let scroll_x = if is_multiline { 0.0 } else { self.scroll_x.get() };
         let scroll_y = if is_multiline { self.scroll_y.get() } else { 0.0 };
         ctx.canvas.save();
@@ -899,6 +956,7 @@ impl Drawable for RawTextField {
 
         let content_height = (box_height - pad_top - pad_bottom).max(0.0);
         let content_width = (box_width - pad_left - pad_right).max(0.0);
+        self.caret_viewport.set(Some((content_width, content_height)));
 
         let text = self.controller.text();
         let is_empty = text.is_empty();
@@ -944,7 +1002,7 @@ impl Drawable for RawTextField {
                 .unwrap_or_else(|| Rc::clone(&geometry));
             let click_offset = seen
                 .hit_test(click_x, click_y)
-                .unwrap_or_else(|| seen.display.graphemes(true).count());
+                .unwrap_or_else(|| seen.grapheme_count());
 
             // Apply double/triple-click selection
             self.resolve_pending_press(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
@@ -1088,12 +1146,11 @@ impl Drawable for RawTextField {
                 let scroll_extent = vertical_scroll_extent(total_text_height, content_height);
                 self.scroll_y_extent.set(scroll_extent);
 
-                let cursor_line = geometry.line_for_offset(self.cursor.offset());
                 let mut scroll = self.scroll_y.get().min(scroll_extent);
                 if self.reveal_caret.replace(false) {
                     scroll = scroll_to_reveal_line(
                         scroll,
-                        geometry.line_span(cursor_line, line_height),
+                        geometry.reveal_span(self.cursor.offset(), line_height),
                         content_height,
                         scroll_extent,
                     );
@@ -1391,7 +1448,7 @@ impl Drawable for RawTextField {
 
         if !layout.geometry.display.is_empty() {
             let style = self.field_text_style();
-            let text_context = field_text_context(ctx, layout.content_width, layout.content_height);
+            let text_context = field_text_context(ctx, layout.content_width, layout.text_box_height());
             let text_widget = self.build_display_widget(
                 &layout.geometry,
                 &style,
@@ -1406,10 +1463,12 @@ impl Drawable for RawTextField {
                     - layout.scroll_y)
                     / scale,
             };
+            // A windowed text is drawn from the top of its window, which is not the top of the text.
+            let window_top = layout.geometry.window.as_ref().map_or(0.0, |window| window.y_base);
             let recorded = text_widget.record_local_v2_into(
                 &canvas,
                 &text_context,
-                text_origin,
+                Vec2d { x: text_origin.x, y: text_origin.y + window_top / scale },
                 false,
                 |canvas| {
                     if let Some((start, end)) = self.cursor.selection_range() {
@@ -1429,7 +1488,7 @@ impl Drawable for RawTextField {
                 },
             );
             assert!(recorded, "field text v2 support must be checked before painting");
-        } else if self.controller.text().is_empty() && !self.is_composing() {
+        } else if self.controller.is_text_empty() && !self.is_composing() {
             let placeholder = if !self.prompt.is_empty() {
                 Some((self.prompt.as_ref(), self.prompt_style))
             } else if !self.hint.is_empty() {
@@ -1458,7 +1517,7 @@ impl Drawable for RawTextField {
         if self.is_composing() {
             let mut style = self.field_text_style();
             style.text_overflow = TextOverflow::Clip;
-            let text_ctx = field_text_context(ctx, layout.content_width, layout.content_height);
+            let text_ctx = field_text_context(ctx, layout.content_width, layout.text_context_height());
             self.with_preedit(|raw_preedit| {
                 let (preedit, cursor) = presentation_preedit(
                     self.input_type,

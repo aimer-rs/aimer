@@ -390,15 +390,24 @@ impl EventElement for RawTextField {
                             self.delete_forward();
                             true
                         }
+                        // The key reaches the field only when it claimed it (see the focus node):
+                        // it indents, and a selection is replaced as typed text would.
+                        NamedKey::Tab
+                            if !modifiers.shift
+                                && !self.read_only
+                                && self.max_lines != Some(1)
+                                && self.tab_spaces.is_some() =>
+                        {
+                            let spaces = " ".repeat(self.tab_spaces.unwrap_or(0));
+                            self.insert_text(&spaces);
+                            true
+                        }
                         NamedKey::Enter
                             if !self.read_only && self.max_lines.is_none_or(|max| max > 1) =>
                         {
-                            // Multi-line mode: Enter inserts newline
-                            if let Some(max) = self.max_lines
-                                && self.line_count() >= max
-                            {
-                                return true;
-                            }
+                            // Multi-line mode: Enter inserts newline. `max_lines` is how many
+                            // lines are shown, and past them the field scrolls: it is not a limit
+                            // on the lines the text may have.
                             self.insert_text("\n");
                             true
                         }

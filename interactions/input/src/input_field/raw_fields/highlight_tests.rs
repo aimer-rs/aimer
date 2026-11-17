@@ -672,18 +672,18 @@ fn the_highlight_context_follows_the_cursor_and_the_text() {
     let field = field("one\ntwo\nthree", Some(concealing_headings()));
 
     field.cursor.set_offset(5);
-    let on_two = field.highlight_context("one\ntwo\nthree");
+    let on_two = field.highlight_context("one\ntwo\nthree", None);
     assert_eq!(on_two.active_lines(), Some(4..7));
-    assert_eq!(field.highlight_context("one\ntwo\nthree"), on_two, "asked again, it is the same");
+    assert_eq!(field.highlight_context("one\ntwo\nthree", None), on_two, "asked again, it is the same");
 
     field.cursor.set_offset(9);
-    assert_eq!(field.highlight_context("one\ntwo\nthree").active_lines(), Some(8..13), "a moved cursor is not served from the memo");
+    assert_eq!(field.highlight_context("one\ntwo\nthree", None).active_lines(), Some(8..13), "a moved cursor is not served from the memo");
 
     field.cursor.set_selection_anchor(Some(1));
-    assert_eq!(field.highlight_context("one\ntwo\nthree").active_lines(), Some(0..13), "nor a new selection");
+    assert_eq!(field.highlight_context("one\ntwo\nthree", None).active_lines(), Some(0..13), "nor a new selection");
 
     field.set_focused(false);
-    assert_eq!(field.highlight_context("one\ntwo\nthree").active_lines(), None, "nor a lost focus");
+    assert_eq!(field.highlight_context("one\ntwo\nthree", None).active_lines(), None, "nor a lost focus");
 }
 
 /// Reserves a 48 px tall, 18 px wide box over the first `[ ]`, the way an

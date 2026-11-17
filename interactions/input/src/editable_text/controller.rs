@@ -192,8 +192,8 @@ impl TextEditingController {
     ) -> bool {
         let value = self.value();
         let selected = value.with_selection(TextSelection::new(
-            grapheme_byte_offset(value.text(), anchor),
-            grapheme_byte_offset(value.text(), focus),
+            value.byte_of_grapheme(anchor),
+            value.byte_of_grapheme(focus),
         ));
         self.apply_value(
             editing::replace_selection(&selected, replacement, max_length),
@@ -241,8 +241,8 @@ impl TextEditingController {
             current.clone()
         } else {
             current.with_selection(TextSelection::new(
-                grapheme_byte_offset(current.text(), anchor),
-                grapheme_byte_offset(current.text(), focus),
+                current.byte_of_grapheme(anchor),
+                current.byte_of_grapheme(focus),
             ))
         };
         {
@@ -357,6 +357,12 @@ impl TextEditingController {
         self.value().text().to_owned()
     }
 
+    /// Whether the text is empty, without a copy of it to ask.
+    #[inline]
+    pub(crate) fn is_text_empty(&self) -> bool {
+        self.core.state.borrow().value.text().is_empty()
+    }
+
     #[cfg(test)]
     pub(crate) fn take(&self) -> String {
         let text = self.text();
@@ -371,26 +377,22 @@ impl TextEditingController {
     }
 
     pub(crate) fn grapheme_count(&self) -> usize {
-        self.value().text().graphemes(true).count()
+        self.value().grapheme_count()
     }
 
     pub(crate) fn selection_graphemes(&self) -> (usize, usize) {
         let value = self.value();
         (
-            value.text()[..value.selection().anchor()]
-                .graphemes(true)
-                .count(),
-            value.text()[..value.selection().focus()]
-                .graphemes(true)
-                .count(),
+            value.grapheme_of_byte(value.selection().anchor()),
+            value.grapheme_of_byte(value.selection().focus()),
         )
     }
 
     pub(crate) fn set_selection_graphemes(&self, anchor: usize, focus: usize) -> bool {
         let value = self.value();
         let selection = TextSelection::new(
-            grapheme_byte_offset(value.text(), anchor),
-            grapheme_byte_offset(value.text(), focus),
+            value.byte_of_grapheme(anchor),
+            value.byte_of_grapheme(focus),
         );
         self.apply_value(value.with_selection(selection), None)
     }
@@ -404,8 +406,8 @@ impl TextEditingController {
     ) -> bool {
         let value = self.value();
         let selected = value.with_selection(TextSelection::new(
-            grapheme_byte_offset(value.text(), anchor),
-            grapheme_byte_offset(value.text(), focus),
+            value.byte_of_grapheme(anchor),
+            value.byte_of_grapheme(focus),
         ));
         let history = record_history.then_some(value);
         self.apply_value(edit(&selected), history)
@@ -413,8 +415,8 @@ impl TextEditingController {
 
     pub(crate) fn get_range(&self, start: usize, end: usize) -> String {
         let value = self.value();
-        let byte_start = grapheme_byte_offset(value.text(), start);
-        let byte_end = grapheme_byte_offset(value.text(), start.max(end));
+        let byte_start = value.byte_of_grapheme(start);
+        let byte_end = value.byte_of_grapheme(start.max(end));
         value.text()[byte_start..byte_end].to_owned()
     }
 
@@ -426,8 +428,8 @@ impl TextEditingController {
     #[cfg(test)]
     pub(crate) fn delete_range(&self, start: usize, end: usize) -> String {
         let value = self.value();
-        let byte_start = grapheme_byte_offset(value.text(), start);
-        let byte_end = grapheme_byte_offset(value.text(), start.max(end));
+        let byte_start = value.byte_of_grapheme(start);
+        let byte_end = value.byte_of_grapheme(start.max(end));
         let removed = value.text()[byte_start..byte_end].to_owned();
         if byte_start == byte_end {
             return removed;
@@ -440,7 +442,7 @@ impl TextEditingController {
     #[cfg(test)]
     pub(crate) fn insert_str(&self, text: &str, offset: usize) {
         let value = self.value();
-        let byte_offset = grapheme_byte_offset(value.text(), offset);
+        let byte_offset = value.byte_of_grapheme(offset);
         let selected = value.with_selection(TextSelection::collapsed(byte_offset));
         self.apply_value(
             editing::replace_selection(&selected, text, None),
@@ -497,12 +499,6 @@ impl TextEditingController {
             state.attachments.clone(),
         ))
     }
-}
-
-fn grapheme_byte_offset(text: &str, offset: usize) -> usize {
-    text.grapheme_indices(true)
-        .nth(offset)
-        .map_or(text.len(), |(byte, _)| byte)
 }
 
 fn notify_attachments(
@@ -599,5 +595,117 @@ impl Default for TextEditingController {
     #[inline]
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod oracle_tests {
+    use unicode_segmentation::UnicodeSegmentation;
+
+    use super::TextEditingController;
+
+    /// Edits made through the controller, which finds graphemes by an index it hands from edit to
+    /// edit, against the same edits made on a plain string by walking it.
+    #[test]
+    fn edits_agree_with_a_plain_string_walked_from_its_start() {
+        const PIECES: [&str; 12] = [
+            "a", "b", " ", "\n", "\r\n", "e", "\u{301}", "\u{e9}", "\u{4f60}", "\u{1f468}\u{200d}\u{1f469}", "\u{1f1e6}", "\u{1f1e7}",
+        ];
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = |below: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % below as u64) as usize
+        };
+        for round in 0..40 {
+            let start: String = (0..200 + next(300)).map(|_| PIECES[next(PIECES.len())]).collect();
+            let controller = TextEditingController::with_text(start.clone());
+            let mut oracle = start;
+            for step in 0..60 {
+                let count = oracle.graphemes(true).count();
+                assert_eq!(controller.grapheme_count(), count, "round {round} step {step}: count");
+                let at = next(count + 1);
+                let byte = oracle.grapheme_indices(true).nth(at).map_or(oracle.len(), |(byte, _)| byte);
+                match next(3) {
+                    0 => {
+                        let piece = PIECES[next(PIECES.len())];
+                        controller.replace_selection_graphemes(at, at, piece, None);
+                        oracle.insert_str(byte, piece);
+                    }
+                    1 if at > 0 => {
+                        controller.delete_backward_graphemes(at, at);
+                        let before = oracle.grapheme_indices(true).nth(at - 1).map(|(b, _)| b).unwrap();
+                        oracle.replace_range(before..byte, "");
+                    }
+                    _ if at < count => {
+                        controller.delete_forward_graphemes(at, at);
+                        let after = oracle.grapheme_indices(true).nth(at + 1).map_or(oracle.len(), |(b, _)| b);
+                        oracle.replace_range(byte..after, "");
+                    }
+                    _ => {}
+                }
+                assert_eq!(controller.text(), oracle, "round {round} step {step}");
+                let (anchor, focus) = controller.selection_graphemes();
+                assert_eq!(anchor, focus);
+                let caret = controller.value().selection().focus();
+                assert_eq!(oracle[..caret].graphemes(true).count(), focus, "round {round} step {step}: caret");
+            }
+        }
+    }
+}
+
+/// What each of the controller's operations costs on a long text, which is what typing in a long
+/// note asks of it, one key at a time.
+///
+/// ```text
+/// cargo nextest run -p aimer_input --run-ignored only -E 'test(bench_the_controller)' --no-capture
+/// ```
+#[cfg(test)]
+mod bench_tests {
+    use std::time::{Duration, Instant};
+
+    use super::TextEditingController;
+
+    fn timed(runs: usize, mut run: impl FnMut()) -> Duration {
+        let started = Instant::now();
+        for _ in 0..runs {
+            run();
+        }
+        started.elapsed() / runs as u32
+    }
+
+    #[test]
+    #[ignore = "a timing, not a check"]
+    fn bench_the_controller() {
+        let latin = "The quick brown fox jumps over the lazy dog. ".repeat(7000);
+        let mixed = "Привет мир, 你好世界 \u{1780}\u{17D2}\u{1794}\u{17BB}\u{1798} e\u{301} caf\u{e9} \u{1f468}\u{200d}\u{1f469}. ".repeat(3500);
+        for (name, text) in [("latin", latin), ("mixed", mixed)] {
+            let controller = TextEditingController::with_text(text.clone());
+            let graphemes = controller.grapheme_count();
+            let middle = graphemes / 2;
+            let kilobytes = text.len() / 1000;
+            let line = |what: &str, time: Duration| println!("{kilobytes:>4} KB {name:<6} {what:<28} {time:>10.2?}");
+
+            line("type a character", timed(20, || {
+                controller.replace_selection_graphemes(middle, middle, "x", None);
+            }));
+            line("backspace", timed(20, || {
+                controller.delete_backward_graphemes(middle + 1, middle + 1);
+            }));
+            line("move the caret", timed(20, || {
+                controller.set_selection_graphemes(middle, middle);
+                controller.set_selection_graphemes(middle + 1, middle + 1);
+            }) / 2);
+            line("selection_graphemes", timed(20, || {
+                let _ = controller.selection_graphemes();
+            }));
+            line("grapheme_count", timed(20, || {
+                let _ = controller.grapheme_count();
+            }));
+            line("text() copy", timed(20, || {
+                let _ = controller.text();
+            }));
+        }
     }
 }

@@ -28,6 +28,7 @@ pub struct TextArea {
     min_lines: usize,
     max_lines: Option<usize>,
     expand: bool,
+    tab_spaces: Option<usize>,
 }
 
 impl TextArea {
@@ -42,6 +43,7 @@ impl TextArea {
             min_lines: 3,
             max_lines: None,
             expand: false,
+            tab_spaces: None,
         }
     }
 
@@ -152,6 +154,18 @@ impl TextArea {
     #[inline]
     pub fn expand(mut self, expand: bool) -> Self {
         self.expand = expand;
+        self
+    }
+
+    /// Makes the Tab key insert `spaces` spaces at the caret, in place of a selection, instead of
+    /// moving focus to the next field.
+    ///
+    /// `None`, the default, leaves Tab to focus traversal. Shift+Tab is never taken, so a
+    /// text area that indents with Tab can still be left from the keyboard. Does nothing for
+    /// a read-only area.
+    #[inline]
+    pub fn tab_spaces(mut self, spaces: impl Into<Option<usize>>) -> Self {
+        self.tab_spaces = spaces.into();
         self
     }
 
@@ -408,6 +422,7 @@ impl TextArea {
         config.max_lines = self
             .max_lines
             .map(|max_lines| max_lines.max(config.min_lines.unwrap_or(1)));
+        config.tab_spaces = self.tab_spaces;
         config.expand = if self.expand {
             ExpandDirection::Vertical
         } else {
@@ -494,6 +509,17 @@ mod tests {
         assert_eq!(config.min_lines, Some(6));
         assert_eq!(config.max_lines, Some(6));
         assert_eq!(config.expand, ExpandDirection::Vertical);
+    }
+
+    #[test]
+    fn the_tab_setting_reaches_the_created_state() {
+        let state = TextArea::new().create_state::<TextFieldState>();
+        assert_eq!(state.config().tab_spaces, None, "Tab moves focus unless asked");
+
+        let state = TextArea::new().tab_spaces(4).create_state::<TextFieldState>();
+        assert_eq!(state.config().tab_spaces, Some(4));
+        let state = TextArea::new().tab_spaces(4).tab_spaces(None).create_state::<TextFieldState>();
+        assert_eq!(state.config().tab_spaces, None);
     }
 
     #[test]

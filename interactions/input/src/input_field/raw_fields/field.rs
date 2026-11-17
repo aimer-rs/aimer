@@ -244,6 +244,8 @@ pub(crate) struct RawFieldConfig {
     pub on_blur: TextFieldCallback,
     pub read_only: bool,
     pub key_filter: Option<KeyFilter>,
+    /// How many spaces the Tab key inserts, for a field that takes it instead of moving focus.
+    pub tab_spaces: Option<usize>,
     pub padding: LayoutSpacing,
     /// The frame placed around the field, when it has one.
     ///
@@ -390,6 +392,9 @@ fn with_embed_boxes(
 /// offset, the selection anchor, and where the drag in progress began, which
 /// decides what the context counts as active.
 type HighlightKey = (u64, usize, Option<usize>, Option<usize>);
+/// What the display text depends on: the controller's revision, which every change
+/// to its value (a composition included) advances, and whether the field obscures.
+type DisplayKey = (u64, bool);
 
 /// What a pending context-menu request is anchored to.
 ///
@@ -417,6 +422,8 @@ pub(super) struct RetainedFieldPaintState {
     focused: bool,
     composing: bool,
     highlighter: u64,
+    /// The window a windowed text was laid out for, and the version of the heights it was placed by.
+    window: Option<((usize, usize), u64)>,
 }
 
 #[allow(dead_code)]
@@ -487,6 +494,8 @@ pub(crate) struct RawTextField {
     pub on_blur: TextFieldCallback,
     pub read_only: bool,
     pub key_filter: Option<KeyFilter>,
+    /// How many spaces the Tab key inserts; `None` leaves Tab to move focus.
+    pub tab_spaces: Option<usize>,
     /// Told when hover, focus or emptiness changes, so the chrome built around
     /// this field is rebuilt from them.
     visual: Option<Rc<VisualFlags>>,
@@ -508,11 +517,33 @@ pub(crate) struct RawTextField {
     /// The last [`HighlightContext`], with the state it was built from, so the
     /// many geometry requests of one frame walk the text for it once.
     highlight_context_memo: RefCell<Option<(HighlightKey, HighlightContext)>>,
+    /// The last [`DisplayText`], with the revision and obscuring it was built for.
+    /// Building it walks every grapheme of the text, and the geometry requests of
+    /// a frame ask for it before the geometry cache can answer, so without this
+    /// a frame costs a pass over the whole text however little has changed.
+    display_memo: RefCell<Option<(DisplayKey, Rc<DisplayText>)>>,
     /// The layout the user was looking at when `pending_click` arrived. A click
     /// is hit-tested against it, not against the layout of the frame that
     /// applies it: placing the cursor can reflow the text (a heading that grows
     /// when the cursor leaves it), and the same pixel would then name another line.
     pub pending_click_geometry: RefCell<Option<Rc<EditableGeometry>>>,
+    /// How many bytes of text make the field lay out a window of it; see
+    /// [`windowing`](super::windowing).
+    pub(super) window_threshold: usize,
+    /// The size of the box the text shows in, in physical pixels, as the last frame laid it
+    /// out: what a caret has to be inside to be seen.
+    pub(super) caret_viewport: Cell<Option<(f32, f32)>>,
+    /// Where each hard line of the text is and how tall: the windowed layout's index.
+    pub(super) line_index: RefCell<Option<Rc<crate::editable_text::LineIndex>>>,
+    /// The hard lines of the window the geometry was last laid out for.
+    pub(super) window_lines: Cell<Option<(usize, usize)>>,
+    /// The text a windowed field lays out while a composition is in progress, with the
+    /// controller revision it was made for.
+    pub(super) composition_display_memo: RefCell<Option<(u64, Arc<str>)>>,
+    /// The line at the top of the viewport and how far into it, with the scroll they
+    /// were taken at: what keeps the text where it is when the estimates above it are
+    /// corrected.
+    pub(super) window_anchor: Cell<Option<(usize, f32, f32)>>,
     pub scroll_x: Cell<f32>,
     pub scroll_y: Cell<f32>,
     pub scroll_y_extent: Cell<f32>,
@@ -609,6 +640,9 @@ impl Rebuildable for RawTextField {
         self.click_count.set(old.click_count.get());
         self.pending_click.set(old.pending_click.get());
         *self.pending_click_geometry.borrow_mut() = old.pending_click_geometry.borrow_mut().take();
+        *self.line_index.borrow_mut() = old.line_index.borrow().clone();
+        self.window_lines.set(old.window_lines.get());
+        self.window_anchor.set(old.window_anchor.get());
         self.scroll_x.set(old.scroll_x.get());
         self.scroll_y.set(old.scroll_y.get());
         self.scroll_y_extent.set(old.scroll_y_extent.get());
@@ -687,6 +721,11 @@ impl RawTextField {
         selection: Option<SelectionParticipant>,
         caret_scope: Option<ScopeId>,
     ) -> Self {
+        // A field that indents with Tab takes the key from focus traversal while it has focus.
+        // Only a multiline, editable one: a single line has nothing to indent.
+        focus_node.set_claims_tab(
+            config.tab_spaces.is_some() && config.max_lines != Some(1) && !config.read_only,
+        );
         let controller_attachment = config
             .controller
             .attach(|_, _| aimer_events::window::request_animation_frame());
@@ -740,6 +779,7 @@ impl RawTextField {
             on_blur: config.on_blur,
             read_only: config.read_only,
             key_filter: config.key_filter,
+            tab_spaces: config.tab_spaces,
             visual: config.visual,
             mouse_held: Cell::new(None),
             drag_origin: Cell::new(None),
@@ -749,7 +789,14 @@ impl RawTextField {
             click_count: Cell::new(0),
             pending_click: Cell::new(None),
             highlight_context_memo: RefCell::new(None),
+            display_memo: RefCell::new(None),
             pending_click_geometry: RefCell::new(None),
+            window_threshold: crate::editable_text::WINDOWED_MIN_BYTES,
+            caret_viewport: Cell::new(None),
+            line_index: RefCell::new(None),
+            window_lines: Cell::new(None),
+            composition_display_memo: RefCell::new(None),
+            window_anchor: Cell::new(None),
             scroll_x: Cell::new(0.0),
             scroll_y: Cell::new(0.0),
             scroll_y_extent: Cell::new(0.0),
@@ -814,7 +861,8 @@ impl RawTextField {
         lines.extend(source.match_indices('\n').map(|(newline, _)| range.start + newline + 1));
         let fraction = if embed.height > 0.0 { ((y - embed.y) / embed.height).clamp(0.0, 0.999) } else { 0.0 };
         let byte = lines[(fraction * lines.len() as f32) as usize];
-        let grapheme = geometry.display[..byte].graphemes(true).count();
+        let grapheme = geometry.window.as_ref().map_or(0, |window| window.grapheme_base)
+            + geometry.display[..byte].graphemes(true).count();
         self.cursor.set_offset(grapheme);
         self.cursor.set_selection_anchor(None);
         self.sync_selection_to_controller();
@@ -880,6 +928,12 @@ impl RawTextField {
     ) {
         let scale = if scale > 0.0 { scale } else { 1.0 };
         let (origin_x, origin_y) = self.caret_origin.get();
+        // A caret on a line the field has scrolled away from is not on the field: the caret
+        // is drawn by a child that is not clipped to the text's box, so it would be drawn
+        // where the line would be, outside.
+        let in_view = self.caret_viewport.get().is_none_or(|(view_width, view_height)| {
+            y + height > 0.0 && y < view_height && x + width > 0.0 && x < view_width
+        });
         self.caret_context.publish(
             CaretGeometry {
                 x: (origin_x + x) / scale,
@@ -889,7 +943,7 @@ impl RawTextField {
             },
             self.cursor.offset(),
             self.is_focused(),
-            !self.is_composing(),
+            in_view && !self.is_composing(),
             self.is_composing(),
         );
     }
@@ -1141,6 +1195,11 @@ impl RawTextField {
 
     /// Mirrors the field cursor into the shared byte-based selection session.
     fn sync_selection_to_area(&self) {
+        // A windowed field has no layout of the lines outside its window to give an area:
+        // it does not take part, and does not copy its text to say so.
+        if self.windowed_display().is_some() {
+            return;
+        }
         let selection_state = self.selection.borrow();
         let Some(selection) = selection_state.as_ref() else {
             return;
@@ -1159,6 +1218,9 @@ impl RawTextField {
 
     /// Mirrors a shared selection handle or cross-widget drag into the field.
     fn sync_cursor_from_area(&self) {
+        if self.windowed_display().is_some() {
+            return;
+        }
         let selection_state = self.selection.borrow();
         let Some(selection) = selection_state.as_ref() else {
             return;
@@ -1361,6 +1423,10 @@ impl RawTextField {
             widget.ranges = geometry.ranges.clone();
             widget
         };
+        // The widget the geometry was measured with has laid the text out already.
+        if let Some(widget) = geometry.display_widget_for(style, align) {
+            return widget;
+        }
         if geometry.ranges.is_none() {
             return Rc::new(build());
         }
@@ -1475,7 +1541,22 @@ impl RawTextField {
     /// cursor offsets used for hit testing and caret placement. An active IME
     /// preedit is omitted from the committed presentation, so the mapping also
     /// skips that source range rather than shifting all following offsets.
-    fn display_text_with_sources(&self) -> DisplayText {
+    ///
+    /// Built once per revision of the text and shared after that: see
+    /// [`display_memo`](Self::display_memo).
+    fn display_text_with_sources(&self) -> Rc<DisplayText> {
+        let key = (self.controller.revision(), self.input_type.is_obscured());
+        if let Some((memo_key, display)) = self.display_memo.borrow().as_ref()
+            && *memo_key == key
+        {
+            return Rc::clone(display);
+        }
+        let display = Rc::new(self.build_display_text());
+        *self.display_memo.borrow_mut() = Some((key, Rc::clone(&display)));
+        display
+    }
+
+    fn build_display_text(&self) -> DisplayText {
         let value = self.controller.value();
         let source = value.text();
         let mut display = String::with_capacity(source.len());
@@ -1485,6 +1566,14 @@ impl RawTextField {
                       source_ranges: &mut Vec<std::ops::Range<usize>>,
                       segment: &str,
                       source_start: usize| {
+            if !obscure && crate::editable_text::is_one_byte_graphemes(segment) {
+                // Every byte is a grapheme: no need to walk the text to find them.
+                display.push_str(segment);
+                source_ranges.extend(
+                    (source_start..source_start + segment.len()).map(|byte| byte..byte + 1),
+                );
+                return;
+            }
             for (offset, grapheme) in segment.grapheme_indices(true) {
                 if obscure {
                     display.push('\u{2022}');
@@ -1596,7 +1685,7 @@ impl RawTextField {
         let x = press.x * scale - abs_x - pad_left + if is_multiline { 0.0 } else { self.scroll_x.get() };
         let y = press.y * scale - abs_y - pad_top - base_y + if is_multiline { self.scroll_y.get() } else { 0.0 };
         let seen = seen.unwrap_or_else(|| Rc::clone(geometry));
-        let offset = seen.hit_test(x, y).unwrap_or_else(|| seen.display.graphemes(true).count());
+        let offset = seen.hit_test(x, y).unwrap_or_else(|| seen.grapheme_count());
         self.drag_origin.set(Some(offset));
         if self.mouse_held.get().is_some() && self.cursor.selection_anchor().is_none() {
             self.cursor.set_selection_anchor(Some(offset));
@@ -1615,7 +1704,7 @@ impl RawTextField {
     ///
     /// A field without focus has no cursor, so nothing is active and every line
     /// shows its rendered form.
-    fn highlight_context(&self, display: &str) -> HighlightContext {
+    fn highlight_context(&self, display: &str, index: Option<&LineIndex>) -> HighlightContext {
         if !self.is_focused() {
             return HighlightContext::default();
         }
@@ -1631,7 +1720,7 @@ impl RawTextField {
         {
             return context.clone();
         }
-        let context = self.build_highlight_context(display);
+        let context = self.build_highlight_context(display, index);
         *self.highlight_context_memo.borrow_mut() = Some((key, context.clone()));
         context
     }
@@ -1645,7 +1734,7 @@ impl RawTextField {
             .map(|_| self.drag_origin.get().unwrap_or(usize::MAX))
     }
 
-    fn build_highlight_context(&self, display: &str) -> HighlightContext {
+    fn build_highlight_context(&self, display: &str, index: Option<&LineIndex>) -> HighlightContext {
         let offset = self.cursor.offset();
         // While the button is held the head sweeps over whatever is under the
         // pointer, and an embed it enters would give way to its source, which moves
@@ -1661,11 +1750,13 @@ impl RawTextField {
         } else {
             self.cursor.selection_range().unwrap_or((offset, offset))
         };
-        let byte = |grapheme: usize| {
-            display
+        // The index finds a grapheme's byte without a walk over the text from its start.
+        let byte = |grapheme: usize| match index {
+            Some(index) => index.byte_of_grapheme(grapheme),
+            None => display
                 .grapheme_indices(true)
                 .nth(grapheme)
-                .map_or(display.len(), |(byte, _)| byte)
+                .map_or(display.len(), |(byte, _)| byte),
         };
         HighlightContext::new(display, byte(from)..byte(to))
     }
@@ -1675,6 +1766,9 @@ impl RawTextField {
         ctx: &BuildContext,
         content_width: f32,
     ) -> Rc<EditableGeometry> {
+        if let Some(text) = self.windowed_display() {
+            return self.windowed_geometry(ctx, content_width, text);
+        }
         let font_size = self.scaled_font_size(&self.text_style, ctx.scale);
         let style = self.field_text_style();
         let display = self.display_text_with_sources();
@@ -1683,9 +1777,9 @@ impl RawTextField {
         let embedder = self.effective_embedder();
         let context = match self.effective_highlighter() {
             Some(highlighter) if highlighter.depends_on_selection() => {
-                self.highlight_context(&display.display)
+                self.highlight_context(&display.display, None)
             }
-            _ if embedder.is_some() => self.highlight_context(&display.display),
+            _ if embedder.is_some() => self.highlight_context(&display.display, None),
             _ => HighlightContext::default(),
         };
         let active = context.active_lines();
@@ -1711,6 +1805,7 @@ impl RawTextField {
                 active_start: active.as_ref().map_or(usize::MAX, |lines| lines.start),
                 active_end: active.as_ref().map_or(usize::MAX, |lines| lines.end),
                 embeds: embed_signature,
+                window: (0, 0),
             },
             || {
                 let mut layout_ctx = ctx.clone();
@@ -1736,16 +1831,24 @@ impl RawTextField {
                     TextAlign::TopLeft,
                 );
                 text_widget.ranges = ranges.clone();
+                let text_widget = Rc::new(text_widget);
                 let interaction = text_widget.interaction_layout(&layout_ctx);
-                EditableGeometry::from_interaction(
-                    display.display,
-                    display.source_ranges,
+                let geometry = EditableGeometry::from_interaction(
+                    Arc::clone(&display.display),
+                    display.source_ranges.clone(),
                     (*interaction).clone(),
                     content_width,
                     self.horizontal_text_align(),
                 )
                 .with_ranges(ranges)
-                .with_embeds(embed_boxes.clone())
+                .with_embeds(embed_boxes.clone());
+                // Styled text keeps the widget it was measured with for painting. Plain
+                // text paints with a fresh one, as it always has.
+                if geometry.ranges.is_some() {
+                    geometry.with_display_widget(style, TextAlign::TopLeft, text_widget)
+                } else {
+                    geometry
+                }
             },
         );
         ctx.canvas.set_text_language(outer_language);
@@ -2029,6 +2132,69 @@ mod grapheme_tests {
         field.input_type = InputType::Obscure;
 
         assert_eq!(field.display_text(), "••");
+    }
+
+    #[test]
+    fn the_display_text_is_built_once_per_revision() {
+        use std::rc::Rc;
+
+        let controller = TextFieldController::with_initial("hello");
+        let mut field = focused_field(controller.clone());
+
+        let first = field.display_text_with_sources();
+        assert!(
+            Rc::ptr_eq(&first, &field.display_text_with_sources()),
+            "asked again with the text unchanged, the same display text answers"
+        );
+
+        controller.set_text("hello world".to_string());
+        let edited = field.display_text_with_sources();
+        assert!(!Rc::ptr_eq(&first, &edited), "an edit builds it again");
+        assert_eq!(&*edited.display, "hello world");
+        assert_eq!(edited.source_ranges.len(), "hello world".len());
+
+        field.input_type = InputType::Obscure;
+        let obscured = field.display_text_with_sources();
+        assert!(!Rc::ptr_eq(&edited, &obscured), "obscuring changes what is shown");
+        assert_eq!(&*obscured.display, "•••••••••••");
+    }
+
+    /// What each displayed grapheme stands for, built one grapheme at a time.
+    fn source_ranges_by_grapheme(text: &str) -> Vec<std::ops::Range<usize>> {
+        use unicode_segmentation::UnicodeSegmentation;
+        text.grapheme_indices(true)
+            .map(|(start, grapheme)| start..start + grapheme.len())
+            .collect()
+    }
+
+    #[test]
+    fn ascii_display_text_maps_each_grapheme_to_its_source_range() {
+        // Plain ASCII is a grapheme per byte, which the builder does not walk the text
+        // to find out; a carriage return before a line feed is the exception.
+        for text in ["", "hello", "tab\there\nline two\n\nend", "crlf\r\nline\r\n", "\r\n", "lone\rcr"] {
+            let field = focused_field(TextFieldController::with_initial(text));
+            let display = field.display_text_with_sources();
+            assert_eq!(&*display.display, text);
+            assert_eq!(display.source_ranges, source_ranges_by_grapheme(text), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn ascii_display_text_around_a_composition_keeps_source_offsets() {
+        let controller = crate::TextEditingController::with_text("abcd\r\nef");
+        assert!(controller.update_composing_graphemes(2, 2, "XY"));
+        assert_eq!(controller.value().composing().map(|range| (range.start(), range.end())), Some((2, 4)));
+        let field = focused_field(controller);
+        let display = field.display_text_with_sources();
+
+        assert_eq!(&*display.display, "abcd\r\nef");
+        let mut expected = source_ranges_by_grapheme("ab");
+        expected.extend(
+            source_ranges_by_grapheme("cd\r\nef")
+                .into_iter()
+                .map(|range| range.start + 4..range.end + 4),
+        );
+        assert_eq!(display.source_ranges, expected);
     }
 
     #[test]

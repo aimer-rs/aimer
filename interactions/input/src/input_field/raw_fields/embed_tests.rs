@@ -18,7 +18,7 @@ use crate::TextEditingController;
 /// An embedded widget that is `height` tall at any width, notes the size it is
 /// updated at, and counts the presses it receives.
 #[derive(Clone)]
-struct Probe {
+pub(super) struct Probe {
     height: f32,
     updated_at: Rc<Cell<(f32, f32)>>,
     presses: Rc<Cell<u32>>,
@@ -31,7 +31,7 @@ struct Probe {
 }
 
 impl Probe {
-    fn new(height: f32, updated_at: Rc<Cell<(f32, f32)>>) -> Self {
+    pub(super) fn new(height: f32, updated_at: Rc<Cell<(f32, f32)>>) -> Self {
         Self { height, updated_at, presses: Rc::default(), consumes: true, consumes_release: false }
     }
 }

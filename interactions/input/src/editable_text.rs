@@ -1,16 +1,21 @@
 mod controller;
 mod editing;
+mod graphemes;
 mod layout;
+mod line_index;
+mod windowed;
 mod platform;
 mod value;
 
 pub(crate) use controller::ControllerAttachment;
 pub use controller::TextEditingController;
 pub(crate) use layout::{
-    DisplayText, EditableGeometry, EditableGeometryCache, EditableGeometryKey, EmbedBox, vertical_target,
-    wrap_visual_lines,
+    DisplayText, EditableGeometry, EditableGeometryCache, EditableGeometryKey, EmbedBox, is_one_byte_graphemes,
+    vertical_target, wrap_visual_lines,
 };
+pub(crate) use line_index::{LineIndex, LineMetrics};
 pub(crate) use platform::adapt_native_delta;
+pub(crate) use windowed::{WINDOWED_MIN_BYTES, lay_out_lines, measure_lines, refine_from_layout};
 #[cfg(any(target_os = "ios", target_os = "android"))]
 pub(crate) use platform::byte_to_utf16;
 pub use value::{TextEditingValue, TextRange};

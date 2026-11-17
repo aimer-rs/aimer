@@ -96,6 +96,54 @@ impl TextHighlighter {
         }
     }
 
+    /// Creates a highlighter that styles the text a line at a time, remembering
+    /// what it did, so an edit costs the lines it changed and not the whole text.
+    ///
+    /// `highlight_line` receives a line of the text, with its line feed if it has
+    /// one, and the state the previous line left behind (`initial` for the first),
+    /// and returns the ranges of the line, relative to its start, and the state it
+    /// leaves for the next. A state is what carries from one line to the next:
+    /// whether a fenced code block or a block comment is open, say. It must depend
+    /// on nothing but those two arguments.
+    ///
+    /// After an edit the lines before the first change and after the last are not
+    /// run again, and neither are the changed ones' neighbours, except that a line
+    /// that now begins in another state is, and so is every line after it until
+    /// the state is one the old text had there. Highlighting a note a line at a
+    /// time is then as costly as the lines that changed, where a function of the
+    /// whole text is as costly as the note.
+    ///
+    /// Create the highlighter once and clone it into each build, as with
+    /// [`new`](Self::new): the lines it remembers are shared by its clones.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::{SpanStyle, StyledRange, TextHighlighter};
+    /// use aimer_widget::base::Color;
+    ///
+    /// // Colours the lines of fenced blocks; the state is whether a block is open.
+    /// let blocks = TextHighlighter::by_line(false, |line, in_block| {
+    ///     let is_fence = line.starts_with("```");
+    ///     let body = line.trim_end_matches('\n').len();
+    ///     let ranges = if (*in_block || is_fence) && body > 0 {
+    ///         vec![StyledRange::new(0..body, SpanStyle::new().color(Color::Rgba(60, 120, 60, 255)))]
+    ///     } else {
+    ///         Vec::new()
+    ///     };
+    ///     (ranges, *in_block != is_fence)
+    /// });
+    /// # let _ = blocks;
+    /// ```
+    pub fn by_line<S, F>(initial: S, highlight_line: F) -> Self
+    where
+        S: Clone + PartialEq + 'static,
+        F: Fn(&str, &S) -> (Vec<StyledRange>, S) + 'static,
+    {
+        let lines = crate::input_field::line_highlight::LineHighlighter::new(initial, highlight_line);
+        Self::new(move |text| lines.highlight(text))
+    }
+
     /// Creates a highlighter that also knows where the cursor is.
     ///
     /// The function receives a [`HighlightContext`] next to the text, so it can
@@ -213,6 +261,23 @@ impl HighlightContext {
     #[inline]
     pub fn selection(&self) -> Option<Range<usize>> {
         self.selection.clone()
+    }
+
+    /// This context as it is for the part of the text that starts `start` bytes in: the
+    /// selection and the active lines moved back by that much.
+    ///
+    /// A highlighter that styles a long text a piece at a time asks each piece which of its
+    /// ranges the cursor is on, and the answer is the one the whole text would give. Lines
+    /// that end before the piece starts are not active in it, and those that start after
+    /// its end are active in none of its ranges, whatever `start` and the piece's length are.
+    #[must_use]
+    pub fn shifted_back(&self, start: usize) -> Self {
+        let back = |range: &Range<usize>| range.start.saturating_sub(start)..range.end.saturating_sub(start);
+        Self {
+            selection: self.selection.as_ref().map(back),
+            // Active lines that end before `start` are active nowhere in the piece.
+            active_lines: self.active_lines.as_ref().filter(|lines| lines.end >= start).map(back),
+        }
     }
 
     /// The whole lines the cursor or selection touches, from the start of the
@@ -398,6 +463,62 @@ mod tests {
                 .collect()
         });
         (highlighter, runs)
+    }
+
+    #[test]
+    fn a_line_highlighter_resolves_through_the_cache_a_line_at_a_time() {
+        let calls = Rc::new(Cell::new(0));
+        let counted = Rc::clone(&calls);
+        let highlighter = TextHighlighter::by_line((), move |line: &str, _: &()| {
+            counted.set(counted.get() + 1);
+            let ranges = line
+                .find("TODO")
+                .map(|start| StyledRange::new(start..start + 4, SpanStyle::new()))
+                .into_iter()
+                .collect();
+            (ranges, ())
+        });
+        let cache = HighlightCache::default();
+        let first = text("one\nTODO two\nthree\n");
+        let ranges = cache.resolve(Some(&highlighter), &first).expect("one range");
+        assert_eq!(ranges[0].range, 4..8);
+        assert_eq!(calls.get(), 3);
+
+        // A character typed in the last line: only that line is run, and the range
+        // of the line before it is where it was.
+        let edited = text("one\nTODO two\nthree!\n");
+        let ranges = cache.resolve(Some(&highlighter), &edited).expect("one range");
+        assert_eq!(ranges[0].range, 4..8);
+        assert_eq!(calls.get(), 4);
+
+        // A line added above moves the range, and runs only the new line.
+        let moved = text("zero\none\nTODO two\nthree!\n");
+        let ranges = cache.resolve(Some(&highlighter), &moved).expect("one range");
+        assert_eq!(ranges[0].range, 9..13);
+        assert_eq!(calls.get(), 5);
+    }
+
+    #[test]
+    fn a_context_shifted_back_answers_for_a_piece_as_the_whole_would() {
+        let text = "one\ntwo\nthree\nfour\n";
+        // The cursor on `three`, which is bytes 8..13.
+        let context = HighlightContext::new(text, 10..10);
+        assert_eq!(context.active_lines(), Some(8..13));
+
+        // A piece that starts at `three`: its own first line is the active one.
+        let piece = context.shifted_back(8);
+        assert_eq!(piece.active_lines(), Some(0..5));
+        assert!(piece.is_active(&(0..5)));
+        // A piece that starts after the active line has nothing active in it...
+        let after = context.shifted_back(14);
+        assert_eq!(after.active_lines(), None);
+        // ...and one that ends before it is asked about ranges that do not reach it.
+        let before = context.shifted_back(0);
+        assert!(!before.is_active(&(0..3)) && before.is_active(&(8..13)));
+        // The line that ends exactly where the piece starts touches it, as it would in the whole.
+        let touching = context.shifted_back(13);
+        assert_eq!(touching.active_lines(), Some(0..0));
+        assert!(touching.is_active(&(0..4)));
     }
 
     fn text(value: &str) -> Arc<str> {

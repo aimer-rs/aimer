@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
+use std::ops::Range;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
@@ -28,7 +29,8 @@ use aimer_widget::{
 
 use crate::editable_text::{
     ControllerAttachment, DisplayText, EditableGeometry, EditableGeometryCache,
-    EditableGeometryKey, EmbedBox, adapt_native_delta, vertical_target, wrap_visual_lines,
+    EditableGeometryKey, EmbedBox, LineIndex, LineMetrics, adapt_native_delta, lay_out_lines,
+    measure_lines, refine_from_layout, vertical_target, wrap_visual_lines,
 };
 use crate::input_field::caret::{
     CaretBlink, CaretBuilder, CaretContext, CaretGeometry, DefaultCaret,
@@ -66,6 +68,7 @@ include!("raw_fields/embed_host.rs");
 include!("raw_fields/composition.rs");
 include!("raw_fields/edit_helpers.rs");
 include!("raw_fields/dimensions.rs");
+include!("raw_fields/windowing.rs");
 include!("raw_fields/platform.rs");
 
 mod menu;
@@ -80,6 +83,16 @@ mod highlight_tests;
 mod embed_tests;
 #[cfg(test)]
 mod area_selection_tests;
+#[cfg(test)]
+mod bench_tests;
+#[cfg(test)]
+mod lookup_tests;
+#[cfg(test)]
+mod scrolled_paint_tests;
+#[cfg(test)]
+mod windowing_tests;
+#[cfg(test)]
+mod tab_tests;
 
 /// Fixtures shared by the test modules living beside the logic they cover.
 #[cfg(test)]

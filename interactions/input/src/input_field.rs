@@ -4,6 +4,7 @@ pub(crate) mod chrome;
 pub mod context_menu;
 pub mod embed;
 pub mod highlight;
+mod line_highlight;
 #[cfg(test)]
 mod controller {
     use crate::TextEditingController;
@@ -924,6 +925,7 @@ impl TextField {
             on_blur: self.on_blur.clone(),
             read_only: self.read_only,
             key_filter: self.key_filter.clone(),
+            tab_spaces: None,
             padding: self.padding,
             chrome: self.chrome(),
             visual: None,

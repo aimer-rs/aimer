@@ -19,14 +19,10 @@ pub(crate) fn delete_backward(value: &TextEditingValue) -> TextEditingValue {
         return replace_range(value, selection, "");
     }
     let caret = selection.start;
-    let Some(previous) = value.text()[..caret]
-        .grapheme_indices(true)
-        .next_back()
-        .map(|(index, _)| index)
-    else {
+    if caret == 0 {
         return value.clone();
-    };
-    replace_range(value, previous..caret, "")
+    }
+    replace_range(value, value.previous_boundary(caret)..caret, "")
 }
 
 pub(crate) fn delete_forward(value: &TextEditingValue) -> TextEditingValue {
@@ -35,10 +31,10 @@ pub(crate) fn delete_forward(value: &TextEditingValue) -> TextEditingValue {
         return replace_range(value, selection, "");
     }
     let caret = selection.start;
-    let Some(grapheme) = value.text()[caret..].graphemes(true).next() else {
+    if caret >= value.text().len() {
         return value.clone();
-    };
-    replace_range(value, caret..caret + grapheme.len(), "")
+    }
+    replace_range(value, caret..value.next_boundary(caret), "")
 }
 
 pub(crate) fn move_left(value: &TextEditingValue, extend: bool) -> TextEditingValue {
@@ -46,10 +42,7 @@ pub(crate) fn move_left(value: &TextEditingValue, extend: bool) -> TextEditingVa
     let target = if !extend && !selection.is_collapsed() {
         selection.range().start
     } else {
-        value.text()[..selection.focus()]
-            .grapheme_indices(true)
-            .next_back()
-            .map_or(selection.focus(), |(index, _)| index)
+        value.previous_boundary(selection.focus())
     };
     moved_selection(value, target, extend)
 }
@@ -59,12 +52,7 @@ pub(crate) fn move_right(value: &TextEditingValue, extend: bool) -> TextEditingV
     let target = if !extend && !selection.is_collapsed() {
         selection.range().end
     } else {
-        value.text()[selection.focus()..]
-            .graphemes(true)
-            .next()
-            .map_or(selection.focus(), |grapheme| {
-                selection.focus() + grapheme.len()
-            })
+        value.next_boundary(selection.focus())
     };
     moved_selection(value, target, extend)
 }
@@ -74,15 +62,13 @@ pub(crate) fn update_composing(value: &TextEditingValue, preedit: &str) -> TextE
         || value.selection().range(),
         |range| range.start()..range.end(),
     );
-    let mut text = String::with_capacity(value.text().len() - range.len() + preedit.len());
-    text.push_str(&value.text()[..range.start]);
-    text.push_str(preedit);
-    text.push_str(&value.text()[range.end..]);
-    let end = range.start + preedit.len();
-    TextEditingValue::new(
-        text,
-        TextSelection::collapsed(end),
-        Some(TextRange::new(range.start, end)),
+    let start = range.start;
+    let end = start + preedit.len();
+    value.splice(
+        range,
+        preedit,
+        |_| TextSelection::collapsed(end),
+        Some(TextRange::new(start, end)),
     )
 }
 
@@ -100,12 +86,7 @@ fn replace_range(
     range: std::ops::Range<usize>,
     replacement: &str,
 ) -> TextEditingValue {
-    let mut text = String::with_capacity(value.text().len() - range.len() + replacement.len());
-    text.push_str(&value.text()[..range.start]);
-    text.push_str(replacement);
-    text.push_str(&value.text()[range.end..]);
-    let caret = range.start + replacement.len();
-    TextEditingValue::new(text, TextSelection::collapsed(caret), None)
+    value.splice(range, replacement, TextSelection::collapsed, None)
 }
 
 fn limited_replacement(
@@ -117,12 +98,8 @@ fn limited_replacement(
     let Some(max_length) = max_length else {
         return replacement.to_owned();
     };
-    let selected = value.text()[range.clone()].graphemes(true).count();
-    let retained = value
-        .text()
-        .graphemes(true)
-        .count()
-        .saturating_sub(selected);
+    let selected = value.grapheme_of_byte(range.end) - value.grapheme_of_byte(range.start);
+    let retained = value.grapheme_count().saturating_sub(selected);
     let available = max_length.saturating_sub(retained);
     replacement.graphemes(true).take(available).collect()
 }
