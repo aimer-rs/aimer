@@ -39,6 +39,22 @@ pub enum SvgMeshStyle {
     },
 }
 
+/// A borrowed SVG dash pattern: `stroke-dasharray` and `stroke-dashoffset`,
+/// optionally limited to part of each subpath.
+///
+/// `array` alternates dash and gap lengths and an odd-length array is repeated
+/// to make it even, as SVG specifies. An empty array means a solid stroke.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SvgDashPattern<'a> {
+    pub array: &'a [f32],
+    pub offset: f32,
+    /// The `[start, end]` fractions, `0.0..=1.0`, of each subpath's length that
+    /// may be drawn. The dashes keep their place along the path and are clipped
+    /// to this window, so it trims a dashed stroke without moving its dashes.
+    /// `None` draws the whole path; an empty or inverted window draws nothing.
+    pub visible: Option<[f32; 2]>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct SvgToleranceBucket(u8);
 
@@ -74,6 +90,10 @@ struct GeometryKey {
     style: MeshStyleKey,
     tolerance: SvgToleranceBucket,
     analytic_aa: bool,
+    /// Bit patterns of the array length, the array, the offset and the visible
+    /// window; `None` for a plain stroke or a fill, so those keys cost nothing
+    /// extra.
+    dash: Option<Box<[u32]>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -151,25 +171,61 @@ impl SvgGeometryCache {
         physical_scale: f32,
         analytic_aa: bool,
     ) -> Result<Arc<SvgMesh>, SvgTessellationError> {
+        self.mesh_for_dashed_with_analytic_aa(geometry, style, None, physical_scale, analytic_aa)
+    }
+
+    /// Like [`Self::mesh_for_with_analytic_aa`], for a stroke cut into dashes.
+    ///
+    /// The dash pattern is part of the cache key, so an animated
+    /// `stroke-dashoffset` caches one mesh per distinct offset. `dash` is ignored
+    /// for fills, and an empty pattern is a solid stroke.
+    pub fn mesh_for_dashed_with_analytic_aa(
+        &mut self,
+        geometry: &SvgGeometry,
+        style: SvgMeshStyle,
+        dash: Option<SvgDashPattern<'_>>,
+        physical_scale: f32,
+        analytic_aa: bool,
+    ) -> Result<Arc<SvgMesh>, SvgTessellationError> {
         self.usage_clock = self.usage_clock.wrapping_add(1);
         let tolerance = SvgToleranceBucket::from_scale(physical_scale);
+        let dash = dash.filter(|dash| {
+            (!dash.array.is_empty() || dash.visible.is_some())
+                && matches!(style, SvgMeshStyle::Stroke { .. })
+        });
         let key = GeometryKey {
             path: path_key(geometry),
             style: style.into(),
             tolerance,
             analytic_aa,
+            dash: dash.map(|dash| {
+                let [start, end] = dash.visible.unwrap_or([f32::NAN, f32::NAN]);
+                [dash.array.len() as u32]
+                    .into_iter()
+                    .chain(dash.array.iter().copied().map(f32::to_bits))
+                    .chain([dash.offset, start, end].map(f32::to_bits))
+                    .collect()
+            }),
         };
         if let Some(entry) = self.entries.get_mut(&key) {
             entry.last_used = self.usage_clock;
             return Ok(entry.mesh.clone());
         }
 
-        let mesh = Arc::new(tessellate(
-            geometry,
-            style,
-            tolerance.tolerance(),
-            analytic_aa,
-        )?);
+        let mesh = Arc::new(match dash {
+            None => tessellate(geometry, style, tolerance.tolerance(), analytic_aa)?,
+            Some(dash) => match dashed_geometry(
+                geometry,
+                dash.array,
+                dash.offset,
+                dash.visible,
+                style,
+                tolerance.tolerance(),
+            )? {
+                Some(dashed) => tessellate(&dashed, style, tolerance.tolerance(), analytic_aa)?,
+                None => empty_mesh(),
+            },
+        });
         let mesh_bytes = mesh.memory_bytes();
         if self.max_entries > 0 && mesh_bytes <= self.max_memory_bytes {
             self.memory_bytes += mesh_bytes;
@@ -1023,65 +1079,84 @@ pub fn tessellate_dashed_stroke(
     physical_scale: f32,
 ) -> Result<SvgMesh, SvgTessellationError> {
     let tolerance = SvgToleranceBucket::from_scale(physical_scale).tolerance();
+    let style = SvgMeshStyle::Stroke {
+        width: stroke.width,
+        line_cap: stroke.line_cap,
+        line_join: stroke.line_join,
+        miter_limit: stroke.miter_limit,
+    };
     if stroke.dash_array.is_empty() {
-        return tessellate(
-            geometry,
-            SvgMeshStyle::Stroke {
-                width: stroke.width,
-                line_cap: stroke.line_cap,
-                line_join: stroke.line_join,
-                miter_limit: stroke.miter_limit,
-            },
-            tolerance,
-            false,
-        );
+        return tessellate(geometry, style, tolerance, false);
     }
-    if !stroke.dash_offset.is_finite()
-        || !stroke.width.is_finite()
-        || stroke.width <= 0.0
-        || !stroke.miter_limit.is_finite()
-        || stroke.miter_limit < 1.0
-        || stroke
-            .dash_array
-            .iter()
-            .any(|dash| !dash.is_finite() || *dash < 0.0)
+    match dashed_geometry(
+        geometry,
+        &stroke.dash_array,
+        stroke.dash_offset,
+        None,
+        style,
+        tolerance,
+    )? {
+        Some(dashed) => tessellate(&dashed, style, tolerance, false),
+        None => Ok(empty_mesh()),
+    }
+}
+
+/// Cuts `geometry` into the visible dashes of a pattern, or `None` when the
+/// pattern leaves nothing visible.
+///
+/// Every dash is its own subpath, so the stroke's caps apply to each dash and
+/// the gaps are real geometry gaps.
+fn dashed_geometry(
+    geometry: &SvgGeometry,
+    array: &[f32],
+    dash_offset: f32,
+    visible: Option<[f32; 2]>,
+    style: SvgMeshStyle,
+    tolerance: f32,
+) -> Result<Option<SvgGeometry>, SvgTessellationError> {
+    let SvgMeshStyle::Stroke {
+        width, miter_limit, ..
+    } = style
+    else {
+        return Err(SvgTessellationError::Tessellation(
+            "only strokes can be dashed".to_owned(),
+        ));
+    };
+    if !dash_offset.is_finite()
+        || !width.is_finite()
+        || width <= 0.0
+        || !miter_limit.is_finite()
+        || miter_limit < 1.0
+        || array.iter().any(|dash| !dash.is_finite() || *dash < 0.0)
+        || visible.is_some_and(|window| window.iter().any(|end| !end.is_finite()))
     {
         return Err(SvgTessellationError::Tessellation(
             "invalid dashed stroke parameters".to_owned(),
         ));
     }
 
-    let pattern_sum = stroke.dash_array.iter().copied().sum::<f32>();
-    if !pattern_sum.is_finite() {
-        return Err(SvgTessellationError::Tessellation(
-            "dashed stroke pattern is not finite".to_owned(),
-        ));
+    let mut pattern = array.to_vec();
+    if pattern.is_empty() {
+        // A trim over a solid stroke: one dash longer than any path.
+        pattern.extend_from_slice(SOLID_PATTERN);
+    } else {
+        let pattern_sum = pattern.iter().copied().sum::<f32>();
+        if !pattern_sum.is_finite() {
+            return Err(SvgTessellationError::Tessellation(
+                "dashed stroke pattern is not finite".to_owned(),
+            ));
+        }
+        if pattern_sum <= f32::EPSILON {
+            return Ok(None);
+        }
+        if pattern.len() % 2 == 1 {
+            pattern.extend_from_within(..);
+        }
     }
-    if pattern_sum <= f32::EPSILON {
-        return Ok(empty_mesh());
-    }
-
-    let mut pattern = stroke.dash_array.to_vec();
-    if pattern.len() % 2 == 1 {
-        pattern.extend_from_within(..);
-    }
-    let commands = dashed_commands(geometry, &pattern, stroke.dash_offset, tolerance);
-    if commands.is_empty() {
-        return Ok(empty_mesh());
-    }
-    tessellate(
-        &SvgGeometry {
-            commands: commands.into(),
-        },
-        SvgMeshStyle::Stroke {
-            width: stroke.width,
-            line_cap: stroke.line_cap,
-            line_join: stroke.line_join,
-            miter_limit: stroke.miter_limit,
-        },
-        tolerance,
-        false,
-    )
+    let commands = dashed_commands(geometry, &pattern, dash_offset, visible, tolerance)?;
+    Ok((!commands.is_empty()).then(|| SvgGeometry {
+        commands: commands.into(),
+    }))
 }
 
 fn empty_mesh() -> SvgMesh {
@@ -1096,23 +1171,49 @@ fn dashed_commands(
     geometry: &SvgGeometry,
     pattern: &[f32],
     dash_offset: f32,
+    visible: Option<[f32; 2]>,
     tolerance: f32,
-) -> Vec<SvgPathCommand> {
+) -> Result<Vec<SvgPathCommand>, SvgTessellationError> {
     let Some(period) = pattern.iter().copied().reduce(|sum, value| sum + value) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if !period.is_finite() || period <= f32::EPSILON {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
+    // A tiny dash on a long path would otherwise loop for as long as the path is
+    // long; a document must not be able to stall the frame that way.
+    let mut steps = 0_u32;
     let mut commands = Vec::new();
     for contour in flatten_path(geometry, tolerance) {
         if contour.len() < 2 {
             continue;
         }
+        // The drawable stretch of this contour, as distances from its start.
+        let (lo, hi) = match visible {
+            None => (0.0, f32::INFINITY),
+            Some([start, end]) => {
+                let total: f32 = contour
+                    .windows(2)
+                    .map(|piece| (piece[1].0 - piece[0].0).hypot(piece[1].1 - piece[0].1))
+                    .sum();
+                (start.clamp(0.0, 1.0) * total, end.clamp(0.0, 1.0) * total)
+            }
+        };
+        if hi <= lo {
+            continue;
+        }
         let (mut pattern_index, mut remaining, mut on) =
             dash_cursor(pattern, dash_offset.rem_euclid(period));
+        // Distance from the contour's start to the current segment's start.
+        let mut travelled = 0.0_f32;
+        // Whether the last piece pushed is still open, so a dash that carries on
+        // around a corner stays one subpath and keeps its join.
+        let mut drawing = false;
         for segment in contour.windows(2) {
+            if travelled >= hi {
+                break;
+            }
             let start = segment[0];
             let end = segment[1];
             let delta = (end.0 - start.0, end.1 - start.1);
@@ -1120,34 +1221,59 @@ fn dashed_commands(
             if !length.is_finite() || length <= f32::EPSILON {
                 continue;
             }
+            let point = |at: f32| {
+                let t = (at - travelled) / length;
+                (start.0 + delta.0 * t, start.1 + delta.1 * t)
+            };
             let mut distance = 0.0;
             while distance < length {
                 while remaining <= f32::EPSILON {
                     advance_dash_cursor(pattern, &mut pattern_index, &mut remaining, &mut on);
+                    steps += 1;
+                    if steps > MAX_DASH_STEPS {
+                        return Err(too_many_dashes());
+                    }
                 }
                 let step = remaining.min(length - distance);
-                if on && step > f32::EPSILON {
-                    let start_t = distance / length;
-                    let end_t = (distance + step) / length;
-                    commands.push(SvgPathCommand::MoveTo {
-                        x: start.0 + delta.0 * start_t,
-                        y: start.1 + delta.1 * start_t,
-                    });
-                    commands.push(SvgPathCommand::LineTo {
-                        x: start.0 + delta.0 * end_t,
-                        y: start.1 + delta.1 * end_t,
-                    });
+                let from = travelled + distance;
+                let to = from + step;
+                let (shown_from, shown_to) = (from.max(lo), to.min(hi));
+                if on && shown_to - shown_from > f32::EPSILON {
+                    if !drawing || shown_from > from {
+                        let (x, y) = point(shown_from);
+                        commands.push(SvgPathCommand::MoveTo { x, y });
+                    }
+                    let (x, y) = point(shown_to);
+                    commands.push(SvgPathCommand::LineTo { x, y });
+                    drawing = true;
+                } else {
+                    drawing = false;
                 }
                 distance += step;
                 remaining -= step;
                 if remaining <= f32::EPSILON {
                     advance_dash_cursor(pattern, &mut pattern_index, &mut remaining, &mut on);
+                    steps += 1;
+                    if steps > MAX_DASH_STEPS {
+                        return Err(too_many_dashes());
+                    }
                 }
             }
+            travelled += length;
         }
     }
-    commands
+    Ok(commands)
 }
+
+fn too_many_dashes() -> SvgTessellationError {
+    SvgTessellationError::Tessellation("dash pattern produces too many dashes".to_owned())
+}
+
+/// One dash longer than any path, for trimming a stroke that has no dashes.
+const SOLID_PATTERN: &[f32] = &[1.0e30, 0.0];
+
+/// Upper bound on dash and gap pieces for one path, far above any drawn pattern.
+const MAX_DASH_STEPS: u32 = 200_000;
 
 fn dash_cursor(pattern: &[f32], mut phase: f32) -> (usize, f32, bool) {
     let mut index = 0;
@@ -1404,6 +1530,92 @@ fn path_key(geometry: &SvgGeometry) -> Vec<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lines(contours: &[&[(f32, f32)]]) -> SvgGeometry {
+        let mut commands = Vec::new();
+        for contour in contours {
+            for (index, &(x, y)) in contour.iter().enumerate() {
+                commands.push(if index == 0 {
+                    SvgPathCommand::MoveTo { x, y }
+                } else {
+                    SvgPathCommand::LineTo { x, y }
+                });
+            }
+        }
+        SvgGeometry { commands: commands.into() }
+    }
+
+    /// The `(x_min, x_max)` of every drawn piece, one entry per subpath.
+    fn spans(commands: &[SvgPathCommand]) -> Vec<(f32, f32)> {
+        let mut spans: Vec<(f32, f32)> = Vec::new();
+        for command in commands {
+            match *command {
+                SvgPathCommand::MoveTo { x, .. } => spans.push((x, x)),
+                SvgPathCommand::LineTo { x, .. } => {
+                    let span = spans.last_mut().expect("a line follows a move");
+                    span.0 = span.0.min(x);
+                    span.1 = span.1.max(x);
+                }
+                _ => {}
+            }
+        }
+        spans
+    }
+
+    #[test]
+    fn a_dash_that_crosses_a_corner_stays_one_polyline() {
+        let corner = lines(&[&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]]);
+        let commands = dashed_commands(&corner, &[15.0, 100.0], 0.0, None, 0.25).unwrap();
+        let moves = commands
+            .iter()
+            .filter(|command| matches!(command, SvgPathCommand::MoveTo { .. }))
+            .count();
+        // One dash, so one subpath: splitting it at the corner would lose the join.
+        assert_eq!(moves, 1);
+        assert!(commands.iter().any(|c| matches!(c, SvgPathCommand::LineTo { x, y } if *x == 10.0 && *y == 0.0)));
+    }
+
+    #[test]
+    fn visible_range_trims_each_subpath_by_its_own_length() {
+        let two = lines(&[&[(0.0, 0.0), (20.0, 0.0)], &[(0.0, 10.0), (10.0, 10.0)]]);
+        let commands =
+            dashed_commands(&two, SOLID_PATTERN, 0.0, Some([0.0, 0.5]), 0.25).unwrap();
+        let spans = spans(&commands);
+        assert_eq!(spans.len(), 2);
+        assert!((spans[0].0 - 0.0).abs() < 1e-3 && (spans[0].1 - 10.0).abs() < 1e-3);
+        assert!((spans[1].0 - 0.0).abs() < 1e-3 && (spans[1].1 - 5.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn visible_range_can_start_part_way_along_the_path() {
+        let line = lines(&[&[(0.0, 0.0), (20.0, 0.0)]]);
+        let commands =
+            dashed_commands(&line, SOLID_PATTERN, 0.0, Some([0.25, 0.75]), 0.25).unwrap();
+        let spans = spans(&commands);
+        assert_eq!(spans.len(), 1);
+        assert!((spans[0].0 - 5.0).abs() < 1e-3 && (spans[0].1 - 15.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn visible_range_clips_dashes_instead_of_replacing_them() {
+        let line = lines(&[&[(0.0, 0.0), (20.0, 0.0)]]);
+        // Dashes cover 0..5 and 10..15; the window 5..15 keeps only the second.
+        let commands =
+            dashed_commands(&line, &[5.0, 5.0], 0.0, Some([0.25, 0.75]), 0.25).unwrap();
+        let spans = spans(&commands);
+        assert_eq!(spans.len(), 1);
+        assert!((spans[0].0 - 10.0).abs() < 1e-3 && (spans[0].1 - 15.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn an_empty_or_inverted_visible_range_draws_nothing() {
+        let line = lines(&[&[(0.0, 0.0), (20.0, 0.0)]]);
+        for range in [[0.5, 0.5], [0.75, 0.25]] {
+            let commands =
+                dashed_commands(&line, SOLID_PATTERN, 0.0, Some(range), 0.25).unwrap();
+            assert!(commands.is_empty(), "{range:?}");
+        }
+    }
 
     #[test]
     fn cubic_flattening_respects_the_screen_space_error_bound() {

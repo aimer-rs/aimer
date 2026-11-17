@@ -268,6 +268,9 @@ impl Plane {
                 node_id: node.node_id,
                 fill: None,
                 stroke: None,
+                stroke_width: None,
+                stroke_dash_offset: None,
+                stroke_dash_offset_percent: None,
                 opacity: None,
                 transform: None,
             };

@@ -946,6 +946,9 @@ impl RawSvg {
                     node_id: node.node_id,
                     fill: None,
                     stroke: None,
+                    stroke_width: None,
+                    stroke_dash_offset: None,
+                    stroke_dash_offset_percent: None,
                     opacity: None,
                     transform: Some(compensation.mul(node.transform)),
                 });
@@ -1274,6 +1277,9 @@ pub(crate) fn overrides_for_rules(
                 node_id: node.node_id,
                 fill: None,
                 stroke: None,
+                stroke_width: None,
+                stroke_dash_offset: None,
+                stroke_dash_offset_percent: None,
                 opacity: None,
                 transform: None,
             };
@@ -1305,6 +1311,15 @@ pub(crate) fn overrides_for_rules(
                         if style.stroke.is_some() {
                             result.stroke = style.stroke;
                         }
+                        if style.stroke_width.is_some() {
+                            result.stroke_width = style.stroke_width;
+                        }
+                        if style.stroke_dash_offset.is_some() {
+                            result.stroke_dash_offset = style.stroke_dash_offset;
+                        }
+                        if style.stroke_dash_offset_percent.is_some() {
+                            result.stroke_dash_offset_percent = style.stroke_dash_offset_percent;
+                        }
                         if let Some(opacity) = style.opacity {
                             group_opacity *= opacity;
                         }
@@ -1317,6 +1332,15 @@ pub(crate) fn overrides_for_rules(
                         }
                         if style.stroke.is_some() {
                             result.stroke = style.stroke;
+                        }
+                        if style.stroke_width.is_some() {
+                            result.stroke_width = style.stroke_width;
+                        }
+                        if style.stroke_dash_offset.is_some() {
+                            result.stroke_dash_offset = style.stroke_dash_offset;
+                        }
+                        if style.stroke_dash_offset_percent.is_some() {
+                            result.stroke_dash_offset_percent = style.stroke_dash_offset_percent;
                         }
                         if style.opacity.is_some() {
                             result.opacity = style.opacity;
@@ -1423,7 +1447,10 @@ fn hits_geometry(
         Some(None) | None => node.stroke.is_some(),
     };
     if stroke_visible && let Some(stroke) = &node.stroke {
-        let threshold = stroke.width * 0.5;
+        let width = node_override
+            .and_then(|value| value.stroke_width)
+            .unwrap_or(stroke.width);
+        let threshold = width * 0.5;
         return contours.iter().any(|contour| {
             contour
                 .windows(2)

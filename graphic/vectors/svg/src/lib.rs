@@ -23,8 +23,8 @@ pub use resources::{
     SvgFilterPrimitive, SvgMask, SvgMaskType, SvgPattern, SvgResourceGraph, SvgResourceUnits,
 };
 pub use tessellation::{
-    SvgGeometryCache, SvgMesh, SvgMeshStyle, SvgTessellationError, SvgToleranceBucket,
-    tessellate_dashed_stroke,
+    SvgDashPattern, SvgGeometryCache, SvgMesh, SvgMeshStyle, SvgTessellationError,
+    SvgToleranceBucket, tessellate_dashed_stroke,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -260,6 +260,14 @@ pub struct SvgNodeStyleOverride {
     pub node_id: SvgNodeId,
     pub fill: Option<Option<SvgColor>>,
     pub stroke: Option<Option<SvgColor>>,
+    /// Replaces the authored stroke width, in the node's own user units.
+    pub stroke_width: Option<f32>,
+    /// Replaces the authored `stroke-dashoffset`. Only a stroke that already has
+    /// a dash pattern is affected; it does not dash a solid stroke.
+    pub stroke_dash_offset: Option<f32>,
+    /// Limits the stroke to the `[start, end]` fractions of each subpath's
+    /// length. `[0.0, 1.0]` is the whole path.
+    pub stroke_dash_offset_percent: Option<[f32; 2]>,
     pub opacity: Option<f32>,
     pub transform: Option<SvgTransform>,
 }
@@ -585,6 +593,108 @@ mod tests {
         assert!(gradient.is_finite());
         assert_eq!(gradient.id(), "accent");
         assert_eq!(gradient.stops().len(), 1);
+    }
+
+    #[test]
+    fn cached_dashed_mesh_has_real_gaps_and_is_reused() {
+        let line = geometry([
+            SvgPathCommand::MoveTo { x: 0.0, y: 0.0 },
+            SvgPathCommand::LineTo { x: 20.0, y: 0.0 },
+        ]);
+        let style = SvgMeshStyle::Stroke {
+            width: 2.0,
+            line_cap: SvgLineCap::Butt,
+            line_join: SvgLineJoin::Miter,
+            miter_limit: 4.0,
+        };
+        let mut cache = SvgGeometryCache::new(1024 * 1024, 8);
+        let pattern = SvgDashPattern { array: &[5.0, 5.0], offset: 0.0, visible: None };
+
+        let dashed = cache
+            .mesh_for_dashed_with_analytic_aa(&line, style, Some(pattern), 1.0, false)
+            .unwrap();
+        // Dashes cover 0..5 and 10..15; no corner may fall inside a gap.
+        assert!(dashed.vertices.iter().all(|v| !(5.01..9.99).contains(&v[0])));
+        assert!(dashed.vertices.iter().any(|v| v[0] >= 14.9));
+
+        let again = cache
+            .mesh_for_dashed_with_analytic_aa(&line, style, Some(pattern), 1.0, false)
+            .unwrap();
+        assert!(Arc::ptr_eq(&dashed, &again), "the same dash pattern must hit the cache");
+
+        let shifted = cache
+            .mesh_for_dashed_with_analytic_aa(
+                &line,
+                style,
+                Some(SvgDashPattern { array: &[5.0, 5.0], offset: 2.5, visible: None }),
+                1.0,
+                false,
+            )
+            .unwrap();
+        assert!(!Arc::ptr_eq(&dashed, &shifted), "the offset is part of the cache key");
+
+        let solid = cache
+            .mesh_for_dashed_with_analytic_aa(&line, style, None, 1.0, false)
+            .unwrap();
+        assert!(solid.vertices.iter().any(|v| (5.01..9.99).contains(&v[0])) || solid.vertices.len() <= 4);
+        assert!(!Arc::ptr_eq(&dashed, &solid));
+    }
+
+    #[test]
+    fn visible_range_without_dashes_is_cached_and_trims_the_mesh() {
+        let line = geometry([
+            SvgPathCommand::MoveTo { x: 0.0, y: 0.0 },
+            SvgPathCommand::LineTo { x: 20.0, y: 0.0 },
+        ]);
+        let style = SvgMeshStyle::Stroke {
+            width: 2.0,
+            line_cap: SvgLineCap::Butt,
+            line_join: SvgLineJoin::Miter,
+            miter_limit: 4.0,
+        };
+        let mut cache = SvgGeometryCache::new(1024 * 1024, 8);
+        let half = SvgDashPattern { array: &[], offset: 0.0, visible: Some([0.0, 0.5]) };
+        let mesh = cache
+            .mesh_for_dashed_with_analytic_aa(&line, style, Some(half), 1.0, false)
+            .unwrap();
+        assert!(!mesh.indices.is_empty());
+        assert!(mesh.vertices.iter().all(|v| v[0] <= 10.01));
+        assert!(mesh.vertices.iter().any(|v| v[0] >= 9.99));
+
+        let again = cache
+            .mesh_for_dashed_with_analytic_aa(&line, style, Some(half), 1.0, false)
+            .unwrap();
+        assert!(Arc::ptr_eq(&mesh, &again));
+        let more = SvgDashPattern { visible: Some([0.0, 0.75]), ..half };
+        let longer = cache
+            .mesh_for_dashed_with_analytic_aa(&line, style, Some(more), 1.0, false)
+            .unwrap();
+        assert!(!Arc::ptr_eq(&mesh, &longer), "the visible range is part of the cache key");
+        assert!(longer.vertices.iter().any(|v| v[0] >= 14.99));
+
+        let nothing = SvgDashPattern { visible: Some([0.5, 0.5]), ..half };
+        let empty = cache
+            .mesh_for_dashed_with_analytic_aa(&line, style, Some(nothing), 1.0, false)
+            .unwrap();
+        assert!(empty.indices.is_empty());
+    }
+
+    #[test]
+    fn dash_pattern_that_would_emit_unbounded_dashes_is_rejected() {
+        let line = geometry([
+            SvgPathCommand::MoveTo { x: 0.0, y: 0.0 },
+            SvgPathCommand::LineTo { x: 1.0e7, y: 0.0 },
+        ]);
+        let stroke = SvgStroke {
+            color: SvgColor::rgba8(0, 0, 0, 255),
+            width: 1.0,
+            line_cap: SvgLineCap::Butt,
+            line_join: SvgLineJoin::Miter,
+            miter_limit: 4.0,
+            dash_array: Arc::from([0.001, 0.001]),
+            dash_offset: 0.0,
+        };
+        assert!(tessellate_dashed_stroke(&line, &stroke, 1.0).is_err());
     }
 
     #[test]

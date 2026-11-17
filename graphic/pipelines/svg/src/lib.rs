@@ -15,7 +15,7 @@ use bytemuck::{Pod, Zeroable};
 
 use aimer_pipeline_core::{FrameUpload, InstanceBufferPolicy};
 use crate::svg::{
-    SvgColor, SvgColorMatrix, SvgFilterInput, SvgFilterPrimitive, SvgGeometryCache, SvgGradient,
+    SvgColor, SvgColorMatrix, SvgDashPattern, SvgFilterInput, SvgFilterPrimitive, SvgGeometryCache, SvgGradient,
     SvgMesh, SvgMeshStyle, SvgNode, SvgNodeStyleOverride, SvgPaint, SvgPaintOrder,
 };
 use crate::svg::eviction::{Candidate, Limits, oldest_to_drop};
@@ -611,10 +611,11 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         physical_scale: f32,
     ) {
         match paint {
-            ResolvedPaint::Solid { color, style } => self.prepare_mesh_generic(
+            ResolvedPaint::Solid { color, style, dash } => self.prepare_mesh_generic(
                 backend,
                 geometry,
                 style,
+                dash,
                 transform,
                 apply_color_matrices(color, color_matrices),
                 opacity,
@@ -625,10 +626,11 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
                 is_srgb,
                 physical_scale,
             ),
-            ResolvedPaint::Gradient { gradient, style } => self.prepare_gradient_generic(
+            ResolvedPaint::Gradient { gradient, style, dash } => self.prepare_gradient_generic(
                 backend,
                 geometry,
                 style,
+                dash,
                 gradient,
                 transform,
                 opacity,
@@ -649,6 +651,7 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         backend: &B,
         geometry: &crate::svg::SvgGeometry,
         style: SvgMeshStyle,
+        dash: Option<SvgDashPattern<'_>>,
         gradient: &SvgGradient,
         transform: Mat3,
         opacity: f32,
@@ -661,9 +664,10 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         physical_scale: f32,
     ) {
         const MAX_GRADIENT_MESH_BYTES: usize = 16 * 1024 * 1024;
-        let Ok(base) = self.geometry_cache.mesh_for_with_analytic_aa(
+        let Ok(base) = self.geometry_cache.mesh_for_dashed_with_analytic_aa(
             geometry,
             style,
+            dash,
             physical_scale,
             self.analytic_aa,
         ) else {
@@ -714,6 +718,7 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         backend: &B,
         geometry: &crate::svg::SvgGeometry,
         style: SvgMeshStyle,
+        dash: Option<SvgDashPattern<'_>>,
         transform: Mat3,
         color: SvgColor,
         opacity: f32,
@@ -724,9 +729,10 @@ impl<B: crate::backend::GpuBackend> SvgPipeline<B> {
         is_srgb: bool,
         physical_scale: f32,
     ) {
-        let Ok(mesh) = self.geometry_cache.mesh_for_with_analytic_aa(
+        let Ok(mesh) = self.geometry_cache.mesh_for_dashed_with_analytic_aa(
             geometry,
             style,
+            dash,
             physical_scale,
             self.analytic_aa,
         ) else {
@@ -1273,10 +1279,13 @@ enum ResolvedPaint<'a> {
     Solid {
         color: SvgColor,
         style: SvgMeshStyle,
+        /// Dash pattern of a stroke; `None` for fills and solid strokes.
+        dash: Option<SvgDashPattern<'a>>,
     },
     Gradient {
         gradient: &'a SvgGradient,
         style: SvgMeshStyle,
+        dash: Option<SvgDashPattern<'a>>,
     },
 }
 
@@ -1291,7 +1300,7 @@ fn resolved_fill<'a>(
         .unwrap_or(node.fill_rule);
     let style = SvgMeshStyle::Fill(rule);
     match node_override.map(|value| value.fill) {
-        Some(Some(Some(color))) => return Some(ResolvedPaint::Solid { color, style }),
+        Some(Some(Some(color))) => return Some(ResolvedPaint::Solid { color, style, dash: None }),
         Some(Some(None)) => return None,
         Some(None) | None => {}
     }
@@ -1299,14 +1308,16 @@ fn resolved_fill<'a>(
         Some(SvgPaint::Solid(color)) => Some(ResolvedPaint::Solid {
             color: *color,
             style,
+            dash: None,
         }),
         Some(SvgPaint::Linear(gradient) | SvgPaint::Radial(gradient)) => {
-            Some(ResolvedPaint::Gradient { gradient, style })
+            Some(ResolvedPaint::Gradient { gradient, style, dash: None })
         }
         Some(SvgPaint::Pattern { .. }) => None,
         None => node.fill.as_ref().map(|fill| ResolvedPaint::Solid {
             color: fill.color,
             style,
+            dash: None,
         }),
     }
 }
@@ -1340,17 +1351,28 @@ fn resolved_stroke<'a>(
     node_override: Option<&SvgNodeStyleOverride>,
 ) -> Option<ResolvedPaint<'a>> {
     let stroke = node.stroke.as_ref()?;
-    if !stroke.dash_array.is_empty() {
-        return None;
-    }
     let style = SvgMeshStyle::Stroke {
-        width: stroke.width,
+        width: node_override
+            .and_then(|value| value.stroke_width)
+            .unwrap_or(stroke.width),
         line_cap: stroke.line_cap,
         line_join: stroke.line_join,
         miter_limit: stroke.miter_limit,
     };
+    // Showing the whole path is no trim at all; skipping it keeps the stroke's
+    // original mesh, which still has its closing join.
+    let visible = node_override
+        .and_then(|value| value.stroke_dash_offset_percent)
+        .filter(|window| *window != [0.0, 1.0]);
+    let dash = (!stroke.dash_array.is_empty() || visible.is_some()).then(|| SvgDashPattern {
+        array: &stroke.dash_array,
+        offset: node_override
+            .and_then(|value| value.stroke_dash_offset)
+            .unwrap_or(stroke.dash_offset),
+        visible,
+    });
     match node_override.map(|value| value.stroke) {
-        Some(Some(Some(color))) => return Some(ResolvedPaint::Solid { color, style }),
+        Some(Some(Some(color))) => return Some(ResolvedPaint::Solid { color, style, dash }),
         Some(Some(None)) => return None,
         Some(None) | None => {}
     }
@@ -1358,14 +1380,20 @@ fn resolved_stroke<'a>(
         Some(SvgPaint::Solid(color)) => Some(ResolvedPaint::Solid {
             color: *color,
             style,
+            dash,
         }),
         Some(SvgPaint::Linear(gradient) | SvgPaint::Radial(gradient)) => {
-            Some(ResolvedPaint::Gradient { gradient, style })
+            Some(ResolvedPaint::Gradient {
+                gradient,
+                style,
+                dash,
+            })
         }
         Some(SvgPaint::Pattern { .. }) => None,
         None => Some(ResolvedPaint::Solid {
             color: stroke.color,
             style,
+            dash,
         }),
     }
 }
@@ -1706,6 +1734,98 @@ mod resource_tests {
         parse_svg_document,
     };
     use crate::utilities::{Mat3, Rect};
+
+    #[test]
+    fn resolved_stroke_applies_width_override_and_keeps_the_dash_pattern() {
+        let parsed = parse_svg_document(
+            br##"<svg width="10" height="10"><path d="M0 0h10" stroke="#000" stroke-width="1" stroke-dasharray="4 2" stroke-dashoffset="1"/></svg>"##,
+        )
+        .unwrap();
+        let node = parsed.scene.nodes.iter().find(|node| node.geometry.is_some()).unwrap();
+        let node_override = crate::svg::SvgNodeStyleOverride {
+            node_id: node.node_id,
+            fill: None,
+            stroke: None,
+            stroke_width: Some(6.0),
+            stroke_dash_offset: None,
+            stroke_dash_offset_percent: None,
+            opacity: None,
+            transform: None,
+        };
+
+        let paint = super::resolved_stroke(node, Some(&node_override)).expect("dashed strokes are drawn");
+        let super::ResolvedPaint::Solid { style, dash, .. } = paint else {
+            panic!("a plain stroke resolves to a solid paint");
+        };
+        assert!(matches!(style, crate::svg::SvgMeshStyle::Stroke { width, .. } if width == 6.0));
+        let dash = dash.expect("the dash pattern must reach the mesh request");
+        assert_eq!(dash.array, &[4.0, 2.0]);
+        assert_eq!(dash.offset, 1.0);
+        assert_eq!(dash.visible, None);
+
+        let plain = super::resolved_stroke(node, None).unwrap();
+        assert!(matches!(plain, super::ResolvedPaint::Solid { style: crate::svg::SvgMeshStyle::Stroke { width, .. }, .. } if width == 1.0));
+    }
+
+    fn override_for(node: &crate::svg::SvgNode) -> crate::svg::SvgNodeStyleOverride {
+        crate::svg::SvgNodeStyleOverride {
+            node_id: node.node_id,
+            fill: None,
+            stroke: None,
+            stroke_width: None,
+            stroke_dash_offset: None,
+            stroke_dash_offset_percent: None,
+            opacity: None,
+            transform: None,
+        }
+    }
+
+    fn dash_of<'a>(paint: Option<super::ResolvedPaint<'a>>) -> Option<crate::svg::SvgDashPattern<'a>> {
+        match paint.expect("the stroke is drawn") {
+            super::ResolvedPaint::Solid { dash, .. } | super::ResolvedPaint::Gradient { dash, .. } => dash,
+        }
+    }
+
+    #[test]
+    fn dash_offset_override_replaces_the_authored_offset_of_a_dashed_stroke() {
+        let parsed = parse_svg_document(
+            br##"<svg width="10" height="10"><path d="M0 0h10" stroke="#000" stroke-dasharray="4 2" stroke-dashoffset="1"/></svg>"##,
+        )
+        .unwrap();
+        let node = parsed.scene.nodes.iter().find(|node| node.geometry.is_some()).unwrap();
+        let node_override = crate::svg::SvgNodeStyleOverride { stroke_dash_offset: Some(3.0), ..override_for(node) };
+        let dash = dash_of(super::resolved_stroke(node, Some(&node_override))).unwrap();
+        assert_eq!(dash.array, &[4.0, 2.0]);
+        assert_eq!(dash.offset, 3.0);
+    }
+
+    #[test]
+    fn dash_offset_alone_does_not_dash_a_solid_stroke() {
+        let parsed = parse_svg_document(
+            br##"<svg width="10" height="10"><path d="M0 0h10" stroke="#000"/></svg>"##,
+        )
+        .unwrap();
+        let node = parsed.scene.nodes.iter().find(|node| node.geometry.is_some()).unwrap();
+        let node_override = crate::svg::SvgNodeStyleOverride { stroke_dash_offset: Some(3.0), ..override_for(node) };
+        assert!(dash_of(super::resolved_stroke(node, Some(&node_override))).is_none());
+    }
+
+    #[test]
+    fn visible_range_trims_a_solid_stroke_unless_it_covers_the_whole_path() {
+        let parsed = parse_svg_document(
+            br##"<svg width="10" height="10"><path d="M0 0h10" stroke="#000"/></svg>"##,
+        )
+        .unwrap();
+        let node = parsed.scene.nodes.iter().find(|node| node.geometry.is_some()).unwrap();
+        let half = crate::svg::SvgNodeStyleOverride { stroke_dash_offset_percent: Some([0.0, 0.5]), ..override_for(node) };
+        let dash = dash_of(super::resolved_stroke(node, Some(&half))).expect("a trimmed stroke carries a pattern");
+        assert!(dash.array.is_empty());
+        assert_eq!(dash.visible, Some([0.0, 0.5]));
+
+        // Showing all of it must keep the original, join-preserving mesh.
+        let full = crate::svg::SvgNodeStyleOverride { stroke_dash_offset_percent: Some([0.0, 1.0]), ..override_for(node) };
+        assert!(dash_of(super::resolved_stroke(node, Some(&full))).is_none());
+    }
 
     #[test]
     fn rectangular_clip_path_and_alpha_mask_restrict_the_node() {

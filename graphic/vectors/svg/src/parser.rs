@@ -111,6 +111,10 @@ struct Style {
     fill: Option<SvgColor>,
     stroke: Option<SvgColor>,
     stroke_width: f32,
+    /// `stroke-dasharray`; empty is a solid stroke. Never holds negative values
+    /// or an all-zero pattern, which SVG treats as solid.
+    dash_array: Arc<[f32]>,
+    dash_offset: f32,
     fill_rule: SvgFillRule,
     opacity: f32,
     visible: bool,
@@ -132,6 +136,8 @@ impl Default for Style {
             fill: Some(SvgColor::rgba8(0, 0, 0, 255)),
             stroke: None,
             stroke_width: 1.0,
+            dash_array: Arc::from([]),
+            dash_offset: 0.0,
             fill_rule: SvgFillRule::NonZero,
             opacity: 1.0,
             visible: true,
@@ -151,6 +157,19 @@ impl Style {
 
     fn stroke_color(&self) -> Option<SvgColor> {
         self.stroke.map(|mut color| { color.a *= self.stroke_opacity; color })
+    }
+
+    /// The stroke this style paints, or `None` when it has no stroke paint.
+    fn svg_stroke(&self) -> Option<SvgStroke> {
+        self.stroke_color().map(|color| SvgStroke {
+            color,
+            width: self.stroke_width,
+            line_cap: self.cap,
+            line_join: self.join,
+            miter_limit: 4.0,
+            dash_array: self.dash_array.clone(),
+            dash_offset: self.dash_offset,
+        })
     }
 }
 
@@ -514,15 +533,7 @@ pub fn parse_svg_document(bytes: impl AsRef<[u8]>) -> Result<SvgParsedDocument, 
                     color,
                     rule: style.fill_rule,
                 }),
-                stroke: style.stroke_color().map(|color| SvgStroke {
-                    color,
-                    width: style.stroke_width,
-                    line_cap: style.cap,
-                    line_join: style.join,
-                    miter_limit: 4.0,
-                    dash_array: Arc::from([]),
-                    dash_offset: 0.0,
-                }),
+                stroke: style.svg_stroke(),
                 fill_paint: None,
                 stroke_paint: None,
                 paint_order: SvgPaintOrder::FillAndStroke,
@@ -717,15 +728,7 @@ pub fn parse_svg_document(bytes: impl AsRef<[u8]>) -> Result<SvgParsedDocument, 
             color,
             rule: style.fill_rule,
         });
-        let stroke = style.stroke_color().map(|color| SvgStroke {
-            color,
-            width: style.stroke_width,
-            line_cap: style.cap,
-            line_join: style.join,
-            miter_limit: 4.0,
-            dash_array: Arc::from([]),
-            dash_offset: 0.0,
-        });
+        let stroke = style.svg_stroke();
         let definition_owner = stack
             .iter()
             .rev()
@@ -1120,6 +1123,12 @@ fn parse_style(
     if let Some(value) = value("stroke-width") {
         style.stroke_width = parse_length(value).ok_or(SvgParseError::InvalidNumber)?;
     }
+    if let Some(value) = value("stroke-dasharray") {
+        style.dash_array = parse_dash_array(value)?;
+    }
+    if let Some(value) = value("stroke-dashoffset") {
+        style.dash_offset = parse_length(value).ok_or(SvgParseError::InvalidNumber)?;
+    }
     if let Some(value) = value("fill-rule") {
         style.fill_rule = match value {
             "nonzero" => SvgFillRule::NonZero,
@@ -1216,6 +1225,8 @@ fn is_supported_style_property(property: &str) -> bool {
             | "visibility"
             | "stroke-linecap"
             | "stroke-linejoin"
+            | "stroke-dasharray"
+            | "stroke-dashoffset"
             | "clip-path"
             | "mask"
             | "filter"
@@ -1545,6 +1556,32 @@ fn parse_length(value: &str) -> Option<f32> {
     let n = trimmed[..end].parse::<f32>().ok()?;
     n.is_finite().then_some(n)
 }
+/// Parses `stroke-dasharray`: `none`, or comma/space separated lengths.
+///
+/// A negative length is an error, and a pattern that sums to zero is a solid
+/// stroke, so both `none` and an all-zero list give an empty array.
+fn parse_dash_array(value: &str) -> Result<Arc<[f32]>, SvgParseError> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Ok(Arc::from([]));
+    }
+    let mut dashes = Vec::new();
+    for token in value.split(|c: char| c == ',' || c.is_whitespace()) {
+        if token.is_empty() {
+            continue;
+        }
+        let dash = parse_length(token).ok_or(SvgParseError::InvalidNumber)?;
+        if dash < 0.0 {
+            return Err(SvgParseError::InvalidNumber);
+        }
+        dashes.push(dash);
+    }
+    if dashes.iter().sum::<f32>() <= 0.0 {
+        return Ok(Arc::from([]));
+    }
+    Ok(dashes.into())
+}
+
 fn parse_viewbox(value: &str) -> Option<[f32; 4]> {
     let values = parse_numbers(value);
     (values.len() == 4
@@ -1958,18 +1995,12 @@ fn resolve_use_references(
             || target_has_property("stroke-width")
             || target_has_property("stroke-linecap")
             || target_has_property("stroke-linejoin")
+            || target_has_property("stroke-dasharray")
+            || target_has_property("stroke-dashoffset")
         {
             target.stroke.clone()
         } else {
-            reference.style.stroke_color().map(|color| SvgStroke {
-                color,
-                width: reference.style.stroke_width,
-                line_cap: reference.style.cap,
-                line_join: reference.style.join,
-                miter_limit: 4.0,
-                dash_array: Arc::from([]),
-                dash_offset: 0.0,
-            })
+            reference.style.svg_stroke()
         };
         use_node.opacity *= target.opacity;
         use_node.visible &= target.visible;

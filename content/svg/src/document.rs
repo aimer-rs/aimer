@@ -496,18 +496,6 @@ fn collect_diagnostics(
             message: Arc::from("only untransformed patterns used on rectangular paths are applied; other pattern paints are retained and skipped"),
         });
     }
-    if lower.contains("stroke-dasharray")
-        && !lower.contains("stroke-dasharray=\"none\"")
-        && !lower.contains("stroke-dasharray='none'")
-        && found.insert("dashed-stroke")
-    {
-        diagnostics.push(SvgDiagnostic {
-            feature: "dashed-stroke",
-            message: Arc::from(
-                "dashed stroke is retained in the model; renderer support is deferred",
-            ),
-        });
-    }
     diagnostics
 }
 

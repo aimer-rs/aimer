@@ -534,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn retains_gradient_paints_and_reports_deferred_stroke_support() {
+    fn retains_gradient_paints_and_applies_dashed_strokes_without_a_deferral_diagnostic() {
         let document = SvgDocument::from_svg(
             br##"<svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
                 <defs><linearGradient id="g" spreadMethod="reflect"><stop offset="0" stop-color="#ff0000" stop-opacity="0.5"/><stop offset="1" stop-color="#0000ff"/></linearGradient></defs>
@@ -557,8 +557,113 @@ mod tests {
             document
                 .diagnostics()
                 .iter()
-                .any(|diagnostic| diagnostic.feature == "dashed-stroke")
+                .all(|diagnostic| diagnostic.feature != "dashed-stroke")
         );
+        assert_eq!(&*document.scene().node(node_id).unwrap().stroke.as_ref().unwrap().dash_array, &[2.0, 1.0]);
+    }
+
+    #[test]
+    fn parses_dash_array_and_offset_from_attributes_css_and_ancestors() {
+        let document = SvgDocument::from_svg(
+            br##"<svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+                <style>.css { stroke-dasharray: 3 1; stroke-dashoffset: 2px; }</style>
+                <g stroke="#000" stroke-dasharray="4, 2 1" stroke-dashoffset="-3">
+                    <path id="inherited" d="M0 0h10"/>
+                    <path id="reset" d="M0 0h10" stroke-dasharray="none" stroke-dashoffset="0"/>
+                    <path id="zero" d="M0 0h10" stroke-dasharray="0 0"/>
+                    <path id="css" class="css" d="M0 0h10"/>
+                </g>
+            </svg>"##,
+        )
+        .unwrap();
+        let stroke = |id: &str| {
+            let node = document.select(format!("#{id}")).unwrap()[0];
+            document.scene().node(node).unwrap().stroke.clone().unwrap()
+        };
+        let inherited = stroke("inherited");
+        assert_eq!(&*inherited.dash_array, &[4.0, 2.0, 1.0]);
+        assert_eq!(inherited.dash_offset, -3.0);
+        assert!(stroke("reset").dash_array.is_empty());
+        // An all-zero pattern is a solid stroke in SVG, never an invisible one.
+        assert!(stroke("zero").dash_array.is_empty());
+        let css = stroke("css");
+        assert_eq!(&*css.dash_array, &[3.0, 1.0]);
+        assert_eq!(css.dash_offset, 2.0);
+    }
+
+    #[test]
+    fn rejects_negative_or_malformed_dash_arrays() {
+        for value in ["4 -1", "a b", "5%"] {
+            let svg = format!(
+                r##"<svg width="10" height="10" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10" stroke="#000" stroke-dasharray="{value}"/></svg>"##
+            );
+            assert!(SvgDocument::from_svg(svg.as_bytes()).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn use_elements_carry_the_referenced_dash_pattern() {
+        let document = SvgDocument::from_svg(
+            br##"<svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+                <defs><path id="line" d="M0 0h10" stroke="#000" stroke-dasharray="2 2" stroke-dashoffset="1"/></defs>
+                <use id="copy" href="#line"/>
+            </svg>"##,
+        )
+        .unwrap();
+        let node = document.select("#copy").unwrap()[0];
+        let stroke = document.scene().node(node).unwrap().stroke.clone().unwrap();
+        assert_eq!(&*stroke.dash_array, &[2.0, 2.0]);
+        assert_eq!(stroke.dash_offset, 1.0);
+    }
+
+    #[test]
+    fn dash_offset_styles_are_stored_clamped_and_reach_the_overrides() {
+        let style = SvgStyle::new().stroke_dash_offset(-4.5).stroke_dash_offset_percent(0.25..0.75);
+        assert_eq!(style.stroke_dash_offset, Some(-4.5));
+        assert_eq!(style.stroke_dash_offset_percent, Some([0.25, 0.75]));
+        assert_eq!(
+            SvgStyle::new().stroke_dash_offset_percent(-1.0..2.0).stroke_dash_offset_percent,
+            Some([0.0, 1.0])
+        );
+        assert_eq!(
+            SvgStyle::new().stroke_dash_offset_percent(f32::NAN..0.5).stroke_dash_offset_percent,
+            Some([0.0, 0.5])
+        );
+        assert_eq!(SvgStyle::new().stroke_dash_offset, None);
+        assert_eq!(SvgStyle::new().stroke_dash_offset_percent, None);
+        assert_eq!(SvgStyle::new().stroke_dash_offset(f32::NAN).stroke_dash_offset, Some(0.0));
+
+        let document = SvgDocument::from_svg(
+            br##"<svg width="20" height="10" xmlns="http://www.w3.org/2000/svg">
+                <g id="group" stroke="#000"><path id="child" d="M0 0h8"/></g>
+                <path id="other" d="M0 5h8" stroke="#000"/>
+            </svg>"##,
+        )
+        .unwrap();
+        let overrides =
+            widget::overrides_for_rules(document.scene(), &[("#group".parse().unwrap(), style)]);
+        assert_eq!(overrides.len(), 2, "the group and its child");
+        for item in &overrides {
+            assert_eq!(item.stroke_dash_offset, Some(-4.5));
+            assert_eq!(item.stroke_dash_offset_percent, Some([0.25, 0.75]));
+        }
+    }
+
+    #[test]
+    fn stroke_width_style_overrides_the_authored_width() {
+        let document = SvgDocument::from_svg(
+            br##"<svg width="20" height="10" xmlns="http://www.w3.org/2000/svg">
+                <path id="a" class="thick" d="M0 0h8" stroke="#000" stroke-width="1"/>
+                <path id="b" d="M0 5h8" stroke="#000" stroke-width="1"/>
+            </svg>"##,
+        )
+        .unwrap();
+        let rules = [(".thick".parse().unwrap(), SvgStyle::new().stroke_width(3.5))];
+        let overrides = widget::overrides_for_rules(document.scene(), &rules);
+        assert_eq!(overrides.len(), 1);
+        assert_eq!(overrides[0].stroke_width, Some(3.5));
+        assert_eq!(SvgStyle::new().stroke_width(-2.0).stroke_width, Some(0.0));
+        assert_eq!(SvgStyle::new().stroke_width, None);
     }
 
     #[test]
@@ -599,6 +704,9 @@ mod tests {
             node_id: node,
             fill: None,
             stroke: None,
+            stroke_width: None,
+            stroke_dash_offset: None,
+            stroke_dash_offset_percent: None,
             opacity: None,
             transform: Some(compensation.mul(source_node.transform)),
         }];
