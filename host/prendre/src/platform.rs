@@ -10,7 +10,7 @@ use aimer_platform::system_back::BackSignal;
 use aimer_platform::window_drag::WindowDragPhase;
 
 use crate::command::{BackStep, EditShortcut};
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, PressureStage, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 use crate::Command;
 
 // Every match below lists each variant, so a variant added to either side is a
@@ -80,6 +80,16 @@ impl From<TouchPhase> for ev::TouchPhase {
             TouchPhase::Moved => Self::Moved,
             TouchPhase::Ended => Self::Ended,
             TouchPhase::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+impl From<PressureStage> for ev::PressureStage {
+    fn from(stage: PressureStage) -> Self {
+        match stage {
+            PressureStage::None => Self::None,
+            PressureStage::Click => Self::Click,
+            PressureStage::Force => Self::Force,
         }
     }
 }
@@ -221,6 +231,9 @@ impl Command {
                 plain(ev::ElementEvent::Pan { pos: at(x, y), delta: at(dx, dy), phase: phase.into() })
             }
             Self::SmartZoom { x, y } => plain(ev::ElementEvent::SmartZoom { pos: at(x, y) }),
+            Self::Pressure { x, y, pressure, stage } => {
+                plain(ev::ElementEvent::Pressure { pos: at(x, y), pressure, stage: stage.into() })
+            }
             Self::Key { key, action, modifiers } => AimerNativePlatformEvent::NativeInput {
                 event: ev::ElementEvent::KeyInput {
                     key: key.into(),
@@ -400,6 +413,11 @@ mod tests {
 
     #[test]
     fn gestures_keep_their_anchor_delta_and_phase() {
+        let (pressure, _) = native(Command::Pressure { x: 5.0, y: 6.0, pressure: 0.8, stage: PressureStage::Force });
+        assert!(matches!(
+            pressure,
+            ev::ElementEvent::Pressure { pos, pressure, stage: ev::PressureStage::Force } if pos == (Vec2d { x: 5.0, y: 6.0 }) && pressure == 0.8
+        ));
         let (pinch, _) = native(Command::Pinch { x: 1.0, y: 2.0, delta: 0.25, phase: TouchPhase::Moved });
         assert!(matches!(pinch, ev::ElementEvent::Pinch { pos, delta, phase: ev::TouchPhase::Moved }
             if (pos.x, pos.y, delta) == (1.0, 2.0, 0.25)));

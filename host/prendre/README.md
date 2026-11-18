@@ -103,7 +103,25 @@ sees the pointer pass; the raw `move` jumps. `scroll` takes an optional point an
 otherwise scrolls where the mouse is. `click`, `drag`, `scroll`, `mouse_move`,
 `key`, `type_text`, `tap`, `swipe` and `pinch` return
 the [`Command`]s to send in order. Scrolling down moves the content up, as a
-wheel does. A character with no `ctrl`, `meta` or `alt` held is typed, and with
+wheel does.
+
+Each of `click`, `drag`, `scroll` and `mouse_move` has a `_with` form that holds modifier keys
+through the whole gesture, any number of the four at once, so a shift-click that extends a
+selection or a ctrl-scroll that zooms is one call. `Modifiers` reads from text (`"ctrl+shift"`,
+`"cmd,option"`), and `modifiers_of` joins a list of such names:
+
+```rust
+use aimer_prendre::actions::{self, modifiers_of};
+use aimer_prendre::PointerButton;
+
+let held = modifiers_of(&["shift", "ctrl+alt"])?;
+let shift_click = actions::click_with(Some((120.0, 48.0)), PointerButton::Primary, 1, "shift".parse()?)?;
+let alt_drag = actions::drag_with((10.0, 10.0), (110.0, 60.0), held)?;
+# Ok::<(), actions::ActionError>(())
+```
+
+On the wire a held key is `mods=shift` (or `mods=ctrl+shift+alt+meta`) after the command, as it
+always was. A character with no `ctrl`, `meta` or `alt` held is typed, and with
 one held it is a shortcut. Bad numbers are an `ActionError`, never a sequence
 the app would mistranslate.
 

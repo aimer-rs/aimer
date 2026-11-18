@@ -266,3 +266,91 @@ fn a_window_action_is_one_command() {
     use crate::model::WindowAction;
     assert_eq!(lines(&window(WindowAction::Minimize)), ["window minimize"]);
 }
+
+
+// ── Modifier keys held through a gesture ────────────────────────────────────────
+
+fn held(ctrl: bool, shift: bool, alt: bool, meta: bool) -> Modifiers {
+    Modifiers { ctrl, shift, alt, meta }
+}
+
+#[test]
+fn a_click_holds_its_modifiers_through_every_step_of_it() {
+    let shift = held(false, true, false, false);
+    assert_eq!(
+        lines(&click_with(Some((10.0, 20.0)), PointerButton::Primary, 1, shift).unwrap()),
+        ["glide 10 20 mods=shift", "down 10 20 primary mods=shift", "up 10 20 primary mods=shift"]
+    );
+    assert_eq!(
+        lines(&click_with(None, PointerButton::Secondary, 2, held(true, false, false, true)).unwrap()),
+        [
+            "down secondary mods=ctrl+meta",
+            "up secondary mods=ctrl+meta",
+            "down secondary mods=ctrl+meta",
+            "up secondary mods=ctrl+meta"
+        ]
+    );
+    // Without any, nothing is added to the line: it is the click there always was.
+    assert_eq!(
+        lines(&click_with(Some((10.0, 20.0)), PointerButton::Primary, 1, Modifiers::default()).unwrap()),
+        lines(&click(Some((10.0, 20.0)), PointerButton::Primary, 1).unwrap())
+    );
+}
+
+#[test]
+fn all_four_modifiers_can_be_held_at_once() {
+    let all = held(true, true, true, true);
+    let commands = click_with(Some((1.0, 2.0)), PointerButton::Primary, 1, all).unwrap();
+    assert_eq!(lines(&commands)[1], "down 1 2 primary mods=ctrl+shift+alt+meta");
+    // And what is built is what the wire says: each line reads back as the command it came from.
+    for command in &commands {
+        assert_eq!(&command.to_string().parse::<Command>().unwrap(), command);
+    }
+}
+
+#[test]
+fn drag_move_and_scroll_hold_their_modifiers_too() {
+    let alt = held(false, false, true, false);
+    assert_eq!(
+        lines(&drag_with((10.0, 10.0), (110.0, 60.0), alt).unwrap()),
+        ["glide 10 10 mods=alt", "down 10 10 primary mods=alt", "glide 110 60 mods=alt", "up 110 60 primary mods=alt"]
+    );
+    assert_eq!(lines(&mouse_move_with(120.0, 48.0, alt).unwrap()), ["glide 120 48 mods=alt"]);
+    let ctrl_shift = held(true, true, false, false);
+    assert_eq!(lines(&scroll_with(None, Direction::Up, 2.0, ctrl_shift).unwrap()), ["trackpad 0 80 mods=ctrl+shift"]);
+    let with_point = lines(&scroll_with(Some((40.0, 50.0)), Direction::Down, 1.0, ctrl_shift).unwrap());
+    assert_eq!(with_point[0], "glide 40 50 mods=ctrl+shift");
+    assert!(with_point.last().unwrap().ends_with("mods=ctrl+shift"));
+}
+
+#[test]
+fn modifiers_are_read_from_one_name_or_several_in_any_case_and_order() {
+    let parse = |text: &str| text.parse::<Modifiers>().unwrap();
+    assert_eq!(parse("shift"), held(false, true, false, false));
+    assert_eq!(parse("Ctrl+Shift"), held(true, true, false, false));
+    assert_eq!(parse("shift+ctrl"), parse("ctrl+shift"), "the order does not matter");
+    assert_eq!(parse("cmd,option"), held(false, false, true, true));
+    assert_eq!(parse(" control + super + win "), held(true, false, false, true));
+    assert_eq!(parse("shift+shift"), parse("shift"), "naming a key twice is naming it once");
+    for none in ["", "-", "none", "NONE", "  "] {
+        assert_eq!(parse(none), Modifiers::default(), "{none:?}");
+    }
+}
+
+#[test]
+fn something_that_is_not_a_modifier_is_refused_by_name() {
+    for bad in ["hyper", "shift+hyper", "shift+", "+shift", "ctrl++alt", "a"] {
+        assert!(bad.parse::<Modifiers>().is_err(), "{bad:?}");
+    }
+    let message = "shift+hyper".parse::<Modifiers>().unwrap_err().to_string();
+    assert!(message.contains("hyper") && message.contains("ctrl, shift, alt or meta"), "{message}");
+}
+
+#[test]
+fn a_list_of_names_holds_every_key_it_names() {
+    assert_eq!(modifiers_of::<&str>(&[]).unwrap(), Modifiers::default());
+    assert_eq!(modifiers_of(&["shift"]).unwrap(), held(false, true, false, false));
+    assert_eq!(modifiers_of(&["shift", "ctrl"]).unwrap(), held(true, true, false, false));
+    assert_eq!(modifiers_of(&["ctrl+alt", "meta", "shift".to_owned().as_str()]).unwrap(), held(true, true, true, true));
+    assert!(modifiers_of(&["shift", "hyper"]).is_err());
+}

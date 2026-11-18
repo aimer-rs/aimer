@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, PressureStage, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 
 use super::*;
 use crate::command::{BackStep, EditShortcut};
@@ -76,6 +76,9 @@ fn every_command_survives_a_round_trip() {
         roundtrip(Command::Pan { x: 1.0, y: 2.0, dx: -3.0, dy: 4.0, phase });
     }
     roundtrip(Command::SmartZoom { x: 7.0, y: 8.0 });
+    for stage in [PressureStage::None, PressureStage::Click, PressureStage::Force] {
+        roundtrip(Command::Pressure { x: 3.0, y: 4.5, pressure: 0.75, stage });
+    }
     roundtrip(Command::Key {
         key: NamedKey::PageDown,
         action: KeyAction::Repeat,
@@ -250,6 +253,10 @@ fn malformed_lines_are_rejected_with_a_reason() {
     assert_eq!(bad("touch start x 2 3"), ParseError::Invalid("id"));
     assert_eq!(bad("pinch 1 2 0.1"), ParseError::Missing("phase"));
     assert_eq!(bad("pan 1 2 3 4"), ParseError::Missing("phase"));
+    assert_eq!(bad("pressure 1 2 0.5"), ParseError::Missing("stage"));
+    assert_eq!(bad("pressure 1 2"), ParseError::Missing("pressure"));
+    assert_eq!(bad("pressure 1 2 0.5 hard"), ParseError::Invalid("stage"));
+    assert_eq!(bad("pressure 1 2 0.5 force now"), ParseError::TooMany);
     assert_eq!(bad("smartzoom 1"), ParseError::Missing("y"));
     assert_eq!(bad("back"), ParseError::Missing("signal"));
     assert_eq!(bad("back swipe"), ParseError::Invalid("signal"));
@@ -297,6 +304,8 @@ fn non_finite_numbers_never_reach_the_application() {
         "pinch 1 2 NaN start",
         "rotate inf 2 0.1 start",
         "pan 1 2 NaN 1 start",
+        "pressure 1 2 NaN force",
+        "pressure inf 2 0.5 click",
         "smartzoom 1 inf",
         "back progress NaN",
     ] {
@@ -375,4 +384,11 @@ fn a_window_action_is_one_word_and_anything_else_is_refused() {
     assert_eq!(bad("window"), ParseError::Missing("action"));
     assert_eq!(bad("window fullscreen"), ParseError::Invalid("action"));
     assert_eq!(bad("window maximize now"), ParseError::TooMany);
+}
+
+#[test]
+fn a_force_press_is_written_with_the_name_of_its_stage() {
+    assert_eq!(Command::Pressure { x: 10.0, y: 20.0, pressure: 1.0, stage: PressureStage::Force }.to_string(), "pressure 10 20 1 force");
+    assert_eq!("pressure 10 20 0 none".parse(), Ok(Command::Pressure { x: 10.0, y: 20.0, pressure: 0.0, stage: PressureStage::None }));
+    assert_eq!("pressure 1 2 0.5 click".parse(), Ok(Command::Pressure { x: 1.0, y: 2.0, pressure: 0.5, stage: PressureStage::Click }));
 }

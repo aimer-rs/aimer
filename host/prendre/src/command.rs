@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, PressureStage, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 
 /// An editing shortcut the application menu offers, delivered without a menu.
 ///
@@ -222,6 +222,9 @@ pub enum Command {
     Pan { x: f32, y: f32, dx: f32, dy: f32, phase: TouchPhase },
     /// A trackpad smart zoom (two-finger double tap) at `(x, y)`.
     SmartZoom { x: f32, y: f32 },
+    /// The pressure of a press on a Force Touch trackpad at `(x, y)`: how hard, from `0` to `1`, and what stage of the press
+    /// that is. A force click is a press that reaches [`PressureStage::Force`].
+    Pressure { x: f32, y: f32, pressure: f32, stage: PressureStage },
     /// A named key changed state.
     Key {
         key: NamedKey,

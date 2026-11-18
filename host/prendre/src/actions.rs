@@ -107,8 +107,14 @@ fn lerp(from: (f32, f32), to: (f32, f32), step: u32) -> (f32, f32) {
 /// so a hover starts and ends on the way and a viewer can follow it. A raw,
 /// instant `move` is a command of its own.
 pub fn mouse_move(x: f32, y: f32) -> Result<Vec<Command>, ActionError> {
+    mouse_move_with(x, y, Modifiers::default())
+}
+
+/// [`mouse_move`] while `modifiers` are held, so a hover that depends on a key (a link that
+/// opens only with `meta` held, a drag handle that shows with `alt`) can be driven.
+pub fn mouse_move_with(x: f32, y: f32, modifiers: Modifiers) -> Result<Vec<Command>, ActionError> {
     finite(&[x, y], "a position")?;
-    Ok(vec![Command::PointerGlide { x, y, millis: None, modifiers: Modifiers::default() }])
+    Ok(vec![Command::PointerGlide { x, y, millis: None, modifiers }])
 }
 
 /// Clicks `button` `count` times (one to three), at `at` or, without one, where
@@ -119,13 +125,24 @@ pub fn mouse_move(x: f32, y: f32) -> Result<Vec<Command>, ActionError> {
 /// one there is no glide: the server presses at the mouse's current position,
 /// and answers with an error if nothing has placed the mouse yet.
 pub fn click(at: Option<(f32, f32)>, button: PointerButton, count: u8) -> Result<Vec<Command>, ActionError> {
+    click_with(at, button, count, Modifiers::default())
+}
+
+/// [`click`] with `modifiers` held for the whole gesture, the glide and every press and release:
+/// a shift-click that extends a selection, a ctrl-click, a cmd-click that follows a link, or
+/// any combination of the four (`Modifiers { ctrl: true, shift: true, .. }`).
+pub fn click_with(
+    at: Option<(f32, f32)>,
+    button: PointerButton,
+    count: u8,
+    modifiers: Modifiers,
+) -> Result<Vec<Command>, ActionError> {
     if let Some((x, y)) = at {
         finite(&[x, y], "a position")?;
     }
     if !(1..=3).contains(&count) {
         return Err(ActionError::new("a click is one to three presses"));
     }
-    let modifiers = Modifiers::default();
     let mut commands = Vec::with_capacity(1 + 2 * usize::from(count));
     if let Some((x, y)) = at {
         commands.push(Command::PointerGlide { x, y, millis: None, modifiers });
@@ -146,8 +163,14 @@ pub fn click(at: Option<(f32, f32)>, button: PointerButton, count: u8) -> Result
 /// Glides to `from`, presses, glides to `to` holding the button, and releases
 /// there. Each press and release waits for the glide before it to arrive.
 pub fn drag(from: (f32, f32), to: (f32, f32)) -> Result<Vec<Command>, ActionError> {
+    drag_with(from, to, Modifiers::default())
+}
+
+/// [`drag`] with `modifiers` held throughout: a drag with `alt` that copies instead of moves, or
+/// with `shift` that constrains.
+pub fn drag_with(from: (f32, f32), to: (f32, f32), modifiers: Modifiers) -> Result<Vec<Command>, ActionError> {
     finite(&[from.0, from.1, to.0, to.1], "a position")?;
-    let (modifiers, button) = (Modifiers::default(), PointerButton::Primary);
+    let button = PointerButton::Primary;
     Ok(vec![
         Command::PointerGlide { x: from.0, y: from.1, millis: None, modifiers },
         Command::PointerDown { x: from.0, y: from.1, button, modifiers },
@@ -171,6 +194,17 @@ const PIXELS_PER_STEP: f32 = 40.0;
 /// Without, it scrolls wherever the mouse already is: the position the app last
 /// had for it, injected or real.
 pub fn scroll(at: Option<(f32, f32)>, direction: Direction, amount: f32) -> Result<Vec<Command>, ActionError> {
+    scroll_with(at, direction, amount, Modifiers::default())
+}
+
+/// [`scroll`] with `modifiers` held: `ctrl` or `meta` zooms where an app treats a wheel with it
+/// held as a zoom, and `shift` scrolls sideways where a toolkit does.
+pub fn scroll_with(
+    at: Option<(f32, f32)>,
+    direction: Direction,
+    amount: f32,
+    modifiers: Modifiers,
+) -> Result<Vec<Command>, ActionError> {
     finite(&[amount], "an amount")?;
     if let Some((x, y)) = at {
         finite(&[x, y], "a position")?;
@@ -186,7 +220,6 @@ pub fn scroll(at: Option<(f32, f32)>, direction: Direction, amount: f32) -> Resu
         Direction::Left => (pixels, 0.0),
         Direction::Right => (-pixels, 0.0),
     };
-    let modifiers = Modifiers::default();
     let scroll = Command::TrackpadScroll { dx, dy, millis: None, modifiers };
     Ok(match at {
         Some((x, y)) => vec![Command::PointerGlide { x, y, millis: None, modifiers }, Command::Settle, scroll],
@@ -271,6 +304,66 @@ pub fn typing(text: &str) -> Command {
 /// once, with no pacing. See [`typing`] for text that looks typed.
 pub fn type_text(text: &str) -> Command {
     Command::Text(text.to_owned())
+}
+
+/// Reads modifier keys from text: one or several joined by `+` or `,`, in any case and in any
+/// order, with the names people use for them.
+///
+/// `ctrl` (or `control`), `shift`, `alt` (`option`, `opt`) and `meta` (`cmd`, `command`, `super`,
+/// `win`, `windows`) name the four keys; `none` and `-` name no key at all. Naming one twice is the
+/// same as naming it once.
+///
+/// # Examples
+///
+/// ```
+/// use aimer_prendre::Modifiers;
+///
+/// let held: Modifiers = "Ctrl+Shift".parse()?;
+/// assert!(held.ctrl && held.shift && !held.alt && !held.meta);
+///
+/// assert_eq!("cmd,option".parse::<Modifiers>()?, Modifiers { meta: true, alt: true, ..Modifiers::default() });
+/// assert!("shift+hyper".parse::<Modifiers>().is_err());
+/// # Ok::<(), aimer_prendre::actions::ActionError>(())
+/// ```
+impl FromStr for Modifiers {
+    type Err = ActionError;
+
+    fn from_str(text: &str) -> Result<Self, ActionError> {
+        let text = text.trim();
+        let mut modifiers = Modifiers::default();
+        if text.is_empty() || text == "-" || text.eq_ignore_ascii_case("none") {
+            return Ok(modifiers);
+        }
+        for part in text.split(['+', ',']) {
+            let name = part.trim().to_ascii_lowercase();
+            if name.is_empty() {
+                return Err(ActionError::new("modifiers are joined by `+`, with a name on each side: `ctrl+shift`"));
+            }
+            if !modifier(&name, &mut modifiers) {
+                return Err(ActionError::new(format!("`{}` is not a modifier: ctrl, shift, alt or meta", part.trim())));
+            }
+        }
+        Ok(modifiers)
+    }
+}
+
+/// The modifiers named by each of `names`, together: `["shift", "ctrl+alt"]` holds all three. A
+/// list is how a command line (`--mods shift --mods ctrl`) or a tool call (`["shift", "ctrl"]`)
+/// names several keys; an empty list holds none.
+///
+/// # Errors
+///
+/// An [`ActionError`] naming the first word that is not a modifier.
+pub fn modifiers_of<S: AsRef<str>>(names: &[S]) -> Result<Modifiers, ActionError> {
+    let mut held = Modifiers::default();
+    for name in names {
+        let one: Modifiers = name.as_ref().parse()?;
+        held.ctrl |= one.ctrl;
+        held.shift |= one.shift;
+        held.alt |= one.alt;
+        held.meta |= one.meta;
+    }
+    Ok(held)
 }
 
 fn modifier(name: &str, modifiers: &mut Modifiers) -> bool {

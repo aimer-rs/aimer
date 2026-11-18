@@ -9,7 +9,7 @@
 //! screenshot [width=PIXELS] [jpeg=QUALITY]
 //! touch start|move|end ID X Y       touch cancel
 //! pinch X Y DELTA PHASE             rotate X Y DELTA PHASE     pan X Y DX DY PHASE
-//! smartzoom X Y
+//! smartzoom X Y                     pressure X Y PRESSURE none|click|force
 //! key press|release|repeat MODS KEY text TEXT                  preedit RANGE [TEXT]
 //! soft-backspace                    back start|progress P|invoke|cancel
 //! link URL                          menu undo|redo|cut|copy|paste|select-all
@@ -50,7 +50,7 @@ use std::str::FromStr;
 
 use std::path::PathBuf;
 
-use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
+use crate::model::{KeyAction, Modifiers, NamedKey, PointerButton, PressureStage, ScrollDeltaKind, TouchPhase, WindowAction, WindowEdge};
 
 use crate::Command;
 use crate::command::{BackStep, EditShortcut, MAX_GLIDE_MILLIS, MAX_SCREENSHOT_WIDTH};
@@ -269,6 +269,23 @@ fn parse_phase(word: &str) -> Result<TouchPhase, ParseError> {
     }
 }
 
+fn parse_stage(word: &str) -> Result<PressureStage, ParseError> {
+    match word {
+        "none" => Ok(PressureStage::None),
+        "click" => Ok(PressureStage::Click),
+        "force" => Ok(PressureStage::Force),
+        _ => Err(ParseError::Invalid("stage")),
+    }
+}
+
+fn stage_name(stage: PressureStage) -> &'static str {
+    match stage {
+        PressureStage::None => "none",
+        PressureStage::Click => "click",
+        PressureStage::Force => "force",
+    }
+}
+
 fn phase_name(phase: TouchPhase) -> &'static str {
     match phase {
         TouchPhase::Started => "start",
@@ -419,6 +436,7 @@ impl fmt::Display for Command {
             Self::Rotate { x, y, delta, phase } => write!(f, "rotate {x} {y} {delta} {}", phase_name(*phase)),
             Self::Pan { x, y, dx, dy, phase } => write!(f, "pan {x} {y} {dx} {dy} {}", phase_name(*phase)),
             Self::SmartZoom { x, y } => write!(f, "smartzoom {x} {y}"),
+            Self::Pressure { x, y, pressure, stage } => write!(f, "pressure {x} {y} {pressure} {}", stage_name(*stage)),
             Self::Key { key, action, modifiers } => {
                 f.write_str(match action {
                     KeyAction::Pressed => "key press ",
@@ -653,6 +671,13 @@ impl FromStr for Command {
                 let phase = parse_phase(words.next().ok_or(ParseError::Missing("phase"))?)?;
                 no_more(words)?;
                 Ok(Self::Pan { x, y, dx, dy, phase })
+            }
+            "pressure" => {
+                let (x, y) = (number(words.next(), "x")?, number(words.next(), "y")?);
+                let pressure = number(words.next(), "pressure")?;
+                let stage = parse_stage(words.next().ok_or(ParseError::Missing("stage"))?)?;
+                no_more(words)?;
+                Ok(Self::Pressure { x, y, pressure, stage })
             }
             "smartzoom" => {
                 let (x, y) = (number(words.next(), "x")?, number(words.next(), "y")?);

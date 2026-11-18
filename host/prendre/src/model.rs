@@ -100,6 +100,17 @@ pub enum TouchPhase {
     Cancelled,
 }
 
+/// How far a press on a pressure-sensitive trackpad has gone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PressureStage {
+    /// No press: the finger is off the pad.
+    None,
+    /// An ordinary click.
+    Click,
+    /// A deep press, the force click.
+    Force,
+}
+
 /// Which edge or corner of the window a resize drags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowEdge {
