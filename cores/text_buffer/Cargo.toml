@@ -1,0 +1,13 @@
+[package]
+name = "aimer_text_buffer"
+version = "0.1.0"
+edition = "2024"
+description = "A rope text buffer: edits, undo and queries that cost what they touch, not the size of the text"
+
+[lints]
+workspace = true
+
+[dependencies]
+aimer_sum_tree.workspace = true
+aimer_simd.workspace = true
+unicode-segmentation.workspace = true
