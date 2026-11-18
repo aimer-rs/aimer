@@ -1,0 +1,10 @@
+[package]
+name = "aimer_sum_tree"
+version = "0.1.0"
+edition = "2024"
+description = "A persistent B+tree whose nodes carry summaries of what is below them"
+
+[lints]
+workspace = true
+
+[dependencies]
