@@ -94,7 +94,7 @@ impl InlineBox {
 /// supplied to [`TextSpan::flatten`]. This keeps transformation, spacing,
 /// decoration, and glyph-shadow inheritance explicit without duplicating the
 /// base style on every span.
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct SpanStyle {
     /// Optional font-size override inherited from the parent span.
     pub font_size: Option<u32>,

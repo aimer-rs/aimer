@@ -40,7 +40,7 @@ Use this workflow to work with a running Aimer app from the outside: start or re
 
 Coordinates are `[x, y]` logical pixels from the top-left corner of the app's window.
 
-- Mouse: `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`, `mouse_move`, `left_click_drag`, and `scroll`. A click's `coordinate` is optional: without it the click happens where the mouse already is, once an earlier click, `mouse_move`, or `scroll` has placed it. The pointer glides along a curved path, and a command sent mid-glide retargets it.
+- Mouse: `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`, `mouse_move`, `left_click_drag`, and `scroll`. A click's `coordinate` is optional: without it the click happens where the mouse already is, once an earlier click, `mouse_move`, or `scroll` has placed it. The pointer glides along a curved path, and a command sent mid-glide retargets it. These tools take an optional `modifiers` list (`["shift"]`, `["ctrl", "shift"]`) held through the gesture: a shift-click extends a text selection, and a ctrl-click, an alt-drag or a ctrl-scroll work the same way.
 - `scroll` is a smooth swipe with `scroll_direction`, `scroll_amount` (steps of 40 pixels), and an optional `coordinate`.
 - Keyboard: `key` takes `text` such as `Return`, `Escape`, or `ctrl+a`. `type` types `text` at a human pace; click the field first so it has focus.
 - Touch, for apps on a phone or tablet: `tap`, `swipe`, and `pinch`.
@@ -64,7 +64,7 @@ Coordinates are `[x, y]` logical pixels from the top-left corner of the app's wi
 
 ## Without the MCP tools
 
-- In a shell, `aimer input click 120 48`, `aimer input key ctrl+a`, `aimer input type "hello"`, `aimer input scroll 200 300 down 3`, and `aimer input send "back invoke"` do the same as the tools. `aimer screenshot -o app.png` saves a picture, and `aimer sessions` lists live sessions. Pass `--session <id>` when several sessions are live.
+- In a shell, `aimer input click 120 48`, `aimer input key ctrl+a`, `aimer input type "hello"`, `aimer input scroll 200 300 down 3`, `aimer input click 120 48 --mods shift` (several: `--mods ctrl+shift`, or repeat `--mods`; also on `move`, `drag` and `scroll`), and `aimer input send "back invoke"` do the same as the tools. `aimer screenshot -o app.png` saves a picture, and `aimer sessions` lists live sessions. Pass `--session <id>` when several sessions are live.
 
 ## Reporting
 

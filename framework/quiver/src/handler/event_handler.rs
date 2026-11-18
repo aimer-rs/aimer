@@ -169,6 +169,7 @@ impl WindowEventHandler {
                     alt: state.alt_key(),
                     meta: state.super_key(),
                 };
+                Modifiers::set_current(app.current_modifiers);
             }
 
             WindowEvent::KeyboardInput { event, .. } => Self::handle_keyboard_input(event, app),
@@ -198,6 +199,11 @@ impl WindowEventHandler {
                 let pos = app.cursor_pos;
                 let event = platform_gesture::pan(pos, delta, app.window_scale, phase);
                 Self::dispatch_platform_gesture(app, event);
+            }
+            // The pressure of a press on a Force Touch trackpad, which macOS reports. It has no position either.
+            WindowEvent::TouchpadPressure { pressure, stage, .. } => {
+                let pos = app.cursor_pos;
+                Self::dispatch_platform_gesture(app, platform_gesture::pressure(pos, pressure, stage));
             }
             WindowEvent::DoubleTapGesture { .. } => {
                 let pos = app.cursor_pos;
@@ -239,6 +245,9 @@ impl WindowEventHandler {
             WindowEvent::Focused(is_focus) => {
                 if !is_focus {
                     Self::notify_attention_lost();
+                    // A key released while another window had focus is never reported here.
+                    app.current_modifiers = Modifiers::default();
+                    Modifiers::set_current(Modifiers::default());
                 }
                 if app.active_root().is_none() {
                     return;

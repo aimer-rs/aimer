@@ -606,6 +606,9 @@ fn badge_overrides(alpha: f32) -> Arc<[SvgNodeStyleOverride]> {
             node_id: node.node_id,
             fill: None,
             stroke: None,
+            stroke_width: None,
+            stroke_dash_offset: None,
+            stroke_dash_offset_percent: None,
             opacity: Some(alpha.clamp(0.0, 1.0)),
             transform: None,
         })

@@ -154,7 +154,7 @@ impl State<MyList> for MyListState {
                                                             println!("Button pressed with text: {}", updater.read_state().input_controller.value().text());
                                                             updater.set_state(|state| {
                                                                 let uuid = Uuid::new_v4().to_string();
-                                                                let text = state.input_controller.value().text().to_owned();
+                                                                let text = state.input_controller.value().text().into_owned();
                                                                 state.input_controller.clear();
                                                                 state.list.push(ListItem {
                                                                     id: uuid,

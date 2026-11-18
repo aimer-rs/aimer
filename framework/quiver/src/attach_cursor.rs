@@ -182,6 +182,9 @@ impl Glyph {
                 node_id: node.node_id,
                 fill: self.recolor.map(|(fill, _)| Some(fill)),
                 stroke: self.recolor.map(|(_, stroke)| Some(stroke)),
+                stroke_width: None,
+                stroke_dash_offset: None,
+                stroke_dash_offset_percent: None,
                 opacity: Some(opacity),
                 // A node's own transform carries the viewBox scaling, so the turn is
                 // applied after it, in the viewport's units.

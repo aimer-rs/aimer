@@ -132,8 +132,8 @@ impl State<PasskeyExample> for PasskeyExampleState {
 
     fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
         let theme = ThemeData::copied(ctx);
-        let server = this.server.value().text().to_owned();
-        let username = this.username.value().text().to_owned();
+        let server = this.server.value().text().into_owned();
+        let username = this.username.value().text().into_owned();
         let press = |operation| operation_callback(operation, server.clone(), username.clone(), this.updater());
 
         Scrollable::new()

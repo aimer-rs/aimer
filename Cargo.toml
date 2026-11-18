@@ -245,6 +245,8 @@ members = [
     "cores/ffi_utils",
     "cores/shape",
     "cores/simd",
+    "cores/sum_tree",
+    "cores/text_buffer",
     # contracts
     "contracts/accessibility",
     "contracts/form",
@@ -366,6 +368,8 @@ aimer_cupid = { path = "graphic/cupid", default-features = false, features = [
     "native",
 ] }
 aimer_simd = { path = "cores/simd" }
+aimer_sum_tree = { path = "cores/sum_tree" }
+aimer_text_buffer = { path = "cores/text_buffer" }
 aimer_primitives = { path = "graphic/primitives" }
 aimer_scene = { path = "graphic/scene" }
 aimer_pipeline_core = { path = "graphic/pipelines/core" }
@@ -649,6 +653,12 @@ debug = "line-tables-only"
 opt-level = 3
 
 [profile.dev.package.aimer_venus]
+opt-level = 3
+
+# Its kernels are generic over a backend and call small trait methods per vector; unoptimized
+# those calls are not inlined, and a scan runs at a fraction of the speed of the byte loop it
+# replaces (see `bench_scanning` in `kernels/bytes.rs`).
+[profile.dev.package.aimer_simd]
 opt-level = 3
 
 # syntect parses every highlighted line with a regex engine, and decoding its

@@ -16,12 +16,50 @@ pub enum KeyAction {
 }
 
 /// Modifier key state carried with keyboard events.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Modifiers {
     pub ctrl: bool,
     pub shift: bool,
     pub alt: bool,
     pub meta: bool,
+}
+
+aimer_tls::thread_local! {
+    static CURRENT_MODIFIERS: std::cell::Cell<Modifiers> = const {
+        std::cell::Cell::new(Modifiers { ctrl: false, shift: false, alt: false, meta: false })
+    };
+}
+
+impl Modifiers {
+    /// The modifier keys that are held now, as the application's event loop last saw them.
+    ///
+    /// Keyboard events carry their own modifiers, but a pointer event does not, and some pointer
+    /// gestures depend on them: a click that extends a selection when `shift` is held, say. The
+    /// state is per thread, which is the thread the event loop and the widgets share. It is the
+    /// default (nothing held) until the loop reports a change, and again when the window loses
+    /// focus.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_events::element::Modifiers;
+    ///
+    /// assert!(!Modifiers::current().shift);
+    /// Modifiers::set_current(Modifiers { shift: true, ..Modifiers::default() });
+    /// assert!(Modifiers::current().shift);
+    /// Modifiers::set_current(Modifiers::default());
+    /// ```
+    #[inline]
+    pub fn current() -> Self {
+        CURRENT_MODIFIERS.with(std::cell::Cell::get)
+    }
+
+    /// Records the modifier keys that are held now. The event loop calls this when they change;
+    /// a test that drives a widget with a held key calls it too.
+    #[inline]
+    pub fn set_current(modifiers: Self) {
+        CURRENT_MODIFIERS.with(|current| current.set(modifiers));
+    }
 }
 
 /// Named (non-text) keys.
@@ -51,6 +89,33 @@ pub enum ScrollDeltaKind {
     Line,
     /// A pixel-precise trackpad or smooth-wheel delta.
     Pixel,
+}
+
+/// How far a press on a pressure-sensitive trackpad has gone: the stages of a macOS Force Touch trackpad, which
+/// reports one as the finger presses harder.
+///
+/// The stages are in order, so `stage >= PressureStage::Click` says that the pad is pressed at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PressureStage {
+    /// No press: the finger is off the pad, or has not pressed it down.
+    None,
+    /// An ordinary click.
+    Click,
+    /// A deep press, the force click that a trackpad that is pressed hard gives.
+    Force,
+}
+
+impl PressureStage {
+    /// The stage a platform number stands for: `0` is no press, `1` a click and `2` a force click. A number that is not one
+    /// of them is the nearest, which is none for what is below `0` and force for what is above `2`.
+    #[inline]
+    pub const fn from_platform(stage: i64) -> Self {
+        match stage {
+            i64::MIN..=0 => Self::None,
+            1 => Self::Click,
+            _ => Self::Force,
+        }
+    }
 }
 
 /// Pointer and keyboard event types for dispatch.
@@ -123,6 +188,20 @@ pub enum ElementEvent {
     SmartZoom {
         /// Where the gesture is anchored, in logical window coordinates.
         pos: Vec2d,
+    },
+    /// The pressure of a press on a pressure-sensitive trackpad, which a macOS Force Touch trackpad reports as the finger
+    /// presses harder and lets go.
+    ///
+    /// Like [`Self::Pinch`] it is routed by hit test at `pos`, the cursor: the platform gives it no position of its own.
+    /// It follows the press all the way: one event for every change of the pressure, and one with
+    /// [`PressureStage::None`] when it is let go. A widget that wants the force click waits for the stage to *become*
+    /// [`PressureStage::Force`], which is once for each deep press.
+    Pressure {
+        /// Where the cursor is, in logical window coordinates.
+        pos: Vec2d,
+        /// How hard the press is, from `0.0` (none) to `1.0` and no more. Never `NaN`.
+        pressure: f32,
+        stage: PressureStage,
     },
     /// A character was typed (text input).
     CharInput {
@@ -320,3 +399,40 @@ impl ElementEvent {
 
 unsafe impl Send for ElementEvent {}
 unsafe impl Sync for ElementEvent {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_stages_of_a_press_are_the_ones_a_trackpad_reports() {
+        assert_eq!(PressureStage::from_platform(0), PressureStage::None);
+        assert_eq!(PressureStage::from_platform(1), PressureStage::Click);
+        assert_eq!(PressureStage::from_platform(2), PressureStage::Force);
+    }
+
+    #[test]
+    fn a_stage_that_is_not_one_of_them_is_the_nearest() {
+        assert_eq!(PressureStage::from_platform(-1), PressureStage::None);
+        assert_eq!(PressureStage::from_platform(i64::MIN), PressureStage::None);
+        assert_eq!(PressureStage::from_platform(3), PressureStage::Force);
+        assert_eq!(PressureStage::from_platform(i64::MAX), PressureStage::Force);
+    }
+
+    #[test]
+    fn the_stages_are_in_order_of_how_hard_the_press_is() {
+        assert!(PressureStage::None < PressureStage::Click);
+        assert!(PressureStage::Click < PressureStage::Force);
+    }
+
+    #[test]
+    fn a_pressure_event_says_where_how_hard_and_what_stage() {
+        let event = ElementEvent::Pressure { pos: Vec2d { x: 3.0, y: 4.0 }, pressure: 0.5, stage: PressureStage::Click };
+        assert!(matches!(
+            event,
+            ElementEvent::Pressure { pos, pressure, stage: PressureStage::Click } if pos == (Vec2d { x: 3.0, y: 4.0 }) && pressure == 0.5
+        ));
+        // It goes to the element under the pointer, as a pinch does, and not to the one that has the focus.
+        assert!(!event.is_focus_directed());
+    }
+}

@@ -13,7 +13,7 @@
 #![cfg_attr(any(target_os = "macos", target_os = "ios"), allow(dead_code))]
 
 use aimer_attribute::position::Vec2d;
-use aimer_events::element::{ElementEvent, ScrollDeltaKind};
+use aimer_events::element::{ElementEvent, PressureStage, ScrollDeltaKind};
 use winit::dpi::PhysicalPosition;
 use winit::event::TouchPhase;
 
@@ -86,6 +86,19 @@ pub(crate) fn pan(
     }
 }
 
+/// The pressure of a press on the trackpad, at the cursor `pos`.
+///
+/// winit reports how hard in `f32`, which may not be a number, and the stage as a number that is `0`, `1` or `2`: it is kept
+/// between none and full, and the stage is the nearest of the three.
+#[inline]
+pub(crate) fn pressure(pos: Vec2d, pressure: f32, stage: i64) -> ElementEvent {
+    ElementEvent::Pressure {
+        pos,
+        pressure: finite(pressure).clamp(0.0, 1.0),
+        stage: PressureStage::from_platform(stage),
+    }
+}
+
 /// The smart-zoom gesture at `pos`.
 #[inline]
 pub(crate) fn smart_zoom(pos: Vec2d) -> ElementEvent {
@@ -115,6 +128,36 @@ mod tests {
     use super::*;
 
     const AT: Vec2d = Vec2d { x: 7.0, y: 9.0 };
+
+    #[test]
+    fn a_press_keeps_where_it_is_how_hard_and_what_stage() {
+        assert!(matches!(
+            pressure(AT, 0.75, 1),
+            ElementEvent::Pressure { pos, pressure, stage: PressureStage::Click } if pos == AT && pressure == 0.75
+        ));
+        assert!(matches!(pressure(AT, 1.0, 2), ElementEvent::Pressure { stage: PressureStage::Force, .. }));
+        assert!(matches!(pressure(AT, 0.0, 0), ElementEvent::Pressure { pressure, stage: PressureStage::None, .. } if pressure == 0.0));
+    }
+
+    #[test]
+    fn a_pressure_is_between_none_and_full_and_what_is_not_a_number_is_none() {
+        let amount = |value: f32| match pressure(AT, value, 1) {
+            ElementEvent::Pressure { pressure, .. } => pressure,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(amount(-0.5), 0.0);
+        assert_eq!(amount(7.0), 1.0);
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            // A widget that follows the pressure would be poisoned by a number that is not one, for good.
+            assert_eq!(amount(bad), 0.0, "{bad} must not reach a widget");
+        }
+    }
+
+    #[test]
+    fn a_stage_the_platform_makes_up_is_the_nearest_of_the_three() {
+        assert!(matches!(pressure(AT, 0.5, -4), ElementEvent::Pressure { stage: PressureStage::None, .. }));
+        assert!(matches!(pressure(AT, 0.5, 9), ElementEvent::Pressure { stage: PressureStage::Force, .. }));
+    }
 
     #[test]
     fn a_pinch_keeps_its_fraction_and_phase() {

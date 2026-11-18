@@ -29,7 +29,7 @@ use crate::text_span::{ResolvedTextSpan, SpanStyle};
 /// let keyword = StyledRange::new(0..3, SpanStyle::new().color(Color::Rgba(80, 120, 255, 255)));
 /// assert_eq!(keyword.range, 0..3);
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StyledRange {
     /// The styled UTF-8 byte range.
     pub range: Range<usize>,

@@ -29,6 +29,7 @@ impl WindowEventHandler {
         modifiers: Modifiers,
     ) {
         app.current_modifiers = modifiers;
+        Modifiers::set_current(modifiers);
         let scale = if app.window_scale.is_finite() && app.window_scale > 0.0 {
             app.window_scale
         } else {
@@ -103,7 +104,8 @@ impl WindowEventHandler {
             ElementEvent::Pinch { pos, .. }
             | ElementEvent::Rotate { pos, .. }
             | ElementEvent::Pan { pos, .. }
-            | ElementEvent::SmartZoom { pos } => {
+            | ElementEvent::SmartZoom { pos }
+            | ElementEvent::Pressure { pos, .. } => {
                 app.cursor_pos = pos;
                 Self::dispatch_platform_gesture(app, event);
             }

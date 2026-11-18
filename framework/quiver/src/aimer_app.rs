@@ -1863,6 +1863,7 @@ mod tests {
     mod thumb_hold;
     mod touch_scroll;
     mod trackpad_gestures;
+    mod force_touch;
     mod window_resize;
 
     static VIRTUALIZED_RENDER_TEST_LOCK: Mutex<()> = Mutex::new(());

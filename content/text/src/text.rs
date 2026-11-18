@@ -1,4 +1,5 @@
 pub mod raw_text;
+mod plain_chunks;
 pub mod selectable_text;
 
 use std::cell::Cell;

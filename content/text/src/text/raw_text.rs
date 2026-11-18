@@ -10,6 +10,7 @@ use aimer_utils::debug;
 use aimer_widget::base::BuildContext;
 use aimer_widget::{TextOverflowMode, *};
 
+use super::plain_chunks;
 use crate::paragraph::Paragraph;
 use crate::paragraph::geometry::{DecorationPaint, prepare_decoration_paint};
 use crate::TextSource;
@@ -345,24 +346,72 @@ impl RawTextWidget {
         before_foreground
             .take()
             .expect("foreground callback is used once")(canvas);
-        canvas.draw_text_styled(
-            std::sync::Arc::<str>::from(self.text.as_str()),
-            aimer_cupid::utilities::Vec2d::new(
-                draw_origin.x,
-                draw_origin.y + data.baseline / data.scale,
-            ),
-            data.font_size / data.scale,
-            self.text_style.color.into(),
-            Some(data.width / data.scale),
-            Some(data.height / data.scale),
-            data.overflow,
-            data.horizontal_align,
-            self.text_style.font_family,
-            self.text_style.font_style,
-            self.text_style.font_weight.numeric(),
-            None,
-            true,
-        );
+        // A long wrapped text is drawn as requests of a few hard lines each, so that the renderer
+        // sets aside the ones that are off screen; see `plain_chunks`. Only text aligned to the
+        // top, whose lines stack from the top of the box.
+        let chunks = (data.overflow == TextOverflowMode::Wrap
+            && matches!(
+                self.text_align,
+                TextAlign::TopLeft | TextAlign::TopCenter | TextAlign::TopRight
+            ))
+        .then(|| plain_chunks::plan(self.text.as_str()))
+        .flatten();
+        let Some(chunks) = chunks else {
+            canvas.draw_text_styled(
+                std::sync::Arc::<str>::from(self.text.as_str()),
+                aimer_cupid::utilities::Vec2d::new(
+                    draw_origin.x,
+                    draw_origin.y + data.baseline / data.scale,
+                ),
+                data.font_size / data.scale,
+                self.text_style.color.into(),
+                Some(data.width / data.scale),
+                Some(data.height / data.scale),
+                data.overflow,
+                data.horizontal_align,
+                self.text_style.font_family,
+                self.text_style.font_style,
+                self.text_style.font_weight.numeric(),
+                None,
+                true,
+            );
+            return true;
+        };
+        let text = self.text.as_str();
+        // Where the chunk's first line begins, in the layout's own pixels.
+        let mut top = 0.0_f32;
+        for chunk in chunks {
+            let part = &text[chunk.text];
+            let metrics = ctx.canvas.measure_text_metrics_styled(
+                part,
+                data.font_size,
+                data.width,
+                self.text_style.font_family,
+                self.text_style.font_style,
+                self.text_style.font_weight.numeric(),
+            );
+            // Text with nothing in it is still a line.
+            let height = if part.is_empty() { metrics.line_height } else { metrics.height };
+            canvas.draw_text_styled(
+                std::sync::Arc::<str>::from(part),
+                aimer_cupid::utilities::Vec2d::new(
+                    draw_origin.x,
+                    draw_origin.y + (top + data.baseline) / data.scale,
+                ),
+                data.font_size / data.scale,
+                self.text_style.color.into(),
+                Some(data.width / data.scale),
+                Some(height / data.scale),
+                data.overflow,
+                data.horizontal_align,
+                self.text_style.font_family,
+                self.text_style.font_style,
+                self.text_style.font_weight.numeric(),
+                None,
+                true,
+            );
+            top += height;
+        }
         true
     }
 
