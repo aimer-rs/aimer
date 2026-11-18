@@ -42,6 +42,8 @@ mod android_clipboard;
 mod desktop_clipboard;
 #[cfg(target_os = "ios")]
 mod ios_clipboard;
+#[cfg(target_os = "macos")]
+mod macos_pasteboard;
 #[cfg(target_arch = "wasm32")]
 mod web_clipboard;
 
@@ -113,6 +115,75 @@ impl std::error::Error for ClipboardError {}
 #[inline]
 pub fn set_text(text: &str) -> Result<(), ClipboardError> {
     platform::set_text(text)
+}
+
+/// Text read from the clipboard, held where the platform delivered it.
+///
+/// It reads as a `str` and can be shared across threads. On macOS it is the bytes the pasteboard
+/// handed over, so a paste of megabytes is not copied into a `String` first; elsewhere it is the
+/// `String` that [`get_text`] returns. A caller that builds a rope or a buffer from it can slice
+/// it in place and let the last slice drop it.
+pub type ClipboardText = std::sync::Arc<dyn AsRef<str> + Send + Sync>;
+
+/// The shortest text, in bytes, that [`set_text_chunks`] gives to the platform in pieces: a
+/// shorter one is joined and written as [`set_text`] does, which is what every platform tests.
+const CHUNKED_WRITE_MIN: usize = 64 * 1024;
+
+/// Reads the clipboard's contents as plain text, without copying them into a `String` where the
+/// platform allows: see [`ClipboardText`].
+///
+/// # Errors
+///
+/// The same as [`get_text`].
+///
+/// # Examples
+///
+/// ```
+/// use aimer_clipboard::clipboard;
+///
+/// // A paste that is read in place: the text is a `str` for as long as it is held.
+/// if let Ok(text) = clipboard::get_shared_text() {
+///     let text: &str = (*text).as_ref();
+///     let _ = text.len();
+/// }
+/// ```
+pub fn get_shared_text() -> Result<ClipboardText, ClipboardError> {
+    #[cfg(target_os = "macos")]
+    if let Some(text) = macos_pasteboard::read() {
+        return Ok(text);
+    }
+    platform::get_text().map(|text| std::sync::Arc::new(text) as ClipboardText)
+}
+
+/// Replaces the clipboard's contents with the text that is `chunks` one after the other.
+///
+/// A text that is already in pieces, such as the chunks of a rope, is written without being joined
+/// into a `String` first: on macOS each piece is copied once, into the buffer the pasteboard
+/// takes. A short text, and every platform without that path, joins the pieces and writes them
+/// as [`set_text`] does.
+///
+/// # Errors
+///
+/// The same as [`set_text`].
+///
+/// # Examples
+///
+/// ```
+/// use aimer_clipboard::clipboard;
+///
+/// let _ = clipboard::set_text_chunks(&["one ", "text ", "in three pieces"]);
+/// ```
+pub fn set_text_chunks(chunks: &[&str]) -> Result<(), ClipboardError> {
+    let length: usize = chunks.iter().map(|chunk| chunk.len()).sum();
+    #[cfg(target_os = "macos")]
+    if length >= CHUNKED_WRITE_MIN && macos_pasteboard::write(chunks) {
+        return Ok(());
+    }
+    let mut text = String::with_capacity(length);
+    for chunk in chunks {
+        text.push_str(chunk);
+    }
+    platform::set_text(&text)
 }
 
 /// Reads the clipboard's contents as plain text.
