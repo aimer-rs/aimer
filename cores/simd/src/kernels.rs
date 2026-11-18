@@ -11,6 +11,10 @@ mod rgba;
 pub use rgba::composite_rgba8;
 mod coverage;
 pub use coverage::{add_u8_in_place, normalize_coverage_u8};
+mod bytes;
+pub use bytes::{count_byte, find_byte, find_byte_at_least, find_byte_outside, is_ascii};
+mod graphemes;
+pub use graphemes::simple_grapheme_count;
 
 #[cfg(any(
     feature = "force-scalar",

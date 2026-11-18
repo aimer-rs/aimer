@@ -1,5 +1,7 @@
 use crate::number::Number;
-use crate::simd_traits::{Simd, SimdAdd, SimdCompare, SimdDiv, SimdMul, SimdSelect, SimdSub};
+use crate::simd_traits::{
+    Simd, SimdAdd, SimdCompare, SimdDiv, SimdEq, SimdMask, SimdMul, SimdSelect, SimdSub,
+};
 
 /// Scalar implementation of the SIMD backend traits.
 ///
@@ -66,5 +68,29 @@ impl<T: Number> SimdSelect<T, 1> for Scalar {
     #[inline]
     fn select(mask: bool, yes: T, no: T) -> T {
         if mask { yes } else { no }
+    }
+}
+
+impl<T: Number> SimdEq<T, 1> for Scalar {
+    #[inline]
+    fn eq(left: T, right: T) -> bool {
+        left == right
+    }
+}
+
+impl<T: Number> SimdMask<T, 1> for Scalar {
+    #[inline]
+    fn bitmask(mask: bool) -> u32 {
+        u32::from(mask)
+    }
+
+    #[inline]
+    fn any(mask: bool) -> bool {
+        mask
+    }
+
+    #[inline]
+    fn or(left: bool, right: bool) -> bool {
+        left || right
     }
 }

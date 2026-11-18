@@ -1,6 +1,8 @@
 #![cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 
-use crate::simd_traits::{Simd, SimdAdd, SimdCompare, SimdMul, SimdSelect, SimdSub};
+use crate::simd_traits::{
+    Simd, SimdAdd, SimdCompare, SimdEq, SimdMask, SimdMul, SimdSelect, SimdSub,
+};
 
 #[cfg(target_arch = "aarch64")]
 use super::Neon as Native;
@@ -221,4 +223,51 @@ fn native_unsigned_vectors_subtract_and_multiply_at_boundaries() {
 
     verify!(u8, 16);
     verify!(u16, 8);
+}
+
+/// A comparison mask reduces to exactly the lanes that are true: every one of the 65,536 ways
+/// sixteen lanes can be true or false, and the order of the bits is the order of the lanes.
+#[test]
+fn native_u8_equality_masks_reduce_to_one_bit_per_true_lane() {
+    let ones = <Native as Simd<u8, 16>>::splat(0xFF);
+    for pattern in 0..=u16::MAX {
+        let lanes: [u8; 16] = core::array::from_fn(|lane| if pattern >> lane & 1 == 1 { 0xFF } else { 0x00 });
+        let vector = <Native as Simd<u8, 16>>::load(&lanes);
+        let mask = <Native as SimdEq<u8, 16>>::eq(vector, ones);
+        assert_eq!(<Native as SimdMask<u8, 16>>::bitmask(mask), u32::from(pattern), "{lanes:?}");
+        assert_eq!(<Native as SimdMask<u8, 16>>::any(mask), pattern != 0, "{lanes:?}");
+        // ORed with its mirror image, which is a different mask for most patterns.
+        let mirror = pattern.reverse_bits();
+        let other: [u8; 16] = core::array::from_fn(|lane| if mirror >> lane & 1 == 1 { 0xFF } else { 0x00 });
+        let other = <Native as SimdEq<u8, 16>>::eq(<Native as Simd<u8, 16>>::load(&other), ones);
+        assert_eq!(
+            <Native as SimdMask<u8, 16>>::bitmask(<Native as SimdMask<u8, 16>>::or(mask, other)),
+            u32::from(pattern | mirror),
+            "{lanes:?}"
+        );
+    }
+}
+
+/// Equality is lane-wise and exact for every pair of byte values, including the pairs a signed
+/// comparison would get wrong.
+#[test]
+fn native_u8_equality_matches_scalar_for_all_operand_pairs() {
+    for left in 0..=255u8 {
+        let a = <Native as Simd<u8, 16>>::splat(left);
+        for right in 0..=255u8 {
+            let b = <Native as Simd<u8, 16>>::splat(right);
+            let bits = <Native as SimdMask<u8, 16>>::bitmask(<Native as SimdEq<u8, 16>>::eq(a, b));
+            assert_eq!(bits, if left == right { 0xFFFF } else { 0 }, "{left} {right}");
+        }
+    }
+}
+
+#[test]
+fn the_scalar_backend_reduces_its_one_lane_mask() {
+    use super::Scalar;
+    assert_eq!(<Scalar as SimdMask<u8, 1>>::bitmask(<Scalar as SimdEq<u8, 1>>::eq(7, 7)), 1);
+    assert_eq!(<Scalar as SimdMask<u8, 1>>::bitmask(<Scalar as SimdEq<u8, 1>>::eq(7, 8)), 0);
+    assert!(<Scalar as SimdMask<u8, 1>>::any(true) && !<Scalar as SimdMask<u8, 1>>::any(false));
+    assert!(<Scalar as SimdMask<u8, 1>>::or(false, true) && !<Scalar as SimdMask<u8, 1>>::or(false, false));
+    assert_eq!(<Scalar as SimdMask<f32, 1>>::bitmask(<Scalar as SimdEq<f32, 1>>::eq(f32::NAN, f32::NAN)), 0);
 }

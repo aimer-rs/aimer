@@ -1,6 +1,6 @@
 use core::arch::x86_64::{
     __m128i, _mm_add_epi8, _mm_add_epi16, _mm_and_si128, _mm_andnot_si128, _mm_cmpeq_epi16,
-    _mm_cmpgt_epi8, _mm_cmpgt_epi16, _mm_loadu_si128, _mm_movemask_epi8, _mm_mulhi_epu16,
+    _mm_cmpeq_epi8, _mm_cmpgt_epi8, _mm_cmpgt_epi16, _mm_loadu_si128, _mm_movemask_epi8, _mm_mulhi_epu16,
     _mm_mullo_epi16, _mm_or_si128, _mm_packus_epi16, _mm_set1_epi8, _mm_set1_epi16,
     _mm_setzero_si128, _mm_srli_epi16, _mm_storeu_si128, _mm_sub_epi8, _mm_sub_epi16,
     _mm_unpackhi_epi8, _mm_unpacklo_epi8, _mm_xor_si128,
@@ -8,7 +8,9 @@ use core::arch::x86_64::{
 
 use super::Sse2;
 use super::integer::{check_add_overflow, check_mul_overflow, check_sub_overflow};
-use crate::simd_traits::{Simd, SimdAdd, SimdCompare, SimdMul, SimdSelect, SimdSub};
+use crate::simd_traits::{
+    Simd, SimdAdd, SimdCompare, SimdEq, SimdMask, SimdMul, SimdSelect, SimdSub,
+};
 
 #[cfg(not(feature = "force-scalar"))]
 impl Sse2 {
@@ -176,5 +178,34 @@ impl SimdMul<u16, 8> for Sse2 {
             );
             _mm_mullo_epi16(left, right)
         }
+    }
+}
+
+impl SimdEq<u8, 16> for Sse2 {
+    #[inline(always)]
+    fn eq(left: Self::Vector, right: Self::Vector) -> Self::Mask {
+        // SAFETY: SSE2 is baseline on x86_64.
+        unsafe { _mm_cmpeq_epi8(left, right) }
+    }
+}
+
+impl SimdMask<u8, 16> for Sse2 {
+    #[inline(always)]
+    fn bitmask(mask: Self::Mask) -> u32 {
+        // SAFETY: SSE2 is baseline. The sign bit of each true lane is set, and
+        // the result has sixteen significant bits.
+        unsafe { _mm_movemask_epi8(mask) as u32 }
+    }
+
+    #[inline(always)]
+    fn any(mask: Self::Mask) -> bool {
+        // SAFETY: SSE2 is baseline on x86_64.
+        unsafe { _mm_movemask_epi8(mask) != 0 }
+    }
+
+    #[inline(always)]
+    fn or(left: Self::Mask, right: Self::Mask) -> Self::Mask {
+        // SAFETY: SSE2 is baseline on x86_64.
+        unsafe { _mm_or_si128(left, right) }
     }
 }

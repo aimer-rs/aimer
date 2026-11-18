@@ -66,3 +66,29 @@ pub trait SimdSelect<T: Number, const LANES: usize>: Simd<T, LANES> {
     /// Returns the yes lane where mask is true and the no lane otherwise.
     fn select(mask: Self::Mask, yes: Self::Vector, no: Self::Vector) -> Self::Vector;
 }
+
+/// Lane-wise equality for a Simd backend.
+pub trait SimdEq<T: Number, const LANES: usize>: Simd<T, LANES> {
+    /// Compares corresponding lanes for equality. A floating-point lane
+    /// containing NaN compares false.
+    fn eq(left: Self::Vector, right: Self::Vector) -> Self::Mask;
+}
+
+/// Reduction of a comparison mask to one bit per lane.
+///
+/// This is what turns a vector comparison into an answer a scan can act on:
+/// whether any lane matched, which was the first, and how many were.
+pub trait SimdMask<T: Number, const LANES: usize>: Simd<T, LANES> {
+    /// Returns a value whose bit `i` is set when lane `i` of `mask` is true,
+    /// and whose bits at and above `LANES` are zero. `LANES` must be at most
+    /// 32.
+    fn bitmask(mask: Self::Mask) -> u32;
+
+    /// Whether any lane of `mask` is true. Cheaper than [`bitmask`](Self::bitmask) on
+    /// backends with no byte movemask, so a scan tests this first and looks for the lane only
+    /// when there is one.
+    fn any(mask: Self::Mask) -> bool;
+
+    /// The lane-wise OR of two masks: true where either is.
+    fn or(left: Self::Mask, right: Self::Mask) -> Self::Mask;
+}

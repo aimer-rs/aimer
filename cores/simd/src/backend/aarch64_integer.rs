@@ -1,8 +1,9 @@
 use core::arch::aarch64::{
-    uint8x16_t, uint16x8_t, vaddq_u8, vaddq_u16, vbslq_u8, vbslq_u16, vcgtq_u8, vcgtq_u16,
-    vcombine_u8, vdupq_n_u8, vdupq_n_u16, vget_high_u8, vget_high_u16, vget_low_u8, vget_low_u16,
-    vld1q_u8, vld1q_u16, vmaxvq_u8, vmaxvq_u16, vmaxvq_u32, vmovn_u16, vmull_u8, vmull_u16,
-    vmulq_u16, vst1q_u8, vst1q_u16, vsubq_u8, vsubq_u16,
+    uint8x16_t, uint16x8_t, vaddq_u8, vaddq_u16, vaddv_u8, vand_u8, vbslq_u8, vbslq_u16,
+    vcgtq_u8, vcgtq_u16, vceqq_u8, vcombine_u8, vdupq_n_u8, vdupq_n_u16, vget_high_u8,
+    vget_high_u16, vget_low_u8, vget_low_u16, vld1_u8, vld1q_u8, vld1q_u16, vmaxvq_u8,
+    vmaxvq_u16, vmaxvq_u32, vmovn_u16, vmull_u8, vmull_u16, vmulq_u16, vst1q_u8, vst1q_u16,
+    vorrq_u8, vsubq_u8, vsubq_u16,
 };
 
 #[cfg(not(feature = "force-scalar"))]
@@ -10,7 +11,9 @@ use core::arch::aarch64::vrshrn_n_u16;
 
 use super::Neon;
 use super::integer::{check_add_overflow, check_mul_overflow, check_sub_overflow};
-use crate::simd_traits::{Simd, SimdAdd, SimdCompare, SimdMul, SimdSelect, SimdSub};
+use crate::simd_traits::{
+    Simd, SimdAdd, SimdCompare, SimdEq, SimdMask, SimdMul, SimdSelect, SimdSub,
+};
 
 #[cfg(not(feature = "force-scalar"))]
 impl Neon {
@@ -143,5 +146,45 @@ impl SimdMul<u16, 8> for Neon {
             check_mul_overflow(vmaxvq_u32(low).max(vmaxvq_u32(high)) > u32::from(u16::MAX));
             vmulq_u16(left, right)
         }
+    }
+}
+
+impl SimdEq<u8, 16> for Neon {
+    #[inline(always)]
+    fn eq(left: Self::Vector, right: Self::Vector) -> Self::Mask {
+        // SAFETY: NEON is baseline on AArch64.
+        unsafe { vceqq_u8(left, right) }
+    }
+}
+
+impl SimdMask<u8, 16> for Neon {
+    #[inline(always)]
+    fn bitmask(mask: Self::Mask) -> u32 {
+        // NEON has no byte movemask. Each true lane is 0xFF, so ANDing with the
+        // weights 1, 2, 4, ..., 128 leaves each lane its own bit, and the sum
+        // across eight lanes (no carries: the bits are distinct) is that half's
+        // mask.
+        const WEIGHTS: [u8; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
+        // SAFETY: NEON is baseline on AArch64. WEIGHTS supplies eight readable
+        // bytes.
+        unsafe {
+            let weights = vld1_u8(WEIGHTS.as_ptr());
+            let low = vaddv_u8(vand_u8(vget_low_u8(mask), weights));
+            let high = vaddv_u8(vand_u8(vget_high_u8(mask), weights));
+            u32::from(low) | (u32::from(high) << 8)
+        }
+    }
+
+    #[inline(always)]
+    fn any(mask: Self::Mask) -> bool {
+        // SAFETY: NEON is baseline on AArch64. Each lane is 0x00 or 0xFF, so the
+        // largest lane is nonzero exactly when some lane is true.
+        unsafe { vmaxvq_u8(mask) != 0 }
+    }
+
+    #[inline(always)]
+    fn or(left: Self::Mask, right: Self::Mask) -> Self::Mask {
+        // SAFETY: NEON is baseline on AArch64.
+        unsafe { vorrq_u8(left, right) }
     }
 }
