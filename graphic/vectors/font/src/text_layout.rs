@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use crate::grapheme_clusters::for_each_grapheme;
 use unicode_bidi::BidiInfo;
 use unicode_linebreak::{BreakOpportunity, linebreaks};
 use unicode_segmentation::UnicodeSegmentation;
@@ -18,6 +19,60 @@ pub type FontId = u32;
 #[inline]
 fn is_hard_break(cluster: &str) -> bool {
     cluster == "\n" || cluster == "\r\n"
+}
+
+/// Whether `c` could make text run right to left, or change the direction of what is around
+/// it: a character of an RTL script, an Arabic number, or a direction control. A superset of
+/// the characters whose bidirectional class is R, AL, AN or one of the embedding, override and
+/// isolate controls, found from where those characters are and not from a table lookup.
+///
+/// Text with none of these has one paragraph direction, left to right, and every character of it
+/// is at level 0 however the neutrals and numbers between them resolve, so the bidirectional
+/// algorithm has nothing to decide for it.
+#[inline]
+fn may_run_right_to_left(c: char) -> bool {
+    let c = c as u32;
+    // Everything before Hebrew is left to right or neutral; Hebrew through Thaana and NKo,
+    // Samaritan, Mandaic and the Arabic extensions end at U+08FF.
+    (0x0590..=0x08FF).contains(&c)
+        // Direction marks and controls: RLM, LRM, embeddings, overrides, isolates.
+        || (0x200E..=0x200F).contains(&c)
+        || (0x202A..=0x202E).contains(&c)
+        || (0x2066..=0x2069).contains(&c)
+        // Hebrew and Arabic presentation forms.
+        || (0xFB1D..=0xFDFF).contains(&c)
+        || (0xFE70..=0xFEFF).contains(&c)
+        // The right-to-left scripts of the supplementary planes, and the Arabic numerals
+        // of the mathematical block.
+        || (0x10800..=0x10FFF).contains(&c)
+        || (0x1E800..=0x1EFFF).contains(&c)
+}
+
+/// Whether any character of `text` [may run right to left](may_run_right_to_left).
+///
+/// A character below U+0590 never does, and its UTF-8 lead byte is below 0xD6, so the plain
+/// text that is most of what is written is passed over a byte at a time.
+fn text_may_run_right_to_left(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    // The bytes below 0xD6 are passed over a vector at a time; a byte at or above it may lead a
+    // character of such a script, and that character is looked at.
+    while let Some(found) = aimer_simd::kernels::find_byte_at_least(&bytes[at..], 0xD6) {
+        at += found;
+        // A run of characters that are not ASCII is walked a character at a time: a scan
+        // started again for each of them would cost more than it passes over. The scan resumes
+        // at the next ASCII character.
+        for c in text[at..].chars() {
+            if c.is_ascii() {
+                break;
+            }
+            if may_run_right_to_left(c) {
+                return true;
+            }
+            at += c.len_utf8();
+        }
+    }
+    false
 }
 
 #[derive(Default)]
@@ -2487,8 +2542,16 @@ pub(crate) fn shape_simple_ltr_text(
 /// Whether `text` is printable ASCII and line feeds only, which is what the simple
 /// left-to-right path shapes: one cluster per byte, and every hard line on its own.
 pub(crate) fn is_simple_ltr_text(text: &str) -> bool {
-    text.bytes()
-        .all(|byte| byte == b'\n' || (b' '..=b'~').contains(&byte))
+    // Printable ASCII is scanned a vector at a time, and a line feed, which is allowed, ends one
+    // scan and starts the next after it.
+    let mut rest = text.as_bytes();
+    while let Some(found) = aimer_simd::kernels::find_byte_outside(rest, b' ', b'~') {
+        if rest[found] != b'\n' {
+            return false;
+        }
+        rest = &rest[found + 1..];
+    }
+    true
 }
 
 /// The face the simple left-to-right path shapes `text` with, when it applies:
@@ -2574,27 +2637,46 @@ pub fn shape_text_styled_with_writing_mode(
         return shaped;
     }
 
-    let bidi = BidiInfo::new(text, None);
+    // Only text that may run right to left has levels worth working out; the rest is level 0.
+    let bidi = text_may_run_right_to_left(text).then(|| BidiInfo::new(text, None));
+    let level_at = |offset: usize| {
+        bidi.as_ref()
+            .and_then(|bidi| bidi.levels.get(offset).copied())
+            .unwrap_or_else(unicode_bidi::Level::ltr)
+    };
 
     let clusters = UNICODE_LAYOUT_SCRATCH.with(|scratch| {
         let scratch = &mut *scratch.borrow_mut();
         scratch.cluster_plans.clear();
         scratch.shaped_run_cache.clear();
-        for (start, cluster) in text.grapheme_indices(true) {
+        // The script and the face of an ASCII character are the same wherever it is in the
+        // text, so each is worked out once and not for every one of the thousands there are.
+        let mut ascii_plans: [Option<(Option<Script>, Option<FontId>)>; 128] = [None; 128];
+        for_each_grapheme(text, |start, cluster| {
             let end = start + cluster.len();
-            let script = cluster_script(cluster);
-            let font_id = if cluster.is_empty() || is_hard_break(cluster) {
-                None
-            } else {
-                primary_ascii_font.or_else(|| {
-                    rasterizer.font_id_for_family_cluster(
-                        cluster,
-                        font_size,
-                        font_family,
-                        font_weight,
-                        font_style,
-                    )
-                })
+            let ascii = (cluster.len() == 1).then(|| usize::from(cluster.as_bytes()[0]));
+            let (script, font_id) = match ascii.and_then(|byte| ascii_plans[byte]) {
+                Some(plan) => plan,
+                None => {
+                    let script = cluster_script(cluster);
+                    let font_id = if cluster.is_empty() || is_hard_break(cluster) {
+                        None
+                    } else {
+                        primary_ascii_font.or_else(|| {
+                            rasterizer.font_id_for_family_cluster(
+                                cluster,
+                                font_size,
+                                font_family,
+                                font_weight,
+                                font_style,
+                            )
+                        })
+                    };
+                    if let Some(byte) = ascii {
+                        ascii_plans[byte] = Some((script, font_id));
+                    }
+                    (script, font_id)
+                }
             };
             scratch.cluster_plans.push(UnicodeClusterPlan {
                 start,
@@ -2602,7 +2684,7 @@ pub fn shape_text_styled_with_writing_mode(
                 script,
                 font_id,
             });
-        }
+        });
         line_break_opportunities_into(text, &mut scratch.can_break_before);
 
         let mut clusters = Vec::with_capacity(scratch.cluster_plans.len());
@@ -2617,11 +2699,7 @@ pub fn shape_text_styled_with_writing_mode(
                 clusters.push(ShapedCluster {
                     text: cluster.to_string(),
                     text_range: cluster_start..cluster_end,
-                    level: bidi
-                        .levels
-                        .get(cluster_start)
-                        .copied()
-                        .unwrap_or_else(unicode_bidi::Level::ltr),
+                    level: level_at(cluster_start),
                     base_codepoint: '\n',
                     glyphs: Vec::new(),
                     width: 0.0,
@@ -2703,11 +2781,7 @@ pub fn shape_text_styled_with_writing_mode(
                 ShapedCluster {
                     text: cluster.to_string(),
                     text_range: plan.start..plan.end,
-                    level: bidi
-                        .levels
-                        .get(plan.start)
-                        .copied()
-                        .unwrap_or_else(unicode_bidi::Level::ltr),
+                    level: level_at(plan.start),
                     base_codepoint: cluster.chars().next().unwrap_or('\0'),
                     // One glyph is the common case; see the ASCII path above.
                     glyphs: Vec::with_capacity(1),
@@ -3497,6 +3571,119 @@ pub fn layout_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Left to right is what text is when nothing in it can be otherwise, so the bidirectional
+    /// algorithm is skipped for it: this holds that to every scalar there is.
+    #[test]
+    fn every_character_that_is_not_left_to_right_can_be_found_without_the_algorithm() {
+        use unicode_bidi::BidiClass::*;
+        for scalar in 0..=0x10FFFFu32 {
+            let Some(c) = char::from_u32(scalar) else { continue };
+            let directional = matches!(
+                unicode_bidi::bidi_class(c),
+                R | AL | AN | RLE | LRE | RLO | LRO | PDF | RLI | LRI | FSI | PDI
+            );
+            assert!(
+                !directional || may_run_right_to_left(c),
+                "U+{scalar:04X} is {:?} and would not be found",
+                unicode_bidi::bidi_class(c)
+            );
+        }
+    }
+
+    #[test]
+    fn text_with_nothing_that_runs_right_to_left_is_all_at_level_zero_without_asking() {
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = |below: u32| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % u64::from(below)) as u32
+        };
+        for _ in 0..400 {
+            let text: String = (0..40)
+                .filter_map(|_| char::from_u32(next(0x11_0000)))
+                .filter(|&c| !may_run_right_to_left(c))
+                .chain("a1 -\n\u{e9}\u{4f60}\u{1f680}".chars())
+                .collect();
+            assert!(!text_may_run_right_to_left(&text));
+            let info = BidiInfo::new(&text, None);
+            assert!(
+                info.levels.iter().all(|level| *level == unicode_bidi::Level::ltr()),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn text_with_a_right_to_left_character_anywhere_is_found() {
+        for text in ["abc \u{5e9}\u{5dc}\u{5d5}\u{5dd}", "\u{627}\u{644}", "x\u{200f}y", "\u{10800}", "\u{fb1d}", "aaaaaaaa\u{202e}"] {
+            assert!(text_may_run_right_to_left(text), "{text:?}");
+        }
+        for text in ["", "plain", "caf\u{e9} \u{44f}\u{437}\u{44b}\u{43a} \u{4f60}\u{597d} \u{1f680}"] {
+            assert!(!text_may_run_right_to_left(text), "{text:?}");
+        }
+    }
+
+    /// What the byte scans of the text path cost per call, on 4 KB of text of a few kinds: the
+    /// check for plain ASCII, the check for a right-to-left character, and cutting into clusters.
+    ///
+    /// ```text
+    /// cargo nextest run -p aimer_cupid_font --run-ignored only -E 'test(bench_byte_scans)' --no-capture
+    /// ```
+    #[test]
+    #[ignore = "a timing, not a check"]
+    fn bench_byte_scans() {
+        use std::hint::black_box;
+        use std::time::{Duration, Instant};
+
+        fn corpus(sentence: &str) -> String {
+            let mut text = String::new();
+            let mut line = 0;
+            while text.len() < 4096 {
+                text.push_str(&format!("{line:>3} {sentence}\n"));
+                line += 1;
+            }
+            text
+        }
+        let corpora = [
+            ("ASCII", corpus("The quick brown fox jumps over the lazy dog and keeps running through the long grass.")),
+            ("ASCII + one é", {
+                let mut text = corpus("The quick brown fox jumps over the lazy dog and keeps running through the long grass.");
+                text.insert(3000, 'é');
+                text
+            }),
+            ("Cyrillic", corpus("Съешь же ещё этих мягких французских булок, да выпей чаю, пока не наступила ночь.")),
+            ("CJK", corpus("国家的发展需要每一个人的努力，我们要在学习和工作中不断进步，创造更加美好的生活。")),
+        ];
+        let best = |mut run: Box<dyn FnMut()>| {
+            let mut best = Duration::MAX;
+            for _ in 0..300 {
+                let started = Instant::now();
+                run();
+                best = best.min(started.elapsed());
+            }
+            best
+        };
+        for (name, text) in &corpora {
+            let text = text.as_str();
+            let simple = best(Box::new(move || {
+                black_box(is_simple_ltr_text(black_box(text)));
+            }));
+            let rtl = best(Box::new(move || {
+                black_box(text_may_run_right_to_left(black_box(text)));
+            }));
+            let graphemes = best(Box::new(move || {
+                let mut count = 0;
+                for_each_grapheme(black_box(text), |_, _| count += 1);
+                black_box(count);
+            }));
+            println!(
+                "{name:<14} {:>5} bytes   is_simple_ltr_text {simple:>9.2?}   may_run_rtl {rtl:>9.2?}   for_each_grapheme {graphemes:>9.2?}",
+                text.len()
+            );
+        }
+    }
 
     #[test]
     fn line_glyph_ranges_span_the_first_to_the_last_glyph_of_each_line() {

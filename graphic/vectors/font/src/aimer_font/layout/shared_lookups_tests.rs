@@ -88,3 +88,41 @@ fn feature_plans_share_lookup_storage_instead_of_cloning_it() {
         );
     }
 }
+
+#[test]
+fn a_pair_adjustment_is_remembered_with_the_table_and_a_clone_starts_empty() {
+    use super::{PairTable, ValueAdjustment};
+
+    let state = LayoutTableState::parse(&shared_lookup_gsub(), GSUB_TAG).expect("the fixture is a valid GSUB");
+    let kern = Some((ValueAdjustment { x_advance: -40, ..ValueAdjustment::default() }, ValueAdjustment::default()));
+
+    state.pair_adjustments.lock().insert((1, 7), kern);
+    assert_eq!(state.pair_adjustments.lock().len(), 1, "kept for the next line shaped with this table");
+    let found = state.pair_adjustments.lock().get(&(1, 7));
+    assert!(found.is_some_and(|answer| answer.is_some_and(|(first, _)| first.x_advance == -40)));
+    // A pair with no kerning is an answer too, and is not the same as a pair never asked about.
+    state.pair_adjustments.lock().insert((1, 8), None);
+    assert!(matches!(state.pair_adjustments.lock().get(&(1, 8)), Some(None)));
+    assert!(state.pair_adjustments.lock().get(&(1, 9)).is_none());
+    assert!(state.clone().pair_adjustments.lock().get(&(1, 7)).is_none(), "a clone has its own, empty");
+    assert!(PairTable::default().get(&(1, 7)).is_none(), "and nothing is allocated until a pair is kept");
+}
+
+#[test]
+fn two_pairs_that_share_a_slot_never_answer_for_each_other() {
+    use super::{PairTable, ValueAdjustment};
+
+    let wide = |x_advance| Some((ValueAdjustment { x_advance, ..ValueAdjustment::default() }, ValueAdjustment::default()));
+    let mut table = PairTable::default();
+    let mut seen = std::collections::HashMap::new();
+    let (first, second) = (0..100_000u32)
+        .map(|pair| (7usize, pair))
+        .find_map(|key| seen.insert(PairTable::slot_of(&key), key).map(|earlier| (earlier, key)))
+        .expect("a hundred thousand pairs fill four thousand slots");
+
+    table.insert(first, wide(1));
+    table.insert(second, wide(2));
+
+    assert!(table.get(&second).is_some_and(|answer| answer.is_some_and(|(kerned, _)| kerned.x_advance == 2)));
+    assert!(table.get(&first).is_none(), "its slot was taken, so it is looked up again");
+}

@@ -19,9 +19,42 @@
 //! transient-width entries is shed without ever taking the live screen's
 //! layouts with it.
 
+use std::cell::OnceCell;
+
 use super::cache_key::LayoutCacheKey;
 use super::recency_cache::RecencyCache;
 use super::text_layout::{PositionedGlyph, PositionedTextLayout};
+use crate::glyph_rasterizer::GlyphKey;
+use hashbrown::HashSet;
+
+/// A cached layout and what is worked out from it once.
+///
+/// A line of text is a few dozen distinct glyphs drawn some hundreds of times. Whether a glyph
+/// is prepared, in the atlas, and how big it is are questions about the glyph and not about
+/// where it is drawn, so a frame that asks them of every glyph of every layout it draws asks the
+/// same few dozen questions over and over. [`distinct_glyphs`](Self::distinct_glyphs) is that
+/// few dozen, found by one pass over the layout the first time they are wanted and kept as long
+/// as the layout is.
+struct CachedLayout {
+    layout: PositionedTextLayout,
+    distinct: OnceCell<Box<[(GlyphKey, f32)]>>,
+}
+
+impl CachedLayout {
+    /// Each glyph key of the layout once, in the order it is first drawn, with the font size
+    /// of that first glyph.
+    fn distinct_glyphs(&self) -> &[(GlyphKey, f32)] {
+        self.distinct.get_or_init(|| {
+            let mut seen = HashSet::new();
+            self.layout
+                .glyphs
+                .iter()
+                .filter(|glyph| seen.insert(glyph.glyph_key))
+                .map(|glyph| (glyph.glyph_key, glyph.font_size))
+                .collect()
+        })
+    }
+}
 
 /// A recency-evicting map from [`LayoutCacheKey`] to positioned glyphs.
 ///
@@ -39,7 +72,7 @@ use super::text_layout::{PositionedGlyph, PositionedTextLayout};
 /// [`get`]: LayoutCache::get
 /// [`touch`]: LayoutCache::touch
 pub(super) struct LayoutCache {
-    cache: RecencyCache<LayoutCacheKey, PositionedTextLayout>,
+    cache: RecencyCache<LayoutCacheKey, CachedLayout>,
 }
 
 impl LayoutCache {
@@ -70,7 +103,7 @@ impl LayoutCache {
     /// Returns the cached glyphs for `key`, stamping the entry as used by the
     /// current frame.
     pub(super) fn get(&mut self, key: &LayoutCacheKey) -> Option<&[PositionedGlyph]> {
-        self.cache.get(key).map(|layout| layout.glyphs.as_slice())
+        self.cache.get(key).map(|entry| entry.layout.glyphs.as_slice())
     }
 
     /// Returns the cached glyphs for `key` without stamping it.
@@ -79,7 +112,7 @@ impl LayoutCache {
     /// [`get`](Self::get) or [`touch`](Self::touch) — the stamp is in place,
     /// so the second read can skip the write.
     pub(super) fn peek(&self, key: &LayoutCacheKey) -> Option<&[PositionedGlyph]> {
-        self.cache.peek(key).map(|layout| layout.glyphs.as_slice())
+        self.cache.peek(key).map(|entry| entry.layout.glyphs.as_slice())
     }
 
     /// Whether `key` is resident, stamping it as used by the current frame
@@ -120,6 +153,30 @@ impl LayoutCache {
             .or_else(|| fallback.and_then(|key| self.peek(key)))
     }
 
+    /// The distinct glyphs of the first resident entry among `primary` and `fallback`, stamping
+    /// it as used by the current frame; see [`CachedLayout::distinct_glyphs`].
+    pub(super) fn distinct_glyphs_with_fallback(
+        &mut self,
+        primary: &LayoutCacheKey,
+        fallback: Option<&LayoutCacheKey>,
+    ) -> Option<&[(GlyphKey, f32)]> {
+        let key = if self.touch(primary) { primary } else { fallback.filter(|key| self.touch(key))? };
+        self.cache.peek(key).map(CachedLayout::distinct_glyphs)
+    }
+
+    /// [`distinct_glyphs_with_fallback`](Self::distinct_glyphs_with_fallback) without stamping,
+    /// for a layout the frame has already confirmed.
+    pub(super) fn peek_distinct_glyphs_with_fallback(
+        &self,
+        primary: &LayoutCacheKey,
+        fallback: Option<&LayoutCacheKey>,
+    ) -> Option<&[(GlyphKey, f32)]> {
+        self.cache
+            .peek(primary)
+            .or_else(|| fallback.and_then(|key| self.cache.peek(key)))
+            .map(CachedLayout::distinct_glyphs)
+    }
+
     /// Returns the source-aware interaction view for a resident layout.
     ///
     /// The renderer's glyph slice and this geometry are stored in one cache
@@ -133,7 +190,7 @@ impl LayoutCache {
         self.cache
             .peek(primary)
             .or_else(|| fallback.and_then(|key| self.cache.peek(key)))
-            .and_then(|layout| layout.interaction.as_ref())
+            .and_then(|entry| entry.layout.interaction.as_ref())
     }
 
     /// Estimated bytes of every resident layout.
@@ -150,7 +207,7 @@ impl LayoutCache {
     pub(super) fn insert(&mut self, key: LayoutCacheKey, layout: impl Into<PositionedTextLayout>) {
         let layout = layout.into();
         let bytes = layout.heap_bytes();
-        self.cache.insert(key, layout, bytes);
+        self.cache.insert(key, CachedLayout { layout, distinct: OnceCell::new() }, bytes);
     }
 
     /// Inserts every layout of `layouts`, each stamped as used by the current
@@ -168,6 +225,7 @@ impl LayoutCache {
 #[cfg(test)]
 mod tests {
     use super::LayoutCache;
+    use crate::glyph_rasterizer::GlyphKey;
     use crate::font::{FontFamily, FontStyle, FontWeight};
     use crate::cache_key::LayoutCacheKey;
 
@@ -182,6 +240,64 @@ mod tests {
             FontWeight::Normal.numeric(),
             None,
         )
+    }
+
+    fn glyph(glyph_id: u16, font_size: f32) -> crate::text_layout::PositionedGlyph {
+        crate::text_layout::PositionedGlyph {
+            codepoint: 'a',
+            glyph_key: GlyphKey::new(1, glyph_id, font_size),
+            line_index: 0,
+            line_x: 0.0,
+            advance: 8.0,
+            x: 0.0,
+            y: 0.0,
+            width: 8,
+            height: 12,
+            font_size,
+        }
+    }
+
+    #[test]
+    fn a_layout_lists_each_of_its_glyphs_once_in_the_order_they_are_first_drawn() {
+        let mut cache = LayoutCache::new(8);
+        cache.begin_frame();
+        // "abracadabra" and a bigger "a": a repeated glyph, and a glyph of the same face at
+        // another size, which is another key.
+        let glyphs: Vec<_> = [1, 2, 3, 1, 4, 1, 5, 1, 2, 3, 1].iter().map(|&id| glyph(id, 16.0)).chain([glyph(1, 24.0)]).collect();
+        cache.insert(key("abracadabra", 100.0), glyphs);
+
+        let distinct = cache.distinct_glyphs_with_fallback(&key("abracadabra", 100.0), None).unwrap();
+
+        let ids: Vec<(u16, u32)> = distinct.iter().map(|(key, _)| (key.glyph_id, key.size_tenths)).collect();
+        assert_eq!(ids, [(1, 160), (2, 160), (3, 160), (4, 160), (5, 160), (1, 240)]);
+        assert_eq!(distinct[5].1, 24.0, "with the font size it was drawn at");
+    }
+
+    #[test]
+    fn the_distinct_glyphs_follow_the_fallback_key_and_a_miss_is_none() {
+        let mut cache = LayoutCache::new(8);
+        cache.begin_frame();
+        cache.insert(key("a", 100.0), vec![glyph(7, 16.0), glyph(7, 16.0)]);
+
+        assert_eq!(cache.distinct_glyphs_with_fallback(&key("a", 999.0), Some(&key("a", 100.0))).unwrap().len(), 1);
+        assert!(cache.distinct_glyphs_with_fallback(&key("a", 999.0), None).is_none());
+        assert!(cache.distinct_glyphs_with_fallback(&key("a", 999.0), Some(&key("b", 1.0))).is_none());
+        assert_eq!(cache.peek_distinct_glyphs_with_fallback(&key("a", 100.0), None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn reading_the_distinct_glyphs_stamps_the_layout_as_used() {
+        let mut cache = LayoutCache::new(1);
+        cache.begin_frame();
+        cache.insert(key("kept", 100.0), vec![glyph(1, 16.0)]);
+        cache.insert(key("dropped", 100.0), vec![glyph(2, 16.0)]);
+        cache.begin_frame();
+        assert!(cache.distinct_glyphs_with_fallback(&key("kept", 100.0), None).is_some());
+
+        cache.begin_frame();
+
+        assert!(cache.peek(&key("kept", 100.0)).is_some());
+        assert!(cache.peek(&key("dropped", 100.0)).is_none());
     }
 
     #[test]

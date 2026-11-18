@@ -366,25 +366,36 @@ impl<B: GpuBackend> TextPipelineV2<B> {
                     layout_height,
                     req.writing_mode,
                 );
-                let Some(positioned) = prepared_layouts
-                    .get(&keys.primary)
-                    .map(|layout| layout.glyphs.as_slice())
-                    .or_else(|| {
-                        self.layout_cache
-                            .peek_with_fallback(&keys.primary, keys.fallback.as_ref())
-                    })
+                // A layout laid out just now is looked through glyph by glyph, once. One that
+                // was already cached is asked about by its distinct glyphs: a line of text is a
+                // few dozen glyphs drawn some hundreds of times, and the answer is the same for
+                // each drawing.
+                if let Some(layout) = prepared_layouts.get(&keys.primary) {
+                    for glyph in &layout.glyphs {
+                        let key = glyph.glyph_key;
+                        let needs_bitmap = self.atlas.get(&key).is_none()
+                            && self.color_atlas.get(&key).is_none();
+                        if self.rasterizer.needs_prepared_glyph(key, needs_bitmap)
+                            && queued_glyphs.insert(key)
+                        {
+                            fresh_glyphs.push((key, glyph.font_size));
+                        }
+                    }
+                    continue;
+                }
+                let Some(distinct) = self
+                    .layout_cache
+                    .peek_distinct_glyphs_with_fallback(&keys.primary, keys.fallback.as_ref())
                 else {
                     return false;
                 };
-
-                for glyph in positioned {
-                    let key = glyph.glyph_key;
+                for &(key, font_size) in distinct {
                     let needs_bitmap =
                         self.atlas.get(&key).is_none() && self.color_atlas.get(&key).is_none();
                     if self.rasterizer.needs_prepared_glyph(key, needs_bitmap)
                         && queued_glyphs.insert(key)
                     {
-                        fresh_glyphs.push((key, glyph.font_size));
+                        fresh_glyphs.push((key, font_size));
                     }
                 }
             }
@@ -817,15 +828,14 @@ impl<B: GpuBackend> TextPipelineV2<B> {
                 // The stamping read: this is the loop that walks exactly the
                 // layouts the frame draws, so it is where the working set is
                 // marked as alive.
-                let Some(positioned) = self
+                let Some(distinct) = self
                     .layout_cache
-                    .get_with_fallback(&keys.primary, keys.fallback.as_ref())
+                    .distinct_glyphs_with_fallback(&keys.primary, keys.fallback.as_ref())
                 else {
                     return;
                 };
 
-                for glyph in positioned {
-                    let key = glyph.glyph_key;
+                for &(key, _) in distinct {
                     if !self.seen_glyphs.insert(key) {
                         continue;
                     }

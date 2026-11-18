@@ -230,6 +230,86 @@ struct LayoutTableState {
     lookups: Vec<LookupState>,
     feature_lookups: Vec<FeatureLookupState>,
     feature_lookup_map: HashMap<FeatureQueryKey, usize>,
+    /// What the pair lookups of this table said of the pairs seen so far; see
+    /// [`PairAdjustmentCache`].
+    pair_adjustments: PairAdjustmentCache,
+}
+
+/// The kerning of a pair of glyphs, remembered for as long as the font is.
+///
+/// What a table's pair lookups add to a pair of glyphs is a function of the two glyphs and of
+/// which lookups the text's script and language select, and of nothing else, yet it is found by
+/// searching the coverage and class tables of every pair subtable. A text is the same few
+/// hundred pairs over and over, and the shaper is asked for one line at a time, so a cache that
+/// lives only as long as one line's shaping finds each pair once for every line. This one is
+/// kept with the table, so each pair is found once for the font.
+///
+/// It is direct-mapped: a pair hashes to one slot, which holds that pair or does not, so a
+/// lookup is a multiply and a compare and never a search or a hash of the whole key; a pair that
+/// shares a slot with another costs a lookup again, never a wrong answer. A map would find
+/// every pair, and cost nearly what searching the font does in a build without optimizations.
+///
+/// The key is the glyph pair and the address of the lookups the query selected, which are never
+/// moved or dropped while the table lives. Cloning the table starts the clone's cache empty.
+#[derive(Default)]
+struct PairAdjustmentCache {
+    table: std::sync::Mutex<PairTable>,
+}
+
+type PairKey = (usize, u32);
+type PairAnswer = Option<(ValueAdjustment, ValueAdjustment)>;
+
+/// The slots of a [`PairAdjustmentCache`], allocated when the first pair is kept.
+#[derive(Default)]
+struct PairTable {
+    slots: Vec<Option<(PairKey, PairAnswer)>>,
+}
+
+impl PairTable {
+    /// A power of two, so a hash picks a slot with a mask. A font's kerning, seen through the
+    /// text a note holds, is far fewer pairs than this.
+    const SLOTS: usize = 4096;
+
+    #[inline]
+    fn slot_of((lookups, pair): &PairKey) -> usize {
+        let hash = (*lookups as u64 ^ u64::from(*pair).wrapping_mul(0x9E37_79B9_7F4A_7C15)).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+        (hash >> 40) as usize & (Self::SLOTS - 1)
+    }
+
+    /// What was kept for `key`: `None` if nothing was, `Some(answer)` if it was.
+    #[inline]
+    fn get(&self, key: &PairKey) -> Option<PairAnswer> {
+        match self.slots.get(Self::slot_of(key)) {
+            Some(Some((held, answer))) if held == key => Some(*answer),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn insert(&mut self, key: PairKey, answer: PairAnswer) {
+        if self.slots.is_empty() {
+            self.slots.resize(Self::SLOTS, None);
+        }
+        self.slots[Self::slot_of(&key)] = Some((key, answer));
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.slots.iter().flatten().count()
+    }
+}
+
+impl PairAdjustmentCache {
+    fn lock(&self) -> std::sync::MutexGuard<'_, PairTable> {
+        // It only remembers answers: a panic elsewhere cannot have made one wrong.
+        self.table.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl Clone for PairAdjustmentCache {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 #[derive(Clone)]
@@ -507,6 +587,7 @@ impl LayoutTableState {
             lookups,
             feature_lookups,
             feature_lookup_map,
+            pair_adjustments: PairAdjustmentCache::default(),
         })
     }
 
@@ -2694,14 +2775,21 @@ fn apply_gpos(
         .any(|lookup| matches!(lookup.lookup_type, 2 | 9) && lookup.lookup_flags & 0x000e != 0);
     if !has_ignored_pair_lookup {
         let mut changed = false;
-        let mut pair_cache = HashMap::with_capacity(glyphs.len().min(256));
+        let mut pair_cache = layout.pair_adjustments.lock();
+        // The lookups the query selected live in this table and stay where they are.
+        // Its low bit, which an address never has, keeps these entries (all the lookups'
+        // sum) apart from the one-lookup entries of the other branch below.
+        let selected_lookups = lookups.as_ptr() as usize | 1;
         for first_index in 0..glyphs.len().saturating_sub(1) {
             let second_index = first_index + 1;
             let first_glyph = glyphs[first_index].glyph_id;
             let second_glyph = glyphs[second_index].glyph_id;
-            let cache_key = (u32::from(first_glyph) << 16) | u32::from(second_glyph);
+            let cache_key = (
+                selected_lookups,
+                (u32::from(first_glyph) << 16) | u32::from(second_glyph),
+            );
             let adjustment = if let Some(adjustment) = pair_cache.get(&cache_key) {
-                *adjustment
+                adjustment
             } else {
                 let mut first = ValueAdjustment::default();
                 let mut second = ValueAdjustment::default();
@@ -2735,11 +2823,15 @@ fn apply_gpos(
     }
 
     let mut changed = false;
+    let mut pair_cache = layout.pair_adjustments.lock();
     for lookup in lookups
         .iter()
         .filter(|lookup| matches!(lookup.lookup_type, 2 | 9))
     {
         let skips_glyphs = lookup.lookup_flags & 0x000e != 0;
+        // What this lookup does to a pair is found once and kept; the subtables of a lookup are
+        // alternatives, so the first that has an adjustment for the pair is the lookup's answer.
+        let this_lookup = std::ptr::from_ref(lookup) as usize;
         for first_index in 0..glyphs.len() {
             if skips_glyphs && gdef.ignores(glyphs[first_index].glyph_id, lookup.lookup_flags)? {
                 continue;
@@ -2755,73 +2847,24 @@ fn apply_gpos(
             };
             let first_glyph = glyphs[first_index].glyph_id;
             let second_glyph = glyphs[second_index].glyph_id;
-            if lookup.compiled_pair_only {
-                for compiled in lookup.compiled_subtables.iter().flatten() {
-                    let Some((first, second)) =
-                        compiled.pair_adjustment(first_glyph, second_glyph)?
-                    else {
-                        continue;
-                    };
-                    changed |= !first.is_zero() || !second.is_zero();
-                    glyphs[first_index].x_advance += first.x_advance;
-                    glyphs[first_index].y_advance += first.y_advance;
-                    glyphs[first_index].x_offset += first.x_placement;
-                    glyphs[first_index].y_offset += first.y_placement;
-                    glyphs[second_index].x_advance += second.x_advance;
-                    glyphs[second_index].y_advance += second.y_advance;
-                    glyphs[second_index].x_offset += second.x_placement;
-                    glyphs[second_index].y_offset += second.y_placement;
-                    break;
-                }
-                continue;
-            }
-            for (subtable_index, subtable_offset) in lookup.subtable_offsets.iter().enumerate() {
-                if let Some(compiled) = lookup
-                    .compiled_subtables
-                    .get(subtable_index)
-                    .and_then(Option::as_ref)
-                {
-                    if compiled.is_pair() {
-                        let Some((first, second)) =
-                            compiled.pair_adjustment(first_glyph, second_glyph)?
-                        else {
-                            continue;
-                        };
-                        changed |= !first.is_zero() || !second.is_zero();
-                        glyphs[first_index].x_advance += first.x_advance;
-                        glyphs[first_index].y_advance += first.y_advance;
-                        glyphs[first_index].x_offset += first.x_placement;
-                        glyphs[first_index].y_offset += first.y_placement;
-                        glyphs[second_index].x_advance += second.x_advance;
-                        glyphs[second_index].y_advance += second.y_advance;
-                        glyphs[second_index].x_offset += second.x_placement;
-                        glyphs[second_index].y_offset += second.y_placement;
-                        break;
-                    }
-                }
-                let subtable = slice_from(table, *subtable_offset, GPOS_TAG)?;
-                let adjustment = pair_adjustment_for_lookup(
-                    subtable,
-                    lookup.lookup_type,
-                    first_glyph,
-                    second_glyph,
-                    0,
-                )?;
-                if let Some((first, second)) = adjustment {
-                    changed |= !first.is_zero() || !second.is_zero();
-                    glyphs[first_index].x_advance += first.x_advance;
-                    glyphs[first_index].y_advance += first.y_advance;
-                    glyphs[first_index].x_offset += first.x_placement;
-                    glyphs[first_index].y_offset += first.y_placement;
-                    glyphs[second_index].x_advance += second.x_advance;
-                    glyphs[second_index].y_advance += second.y_advance;
-                    glyphs[second_index].x_offset += second.x_placement;
-                    glyphs[second_index].y_offset += second.y_placement;
-                    // Subtables in one lookup are alternatives. Once one
-                    // has a real adjustment, later script partitions must
-                    // not add another adjustment to the same pair.
-                    break;
-                }
+            let cache_key = (this_lookup, (u32::from(first_glyph) << 16) | u32::from(second_glyph));
+            let adjustment = if let Some(adjustment) = pair_cache.get(&cache_key) {
+                adjustment
+            } else {
+                let adjustment =
+                    pair_adjustment_for_lookup_state(table, lookup, first_glyph, second_glyph)?;
+                pair_cache.insert(cache_key, adjustment);
+                adjustment
+            };
+            if let Some((first, second)) = adjustment {
+                changed |= !first.is_zero() || !second.is_zero();
+                let (before_second, second_glyph) = glyphs.split_at_mut(second_index);
+                apply_pair_adjustment(
+                    &mut before_second[first_index],
+                    &mut second_glyph[0],
+                    first,
+                    second,
+                );
             }
         }
     }

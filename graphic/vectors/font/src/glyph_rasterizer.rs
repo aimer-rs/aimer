@@ -1,4 +1,5 @@
 mod glyph_run;
+mod metrics_memo;
 mod run_advances;
 #[cfg(test)]
 mod script_run_tests;
@@ -567,6 +568,9 @@ pub struct GlyphRasterizer {
     /// The kana names the face whose stroke weight the run's platform-drawn
     /// ideographs must match — see [`Self::glyph_weight_for_request`].
     run_companion: Option<char>,
+    /// The design weight of the face drawing `run_companion`, with the registry revision it was
+    /// worked out under; see [`Self::run_companion_weight`].
+    run_companion_weight_memo: Option<(char, u64, Option<u16>)>,
     /// The design weight of the face [`COMPANION_WEIGHT_PROBE`] resolves to,
     /// memoized after the first kana-less run asks for it.
     ///
@@ -600,6 +604,8 @@ pub struct GlyphRasterizer {
     /// chain and re-entering the process-wide system resolver for each one.
     /// Entries are cleared whenever the available face set changes.
     resolved_codepoint_cache: HashMap<(char, ScriptRequirement, u16), (FontId, u16, bool)>,
+    /// The pixel boxes of the glyphs shaped lately; see [`metrics_memo`].
+    metrics_memo: metrics_memo::MetricsMemo,
     #[cfg(any(test, feature = "test-counters"))]
     shape_call_count: usize,
     #[cfg(any(test, feature = "test-counters"))]
@@ -702,6 +708,7 @@ impl GlyphRasterizer {
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
             run_companion: None,
+            run_companion_weight_memo: None,
             default_companion_weight: None,
             skip_bundled_cjk: false,
             platform_only_cache: HashMap::default(),
@@ -712,6 +719,7 @@ impl GlyphRasterizer {
             aimer_font_cache: HashMap::default(),
             run_buffers: RunBuffers::default(),
             resolved_codepoint_cache: HashMap::default(),
+            metrics_memo: metrics_memo::MetricsMemo::default(),
             #[cfg(any(test, feature = "test-counters"))]
             shape_call_count: 0,
             #[cfg(any(test, feature = "test-counters"))]
@@ -747,6 +755,7 @@ impl GlyphRasterizer {
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
             run_companion: None,
+            run_companion_weight_memo: None,
             default_companion_weight: None,
             skip_bundled_cjk: false,
             platform_only_cache: HashMap::default(),
@@ -757,6 +766,7 @@ impl GlyphRasterizer {
             aimer_font_cache: HashMap::default(),
             run_buffers: RunBuffers::default(),
             resolved_codepoint_cache: HashMap::default(),
+            metrics_memo: metrics_memo::MetricsMemo::default(),
             #[cfg(any(test, feature = "test-counters"))]
             shape_call_count: 0,
             #[cfg(any(test, feature = "test-counters"))]
@@ -839,9 +849,7 @@ impl GlyphRasterizer {
     ) {
         if text.is_empty()
             || (family == FontFamily::SANS_SERIF
-                && text
-                    .bytes()
-                    .all(|byte| byte == b'\n' || (b' '..=b'~').contains(&byte))
+                && crate::text_layout::is_simple_ltr_text(text)
                 && self.primary_covers_printable_ascii())
         {
             return;
@@ -857,16 +865,25 @@ impl GlyphRasterizer {
             // `glyph_key_for_codepoint_at_weight`, so worker snapshots make
             // the same face choice without re-entering fallback resolution.
             let mut run_weight = None;
-            for (_, cluster) in text.grapheme_indices(true) {
+            // Text is mostly printable ASCII, which the primary face draws: those characters
+            // enter no fallback chain and are passed over without a cmap lookup each.
+            let ascii_is_primary = self.primary_covers_printable_ascii();
+            crate::grapheme_clusters::for_each_grapheme(text, |_, cluster| {
+                if ascii_is_primary
+                    && cluster.len() == 1
+                    && (b' '..=b'~').contains(&cluster.as_bytes()[0])
+                {
+                    return;
+                }
                 let Some(codepoint) = cluster.chars().find(|codepoint| !codepoint.is_control())
                 else {
-                    continue;
+                    return;
                 };
                 if self
                     .glyph_index_for_font(self.primary.id, codepoint)
                     .is_some()
                 {
-                    continue;
+                    return;
                 }
                 let resolved_weight = match run_weight {
                     Some(run_weight) => run_weight,
@@ -879,13 +896,13 @@ impl GlyphRasterizer {
                 let requirement = self.requirement_for(codepoint);
                 let cache_key = (codepoint, requirement, resolved_weight);
                 if self.resolved_codepoint_cache.contains_key(&cache_key) {
-                    continue;
+                    return;
                 }
                 self.ensure_fallbacks_for_codepoint(codepoint);
                 let resolved =
                     self.fallback_glyph_for_codepoint(codepoint, requirement, resolved_weight);
                 self.resolved_codepoint_cache.insert(cache_key, resolved);
-            }
+            });
         } else {
             for (_, cluster) in text.grapheme_indices(true) {
                 let _ = self.font_id_for_family_cluster(cluster, font_size, family, weight, style);
@@ -986,6 +1003,7 @@ impl GlyphRasterizer {
             primary_printable_ascii_coverage: None,
             script_run: ScriptRequirement::EMPTY,
             run_companion: None,
+            run_companion_weight_memo: None,
             skip_bundled_cjk: false,
             platform_only_cache: HashMap::default(),
             design_weight_cache: HashMap::default(),
@@ -995,6 +1013,7 @@ impl GlyphRasterizer {
             aimer_font_cache,
             run_buffers: RunBuffers::default(),
             resolved_codepoint_cache: (*snapshot.resolved_codepoint_cache).clone(),
+            metrics_memo: metrics_memo::MetricsMemo::default(),
             #[cfg(any(test, feature = "test-counters"))]
             shape_call_count: 0,
             #[cfg(any(test, feature = "test-counters"))]
@@ -1286,8 +1305,10 @@ impl GlyphRasterizer {
             .retain(|font_id, _| !invalidated_ids.contains(font_id));
         self.unsupported_codepoints.clear();
         self.default_companion_weight = None;
+        self.run_companion_weight_memo = None;
         self.resolved_codepoint_cache.clear();
 
+        self.metrics_memo.clear();
         for font_id in invalidated_ids.iter().copied() {
             glyph_metrics::forget_font(font_id);
         }
@@ -1456,6 +1477,7 @@ impl GlyphRasterizer {
         self.resolved_codepoint_cache.clear();
         self.platform_only_cache.clear();
         self.design_weight_cache.clear();
+        self.metrics_memo.clear();
         glyph_metrics::forget_font(font_id);
         self.font_bytes_cache.remove(&font_id);
         self.aimer_font_cache.remove(&font_id);
@@ -1753,6 +1775,8 @@ impl GlyphRasterizer {
     /// pass it here; see [`ScriptRequirement::from_run`] for how far it
     /// reaches.
     pub fn begin_script_run(&mut self, text: &str, language: Option<TextLanguage>) {
+        // The faces are chosen against the run just announced, and so is what was remembered.
+        self.run_companion_weight_memo = None;
         // A requirement is built from the ideographs of the run and the
         // companion is its first kana; ASCII has neither, whatever `language`
         // hints, so the scan is skipped for the text that is most of what gets
@@ -1771,6 +1795,7 @@ impl GlyphRasterizer {
     /// Lookups fall back to the script's fixed samples, which is all a caller
     /// holding a single character can be judged against.
     pub fn end_script_run(&mut self) {
+        self.run_companion_weight_memo = None;
         self.script_run = ScriptRequirement::EMPTY;
         self.run_companion = None;
     }
@@ -1875,8 +1900,20 @@ impl GlyphRasterizer {
     /// `OS/2` table.
     fn run_companion_weight(&mut self) -> Option<u16> {
         let companion = self.run_companion?;
+        // Asked for every character of the run that is drawn by another face, and the answer
+        // is the same for all of them: which face the kana resolve to does not change while
+        // the set of faces does not.
+        let revision = FontRegistry::revision();
+        if let Some((kana, memo_revision, weight)) = self.run_companion_weight_memo
+            && kana == companion
+            && memo_revision == revision
+        {
+            return weight;
+        }
         let font_id = self.font_id_for_codepoint(companion);
-        self.face_design_weight(font_id)
+        let weight = self.face_design_weight(font_id);
+        self.run_companion_weight_memo = Some((companion, revision, weight));
+        weight
     }
 
     /// The design weight of the face kana resolve to on this system.
@@ -2611,7 +2648,21 @@ impl GlyphRasterizer {
         }
 
         self.refresh_registered_family_faces();
+        // Glyphs shaped lately are answered from the memo, without hashing a key for the shared
+        // store and again for this rasterizer's cache. A run of plain text is all such glyphs.
         let mut metric_values = std::mem::take(&mut self.run_buffers.metric_values);
+        metric_values.clear();
+        for key in keys {
+            let Some(memoized) = self.metrics_memo.get(key) else { break };
+            metric_values.push(Some(memoized));
+        }
+        if metric_values.len() == keys.len() {
+            for metrics in metric_values.iter().flatten() {
+                emit(*metrics);
+            }
+            self.run_buffers.metric_values = metric_values;
+            return;
+        }
         glyph_metrics::cached_many(keys, &mut metric_values);
         self.run_buffers.pending_keys.clear();
         self.run_buffers.pending_seen.clear();
@@ -2633,6 +2684,7 @@ impl GlyphRasterizer {
             } else {
                 metric_values[index].unwrap_or_else(|| self.metrics_for_key(*key, font_size))
             };
+            self.metrics_memo.put(*key, metrics);
             emit(metrics);
         }
         self.run_buffers.metric_values = metric_values;

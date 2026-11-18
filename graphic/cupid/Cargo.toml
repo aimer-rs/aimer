@@ -101,6 +101,10 @@ required-features = ["wgpu"]
 name = "text_scroll_benchmark"
 required-features = ["wgpu"]
 
+[[example]]
+name = "text_scroll_chunks_benchmark"
+required-features = ["wgpu"]
+
 [[bin]]
 path = "src/bin_vulkan.rs"
 name = "cupid-vulkan"
