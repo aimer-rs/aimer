@@ -3,6 +3,7 @@ pub mod copy_button;
 mod custom;
 mod document;
 mod live;
+mod live_cuts;
 mod live_segments;
 mod markdown_theme;
 mod renderer;

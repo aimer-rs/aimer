@@ -24,6 +24,7 @@ aimer_style.workspace = true
 webbrowser.workspace = true
 aimer_svg.workspace = true
 aimer_input.workspace = true
+aimer_text_buffer.workspace = true
 aimer_clipboard.workspace = true
 synoptic.workspace = true
 syntect = { workspace = true, optional = true }

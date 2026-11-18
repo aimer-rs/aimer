@@ -29,6 +29,10 @@ use markdown::mdast::Node;
 pub(crate) const MIN_TEXT_BYTES: usize = 4096;
 
 
+/// The length, in bytes, from which a note is read a window at a time and not whole: see
+/// [`crate::live_cuts`] for what that gives up.
+pub(crate) const WINDOWED_BYTES: usize = 256 * 1024;
+
 /// The least a piece holds, in bytes. Pieces of a few blocks keep the cache to a few hundred
 /// entries for a long note, and a piece that small is a quick parse.
 pub(crate) const MIN_SEGMENT_BYTES: usize = 1024;
@@ -40,47 +44,83 @@ pub(crate) fn segment_cuts(text: &str) -> Option<Vec<usize>> {
         return None;
     }
     let mut cuts = Vec::new();
-    let mut last_cut = 0;
-    let mut fence: Option<(u8, usize)> = None;
-    let mut html: Option<&'static str> = None;
-    let mut previous_blank = false;
-    let mut at = 0;
+    let mut scan = Scan::START;
     for line in text.split_inclusive('\n') {
+        let at = scan.at;
+        match scan.step(line) {
+            Step::Definition => return None,
+            Step::Cut => cuts.push(at),
+            Step::Line => {}
+        }
+    }
+    (!cuts.is_empty()).then_some(cuts)
+}
+
+/// Where the reading of a note is, between two of its lines: what is carried from one line to the
+/// next, which is all the next line needs to know of the ones before it. A scan can be taken up
+/// again from any state it was in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Scan {
+    /// The start of the next line.
+    pub at: usize,
+    /// Where the last cut was; a piece holds at least [`MIN_SEGMENT_BYTES`].
+    pub last_cut: usize,
+    fence: Option<(u8, usize)>,
+    html: Option<&'static str>,
+    previous_blank: bool,
+}
+
+/// What a line was found to be.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Step {
+    Line,
+    /// The line starts a piece.
+    Cut,
+    /// The line is a link reference or footnote definition, outside any code.
+    Definition,
+}
+
+impl Scan {
+    /// The state before the first line.
+    pub(crate) const START: Self = Self { at: 0, last_cut: 0, fence: None, html: None, previous_blank: false };
+
+    /// Reads `line`, which starts at `self.at`, and moves to the start of the next.
+    pub(crate) fn step(&mut self, line: &str) -> Step {
+        let at = self.at;
         let body = line.trim_end_matches(['\n', '\r']);
         let blank = body.trim().is_empty();
         let inner = strip_containers(body);
-        if let Some((mark, length)) = fence {
+        let mut found = Step::Line;
+        if let Some((mark, length)) = self.fence {
             if closes_fence(inner, mark, length) {
-                fence = None;
+                self.fence = None;
             }
-        } else if let Some(terminator) = html {
+        } else if let Some(terminator) = self.html {
             if body.to_ascii_lowercase().contains(terminator) {
-                html = None;
+                self.html = None;
             }
         } else {
             if is_definition(body) {
-                return None;
+                found = Step::Definition;
             }
-            if previous_blank
-                && !blank
-                && at - last_cut >= MIN_SEGMENT_BYTES
-                && starts_new_block(body)
-            {
-                cuts.push(at);
-                last_cut = at;
+            if self.previous_blank && !blank && at - self.last_cut >= MIN_SEGMENT_BYTES && starts_new_block(body) {
+                if found == Step::Line {
+                    found = Step::Cut;
+                }
+                self.last_cut = at;
             }
             if let Some(opened) = opens_fence(inner) {
-                fence = Some(opened);
+                self.fence = Some(opened);
             } else if let Some(terminator) = html_terminator(body)
                 && !body.to_ascii_lowercase().contains(terminator)
             {
-                html = Some(terminator);
+                self.html = Some(terminator);
             }
         }
-        previous_blank = blank;
-        at += line.len();
+        self.previous_blank = blank;
+        self.at = at + line.len();
+        found
     }
-    (!cuts.is_empty()).then_some(cuts)
 }
 
 /// `line` without the container marks a block can sit in: leading spaces, quote marks and one

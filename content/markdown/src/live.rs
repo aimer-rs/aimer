@@ -17,6 +17,7 @@
 //! The public [`Document`](crate::Document) drops source positions, which a text
 //! field needs, so this walks the parser's own tree.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
@@ -29,7 +30,10 @@ use markdown::mdast::{Blockquote, Heading, Node, Table};
 use markdown::{Constructs, ParseOptions};
 
 use crate::MarkdownTheme;
-use crate::live_segments::{Piece, SegmentCache, segment_cuts};
+use aimer_text_buffer::TextSnapshot;
+
+use crate::live_cuts::CutIndex;
+use crate::live_segments::{Piece, SegmentCache, WINDOWED_BYTES, segment_cuts};
 
 /// The parse of the last text a highlighter saw. The tree does not depend on
 /// where the cursor is, so moving it between lines costs a walk and not a parse.
@@ -81,6 +85,8 @@ pub struct LivePreview {
     parsed: Parsed,
     /// What was read of each piece of the notes read lately; see [`crate::live_segments`].
     segments: Rc<RefCell<SegmentCache>>,
+    /// Where the pieces of a very long note are near a place; see [`crate::live_cuts`].
+    cuts: Rc<RefCell<CutIndex>>,
     title: Option<SpanStyle>,
     image_height: f32,
 }
@@ -93,6 +99,7 @@ impl LivePreview {
             theme: *theme,
             parsed: Parsed::default(),
             segments: Rc::new(RefCell::new(SegmentCache::new())),
+            cuts: Rc::new(RefCell::new(CutIndex::new())),
             title: None,
             image_height: DEFAULT_IMAGE_HEIGHT,
         }
@@ -151,17 +158,30 @@ impl LivePreview {
     /// The pieces `text` is cut into at `cuts`, each with what was read of it: the bytes it spans,
     /// and the reading, which is kept for as long as the piece is the same.
     fn pieces(&self, text: &str, cuts: &[usize]) -> Option<Vec<(Range<usize>, Rc<Piece>)>> {
-        let mut cache = self.segments.borrow_mut();
         let mut start = 0;
-        cuts.iter()
+        let spans: Vec<Range<usize>> = cuts
+            .iter()
             .copied()
             .chain(std::iter::once(text.len()))
             .map(|end| {
-                let piece = cache.piece(&text[start..end], parse)?;
                 let span = start..end;
                 start = end;
-                Some((span, piece))
+                span
             })
+            .collect();
+        self.pieces_of(&spans, &|span| Cow::Borrowed(&text[span.clone()]))
+    }
+
+    /// The reading of each of `spans`, whose text `text_of` gives.
+    fn pieces_of<'a>(
+        &self,
+        spans: &[Range<usize>],
+        text_of: &dyn Fn(&Range<usize>) -> Cow<'a, str>,
+    ) -> Option<Vec<(Range<usize>, Rc<Piece>)>> {
+        let mut cache = self.segments.borrow_mut();
+        spans
+            .iter()
+            .map(|span| Some((span.clone(), cache.piece(&text_of(span), parse)?)))
             .collect()
     }
 
@@ -172,8 +192,38 @@ impl LivePreview {
     /// the whole's that touches the piece.
     fn ranges_in_pieces(&self, text: &str, context: &HighlightContext, cuts: &[usize]) -> Option<Vec<StyledRange>> {
         let pieces = self.pieces(text, cuts)?;
+        Some(self.paint_pieces(&pieces, &|span| Cow::Borrowed(&text[span.clone()]), context))
+    }
+
+    /// The ranges of `range` of a text held as a snapshot, which is read a window at a time when
+    /// it is long: the pieces that hold `range` are found, read and painted, and no others. They
+    /// are the ones [`ranges`](Self::ranges) would give for those bytes, except that a link
+    /// reference or a footnote is found only in its own piece; see [`crate::live_cuts`].
+    /// A short text is read whole.
+    pub fn ranges_window(&self, text: &TextSnapshot, range: Range<usize>, context: &HighlightContext) -> Vec<StyledRange> {
+        if text.len() < WINDOWED_BYTES {
+            return self.ranges(&text.slice(0..text.len()), context);
+        }
+        let spans = {
+            let mut cuts = self.cuts.borrow_mut();
+            cuts.follow(text);
+            cuts.pieces(range)
+        };
+        match self.pieces_of(&spans, &|span| text.slice(span.clone())) {
+            Some(pieces) => self.paint_pieces(&pieces, &|span| text.slice(span.clone()), context),
+            None => Vec::new(),
+        }
+    }
+
+    /// Paints each piece for the cursor and gathers the ranges, in the offsets of the note.
+    fn paint_pieces<'a>(
+        &self,
+        pieces: &[(Range<usize>, Rc<Piece>)],
+        text_of: &dyn Fn(&Range<usize>) -> Cow<'a, str>,
+        context: &HighlightContext,
+    ) -> Vec<StyledRange> {
         let mut ranges = Vec::new();
-        for (index, (span, piece)) in pieces.iter().enumerate() {
+        for (span, piece) in pieces {
             let local = context.shifted_back(span.start);
             let length = span.len();
             // The active lines that reach the piece, which is all the painting of it can tell of the cursor.
@@ -181,28 +231,25 @@ impl LivePreview {
                 .active_lines()
                 .filter(|lines| lines.start <= length)
                 .map(|lines| (lines.start, lines.end.min(length)));
-            let painted = piece.ranges(active, |root| paint(&text[span.clone()], &local, &self.styles, root));
-            let shifted = painted.iter().map(|range| {
-                StyledRange::new(range.range.start + span.start..range.range.end + span.start, range.style)
-            });
-            match (index, self.title) {
+            let piece_text = text_of(span);
+            let painted = piece.ranges(active, |root| paint(&piece_text, &local, &self.styles, root));
+            match (span.start, self.title) {
                 // The title is the first line, which the first piece holds.
                 (0, Some(title)) => {
-                    let first = with_title(painted.to_vec(), &text[span.clone()], title);
-                    ranges.extend(first.into_iter().map(|range| {
-                        StyledRange::new(range.range.start..range.range.end, range.style)
-                    }));
+                    ranges.extend(with_title(painted.to_vec(), &piece_text, title));
                 }
-                _ => ranges.extend(shifted),
+                _ => ranges.extend(painted.iter().map(|range| {
+                    StyledRange::new(range.range.start + span.start..range.range.end + span.start, range.style)
+                })),
             }
         }
-        Some(ranges)
+        ranges
     }
 
     /// A [`TextHighlighter`] for a text field, sharing this preview's parse.
     pub fn highlighter(&self) -> TextHighlighter {
         let preview = self.clone();
-        TextHighlighter::with_selection(move |text, context| preview.ranges(text, context))
+        TextHighlighter::windowed(move |text, range, context| preview.ranges_window(text, range, context))
     }
 
     /// The blocks of `text` that are shown as widgets instead of text: tables and
@@ -229,6 +276,29 @@ impl LivePreview {
             return embeds;
         }
         self.embeds_whole(text, context)
+    }
+
+    /// The embeds of the pieces of a text held as a snapshot that hold `range`, each whole: the
+    /// ones a field needs to lay out those bytes. A short text is read whole. Identical blocks of
+    /// the pieces read are told apart by their order among them.
+    pub fn embeds_window(&self, text: &TextSnapshot, range: Range<usize>, context: &HighlightContext) -> Vec<TextEmbed> {
+        if text.len() < WINDOWED_BYTES {
+            return self.embeds(&text.slice(0..text.len()), context);
+        }
+        let spans = {
+            let mut cuts = self.cuts.borrow_mut();
+            cuts.follow(text);
+            cuts.pieces(range)
+        };
+        let Some(pieces) = self.pieces_of(&spans, &|span| text.slice(span.clone())) else {
+            return Vec::new();
+        };
+        let mut seen: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+        let mut embeds = Vec::new();
+        for (span, piece) in &pieces {
+            self.embeds_of(&text.slice(span.clone()), span.start, &piece.root, context, &mut seen, &mut embeds);
+        }
+        embeds
     }
 
     /// [`embeds`](Self::embeds) from a parse of the whole text.
@@ -299,7 +369,7 @@ impl LivePreview {
     /// finds as widgets. Pair it with [`highlighter`](Self::highlighter).
     pub fn embedder(&self) -> TextEmbedder {
         let preview = self.clone();
-        TextEmbedder::new(move |text, context| preview.embeds(text, context))
+        TextEmbedder::windowed(move |text, range, context| preview.embeds_window(text, range, context))
     }
 }
 
@@ -1508,6 +1578,65 @@ mod tests {
         assert!(cut_notes > 80, "the notes were cut in {cut_notes} of 120 rounds");
     }
 
+    /// What `ranges` overlap `window`, as text to compare.
+    fn overlapping(ranges: &[StyledRange], window: &Range<usize>) -> String {
+        let kept: Vec<_> = ranges.iter().filter(|r| r.range.start < window.end && window.start < r.range.end).collect();
+        format!("{kept:?}")
+    }
+
+    #[test]
+    fn reading_a_window_of_a_long_note_gives_what_reading_it_whole_gives_there() {
+        let preview = LivePreview::new(&theme()).title(SpanStyle::new().font_size(24).font_weight(FontWeight::Bold));
+        let reference = LivePreview::new(&theme()).title(SpanStyle::new().font_size(24).font_weight(FontWeight::Bold));
+        let mut random = Random(0xA5A5_5A5A_1234_4321);
+        let mut text = document(&mut random, 1500);
+        assert!(text.len() > WINDOWED_BYTES, "{} bytes", text.len());
+        let mut snapshot = TextSnapshot::from_text(&text);
+        for round in 0..25 {
+            if round > 0 {
+                // Typed into the note, as a field would, so the preview follows an edit.
+                let mut at = random.next(text.len());
+                while !text.is_char_boundary(at) {
+                    at += 1;
+                }
+                let inserted = ["a", "\n", "**", "\n\n# New\n\n"][random.next(4)];
+                text.insert_str(at, inserted);
+                snapshot = snapshot.with_replaced(at..at, inserted);
+            }
+            for context in contexts(&text, &mut random).into_iter().take(5) {
+                let mut start = random.next(text.len());
+                while !text.is_char_boundary(start) {
+                    start += 1;
+                }
+                let mut end = (start + 1 + random.next(8000)).min(text.len());
+                while !text.is_char_boundary(end) {
+                    end += 1;
+                }
+                let window = start..end;
+                let windowed = preview.ranges_window(&snapshot, window.clone(), &context);
+                let whole = reference.ranges_whole(&text, &context);
+                assert_eq!(
+                    overlapping(&windowed, &window),
+                    overlapping(&whole, &window),
+                    "round {round}: window {window:?}, cursor on {:?}",
+                    context.active_lines()
+                );
+                let embeds = |embeds: Vec<TextEmbed>| {
+                    embeds
+                        .iter()
+                        .filter(|embed| embed.range().start < window.end && window.start < embed.range().end)
+                        .map(|embed| embed.range())
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(
+                    embeds(preview.embeds_window(&snapshot, window.clone(), &context)),
+                    embeds(reference.embeds_whole(&text, &context)),
+                    "round {round}: embeds in {window:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_note_with_a_definition_is_read_whole_and_reads_as_before() {
         let preview = LivePreview::new(&theme());
@@ -1609,5 +1738,46 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A keystroke in a note of megabytes, read a window at a time: styling and embeds of the
+    /// 8 KB around the cursor, after the edit, the way a field asks for them.
+    #[test]
+    #[ignore = "benchmark"]
+    fn bench_a_windowed_keystroke() {
+        use std::time::Instant;
+
+        let mut random = Random(0xABCD_EF01_2345_6789);
+        for megabytes in [1, 5, 30] {
+            let mut text = String::new();
+            let mut index = 0;
+            while text.len() < megabytes * 1_000_000 {
+                text.push_str(&block(&mut random, index));
+                index += 1;
+            }
+            let preview = LivePreview::new(&theme());
+            let mut snapshot = TextSnapshot::from_text(&text);
+            let at = text.len() / 2;
+            let window = |at: usize| at.saturating_sub(4000)..(at + 4000).min(snapshot_len(&text));
+            let context = HighlightContext::in_snapshot(&snapshot, at..at);
+            let started = Instant::now();
+            let _ = preview.ranges_window(&snapshot, window(at), &context);
+            let _ = preview.embeds_window(&snapshot, window(at), &context);
+            let first = started.elapsed();
+            let mut total = std::time::Duration::ZERO;
+            for step in 0..20 {
+                snapshot = snapshot.with_replaced(at + step..at + step, "x");
+                let context = HighlightContext::in_snapshot(&snapshot, at + step + 1..at + step + 1);
+                let started = Instant::now();
+                let _ = preview.ranges_window(&snapshot, window(at), &context);
+                let _ = preview.embeds_window(&snapshot, window(at), &context);
+                total += started.elapsed();
+            }
+            println!("{megabytes:>3} MB   first window {first:>10.2?}   each keystroke {:>10.2?}", total / 20);
+        }
+    }
+
+    fn snapshot_len(text: &str) -> usize {
+        text.len()
     }
 }
