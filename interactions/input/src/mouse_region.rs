@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use aimer_attribute::CacheBounds;
-use aimer_events::element::ElementEvent;
+use aimer_events::element::{ElementEvent, PressureStage};
 use aimer_events::pointer::PointerSource;
 use aimer_events::window::request_animation_frame;
 use aimer_widget::InteractionBounds;
@@ -33,6 +33,22 @@ pub type SharedPointerState = Rc<Cell<PointerState>>;
 /// A callback for pointer activity, with the kind of pointer it came from.
 pub type PointerActivityCallback = Rc<dyn Fn(PointerSource)>;
 
+/// What a region calls when it is force-clicked, with where, in logical window coordinates.
+pub type ForcePressCallback = Rc<dyn Fn(aimer_attribute::position::Vec2d)>;
+
+/// A region's callback for the force click of a pressure-sensitive trackpad, and how deep the press that is going on has
+/// got: a deep press is one force click, however many reports of its pressure there are.
+pub(crate) struct ForcePress {
+    callback: ForcePressCallback,
+    stage: Cell<PressureStage>,
+}
+
+impl ForcePress {
+    pub(crate) fn new(callback: ForcePressCallback) -> Self {
+        Self { callback, stage: Cell::new(PressureStage::None) }
+    }
+}
+
 /// A transparent widget that tracks mouse hover over its child.
 ///
 /// Touch events do not change hover state. Enter and exit callbacks run only on
@@ -54,6 +70,7 @@ pub struct MouseRegion<W = RequiredChild> {
     pub on_hover_enter: VoidCallback,
     pub on_hover_exit: VoidCallback,
     pub on_pointer_activity: Option<PointerActivityCallback>,
+    pub on_force_press: Option<ForcePressCallback>,
     pub cursor: Option<winit::window::CursorIcon>,
     pub current_state: SharedPointerState,
     pub cached_bounds: CacheBounds,
@@ -74,6 +91,7 @@ impl MouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: CacheBounds::new(),
@@ -109,6 +127,17 @@ impl<W> MouseRegion<W> {
         self
     }
 
+    /// Sets what is called when the region is force-clicked: the trackpad is pressed down hard in it, which a macOS Force
+    /// Touch trackpad reports as a deep stage. It is called once for each deep press, with where the pointer is, and
+    /// again only after the press has been let go.
+    ///
+    /// A widget inside the region that takes the pressure comes first, and then this is not called. The event is taken
+    /// when this is called, so that what is behind the region does not also act on it.
+    pub fn on_force_press(mut self, on_force_press: impl Fn(aimer_attribute::position::Vec2d) + 'static) -> Self {
+        self.on_force_press = Some(Rc::new(on_force_press));
+        self
+    }
+
     /// Sets the cursor shown while the mouse is inside the region.
     ///
     /// Pass `None` to leave the cursor unchanged. On exit, a configured cursor
@@ -134,6 +163,7 @@ impl<W> MouseRegion<W> {
             on_hover_enter: self.on_hover_enter,
             on_hover_exit: self.on_hover_exit,
             on_pointer_activity: self.on_pointer_activity,
+            on_force_press: self.on_force_press,
             cursor: self.cursor,
             current_state: self.current_state,
             cached_bounds: self.cached_bounds,
@@ -160,6 +190,7 @@ impl<W: Widget + 'static> Widget for MouseRegion<W> {
             on_hover_enter: self.on_hover_enter.clone(),
             on_hover_exit: self.on_hover_exit.clone(),
             on_pointer_activity: self.on_pointer_activity.clone(),
+            on_force_press: self.on_force_press.clone().map(ForcePress::new),
             cursor: self.cursor,
             current_state: self.current_state.clone(),
             cached_bounds: seeded_interaction_bounds(&self.cached_bounds),
@@ -187,6 +218,7 @@ pub struct RawMouseRegion<E: Element> {
     pub(crate) on_hover_enter: VoidCallback,
     pub(crate) on_hover_exit: VoidCallback,
     pub(crate) on_pointer_activity: Option<PointerActivityCallback>,
+    pub(crate) on_force_press: Option<ForcePress>,
     pub(crate) cursor: Option<winit::window::CursorIcon>,
     pub(crate) current_state: Rc<Cell<PointerState>>,
     pub(crate) cached_bounds: InteractionBounds,
@@ -293,11 +325,41 @@ impl<E: Element> RawMouseRegion<E> {
 }
 
 impl<E: Element> RawMouseRegion<E> {
+    /// The pressure of the trackpad, at the cursor `pos`: the child comes first, and then the region takes the press
+    /// that goes deep, once.
+    fn handle_pressure<'dispatcher, 'tree>(
+        &self,
+        pos: Vec2d,
+        stage: PressureStage,
+        event: &ElementEvent,
+        mut context: Option<&mut EventDispatchContext<'dispatcher, 'tree>>,
+    ) -> EventResult {
+        let inside = self.cached_bounds.is_inside(pos.x, pos.y);
+        let result = match context.as_mut() {
+            Some(context) if inside => context.dispatch_child(&self.child, pos, event),
+            _ => EventResult::ignored(),
+        };
+        let Some(force) = &self.on_force_press else {
+            return result;
+        };
+        // The depth is kept wherever the pointer is: a press that is held deep while the pointer leaves and comes back is
+        // the press that began, and not another.
+        let before = force.stage.replace(stage);
+        if inside && !result.is_consumed() && stage == PressureStage::Force && before != PressureStage::Force {
+            (force.callback)(pos);
+            return EventResult::consumed();
+        }
+        result
+    }
+
     fn handle_event<'dispatcher, 'tree>(
         &self,
         event: &ElementEvent,
         mut context: Option<&mut EventDispatchContext<'dispatcher, 'tree>>,
     ) -> EventResult {
+        if let ElementEvent::Pressure { pos, stage, .. } = event {
+            return self.handle_pressure(*pos, *stage, event, context);
+        }
         let pointer = match event {
             ElementEvent::PointerDown(info)
             | ElementEvent::PointerUp(info)
@@ -415,6 +477,10 @@ impl<E: Element + 'static> Rebuildable for RawMouseRegion<E> {
         }
         // The icon this region's predecessor set is still the one showing.
         self.cursor_claim.inherit(&old.cursor_claim);
+        // A press that is deep when the region is built again is still the press that went deep.
+        if let (Some(new), Some(old)) = (&self.on_force_press, &old.on_force_press) {
+            new.stage.set(old.stage.get());
+        }
     }
 }
 
@@ -689,6 +755,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: Some(Rc::new(move |source| record.borrow_mut().push(source))),
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -710,11 +777,81 @@ mod tests {
         assert_eq!(*seen.borrow(), vec![PointerSource::Mouse, PointerSource::Touch]);
     }
 
+    /// A region over the top-left 50 by 50 that records where it is force-clicked.
+    fn force_region() -> (RawMouseRegion<TestElement>, Rc<std::cell::RefCell<Vec<aimer_attribute::position::Vec2d>>>) {
+        let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let record = seen.clone();
+        let region = RawMouseRegion {
+            on_hover_enter: VoidCallback::default(),
+            on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
+            on_force_press: Some(ForcePress::new(Rc::new(move |at| record.borrow_mut().push(at)))),
+            cursor: None,
+            current_state: Rc::new(Cell::new(PointerState::Outside)),
+            cached_bounds: InteractionBounds::new(),
+            child: TestElement,
+            window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
+        };
+        region.cached_bounds.save(1.0, 0.0, 0.0, 50.0, 50.0);
+        (region, seen)
+    }
+
+    fn press(x: f32, pressure: f32, stage: aimer_events::element::PressureStage) -> ElementEvent {
+        ElementEvent::Pressure { pos: aimer_attribute::position::Vec2d { x, y: 10.0 }, pressure, stage }
+    }
+
+    #[test]
+    fn a_force_press_calls_the_region_once_for_each_deep_press_with_where_it_was() {
+        use aimer_events::element::PressureStage::{Click, Force, None as Off};
+        let (region, seen) = force_region();
+
+        // The press goes in: a click, and then deeper.
+        assert!(!region.on_event(&press(10.0, 0.3, Click)).is_consumed(), "a click is not a force click");
+        let deep = region.on_event(&press(12.0, 0.9, Force));
+        assert!(deep.is_consumed(), "the region took it, so what is behind it does not");
+        assert_eq!(*seen.borrow(), vec![aimer_attribute::position::Vec2d { x: 12.0, y: 10.0 }]);
+        // It stays deep, and moves about in it: that is the same press.
+        assert!(!region.on_event(&press(12.0, 1.0, Force)).is_consumed());
+        let _ = region.on_event(&press(13.0, 0.95, Force));
+        assert_eq!(seen.borrow().len(), 1);
+        // Let go, and press again: another.
+        let _ = region.on_event(&press(13.0, 0.0, Off));
+        let _ = region.on_event(&press(14.0, 0.4, Click));
+        let _ = region.on_event(&press(14.0, 0.9, Force));
+        assert_eq!(seen.borrow().len(), 2);
+        assert_eq!(seen.borrow()[1].x, 14.0);
+    }
+
+    #[test]
+    fn a_force_press_outside_the_region_is_not_the_regions_and_a_press_held_on_leaving_and_coming_back_is_not_a_new_one() {
+        use aimer_events::element::PressureStage::{Click, Force};
+        let (region, seen) = force_region();
+        // Beside it: not its press.
+        assert!(!region.on_event(&press(400.0, 1.0, Force)).is_consumed());
+        assert!(seen.borrow().is_empty());
+        let _ = region.on_event(&press(400.0, 0.2, Click));
+        // Deep inside, the pointer is moved out and back with the press held.
+        let _ = region.on_event(&press(10.0, 0.9, Force));
+        assert_eq!(seen.borrow().len(), 1);
+        let _ = region.on_event(&press(400.0, 0.9, Force));
+        let _ = region.on_event(&press(20.0, 0.9, Force));
+        assert_eq!(seen.borrow().len(), 1, "it is the press that began, not another");
+    }
+
+    #[test]
+    fn a_region_with_no_force_press_leaves_the_pressure_alone() {
+        use aimer_events::element::PressureStage::Force;
+        let region = region_over(Rc::new(Cell::new(PointerState::Outside)));
+        assert!(!region.on_event(&press(10.0, 1.0, Force)).is_consumed());
+    }
+
     fn region_over(current_state: Rc<Cell<PointerState>>) -> RawMouseRegion<TestElement> {
         let region = RawMouseRegion {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state,
             cached_bounds: InteractionBounds::new(),
@@ -766,6 +903,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: current_state.clone(),
             cached_bounds: InteractionBounds::new(),
@@ -787,6 +925,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -825,6 +964,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Inside)),
             cached_bounds: bounds,
@@ -863,6 +1003,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: Some(winit::window::CursorIcon::Pointer),
             current_state: Rc::new(Cell::new(PointerState::Inside)),
             cached_bounds: bounds,
@@ -901,6 +1042,7 @@ mod tests {
                 on_hover_enter: VoidCallback::default(),
                 on_hover_exit: VoidCallback::default(),
                 on_pointer_activity: None,
+                on_force_press: None,
                 cursor: Some(icon),
                 current_state: Rc::new(Cell::new(PointerState::Outside)),
                 cached_bounds: bounds,
@@ -961,6 +1103,7 @@ mod tests {
                 (move || exited.set(exited.get() + 1)).into()
             },
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Inside)),
             cached_bounds: bounds,
@@ -990,6 +1133,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: state.clone(),
             cached_bounds: bounds,
@@ -1028,6 +1172,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: InteractionBounds::new(),
@@ -1066,6 +1211,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -1100,6 +1246,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -1149,6 +1296,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds: bounds,
@@ -1211,6 +1359,7 @@ mod tests {
             on_hover_enter: VoidCallback::default(),
             on_hover_exit: VoidCallback::default(),
             on_pointer_activity: None,
+            on_force_press: None,
             cursor: None,
             current_state: Rc::new(Cell::new(PointerState::Outside)),
             cached_bounds,

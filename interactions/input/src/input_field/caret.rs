@@ -32,6 +32,10 @@ pub struct CaretGeometry {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct CaretSnapshot {
     geometry: CaretGeometry,
+    extent: Option<(f32, f32)>,
+    /// What hangs from the caret and is pressed like a button: `(left, top, width, height)`, from the caret's
+    /// own top-left corner.
+    popup: Option<(f32, f32, f32, f32)>,
     offset: usize,
     focused: bool,
     available: bool,
@@ -49,8 +53,12 @@ struct CaretSnapshot {
 #[derive(Clone)]
 pub struct CaretContext {
     snapshot: Rc<Cell<CaretSnapshot>>,
+    popup_press: Rc<RefCell<Option<Rc<dyn Fn(f32, f32)>>>>,
+    popup_dismiss: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     blink: CaretBlink,
     repaint: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    /// The widgets of an app that hang from the caret and want to be told too.
+    repaint_also: Rc<RefCell<Vec<Rc<dyn Fn()>>>>,
 }
 
 impl CaretContext {
@@ -58,8 +66,11 @@ impl CaretContext {
     pub(crate) fn new(blink: CaretBlink) -> Self {
         Self {
             snapshot: Rc::new(Cell::new(CaretSnapshot::default())),
+            popup_press: Rc::new(RefCell::new(None)),
+            popup_dismiss: Rc::new(RefCell::new(None)),
             blink,
             repaint: Rc::new(RefCell::new(None)),
+            repaint_also: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -67,6 +78,81 @@ impl CaretContext {
     #[inline]
     pub fn geometry(&self) -> CaretGeometry {
         self.snapshot.get().geometry
+    }
+
+    /// Returns where the part of the field that shows text ends, as the far edges `(x, y)` in the same
+    /// coordinates as [`geometry`](Self::geometry), or `None` for a field that has not been laid out.
+    ///
+    /// This is what lets something that hangs from the caret, such as a menu, stay in view: it opens
+    /// upwards when there is not room below the caret, and moves left when there is not room beside it.
+    #[inline]
+    pub fn visible_extent(&self) -> Option<(f32, f32)> {
+        self.snapshot.get().extent
+    }
+
+    /// Says where something that hangs from the caret, such as a menu, is, as `(left, top, width, height)` from the
+    /// caret's top-left corner, or that nothing does.
+    ///
+    /// A press on it is not the field's: the caret stays where it is, and the press and its release are left to
+    /// the widget that is there, as a press on a margin icon or on an embedded widget is. It is told from the
+    /// caret and not in the coordinates of the field, so that it is where the caret is when the field scrolls.
+    pub fn set_popup(&self, popup: Option<(f32, f32, f32, f32)>) {
+        let mut snapshot = self.snapshot.get();
+        snapshot.popup = popup;
+        self.snapshot.set(snapshot);
+    }
+
+    /// Sets what is called when what hangs from the caret is pressed, with where, as `(x, y)` from its top-left corner.
+    /// The widgets that hang from the caret are not reached by a press that is outside the caret's own box, as a menu
+    /// is, so it is told here instead.
+    pub fn on_popup_press(&self, callback: Option<Rc<dyn Fn(f32, f32)>>) {
+        *self.popup_press.borrow_mut() = callback;
+    }
+
+    /// Sets what is called when what hangs from the caret is to go: the field has lost focus, or the part of it that shows
+    /// text has changed size, as when a panel opens under it, so that the place the popup was put at is not the place it
+    /// would be put at now. What hangs from the caret is not [set](Self::set_popup) any more when this is called.
+    pub fn on_popup_dismiss(&self, callback: Option<Rc<dyn Fn()>>) {
+        *self.popup_dismiss.borrow_mut() = callback;
+    }
+
+    /// Takes away what hangs from the caret and tells what shows it, if there is anything.
+    pub(crate) fn dismiss_popup(&self) {
+        let mut snapshot = self.snapshot.get();
+        if snapshot.popup.take().is_none() {
+            return;
+        }
+        self.snapshot.set(snapshot);
+        // Cloned out of the cell first: what is called may set it again.
+        let callback = self.popup_dismiss.borrow().clone();
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
+
+    /// Presses what hangs from the caret at `(x, y)`, in the coordinates of the field. Whether there is any there.
+    pub(crate) fn press_popup(&self, x: f32, y: f32) -> bool {
+        if !self.popup_at(x, y) {
+            return false;
+        }
+        let snapshot = self.snapshot.get();
+        let (left, top, _, _) = snapshot.popup.expect("a popup is where a press landed on it");
+        // Cloned out of the cell first: what is called may set it again.
+        let callback = self.popup_press.borrow().clone();
+        if let Some(callback) = callback {
+            callback(x - snapshot.geometry.x - left, y - snapshot.geometry.y - top);
+        }
+        true
+    }
+
+    /// Whether `(x, y)`, in the coordinates of the field, is on what hangs from the caret.
+    pub(crate) fn popup_at(&self, x: f32, y: f32) -> bool {
+        let snapshot = self.snapshot.get();
+        let Some((left, top, width, height)) = snapshot.popup else {
+            return false;
+        };
+        let (origin_x, origin_y) = (snapshot.geometry.x + left, snapshot.geometry.y + top);
+        x >= origin_x && x < origin_x + width && y >= origin_y && y < origin_y + height
     }
 
     /// Returns the current caret position in grapheme-cluster units.
@@ -111,11 +197,38 @@ impl CaretContext {
         &self.blink
     }
 
+    /// Records where the visible part of the field ends, in the coordinates of the geometry.
+    pub(crate) fn set_extent(&self, extent: Option<(f32, f32)>) {
+        let mut snapshot = self.snapshot.get();
+        let resized = snapshot.extent.is_some() && snapshot.extent != extent;
+        snapshot.extent = extent;
+        self.snapshot.set(snapshot);
+        // A popup was put where there was room for it, which there may not be any more, and is where the field was.
+        if resized {
+            self.dismiss_popup();
+        }
+    }
+
     pub(crate) fn set_repaint_callback(&self, callback: Rc<dyn Fn()>) {
         *self.repaint.borrow_mut() = Some(callback);
     }
 
+    /// Asks to be told when the caret is to be painted again: it shows or hides as it blinks, changes size, or is
+    /// shown or hidden by focus. Unlike the caret that is built into the field, a caret widget of an app that has the
+    /// [`DefaultCaret`] inside it, with something else beside it such as a menu, is not repainted by the caret's own
+    /// callback, and rebuilds itself when it is told here.
+    ///
+    /// The callbacks are kept for as long as the context is: one that is not wanted any more should do nothing.
+    pub fn on_repaint(&self, callback: Rc<dyn Fn()>) {
+        self.repaint_also.borrow_mut().push(callback);
+    }
+
     pub(crate) fn request_repaint(&self) {
+        // Cloned out of the cell first: what is called may ask for another.
+        let also: Vec<Rc<dyn Fn()>> = self.repaint_also.borrow().clone();
+        for callback in also {
+            callback();
+        }
         if let Some(callback) = self.repaint.borrow().as_ref() {
             callback();
         }
@@ -144,6 +257,8 @@ impl CaretContext {
         };
         self.snapshot.set(CaretSnapshot {
             geometry,
+            extent: previous.extent,
+            popup: previous.popup,
             offset,
             focused,
             available,
@@ -732,6 +847,38 @@ mod tests {
 
         assert!(context.is_visible());
         assert_eq!(repaints.get(), settled);
+    }
+
+    /// The caret that is built into the field repaints itself through one callback. A caret widget of an app, with the
+    /// caret inside it, is not reached that way, and asks to be told too: without that its caret is painted once and
+    /// never again, whatever the blink does.
+    #[test]
+    fn a_widget_that_hangs_from_the_caret_is_told_of_a_repaint_as_well_as_the_caret_that_is_built_in() {
+        let blink = CaretBlink::new();
+        let context = CaretContext::new(blink.clone());
+        let (own, hanging) = (Rc::new(Cell::new(0u32)), Rc::new(Cell::new(0u32)));
+        let (counted_own, counted_hanging) = (Rc::clone(&own), Rc::clone(&hanging));
+        context.set_repaint_callback(Rc::new(move || counted_own.set(counted_own.get() + 1)));
+        context.on_repaint(Rc::new(move || counted_hanging.set(counted_hanging.get() + 1)));
+        let geometry = CaretGeometry { width: 1.5, height: 16.0, ..CaretGeometry::default() };
+
+        context.publish(geometry, 0, true, true, false);
+        assert!(own.get() > 0 && hanging.get() > 0, "both are told when the caret first shows");
+        let (own_settled, hanging_settled) = (own.get(), hanging.get());
+        context.publish(geometry, 0, true, true, false);
+        assert_eq!((own.get(), hanging.get()), (own_settled, hanging_settled), "and neither when nothing changed");
+
+        // The blink goes to its hidden half, and then back: each is a change both are told of.
+        let start = AnimInstant::now();
+        blink.tick(start);
+        blink.tick(start + Duration::from_millis(500));
+        context.publish(geometry, 0, true, true, false);
+        assert!(!context.is_visible());
+        assert_eq!((own.get(), hanging.get()), (own_settled + 1, hanging_settled + 1));
+        blink.tick(start + Duration::from_millis(1000));
+        context.publish(geometry, 0, true, true, false);
+        assert!(context.is_visible());
+        assert_eq!((own.get(), hanging.get()), (own_settled + 2, hanging_settled + 2));
     }
 
     /// The transient "unavailable" publish keeps the blink phase, so a hidden

@@ -93,3 +93,57 @@ fn a_short_field_keeps_declaring_its_viewport() {
     // Text that fits has nothing to scroll: its box stays what it was.
     assert!(viewport > 0.0 && viewport < 3.0 * 40.0, "{viewport}");
 }
+
+/// A long text is drawn as requests of a few lines each, so that the renderer can set aside the
+/// ones that are off screen. Each must land where its first line is in the field's own layout,
+/// which is where the caret goes: lines that wrap, blank lines and short ones in between.
+#[test]
+fn a_long_text_is_drawn_in_chunks_that_sit_where_their_lines_are() {
+    let text: String = (0..260)
+        .map(|index| match index % 5 {
+            0 => format!("A line {index} long enough that it has to wrap across the width of the field more than once, or twice\n"),
+            1 => "\n".to_owned(),
+            2 => format!("short {index}\n"),
+            3 => "\n\n".to_owned(),
+            _ => format!("tail {index}\n"),
+        })
+        .collect();
+    assert!(text.len() > 5_000, "long enough to be cut: {}", text.len());
+    let mut field = focused_multiline_field(TextFieldController::with_initial(text.clone()), 3);
+    field.text_style = field.text_style.text_overflow(TextOverflow::Wrap);
+    field.window_threshold = usize::MAX;
+    field.max_lines = None;
+    let mut ctx = dummy_build_context(400.0, 200.0);
+    ctx.box_constraint.max_height = 1_000_000.0;
+    ctx.parent_size.height = 1_000_000.0;
+    field.update(&ctx);
+
+    let tree = RenderTree::new();
+    let root = tree.add_root(Rect::new(0.0, 0.0, 400.0, 200.0)).unwrap();
+    let node_context = tree.context(root).unwrap();
+    ctx.with_local_v2_paint_context(node_context, |ctx| {
+        assert!(field.can_paint(ctx));
+        field.paint(ctx);
+    });
+    let runs: Vec<(f32, String)> = tree
+        .draw_list_snapshot(root)
+        .unwrap()
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawCommand::DrawText { position, text, .. } => Some((position.y, text.to_string())),
+            _ => None,
+        })
+        .collect();
+
+    assert!(runs.len() > 10, "the text is cut into many requests: {}", runs.len());
+    assert_eq!(runs.iter().map(|run| run.1.as_str()).collect::<Vec<_>>().join("\n"), text, "and they are all of it");
+    let geometry = field.editable_geometry(&ctx, 400.0);
+    let caret_y = |offset: usize| geometry.caret_geometry(offset).expect("the caret is laid out").y;
+    let mut start = 0;
+    for (index, (y, part)) in runs.iter().enumerate() {
+        let want = runs[0].0 + caret_y(start) - caret_y(0);
+        assert!((y - want).abs() < 0.5, "chunk {index} is drawn at {y}, its first line is at {want}");
+        start += part.len() + 1;
+    }
+}

@@ -303,6 +303,17 @@ impl Drawable for RawTextFieldHost {
         self.field.paint_outsets(ctx)
     }
 
+    /// An embedded widget is clipped to the box of the text: it moves with the text when the field
+    /// scrolls, and must not draw over the margin of line numbers or beyond the field.
+    fn child_geometry(
+        &self,
+        ctx: &BuildContext,
+        child: &dyn Element,
+    ) -> Option<(aimer_cupid::draw_cmd::Rect, Option<aimer_cupid::draw_cmd::Rect>)> {
+        let (bounds, clip) = self.field.embeds.geometry_of(child, ctx.scale)?;
+        Some((bounds, Some(clip)))
+    }
+
     fn paint_needs_recording(&self, ctx: &BuildContext) -> bool {
         self.field.paint_needs_recording(ctx)
     }
@@ -404,9 +415,35 @@ impl EventElement for RawTextFieldHost {
         // consumes the release, and one that does not lets the click through to
         // here, where it moves the cursor into the block.
         match event {
+            // An icon in the margin is a button: it does its work on the press, and neither the press nor
+            // its release reaches the field, so the caret stays where it is.
+            ElementEvent::PointerDown(info) if let Some(press) = self.field.gutter_marker_at(info.pos) => {
+                self.field.marker_pressed.set(true);
+                press();
+                return EventResult::consumed().with_redraw();
+            }
+            ElementEvent::PointerUp(_) if self.field.marker_pressed.replace(false) => {
+                return EventResult::consumed();
+            }
+            // What hangs from the caret, a menu, is pressed by its own widgets: the press does not go to the field,
+            // which would move the caret and take the menu away before the release of the click arrives.
+            ElementEvent::PointerDown(info) if self.field.press_popup(info.pos) => {
+                self.field.popup_pressed.set(true);
+                return EventResult::consumed();
+            }
+            ElementEvent::PointerUp(_) if self.field.popup_pressed.replace(false) => {
+                return EventResult::consumed();
+            }
             ElementEvent::PointerDown(info) if self.field.embed_at(info.pos) => {
                 self.field.embeds.set_pressed(true);
                 return EventResult::consumed();
+            }
+            // A press anywhere else is a new gesture. A widget that handles its own tap, a button, consumes
+            // the release, so the host never saw the release of the press it noted; left standing, that
+            // note would take the release of this press, and the field, which never saw it, would believe
+            // the button still down and extend a selection wherever the pointer went next.
+            ElementEvent::PointerDown(_) => {
+                self.field.embeds.set_pressed(false);
             }
             // Only a release that ends a press made on an embedded widget is the
             // host's. Any other release, even one that happens to land over an

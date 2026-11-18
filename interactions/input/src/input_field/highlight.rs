@@ -1,3 +1,4 @@
+use aimer_text_buffer::TextSnapshot;
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
@@ -78,7 +79,11 @@ pub struct TextHighlighter {
     id: u64,
     highlight: Rc<dyn Fn(&str, &HighlightContext) -> Vec<StyledRange>>,
     by_selection: bool,
+    window: Option<Rc<WindowFn>>,
 }
+
+/// A function that styles a part of a text it is given whole, as a snapshot.
+type WindowFn = dyn Fn(&TextSnapshot, Range<usize>, &HighlightContext) -> Vec<StyledRange>;
 
 impl TextHighlighter {
     /// Creates a highlighter from a function that styles ranges of a text.
@@ -93,6 +98,7 @@ impl TextHighlighter {
             id: NEXT_HIGHLIGHTER_ID.fetch_add(1, Ordering::Relaxed),
             highlight: Rc::new(move |text, _| highlight(text)),
             by_selection: false,
+            window: None,
         }
     }
 
@@ -187,6 +193,64 @@ impl TextHighlighter {
             id: NEXT_HIGHLIGHTER_ID.fetch_add(1, Ordering::Relaxed),
             highlight: Rc::new(highlight),
             by_selection: true,
+            window: None,
+        }
+    }
+
+    /// Creates a highlighter that styles only the part of a text that is on screen.
+    ///
+    /// A field with a text of megabytes lays out the lines near the viewport and no more, and it
+    /// asks this function for those alone: the function receives the whole text as a
+    /// [`TextSnapshot`], which it can read any part of without a copy of the rest, the byte
+    /// range the field is about to lay out, and the cursor. It returns the styled ranges of
+    /// that range, in the offsets of the whole text. Ranges outside the one asked for are
+    /// ignored, so a function that styles in pieces may return all of its last piece.
+    ///
+    /// An edit then costs the styling of what is on screen, however long the text is. The
+    /// function must be pure, like the ones of the other constructors, and may keep what it
+    /// learned of a text for the next call: the snapshot of an edited text shares what it can
+    /// with the one it was made from.
+    ///
+    /// A field with a short text, and a call to [`highlight`](Self::highlight), ask for the
+    /// whole text at once.
+    ///
+    /// Like [`with_selection`](Self::with_selection), it is given where the cursor is and runs
+    /// again when the cursor changes lines.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::{SpanStyle, StyledRange, TextHighlighter};
+    /// use aimer_widget::base::Color;
+    ///
+    /// // Colours every `TODO` in the lines of the window.
+    /// let todos = TextHighlighter::windowed(|text, range, _context| {
+    ///     let first = text.line_range(text.byte_to_line(range.start)).start;
+    ///     let last = text.line_range(text.byte_to_line(range.end.saturating_sub(1))).end;
+    ///     let lines = text.slice(first..last);
+    ///     lines
+    ///         .match_indices("TODO")
+    ///         .map(|(at, found)| {
+    ///             let style = SpanStyle::new().color(Color::Rgba(220, 120, 20, 255));
+    ///             StyledRange::new(first + at..first + at + found.len(), style)
+    ///         })
+    ///         .collect()
+    /// });
+    ///
+    /// assert_eq!(todos.highlight("a TODO\nb").len(), 1);
+    /// ```
+    #[inline]
+    pub fn windowed<F>(highlight: F) -> Self
+    where
+        F: Fn(&TextSnapshot, Range<usize>, &HighlightContext) -> Vec<StyledRange> + 'static,
+    {
+        let window = Rc::new(highlight);
+        let whole = Rc::clone(&window);
+        Self {
+            id: NEXT_HIGHLIGHTER_ID.fetch_add(1, Ordering::Relaxed),
+            highlight: Rc::new(move |text, context| whole(&TextSnapshot::from_text(text), 0..text.len(), context)),
+            by_selection: true,
+            window: Some(window),
         }
     }
 
@@ -201,6 +265,22 @@ impl TextHighlighter {
     #[inline]
     pub(crate) fn highlight_in(&self, text: &str, context: &HighlightContext) -> Vec<StyledRange> {
         (self.highlight)(text, context)
+    }
+
+    /// The ranges for `range` of `text`, when this highlighter was made to style a window of it.
+    pub(crate) fn highlight_window(
+        &self,
+        text: &TextSnapshot,
+        range: Range<usize>,
+        context: &HighlightContext,
+    ) -> Option<Vec<StyledRange>> {
+        self.window.as_ref().map(|window| window(text, range, context))
+    }
+
+    /// Whether this highlighter styles a window of a text and not all of it.
+    #[inline]
+    pub(crate) fn is_windowed(&self) -> bool {
+        self.window.is_some()
     }
 
     /// Whether the ranges depend on the cursor, which is what decides if a move
@@ -255,6 +335,23 @@ impl HighlightContext {
             selection: Some(start..end),
             active_lines: Some(first..last),
         }
+    }
+
+    /// [`new`](Self::new) for a text held as a snapshot: the lines are found from its line
+    /// counts, and nothing of the text is read.
+    ///
+    /// A selection that is not on character boundaries of `text` panics, and one past its end is
+    /// clamped.
+    pub fn in_snapshot(text: &TextSnapshot, selection: Range<usize>) -> Self {
+        let start = selection.start.min(text.len());
+        let end = selection.end.clamp(start, text.len());
+        let first = text.line_range(text.byte_to_line(start)).start;
+        let mut last = text.line_range(text.byte_to_line(end)).end;
+        // Not the line break, which is not on the line.
+        if last > first && text.byte_at(last - 1) == Some(b'\n') {
+            last -= 1;
+        }
+        Self { selection: Some(start..end), active_lines: Some(first..last) }
     }
 
     /// The selected bytes, empty for a plain caret, or `None` without focus.
@@ -323,11 +420,28 @@ pub(crate) fn highlighter_id(highlighter: Option<&TextHighlighter>) -> u64 {
 #[derive(Default)]
 pub(crate) struct HighlightCache {
     cached: RefCell<Option<CachedHighlight>>,
+    windowed: RefCell<Option<CachedWindow>>,
+}
+
+/// The ranges a windowed highlighter made for a range of a text.
+struct CachedWindow {
+    highlighter: u64,
+    text: TextSnapshot,
+    active: Option<Range<usize>>,
+    covers: Range<usize>,
+    ranges: Rc<[StyledRange]>,
+}
+
+/// The text a highlight was made for, remembered so that the same text is known again: a short one
+/// by its string, and a long one by its snapshot, which is compared by what the two share.
+enum CachedText {
+    Shared(Arc<str>),
+    Snapshot(TextSnapshot),
 }
 
 struct CachedHighlight {
     highlighter: u64,
-    text: Arc<str>,
+    text: CachedText,
     /// The lines the ranges were computed for; `None` for a highlighter that
     /// does not look at the cursor, whose ranges stay valid wherever it is.
     active: Option<Range<usize>>,
@@ -370,15 +484,83 @@ impl HighlightCache {
         if let Some(hit) = cached.as_ref()
             && hit.highlighter == highlighter.id()
             && hit.active == active
-            && (Arc::ptr_eq(&hit.text, text) || hit.text == *text)
+            && matches!(&hit.text, CachedText::Shared(held) if Arc::ptr_eq(held, text) || held == text)
         {
             return (!hit.ranges.is_empty()).then(|| Rc::clone(&hit.ranges));
         }
         let ranges: Rc<[StyledRange]> = highlighter.highlight_in(text, context).into();
         *cached = Some(CachedHighlight {
             highlighter: highlighter.id(),
-            text: Arc::clone(text),
+            text: CachedText::Shared(Arc::clone(text)),
             active,
+            ranges: Rc::clone(&ranges),
+        });
+        (!ranges.is_empty()).then_some(ranges)
+    }
+
+    /// [`resolve_in`](Self::resolve_in) for a text held as a snapshot: it is known again by what it
+    /// shares with the one the ranges were made for, and is made into a string only when the
+    /// highlighter has to run.
+    pub(crate) fn resolve_in_snapshot(
+        &self,
+        highlighter: Option<&TextHighlighter>,
+        text: &TextSnapshot,
+        context: &HighlightContext,
+    ) -> Option<Rc<[StyledRange]>> {
+        let highlighter = highlighter?;
+        if text.is_empty() {
+            return None;
+        }
+        let active = highlighter.depends_on_selection().then(|| context.active_lines()).flatten();
+        let mut cached = self.cached.borrow_mut();
+        if let Some(hit) = cached.as_ref()
+            && hit.highlighter == highlighter.id()
+            && hit.active == active
+            && matches!(&hit.text, CachedText::Snapshot(held) if held.ptr_eq(text) || held.diff(text).is_none())
+        {
+            return (!hit.ranges.is_empty()).then(|| Rc::clone(&hit.ranges));
+        }
+        let ranges: Rc<[StyledRange]> = highlighter.highlight_in(&text.slice(0..text.len()), context).into();
+        *cached = Some(CachedHighlight {
+            highlighter: highlighter.id(),
+            text: CachedText::Snapshot(text.clone()),
+            active,
+            ranges: Rc::clone(&ranges),
+        });
+        (!ranges.is_empty()).then_some(ranges)
+    }
+
+    /// The ranges of `range` of `text` from a windowed `highlighter`, which runs only when it, the
+    /// text, the lines the cursor is on, or a range the last answer did not cover, differ from
+    /// what the last call saw. `None` when it styled nothing.
+    pub(crate) fn resolve_window(
+        &self,
+        highlighter: &TextHighlighter,
+        text: &TextSnapshot,
+        range: Range<usize>,
+        context: &HighlightContext,
+    ) -> Option<Rc<[StyledRange]>> {
+        if text.is_empty() {
+            return None;
+        }
+        let active = context.active_lines();
+        let mut cached = self.windowed.borrow_mut();
+        if let Some(hit) = cached.as_ref()
+            && hit.highlighter == highlighter.id()
+            && hit.active == active
+            && hit.covers.start <= range.start
+            && range.end <= hit.covers.end
+            && (hit.text.ptr_eq(text) || hit.text.diff(text).is_none())
+        {
+            return (!hit.ranges.is_empty()).then(|| Rc::clone(&hit.ranges));
+        }
+        let ranges: Rc<[StyledRange]> =
+            highlighter.highlight_window(text, range.clone(), context).unwrap_or_default().into();
+        *cached = Some(CachedWindow {
+            highlighter: highlighter.id(),
+            text: text.clone(),
+            active,
+            covers: range,
             ranges: Rc::clone(&ranges),
         });
         (!ranges.is_empty()).then_some(ranges)
@@ -388,6 +570,7 @@ impl HighlightCache {
     /// that leaves the text alone does not run the highlighter again.
     pub(crate) fn adopt(&self, old: &Self) {
         *self.cached.borrow_mut() = old.cached.borrow_mut().take();
+        *self.windowed.borrow_mut() = old.windowed.borrow_mut().take();
     }
 }
 

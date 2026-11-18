@@ -1,4 +1,5 @@
 use std::panic::Location;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use aimer_decoration::Decoration;
@@ -11,8 +12,9 @@ use aimer_widget::{
 use crate::TextEditingController;
 use crate::input_field::caret::CaretContext;
 use crate::input_field::chrome::TextFieldVisualState;
+use crate::input_field::gutter::{GutterMarkers, LineBars, LineNumbers};
 use crate::input_field::highlight::TextHighlighter;
-use crate::input_field::raw_fields::{ExpandDirection, InputType, TextFieldCallback};
+use crate::input_field::raw_fields::{ExpandDirection, ForceClick, InputType, PointerHoles, TextFieldCallback};
 use crate::input_field::{TextField, TextFieldState};
 
 /// A multiline text input widget.
@@ -29,6 +31,14 @@ pub struct TextArea {
     max_lines: Option<usize>,
     expand: bool,
     tab_spaces: Option<usize>,
+    wrap: bool,
+    line_numbers: Option<LineNumbers>,
+    gutter_markers: Option<GutterMarkers>,
+    pointer_holes: Option<PointerHoles>,
+    on_force_click: Option<ForceClick>,
+    line_bars: Option<LineBars>,
+    line_break_prefix: Option<Rc<dyn Fn(&str) -> Option<String>>>,
+    current_line: Option<Color>,
 }
 
 impl TextArea {
@@ -44,6 +54,14 @@ impl TextArea {
             max_lines: None,
             expand: false,
             tab_spaces: None,
+            wrap: true,
+            line_numbers: None,
+            gutter_markers: None,
+            pointer_holes: None,
+            on_force_click: None,
+            line_bars: None,
+            line_break_prefix: None,
+            current_line: None,
         }
     }
 
@@ -166,6 +184,99 @@ impl TextArea {
     #[inline]
     pub fn tab_spaces(mut self, spaces: impl Into<Option<usize>>) -> Self {
         self.tab_spaces = spaces.into();
+        self
+    }
+
+    /// Chooses whether long lines wrap to the width of the area. The default is `true`.
+    ///
+    /// An area that does not wrap shows each line on one row, however long, and scrolls sideways
+    /// to keep the caret in view, which is what a code editor does. The horizontal scroll follows
+    /// the caret, the trackpad and shift with the wheel; the lines are not cut or abbreviated.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextArea;
+    ///
+    /// let code = TextArea::new().wrap(false);
+    /// # let _ = code;
+    /// ```
+    #[inline]
+    pub fn wrap(mut self, wrap: bool) -> Self {
+        self.wrap = wrap;
+        self
+    }
+
+    /// Shows line numbers in a margin to the left of the text, or hides them with `None`.
+    ///
+    /// The margin takes room from the text, as wide as the largest number needs, and the number of the
+    /// line the caret is on stands out. Clicking in it puts the caret at the start of the line.
+    #[inline]
+    pub fn line_numbers(mut self, numbers: impl Into<Option<LineNumbers>>) -> Self {
+        self.line_numbers = numbers.into();
+        self
+    }
+
+    /// Sets what is called when the text is force-clicked: the trackpad is pressed down hard on it, which a macOS Force
+    /// Touch trackpad reports as a deep stage. It is called once for each deep press, with the byte of the text under the
+    /// pointer, a frame after the press, when the layout can say which it is. A press on something drawn over the text,
+    /// such as the menu of a caret widget or an icon in the margin, is not a press on the text.
+    #[inline]
+    pub fn on_force_click(mut self, on_force_click: impl Fn(usize) + 'static) -> Self {
+        self.on_force_click = Some(std::rc::Rc::new(on_force_click));
+        self
+    }
+
+    /// Says where something else is drawn over the field and is pressed like a button, such as a badge floating at its
+    /// corner: from the field's width and height, the rectangles `(left, top, width, height)` it covers. The pointer over
+    /// one shows an arrow and not the text cursor.
+    #[inline]
+    pub fn pointer_holes(mut self, holes: impl Into<Option<PointerHoles>>) -> Self {
+        self.pointer_holes = holes.into();
+        self
+    }
+
+    /// Puts a column of clickable icons before the line numbers; see [`GutterMarkers`]. Does nothing
+    /// without [`line_numbers`](Self::line_numbers), whose margin it is part of.
+    #[inline]
+    pub fn gutter_markers(mut self, markers: impl Into<Option<GutterMarkers>>) -> Self {
+        self.gutter_markers = markers.into();
+        self
+    }
+
+    /// Makes Return start the new line with what `prefix` says: it is given the text of the line before
+    /// the caret, and returns what the new line begins with, or `None` for nothing. A code editor
+    /// continues a comment (`/// `) or a list this way.
+    #[inline]
+    pub fn line_break_prefix(mut self, prefix: impl Fn(&str) -> Option<String> + 'static) -> Self {
+        self.line_break_prefix = Some(Rc::new(prefix));
+        self
+    }
+
+    /// Lets `filter` take a key press before the area does, and keep it from the area by answering
+    /// `true`; see [`TextField::on_key`]. A code editor refuses a key that would change text it keeps
+    /// from being edited this way.
+    #[inline]
+    pub fn on_key(
+        mut self,
+        filter: impl Fn(&aimer_events::element::NamedKey, &aimer_events::element::Modifiers) -> bool + 'static,
+    ) -> Self {
+        self.field = self.field.on_key(filter);
+        self
+    }
+
+    /// Draws a bar down the left of the lines `bars` gives one, behind the text; see [`LineBars`].
+    #[inline]
+    pub fn line_bars(mut self, bars: impl Into<Option<LineBars>>) -> Self {
+        self.line_bars = bars.into();
+        self
+    }
+
+    /// Draws a band of `color` behind the line the caret is on, across the margin and the text, as a
+    /// code editor marks the current line. `None`, the default, draws none.
+    #[inline]
+    pub fn current_line(mut self, color: impl Into<Option<Color>>) -> Self {
+        self.current_line = color.into();
         self
     }
 
@@ -423,6 +534,14 @@ impl TextArea {
             .max_lines
             .map(|max_lines| max_lines.max(config.min_lines.unwrap_or(1)));
         config.tab_spaces = self.tab_spaces;
+        config.wrap = self.wrap;
+        config.line_numbers = self.line_numbers;
+        config.gutter_markers = self.gutter_markers.clone();
+        config.pointer_holes = self.pointer_holes.clone();
+        config.on_force_click = self.on_force_click.clone();
+        config.line_bars = self.line_bars.clone();
+        config.line_break_prefix = self.line_break_prefix.clone();
+        config.current_line = self.current_line;
         config.expand = if self.expand {
             ExpandDirection::Vertical
         } else {
@@ -520,6 +639,20 @@ mod tests {
         assert_eq!(state.config().tab_spaces, Some(4));
         let state = TextArea::new().tab_spaces(4).tab_spaces(None).create_state::<TextFieldState>();
         assert_eq!(state.config().tab_spaces, None);
+    }
+
+    #[test]
+    fn a_key_filter_reaches_the_created_state() {
+        use aimer_events::element::{Modifiers, NamedKey};
+
+        let state = TextArea::new()
+            .on_key(|key, _| matches!(key, NamedKey::Backspace))
+            .create_state::<TextFieldState>();
+
+        let filter = state.config().key_filter.as_ref().expect("it was set").clone();
+        assert!(filter(&NamedKey::Backspace, &Modifiers::default()));
+        assert!(!filter(&NamedKey::Delete, &Modifiers::default()));
+        assert!(TextArea::new().create_state::<TextFieldState>().config().key_filter.is_none());
     }
 
     #[test]

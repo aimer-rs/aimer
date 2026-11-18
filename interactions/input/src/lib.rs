@@ -11,7 +11,7 @@ pub use aimer_text::TextSelection;
 /// crates (e.g. `aimer_container`) can use it without a dependency cycle. It is
 /// re-exported here so existing `aimer_input::callback::*` paths keep working.
 pub use aimer_utils::callback;
-pub use editable_text::{TextEditingController, TextEditingValue, TextRange};
+pub use editable_text::{ControllerListener, TextEditingController, TextEditingValue, TextRange};
 pub use text_area::TextArea;
 pub mod button;
 
@@ -23,6 +23,8 @@ pub mod input {
     pub use crate::input_field::chrome::TextFieldVisualState;
     pub use crate::input_field::embed::{EmbedHeight, TextEmbed, TextEmbedder};
     pub use crate::input_field::highlight::{HighlightContext, TextHighlighter};
+    pub use crate::input_field::gutter::{GutterMarker, GutterMarkers, LineBar, LineBars, LineNumbers};
+    pub use aimer_text_buffer::TextSnapshot;
     pub use aimer_text::{InlineBox, SpanStyle, StyledRange};
     pub use crate::input_field::{TextField, TextFieldState};
     pub use crate::{TextArea, TextEditingController, TextEditingValue, TextRange, TextSelection};

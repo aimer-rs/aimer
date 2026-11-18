@@ -3,6 +3,7 @@ use std::rc::{Rc, Weak};
 
 use aimer_cupid::font::TextLanguage;
 use aimer_text::TextSelection;
+use aimer_text_buffer::TextSnapshot;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::TextEditingValue;
@@ -42,6 +43,12 @@ pub(crate) struct ControllerAttachment {
     id: u64,
 }
 
+/// Keeps a [`TextEditingController::listen`] callback registered: dropping it stops the calls.
+#[must_use = "dropping the listener stops it"]
+pub struct ControllerListener {
+    _attachment: ControllerAttachment,
+}
+
 impl TextEditingController {
     const MAX_UNDO_DEPTH: usize = 200;
     /// Creates an empty controller with a collapsed selection.
@@ -54,6 +61,13 @@ impl TextEditingController {
     #[inline]
     pub fn with_text(text: impl Into<String>) -> Self {
         Self::with_value(TextEditingValue::with_text(text))
+    }
+
+    /// [`with_text`](Self::with_text) for a text that is only borrowed: a long one is put straight
+    /// into the controller's tree of chunks, with no `String` made of it first.
+    #[inline]
+    pub fn with_str(text: &str) -> Self {
+        Self::with_value(TextEditingValue::with_str(text))
     }
 
     fn with_value(value: TextEditingValue) -> Self {
@@ -201,6 +215,53 @@ impl TextEditingController {
         )
     }
 
+    /// Where the caret is, as the one-based line and the one-based column (in graphemes, from the
+    /// start of the line) a status bar shows: `32:23`. For a selection it is where the selection
+    /// ends, the end the caret is at.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::with_text("one\ntwo");
+    /// assert_eq!(controller.cursor_position(), (2, 4), "the caret is at the end of the second line");
+    /// ```
+    pub fn cursor_position(&self) -> (usize, usize) {
+        let value = self.value();
+        let (line, column) = value.line_and_column(value.selection().focus());
+        (line + 1, column + 1)
+    }
+
+    /// The text as a snapshot, which never changes whatever is typed after: see
+    /// [`TextEditingValue::snapshot`].
+    pub fn snapshot(&self) -> TextSnapshot {
+        self.value().snapshot()
+    }
+
+    /// How many lines the text has: one more than its line feeds.
+    pub fn line_count(&self) -> usize {
+        self.value().line_count()
+    }
+
+    /// [`replace_selection_graphemes`](Self::replace_selection_graphemes) with a replacement that is
+    /// a snapshot, shared and not copied. There is no length limit to apply to one: the caller gives
+    /// a text that is to go in whole.
+    pub(crate) fn replace_selection_graphemes_snapshot(
+        &self,
+        anchor: usize,
+        focus: usize,
+        with: &TextSnapshot,
+    ) -> bool {
+        let value = self.value();
+        let selected = value.with_selection(TextSelection::new(
+            value.byte_of_grapheme(anchor),
+            value.byte_of_grapheme(focus),
+        ));
+        let range = selected.selection().range();
+        self.apply_value(selected.splice_snapshot(range, with, TextSelection::collapsed), Some(value))
+    }
+
     pub(crate) fn delete_backward_graphemes(&self, anchor: usize, focus: usize) -> bool {
         self.edit_from_graphemes(anchor, focus, editing::delete_backward, true)
     }
@@ -280,7 +341,7 @@ impl TextEditingController {
                 .borrow_mut()
                 .composition_origin
                 .take()
-                .or_else(|| (current.text() != value.text()).then_some(current))
+                .or_else(|| (!current.same_text(&value)).then_some(current))
         };
         self.apply_value(value, history)
     }
@@ -307,6 +368,83 @@ impl TextEditingController {
     pub fn set_text(&self, text: impl Into<String>) {
         let selection = self.value().selection();
         self.set_value(TextEditingValue::new(text, selection, None));
+    }
+
+    /// Replaces the UTF-8 byte `range` of the text with `replacement` as one undoable edit, and puts
+    /// the caret after the replacement. A code editor completes the word before the caret this way.
+    ///
+    /// The range is clamped to the text and widened to whole graphemes, so it never splits a
+    /// character. It costs the edit, not the text: a long text is edited along one path of its tree.
+    /// Returns whether the text or the caret changed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::with_text("let x = pu;");
+    /// controller.replace_range(8..10, "pub");
+    /// assert_eq!(controller.value().text(), "let x = pub;");
+    /// ```
+    pub fn replace_range(&self, range: std::ops::Range<usize>, replacement: &str) -> bool {
+        let value = self.value();
+        let start = value.floor_to_boundary(range.start.min(value.len()));
+        let end = value.ceil_to_boundary(range.end.min(value.len())).max(start);
+        let edited = value.splice(start..end, replacement, TextSelection::collapsed, None);
+        self.core.state.borrow_mut().composition_origin = None;
+        self.apply_value(edited, Some(value))
+    }
+
+    /// Replaces several ranges of bytes at once, as one edit that one undo takes back, and puts the
+    /// caret after the replacement of the `caret_after`-th range of them in the order they have in the
+    /// text, wherever the others have moved it. The ranges are given in any order and must not overlap
+    /// (they may touch); each is made whole characters, and one past the end is the end. Returns
+    /// whether the text changed: nothing does when they overlap or there are none.
+    ///
+    /// This is for what a language server asks for when an item is completed: the word, and the line
+    /// that imports it somewhere else.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::with_text("let m = Ma;");
+    /// controller.replace_ranges(&[(8..10, "Map"), (0..0, "use a::Map;\n")], 1);
+    /// assert_eq!(controller.value().text(), "use a::Map;\nlet m = Map;");
+    /// assert!(controller.undo());
+    /// assert_eq!(controller.value().text(), "let m = Ma;");
+    /// ```
+    pub fn replace_ranges(&self, edits: &[(std::ops::Range<usize>, &str)], caret_after: usize) -> bool {
+        let value = self.value();
+        let mut list: Vec<(usize, usize, &str)> = edits
+            .iter()
+            .map(|(range, text)| {
+                let start = value.floor_to_boundary(range.start.min(value.len()));
+                let end = value.ceil_to_boundary(range.end.min(value.len())).max(start);
+                (start, end, *text)
+            })
+            .collect();
+        if list.is_empty() {
+            return false;
+        }
+        list.sort_by_key(|&(start, end, _)| (start, end));
+        if list.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+            return false;
+        }
+        let focus = caret_after.min(list.len() - 1);
+        // Where the caret is once the ranges before it are replaced: each moves it by how much longer or
+        // shorter its replacement is.
+        let moved: isize = list[..focus].iter().map(|&(start, end, text)| text.len() as isize - (end - start) as isize).sum();
+        let caret = (list[focus].0 + list[focus].2.len()).checked_add_signed(moved).expect("a caret is not before the start of the text");
+        let mut edited = value.clone();
+        // From the end, so that a range is not moved by the ones after it.
+        for &(start, end, text) in list.iter().rev() {
+            edited = edited.splice(start..end, text, TextSelection::collapsed, None);
+        }
+        let edited = edited.with_selection(TextSelection::collapsed(caret));
+        self.core.state.borrow_mut().composition_origin = None;
+        self.apply_value(edited, Some(value))
     }
 
     /// Removes all text and collapses the selection at zero.
@@ -354,13 +492,13 @@ impl TextEditingController {
 
     #[inline]
     pub(crate) fn text(&self) -> String {
-        self.value().text().to_owned()
+        self.value().text().into_owned()
     }
 
     /// Whether the text is empty, without a copy of it to ask.
     #[inline]
     pub(crate) fn is_text_empty(&self) -> bool {
-        self.core.state.borrow().value.text().is_empty()
+        self.core.state.borrow().value.is_empty()
     }
 
     #[cfg(test)]
@@ -386,6 +524,52 @@ impl TextEditingController {
             value.grapheme_of_byte(value.selection().anchor()),
             value.grapheme_of_byte(value.selection().focus()),
         )
+    }
+
+    /// Selects from the grapheme offset `anchor` to `focus`, which is a caret where they are the
+    /// same. Offsets past the end of the text are the end. Returns whether the selection changed.
+    /// The caret of a controller made with text is at its end; this is how a file is opened at its
+    /// start.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::with_text("one\ntwo");
+    /// controller.select(0, 0);
+    /// assert_eq!(controller.cursor_position(), (1, 1));
+    /// controller.select(0, 5);
+    /// assert_eq!(controller.cursor_position(), (2, 2));
+    /// ```
+    pub fn select(&self, anchor: usize, focus: usize) -> bool {
+        self.set_selection_graphemes(anchor, focus)
+    }
+
+    /// Selects from the byte offset `anchor` to `focus`, which is a caret where they are the same. An
+    /// offset past the end is the end, and one inside a character or a grapheme (a letter and its
+    /// mark are one) is moved back to the start of it, so a selection never cuts either. Returns
+    /// whether the selection changed. It is not an edit, and the undo history is as it was.
+    ///
+    /// This is [`select`](Self::select) for a caller that has byte offsets of the text, such as the
+    /// ranges a compiler or a language server reports, and not offsets of graphemes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::with_text("caf\u{e9}\nbar");
+    /// // "bar" starts at byte 6: "é" is two bytes.
+    /// controller.select_bytes(6, 9);
+    /// assert_eq!(controller.cursor_position(), (2, 4));
+    /// ```
+    pub fn select_bytes(&self, anchor: usize, focus: usize) -> bool {
+        let value = self.value();
+        let len = value.len();
+        // `with_selection` brings each end back to a grapheme boundary.
+        let selection = TextSelection::new(anchor.min(len), focus.min(len));
+        self.apply_value(value.with_selection(selection), None)
     }
 
     pub(crate) fn set_selection_graphemes(&self, anchor: usize, focus: usize) -> bool {
@@ -417,7 +601,8 @@ impl TextEditingController {
         let value = self.value();
         let byte_start = value.byte_of_grapheme(start);
         let byte_end = value.byte_of_grapheme(start.max(end));
-        value.text()[byte_start..byte_end].to_owned()
+        // The range alone: reading the whole text out to cut a part of it would copy a long one.
+        value.slice(byte_start..byte_end).into_owned()
     }
 
     #[cfg(test)]
@@ -448,6 +633,34 @@ impl TextEditingController {
             editing::replace_selection(&selected, text, None),
             Some(value),
         );
+    }
+
+    /// Calls `callback` with the new value after every change to the controller: an edit, a move of the
+    /// caret or the selection, an undo, a text set from outside. It is how a status bar follows the
+    /// caret, or a view follows the text, without being the field that edits it.
+    ///
+    /// The call is made after the change is complete, so the callback may read the controller and
+    /// change it again; keep it quick, since it runs on each keystroke. The returned guard keeps the
+    /// callback registered for as long as it is held.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::cell::Cell;
+    /// use std::rc::Rc;
+    ///
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::new();
+    /// let changes = Rc::new(Cell::new(0));
+    /// let counted = Rc::clone(&changes);
+    /// let _listener = controller.listen(move |_value| counted.set(counted.get() + 1));
+    ///
+    /// controller.set_text("hello");
+    /// assert_eq!(changes.get(), 1);
+    /// ```
+    pub fn listen(&self, callback: impl Fn(&TextEditingValue) + 'static) -> ControllerListener {
+        ControllerListener { _attachment: self.attach(move |value, _revision| callback(value)) }
     }
 
     pub(crate) fn attach(
@@ -518,6 +731,128 @@ mod tests {
     use super::TextEditingController;
 
     #[test]
+    fn several_ranges_are_replaced_at_once_as_one_edit_that_one_undo_takes_back() {
+        // A word is completed and the line that imports it is added at the top, as a server asks.
+        let controller = TextEditingController::with_text("fn main() {\n    HashM\n}\n");
+        let at = controller.value().text().find("HashM").unwrap();
+        let word = at..at + 5;
+        assert!(controller.replace_ranges(&[(word, "HashMap"), (0..0, "use std::collections::HashMap;\n\n")], 1));
+        assert_eq!(
+            controller.value().text(),
+            "use std::collections::HashMap;\n\nfn main() {\n    HashMap\n}\n",
+            "the later range was replaced first, so the earlier one was not moved"
+        );
+        let end = controller.value().text().find("HashMap\n}").unwrap() + "HashMap".len();
+        assert_eq!(controller.value().selection().focus(), end, "the caret is after the word, wherever the other edit put it");
+        assert_eq!(controller.value().selection().anchor(), end);
+        assert!(controller.undo());
+        assert_eq!(controller.value().text(), "fn main() {\n    HashM\n}\n", "both edits are taken back by one undo");
+        assert!(!controller.undo());
+    }
+
+    #[test]
+    fn ranges_that_overlap_or_none_at_all_change_nothing() {
+        let controller = TextEditingController::with_text("abcdef");
+        assert!(!controller.replace_ranges(&[(1..4, "x"), (3..5, "y")], 0), "they overlap");
+        assert!(!controller.replace_ranges(&[], 0), "no edit is no change");
+        assert_eq!(controller.value().text(), "abcdef");
+        assert!(!controller.undo(), "and nothing was recorded");
+        // Ranges that only touch are not overlapping, and are given in any order.
+        assert!(controller.replace_ranges(&[(3..6, "Z"), (0..3, "Y")], 1));
+        assert_eq!(controller.value().text(), "YZ");
+        assert_eq!(controller.value().selection().focus(), 2, "after the replacement of the range that is second in the text");
+    }
+
+    #[test]
+    fn ranges_that_are_in_a_character_or_past_the_end_are_made_whole() {
+        let controller = TextEditingController::with_text("\u{e9}b");
+        // Byte 1 is inside the accent, which is two bytes.
+        assert!(controller.replace_ranges(&[(1..3, "X"), (50..60, "!")], 0));
+        assert_eq!(controller.value().text(), "X!", "the accent whole, and the end where past it was said");
+    }
+
+    #[test]
+    fn a_selection_by_bytes_puts_the_caret_where_the_byte_is_and_counts_in_bytes_not_characters() {
+        // "é" is two bytes, "你" three, "😀" four.
+        let text = "a\u{e9}\u{4f60}\u{1f600}z\nline two";
+        let controller = TextEditingController::with_text(text);
+        let at = |needle: &str| text.find(needle).expect("in the text");
+
+        assert!(controller.select_bytes(at("z"), at("z")));
+        assert_eq!(controller.cursor_position(), (1, 5), "after four characters on the first line");
+        assert_eq!(controller.value().selection().anchor(), at("z"));
+        assert_eq!(controller.value().selection().focus(), at("z"));
+
+        assert!(controller.select_bytes(at("line"), at("two")));
+        assert_eq!(controller.cursor_position(), (2, 6), "the end of the selection is the caret");
+        let selection = controller.value().selection();
+        assert_eq!((selection.anchor(), selection.focus()), (at("line"), at("two")));
+
+        // The same place again is not a change.
+        assert!(!controller.select_bytes(at("line"), at("two")));
+    }
+
+    #[test]
+    fn a_byte_that_is_inside_a_character_or_a_grapheme_is_moved_to_the_start_of_it() {
+        // "e" and U+0301 are one grapheme: a caret does not go between them. 😀 is four bytes.
+        let text = "e\u{301}x\u{1f600}y";
+        let controller = TextEditingController::with_text(text);
+        controller.select_bytes(1, 1);
+        assert_eq!(controller.value().selection().focus(), 0, "between a letter and its mark is before the letter");
+        controller.select_bytes(5, 5);
+        assert_eq!(controller.value().selection().focus(), 4, "inside the emoji is before it");
+        controller.select_bytes(4, 8);
+        let selection = controller.value().selection();
+        assert_eq!((selection.anchor(), selection.focus()), (4, 8), "whole characters are as they are");
+    }
+
+    #[test]
+    fn a_byte_past_the_end_is_the_end_and_empty_text_has_only_one_place() {
+        let controller = TextEditingController::with_text("abc");
+        controller.select_bytes(0, 0);
+        assert!(controller.select_bytes(99, 1000));
+        assert_eq!((controller.value().selection().anchor(), controller.value().selection().focus()), (3, 3));
+        let empty = TextEditingController::new();
+        assert!(!empty.select_bytes(5, 9), "the caret of empty text is already where there is to go");
+        assert_eq!(empty.value().selection().focus(), 0);
+    }
+
+    #[test]
+    fn a_selection_by_bytes_is_not_an_edit_and_leaves_the_undo_history_alone() {
+        let controller = TextEditingController::with_text("hello");
+        controller.set_text("hello world");
+        assert!(controller.undo(), "the edit is there to be undone");
+        assert!(controller.redo());
+        controller.select_bytes(2, 2);
+        controller.select_bytes(5, 5);
+        // What an undo undoes is still the edit, and not the moves of the caret.
+        assert!(controller.undo());
+        assert_eq!(controller.value().text(), "hello");
+        assert!(!controller.undo(), "nothing else was recorded");
+    }
+
+    #[test]
+    fn a_range_of_bytes_is_replaced_as_one_edit_the_caret_goes_after() {
+        let controller = TextEditingController::with_text("let x = pu;\n");
+        assert!(controller.replace_range(8..10, "pub"));
+        assert_eq!(controller.value().text(), "let x = pub;\n");
+        assert_eq!(controller.value().selection().range(), 11..11, "the caret is after the replacement");
+        assert!(!controller.replace_range(11..11, ""), "the same text with the caret where it is is not an edit");
+        assert!(controller.undo(), "one undo takes it back");
+        assert_eq!(controller.value().text(), "let x = pu;\n");
+    }
+
+    #[test]
+    fn a_range_is_clamped_to_the_text_and_to_whole_characters() {
+        let controller = TextEditingController::with_text("caf\u{e9}!");
+        // The range ends inside the two bytes of the accent: it takes the whole character.
+        assert!(controller.replace_range(1..4, "-"));
+        assert_eq!(controller.value().text(), "c-!");
+        assert!(controller.replace_range(1..100, ""), "past the end is the end");
+        assert_eq!(controller.value().text(), "c");
+    }
+
+    #[test]
     fn controller_starts_without_an_input_language() {
         let controller = TextEditingController::with_text("你好");
 
@@ -565,6 +900,25 @@ mod tests {
         assert_eq!(rebuilt.input_language(), Some(TextLanguage::Korean));
     }
 
+    /// A listener's callback may own what owns another listener of the same controller: closing a
+    /// document whose widgets listen to it drops the last callback, which drops the document, which
+    /// drops its own listener. That must not happen while the controller's state is borrowed.
+    #[test]
+    fn dropping_a_listener_whose_callback_owns_another_listener_does_not_reenter_the_controller() {
+        let controller = TextEditingController::with_text("a");
+        let inner = controller.listen(|_| {});
+        let outer = controller.listen({
+            let keep = inner;
+            move |_| {
+                let _ = &keep;
+            }
+        });
+        drop(outer);
+        // The controller still works, and the inner listener went with the outer one.
+        controller.set_text("b");
+        assert_eq!(controller.value().text(), "b");
+    }
+
     #[test]
     fn editing_the_text_never_forgets_the_language() {
         let controller = TextEditingController::with_text("你好");
@@ -579,14 +933,21 @@ mod tests {
 impl Drop for ControllerAttachment {
     fn drop(&mut self) {
         if let Some(core) = self.core.upgrade() {
-            let mut state = core.state.borrow_mut();
-            state.attachments = state
-                .attachments
-                .iter()
-                .filter(|(id, _)| *id != self.id)
-                .cloned()
-                .collect::<Vec<_>>()
-                .into();
+            let replaced = {
+                let mut state = core.state.borrow_mut();
+                let kept: Rc<[AttachmentEntry]> = state
+                    .attachments
+                    .iter()
+                    .filter(|(id, _)| *id != self.id)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into();
+                std::mem::replace(&mut state.attachments, kept)
+            };
+            // The old list held the last reference to this attachment's callback. The callback may own
+            // something that owns another listener of this controller (a document, say), whose drop
+            // takes the state again, so it is released after the borrow above has ended.
+            drop(replaced);
         }
     }
 }

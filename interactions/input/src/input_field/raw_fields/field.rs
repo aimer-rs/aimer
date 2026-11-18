@@ -185,6 +185,19 @@ impl Cursor {
 /// combobox uses this to move its highlight with the arrow keys.
 pub(crate) type KeyFilter = Rc<dyn Fn(&NamedKey, &Modifiers) -> bool>;
 
+/// Says what a new line starts with, given the text of the line before the caret.
+pub(crate) type LineBreakPrefix = Rc<dyn Fn(&str) -> Option<String>>;
+
+/// Tells where the parts of a field are that something else is drawn over, from the width and the height of the
+/// field: each as `(left, top, width, height)` in logical pixels from the field's top-left corner. The pointer over
+/// one is not over the text, and the field shows an arrow there and not the text cursor, as it does over an icon in the
+/// margin.
+pub type PointerHoles = std::rc::Rc<dyn Fn(f32, f32) -> Vec<(f32, f32, f32, f32)>>;
+
+/// What a field calls when it is force-clicked: the trackpad is pressed down hard on the text, which a macOS Force Touch
+/// trackpad reports as a deep stage. It is given the byte of the text under the pointer.
+pub type ForceClick = std::rc::Rc<dyn Fn(usize)>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExpandDirection {
     Horizontal,
@@ -244,8 +257,27 @@ pub(crate) struct RawFieldConfig {
     pub on_blur: TextFieldCallback,
     pub read_only: bool,
     pub key_filter: Option<KeyFilter>,
+    /// What a new line starts with, given the line up to the caret; see [`TextArea::line_break_prefix`].
+    pub line_break_prefix: Option<LineBreakPrefix>,
     /// How many spaces the Tab key inserts, for a field that takes it instead of moving focus.
     pub tab_spaces: Option<usize>,
+    /// Whether long lines wrap to the width of the field. A field that does not wrap scrolls
+    /// sideways to its caret instead. Only a multi-line field has the choice: a single-line one
+    /// never wraps.
+    pub wrap: bool,
+    /// The line numbers in the margin, if the field has them.
+    pub line_numbers: Option<LineNumbers>,
+    /// The clickable icons before the numbers, if the field has them.
+    pub gutter_markers: Option<GutterMarkers>,
+    /// The parts of the field that something else is drawn over and is pressed like a button, if there are any;
+    /// see [`PointerHoles`].
+    pub pointer_holes: Option<PointerHoles>,
+    /// What is called when the text is force-clicked, if anything is; see [`ForceClick`].
+    pub on_force_click: Option<ForceClick>,
+    /// The bars beside some lines, if the field has them.
+    pub line_bars: Option<LineBars>,
+    /// The color of the band behind the line the caret is on, if the field draws one.
+    pub current_line: Option<Color>,
     pub padding: LayoutSpacing,
     /// The frame placed around the field, when it has one.
     ///
@@ -321,7 +353,7 @@ impl Widget for RawTextFieldWidget {
         );
         let selection = SelectionParticipant::from_context(
             ctx,
-            Rc::from(self.config.controller.text()),
+            crate::editable_text::selection_source(&self.config.controller),
         );
         let field = RawTextField::with_caret_context(
             self.config,
@@ -356,8 +388,18 @@ fn embed_signature(embedder: Option<&TextEmbedder>, boxes: &[EmbedBox]) -> u64 {
     hasher.finish()
 }
 
-/// The highlighter's ranges with a box in place of every embed. A highlighted
-/// range that touches an embed is dropped: the embed draws that text.
+/// The whole text as a string, made when it is asked for and not before: a memo that holds the
+/// answer never asks, so a long text is not turned into a string by a frame that changed nothing.
+/// The shortest paste, in bytes, that goes into the text as the clipboard's own bytes: a shorter one
+/// is copied in, which costs less than the chunks that share it.
+const SHARED_PASTE_MIN: usize = 64 * 1024;
+
+type Whole<'a> = &'a dyn Fn() -> std::borrow::Cow<'a, str>;
+
+/// The highlighter's ranges with a box in place of every embed. A highlighted range that reaches into
+/// an embed is cut at it, and what lies outside keeps its style: the embed draws the text inside. A
+/// range that is cut in two is two ranges, one on each side, so a comment that runs through a rendered
+/// block is still a comment before it and after it.
 fn with_embed_boxes(
     ranges: Option<Rc<[aimer_text::StyledRange]>>,
     boxes: &[EmbedBox],
@@ -367,14 +409,32 @@ fn with_embed_boxes(
         return ranges;
     }
     let scale = if scale > 0.0 { scale } else { 1.0 };
-    let mut merged: Vec<aimer_text::StyledRange> = ranges
-        .iter()
-        .flat_map(|ranges| ranges.iter())
-        .filter(|styled| {
-            !boxes.iter().any(|embed| styled.range.start < embed.range.end && embed.range.start < styled.range.end)
-        })
-        .cloned()
-        .collect();
+    // In order, so that the ones a range reaches into are found by where it starts. They do not
+    // overlap: embeds that do were left out when they were made.
+    let mut order: Vec<&Range<usize>> = boxes.iter().map(|embed| &embed.range).collect();
+    order.sort_unstable_by_key(|range| range.start);
+    let mut merged: Vec<aimer_text::StyledRange> = Vec::new();
+    for styled in ranges.iter().flat_map(|ranges| ranges.iter()) {
+        let mut from = styled.range.start;
+        // The first embed that ends after the range starts.
+        let first = order.partition_point(|embed| embed.end <= styled.range.start);
+        let mut cut = false;
+        for embed in &order[first..] {
+            if embed.start >= styled.range.end {
+                break;
+            }
+            cut = true;
+            if from < embed.start {
+                merged.push(aimer_text::StyledRange::new(from..embed.start, styled.style.clone()));
+            }
+            from = from.max(embed.end);
+        }
+        if !cut {
+            merged.push(styled.clone());
+        } else if from < styled.range.end {
+            merged.push(aimer_text::StyledRange::new(from..styled.range.end, styled.style.clone()));
+        }
+    }
     for embed in boxes {
         // A hair under the full width, so rounding never wraps the box away
         // from a line of its own.
@@ -460,6 +520,8 @@ pub(crate) struct RawTextField {
     pub(crate) embeds: Rc<EmbedStore>,
     /// The last embeds the embedder answered with, and what they were asked for.
     embed_memo: RefCell<Option<(HighlightKey, Rc<[TextEmbed]>)>>,
+    /// The embeds of the bytes a windowed embedder was last asked about, with what they were for.
+    window_embed_memo: RefCell<Option<(HighlightKey, Range<usize>, bool, Rc<[TextEmbed]>)>>,
     pub display_widget: RetainedDisplay,
     pub prompt: Arc<str>,
     pub hint: Arc<str>,
@@ -494,8 +556,36 @@ pub(crate) struct RawTextField {
     pub on_blur: TextFieldCallback,
     pub read_only: bool,
     pub key_filter: Option<KeyFilter>,
+    /// What a new line starts with; see [`RawFieldConfig::line_break_prefix`].
+    pub line_break_prefix: Option<LineBreakPrefix>,
     /// How many spaces the Tab key inserts; `None` leaves Tab to move focus.
     pub tab_spaces: Option<usize>,
+    /// Whether long lines wrap; see [`RawFieldConfig::wrap`].
+    pub wrap: bool,
+    /// The line numbers in the margin; see [`RawFieldConfig::line_numbers`].
+    pub line_numbers: Option<LineNumbers>,
+    /// The icons before the numbers; see [`RawFieldConfig::gutter_markers`].
+    pub gutter_markers: Option<GutterMarkers>,
+    /// The parts of the field that something else is over; see [`RawFieldConfig::pointer_holes`].
+    pub pointer_holes: Option<PointerHoles>,
+    /// What is called when the text is force-clicked; see [`RawFieldConfig::on_force_click`].
+    pub on_force_click: Option<ForceClick>,
+    /// Where the text was force-clicked and the byte of it is not known yet: the layout finds it, as it does for a click.
+    pub pending_force: Cell<Option<Vec2d>>,
+    /// How deep the press that is going on has got, so that a deep press is one force click and not one for each report.
+    pub force_stage: Cell<aimer_events::element::PressureStage>,
+    /// The bars beside lines; see [`RawFieldConfig::line_bars`].
+    pub line_bars: Option<LineBars>,
+    /// Where each icon was drawn the last time, in logical pixels from the field's outer origin, and
+    /// what pressing it does: what a press is judged by.
+    pub marker_hits: RefCell<Vec<MarkerHit>>,
+    /// Whether the press that has not been let go yet was on an icon, which keeps the release from the
+    /// field.
+    pub marker_pressed: Cell<bool>,
+    /// Whether a press that began on what hangs from the caret has not been released.
+    pub popup_pressed: Cell<bool>,
+    /// The band behind the caret's line; see [`RawFieldConfig::current_line`].
+    pub current_line: Option<Color>,
     /// Told when hover, focus or emptiness changes, so the chrome built around
     /// this field is rebuilt from them.
     visual: Option<Rc<VisualFlags>>,
@@ -513,6 +603,12 @@ pub(crate) struct RawTextField {
     pub last_click_time: Cell<AnimInstant>,
     pub last_click_pos: Cell<Option<Vec2d>>,
     pub click_count: Cell<u8>,
+    /// The anchor (a grapheme offset) a press made with shift held extends the selection from, while
+    /// the press waits to be placed: it extends the selection to where it lands. Kept here and not
+    /// only in the cursor, because a selection area writes its own state over the cursor's in the
+    /// frame between, and a caret with nothing selected has no anchor to write back. Taken when the
+    /// press is placed.
+    pub shift_press: Cell<Option<usize>>,
     pub pending_click: Cell<Option<Vec2d>>,
     /// The last [`HighlightContext`], with the state it was built from, so the
     /// many geometry requests of one frame walk the text for it once.
@@ -539,7 +635,7 @@ pub(crate) struct RawTextField {
     pub(super) window_lines: Cell<Option<(usize, usize)>>,
     /// The text a windowed field lays out while a composition is in progress, with the
     /// controller revision it was made for.
-    pub(super) composition_display_memo: RefCell<Option<(u64, Arc<str>)>>,
+    pub(super) composition_display_memo: RefCell<Option<(u64, TextSnapshot)>>,
     /// The line at the top of the viewport and how far into it, with the scroll they
     /// were taken at: what keeps the text where it is when the estimates above it are
     /// corrected.
@@ -654,7 +750,7 @@ impl Rebuildable for RawTextField {
         self.preedit_cursor.set(old.preedit_cursor.get());
         self.ime_cursor_area.set(old.ime_cursor_area.get());
         let selection = old.selection.borrow().as_ref().map(|selection| {
-            selection.adopt(Rc::from(self.controller.text()))
+            selection.adopt(crate::editable_text::selection_source(&self.controller))
         });
         *self.selection.borrow_mut() = selection;
 
@@ -748,6 +844,7 @@ impl RawTextField {
             embedder: config.embedder,
             embeds: Rc::new(EmbedStore::default()),
             embed_memo: RefCell::new(None),
+            window_embed_memo: RefCell::new(None),
             display_widget: RetainedDisplay::default(),
             prompt: config.prompt,
             hint: config.hint,
@@ -779,7 +876,20 @@ impl RawTextField {
             on_blur: config.on_blur,
             read_only: config.read_only,
             key_filter: config.key_filter,
+            line_break_prefix: config.line_break_prefix,
             tab_spaces: config.tab_spaces,
+            wrap: config.wrap,
+            line_numbers: config.line_numbers,
+            gutter_markers: config.gutter_markers,
+            pointer_holes: config.pointer_holes,
+            on_force_click: config.on_force_click,
+            pending_force: Cell::new(None),
+            force_stage: Cell::new(aimer_events::element::PressureStage::None),
+            line_bars: config.line_bars,
+            marker_hits: RefCell::new(Vec::new()),
+            marker_pressed: Cell::new(false),
+            popup_pressed: Cell::new(false),
+            current_line: config.current_line,
             visual: config.visual,
             mouse_held: Cell::new(None),
             drag_origin: Cell::new(None),
@@ -787,6 +897,7 @@ impl RawTextField {
             last_click_time: Cell::new(AnimInstant::now()),
             last_click_pos: Cell::new(None),
             click_count: Cell::new(0),
+            shift_press: Cell::new(None),
             pending_click: Cell::new(None),
             highlight_context_memo: RefCell::new(None),
             display_memo: RefCell::new(None),
@@ -829,6 +940,32 @@ impl RawTextField {
     /// Judged by the field's own bounds and the rectangles it published, not by
     /// what the widgets recorded, which a widget that has not been drawn yet has
     /// not.
+    pub(crate) fn press_popup(&self, pos: Vec2d) -> bool {
+        let Some(origin) = self.cached_bounds.get_bounds() else {
+            return false;
+        };
+        self.caret_context.press_popup(pos.x - origin.x, pos.y - origin.y)
+    }
+
+    /// Whether `pos`, in the coordinates of the window, is on what hangs from the caret.
+    pub(crate) fn hole_at(&self, pos: Vec2d) -> bool {
+        let (Some(holes), Some(bounds)) = (&self.pointer_holes, self.cached_bounds.get_bounds()) else {
+            return false;
+        };
+        let (x, y) = (pos.x - bounds.x, pos.y - bounds.y);
+        holes(bounds.width, bounds.height).into_iter().any(|(left, top, width, height)| x >= left && x < left + width && y >= top && y < top + height)
+    }
+
+    /// Whether `pos`, in the coordinates of the window, is on what hangs from the caret.
+    pub(crate) fn popup_at(&self, pos: Vec2d) -> bool {
+        // A press is told in the coordinates of the window, and what hangs from the caret in those of the field.
+        let Some(origin) = self.cached_bounds.get_bounds() else {
+            return false;
+        };
+        self.caret_context.popup_at(pos.x - origin.x, pos.y - origin.y)
+    }
+
+    /// Whether `pos`, in the coordinates of the window, is on an embedded widget.
     pub(crate) fn embed_at(&self, pos: Vec2d) -> bool {
         let Some(origin) = self.cached_bounds.get_bounds() else {
             return false;
@@ -873,12 +1010,14 @@ impl RawTextField {
 
     /// Tells the host where the embedded widgets' boxes were laid out, in logical
     /// pixels from the field's outer origin, the way the caret's rectangle is.
-    /// Embeds take whole lines, so a field that scrolls sideways has none.
+    /// An embed is part of the text, so it goes with it when the field scrolls
+    /// sideways, `scroll_x` physical pixels, and is clipped to the box of the text.
     fn publish_embeds(
         &self,
         geometry: &EditableGeometry,
         multiline: bool,
         base_y: f32,
+        scroll_x: f32,
         scroll_y: f32,
         scale: f32,
     ) {
@@ -888,15 +1027,18 @@ impl RawTextField {
         }
         let scale = if scale > 0.0 { scale } else { 1.0 };
         let (origin_x, origin_y) = self.caret_origin.get();
+        let (view_width, view_height) = self.caret_viewport.get().unwrap_or((0.0, 0.0));
+        let clip = (origin_x / scale, origin_y / scale, view_width / scale, view_height / scale);
         self.embeds.publish(
             rects
                 .into_iter()
                 .map(|rect| PublishedEmbed {
                     key: rect.key,
-                    x: (origin_x + rect.x) / scale,
+                    x: (origin_x + rect.x - scroll_x) / scale,
                     y: (origin_y + base_y + rect.top - scroll_y) / scale,
                     width: rect.width / scale,
                     height: rect.height / scale,
+                    clip,
                 })
                 .collect(),
         );
@@ -945,6 +1087,10 @@ impl RawTextField {
             self.is_focused(),
             in_view && !self.is_composing(),
             self.is_composing(),
+        );
+        // Where the text ends on the field, which is where what hangs from the caret has to stay inside.
+        self.caret_context.set_extent(
+            self.caret_viewport.get().map(|(view_width, view_height)| ((origin_x + view_width) / scale, (origin_y + view_height) / scale)),
         );
     }
 
@@ -1008,7 +1154,10 @@ impl RawTextField {
         let was_focused = self.focused.replace(focused);
         self.sync_visual();
         if focused {
-            self.reveal_caret.set(true);
+            // The view is not scrolled to the caret here. A field is told it has lost and regained
+            // focus whenever its window is deactivated and activated again (full screen, switching
+            // apps), and each time that would throw away where the user had scrolled to. What does
+            // scroll to the caret asks for it: a click, a key, an edit, and the first layout.
             self.enable_platform_ime();
             return;
         }
@@ -1233,9 +1382,16 @@ impl RawTextField {
         };
         let anchor = grapheme_count(&text[..anchor.min(text.len())]);
         let focus = grapheme_count(&text[..focus.min(text.len())]);
-        self.cursor.set_selection_anchor((anchor != focus).then_some(anchor));
+        let anchor = (anchor != focus).then_some(anchor);
+        // Asked on every layout pass, and the area usually says what the field already has. Then
+        // nothing is done, and above all the view is not taken back to the caret: it would undo
+        // where the user scrolled to each time the window is resized or activated again.
+        if self.cursor.offset() == focus && self.cursor.selection_anchor() == anchor {
+            return;
+        }
+        self.cursor.set_selection_anchor(anchor);
         self.cursor.set_offset(focus);
-        self.controller.set_selection_graphemes(anchor, focus);
+        self.controller.set_selection_graphemes(anchor.unwrap_or(focus), focus);
         self.observed_revision.set(self.controller.revision());
         self.reveal_caret.set(true);
     }
@@ -1267,7 +1423,7 @@ impl RawTextField {
         self.sync_cursor_from_controller();
         self.cursor.reset_blink();
         self.clear_preedit();
-        self.on_changed.call(&self.controller.text());
+        self.on_changed.call_with(|| self.controller.text());
         true
     }
 
@@ -1278,7 +1434,7 @@ impl RawTextField {
             return false;
         }
         self.sync_cursor_from_controller();
-        self.on_changed.call(&self.controller.text());
+        self.on_changed.call_with(|| self.controller.text());
         true
     }
 
@@ -1288,7 +1444,7 @@ impl RawTextField {
             return false;
         }
         self.sync_cursor_from_controller();
-        self.on_changed.call(&self.controller.text());
+        self.on_changed.call_with(|| self.controller.text());
         true
     }
 
@@ -1322,6 +1478,41 @@ impl RawTextField {
     /// granularity at the phrase the user actually typed.
     ///
     /// Returns whether the text changed.
+    /// Puts the graphemes `start..end` on the clipboard, from the chunks they are in: a selection of
+    /// megabytes is not made into a `String` on the way.
+    fn copy_range(&self, start: usize, end: usize) {
+        let value = self.controller.value();
+        let from = value.byte_of_grapheme(start);
+        let to = value.byte_of_grapheme(start.max(end));
+        clipboard_write_pieces(&value.pieces(from..to));
+    }
+
+    /// [`insert_text`](Self::insert_text) for a text read from the clipboard. A long one goes into
+    /// the field as the bytes the clipboard delivered, shared with the text and not copied; the
+    /// rest, and every field that must change what is put in (a limit on its length, one line), take
+    /// the text as a `str`.
+    fn insert_shared(&self, text: &aimer_clipboard::clipboard::ClipboardText) -> bool {
+        let whole: &str = (**text).as_ref();
+        if whole.len() < SHARED_PASTE_MIN
+            || self.max_length.is_some()
+            || self.max_lines == Some(1)
+            || self.is_composing()
+            || self.read_only
+        {
+            return self.insert_text(whole);
+        }
+        let snapshot = TextSnapshot::from_shared(std::sync::Arc::clone(text));
+        let (anchor, focus) = self.cursor_selection();
+        if !self.controller.replace_selection_graphemes_snapshot(anchor, focus, &snapshot) {
+            return false;
+        }
+        self.sync_cursor_from_controller();
+        self.cursor.reset_blink();
+        self.clear_preedit();
+        self.on_changed.call_with(|| self.controller.text());
+        true
+    }
+
     fn insert_text(&self, text: &str) -> bool {
         if text.is_empty() {
             return false;
@@ -1338,7 +1529,7 @@ impl RawTextField {
             self.sync_cursor_from_controller();
             self.cursor.reset_blink();
             self.clear_preedit_presentation();
-            self.on_changed.call(&self.controller.text());
+            self.on_changed.call_with(|| self.controller.text());
             return true;
         }
         self.replace_cursor_selection(&text, self.max_length)
@@ -1362,7 +1553,7 @@ impl RawTextField {
             visual.sync(
                 self.is_hovered(),
                 self.is_focused(),
-                self.controller.value().text().is_empty(),
+                self.controller.value().is_empty(),
             );
         }
     }
@@ -1457,8 +1648,8 @@ impl RawTextField {
     /// boundaries.
     fn select_word_at(&self, grapheme_offset: usize) {
         use unicode_segmentation::UnicodeSegmentation;
-        let text = self.controller.text();
-        if text.is_empty() {
+        let value = self.controller.value();
+        if value.is_empty() {
             return;
         }
 
@@ -1466,18 +1657,25 @@ impl RawTextField {
         // converted into byte space once and the matching bounds are converted
         // back into grapheme offsets. Counting `char`s here would land inside a
         // cluster and select the wrong word.
-        let byte_offset = text
-            .grapheme_indices(true)
-            .nth(grapheme_offset)
-            .map(|(byte, _)| byte)
-            .unwrap_or(text.len());
+        let byte_offset = value.byte_of_grapheme(grapheme_offset);
 
-        for (start, segment) in text.split_word_bound_indices() {
-            let end = start + segment.len();
+        // The words are looked for in the text around the click: all of a short text, and a few
+        // kilobytes either side of the click in a long one, since a word is not longer than that.
+        const REACH: usize = 4096;
+        let (from, to) = if value.len() <= 2 * REACH {
+            (0, value.len())
+        } else {
+            (
+                value.floor_to_boundary(byte_offset.saturating_sub(REACH)),
+                value.ceil_to_boundary((byte_offset + REACH).min(value.len())),
+            )
+        };
+        let window = value.slice(from..to);
+        for (start, segment) in window.split_word_bound_indices() {
+            let (start, end) = (from + start, from + start + segment.len());
             if byte_offset >= start && byte_offset < end {
-                self.cursor
-                    .set_selection_anchor(Some(text[..start].graphemes(true).count()));
-                self.cursor.set_offset(text[..end].graphemes(true).count());
+                self.cursor.set_selection_anchor(Some(value.grapheme_of_byte(start)));
+                self.cursor.set_offset(value.grapheme_of_byte(end));
                 return;
             }
         }
@@ -1486,24 +1684,23 @@ impl RawTextField {
     /// Select the line (between newline characters) containing the given
     /// grapheme offset.
     fn select_line_at(&self, grapheme_offset: usize) {
-        let text = self.controller.text();
-        if text.is_empty() {
+        let value = self.controller.value();
+        if value.is_empty() {
             return;
         }
-
-        let graphemes = grapheme_slices(&text);
-        let mut line_start = grapheme_offset.min(graphemes.len());
-        let mut line_end = line_start;
-
-        while line_start > 0 && graphemes[line_start - 1] != "\n" {
-            line_start -= 1;
+        // The hard line the offset is on, from the rope: no walk over the text.
+        let snapshot = value.snapshot();
+        let byte = value.byte_of_grapheme(grapheme_offset.min(value.grapheme_count()));
+        let mut line = snapshot.line_range(snapshot.byte_to_line(byte));
+        // Without its line break: a line feed, or a carriage return and a line feed.
+        if line.end > line.start && snapshot.byte_at(line.end - 1) == Some(b'\n') {
+            line.end -= 1;
+            if line.end > line.start && snapshot.byte_at(line.end - 1) == Some(b'\r') {
+                line.end -= 1;
+            }
         }
-        while line_end < graphemes.len() && graphemes[line_end] != "\n" {
-            line_end += 1;
-        }
-
-        self.cursor.set_selection_anchor(Some(line_start));
-        self.cursor.set_offset(line_end);
+        self.cursor.set_selection_anchor(Some(value.grapheme_of_byte(line.start)));
+        self.cursor.set_offset(value.grapheme_of_byte(line.end));
     }
 
     /// Adjust `scroll_x` so the cursor is visible within `content_width`.
@@ -1600,7 +1797,7 @@ impl RawTextField {
                 composing.end(),
             );
         } else {
-            append(&mut display, &mut source_ranges, source, 0);
+            append(&mut display, &mut source_ranges, &source, 0);
         }
 
         DisplayText {
@@ -1621,7 +1818,26 @@ impl RawTextField {
     /// field viewport.
     #[inline]
     fn wraps_text(&self) -> bool {
+        self.max_lines != Some(1) && self.wrap
+    }
+
+    /// Whether the text scrolls up and down: it is a field of more than one line.
+    #[inline]
+    fn scrolls_vertically(&self) -> bool {
         self.max_lines != Some(1)
+    }
+
+    /// Whether the text scrolls sideways: its lines do not wrap, so a line can be wider than the
+    /// field. A single-line field always does; a multi-line one when it was asked not to wrap.
+    #[inline]
+    fn scrolls_horizontally(&self) -> bool {
+        !self.wraps_text()
+    }
+
+    /// How far the text is scrolled sideways, in physical pixels: none for a field that wraps.
+    #[inline]
+    fn scroll_x_offset(&self) -> f32 {
+        if self.scrolls_horizontally() { self.scroll_x.get() } else { 0.0 }
     }
 
     /// Makes the text style used by the committed field painter. Alignment is
@@ -1669,6 +1885,34 @@ impl RawTextField {
     /// Turns the press set aside by [`queue_drag_position`](Self::queue_drag_position)
     /// into the origin and anchor of the drag. The arguments are the frame's
     /// measurements, the same ones a queued click is resolved with.
+    /// Tells what the text was force-clicked at, if it was since the last layout: the byte under the pointer, found with the
+    /// same measurements a queued click is resolved with.
+    fn resolve_force_click(
+        &self,
+        geometry: &Rc<EditableGeometry>,
+        scale: f32,
+        (abs_x, abs_y): (f32, f32),
+        (pad_left, pad_top): (f32, f32),
+        base_y: f32,
+        is_multiline: bool,
+    ) {
+        let Some(pos) = self.pending_force.take() else {
+            return;
+        };
+        let x = pos.x * scale - abs_x - pad_left + self.scroll_x_offset();
+        let y = pos.y * scale - abs_y - pad_top - base_y + if is_multiline { self.scroll_y.get() } else { 0.0 };
+        // What is below the last line says nothing of the text, and a pointer there is not on it.
+        let Some(grapheme) = geometry.hit_test(x, y) else {
+            return;
+        };
+        // The callback is given a byte of the text and is made on a copy of the handle, so that it may do what it likes
+        // with the field.
+        let Some(callback) = self.on_force_click.clone() else {
+            return;
+        };
+        callback(self.controller.value().byte_of_grapheme(grapheme));
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn resolve_pending_press(
         &self,
@@ -1682,7 +1926,7 @@ impl RawTextField {
         let Some((press, seen)) = self.pending_press.borrow_mut().take() else {
             return;
         };
-        let x = press.x * scale - abs_x - pad_left + if is_multiline { 0.0 } else { self.scroll_x.get() };
+        let x = press.x * scale - abs_x - pad_left + self.scroll_x_offset();
         let y = press.y * scale - abs_y - pad_top - base_y + if is_multiline { self.scroll_y.get() } else { 0.0 };
         let seen = seen.unwrap_or_else(|| Rc::clone(geometry));
         let offset = seen.hit_test(x, y).unwrap_or_else(|| seen.grapheme_count());
@@ -1704,7 +1948,7 @@ impl RawTextField {
     ///
     /// A field without focus has no cursor, so nothing is active and every line
     /// shows its rendered form.
-    fn highlight_context(&self, display: &str, index: Option<&LineIndex>) -> HighlightContext {
+    fn highlight_context(&self, display: Whole<'_>, index: Option<&LineIndex>) -> HighlightContext {
         if !self.is_focused() {
             return HighlightContext::default();
         }
@@ -1734,7 +1978,7 @@ impl RawTextField {
             .map(|_| self.drag_origin.get().unwrap_or(usize::MAX))
     }
 
-    fn build_highlight_context(&self, display: &str, index: Option<&LineIndex>) -> HighlightContext {
+    fn build_highlight_context(&self, display: Whole<'_>, index: Option<&LineIndex>) -> HighlightContext {
         let offset = self.cursor.offset();
         // While the button is held the head sweeps over whatever is under the
         // pointer, and an embed it enters would give way to its source, which moves
@@ -1750,7 +1994,12 @@ impl RawTextField {
         } else {
             self.cursor.selection_range().unwrap_or((offset, offset))
         };
-        // The index finds a grapheme's byte without a walk over the text from its start.
+        // The index finds a grapheme's byte without a walk over the text from its start, and the
+        // lines the cursor is on from its line counts: the text is not read, nor copied.
+        if let Some(index) = index {
+            return HighlightContext::in_snapshot(index.text(), index.byte_of_grapheme(from)..index.byte_of_grapheme(to));
+        }
+        let display = display();
         let byte = |grapheme: usize| match index {
             Some(index) => index.byte_of_grapheme(grapheme),
             None => display
@@ -1758,7 +2007,7 @@ impl RawTextField {
                 .nth(grapheme)
                 .map_or(display.len(), |(byte, _)| byte),
         };
-        HighlightContext::new(display, byte(from)..byte(to))
+        HighlightContext::new(&display, byte(from)..byte(to))
     }
 
     fn editable_geometry(
@@ -1777,13 +2026,13 @@ impl RawTextField {
         let embedder = self.effective_embedder();
         let context = match self.effective_highlighter() {
             Some(highlighter) if highlighter.depends_on_selection() => {
-                self.highlight_context(&display.display, None)
+                self.highlight_context(&|| std::borrow::Cow::Borrowed(&*display.display), None)
             }
-            _ if embedder.is_some() => self.highlight_context(&display.display, None),
+            _ if embedder.is_some() => self.highlight_context(&|| std::borrow::Cow::Borrowed(&*display.display), None),
             _ => HighlightContext::default(),
         };
         let active = context.active_lines();
-        let embed_boxes = self.embed_boxes(&display.display, &context, content_width, ctx);
+        let embed_boxes = self.embed_boxes(&|| std::borrow::Cow::Borrowed(&*display.display), &context, content_width, ctx);
         let embed_signature = embed_signature(embedder, &embed_boxes);
         let outer_language = ctx.canvas.text_language();
         ctx.canvas.set_text_language(language);
@@ -1864,7 +2113,7 @@ impl RawTextField {
 
     /// The embeds for `display` with the cursor where it is, asked of the embedder
     /// once per text and cursor like the highlight context is.
-    fn current_embeds(&self, display: &str, context: &HighlightContext) -> Rc<[TextEmbed]> {
+    fn current_embeds(&self, display: Whole<'_>, context: &HighlightContext) -> Rc<[TextEmbed]> {
         let Some(embedder) = self.effective_embedder() else {
             return Rc::from(Vec::new());
         };
@@ -1881,7 +2130,7 @@ impl RawTextField {
         {
             return Rc::clone(embeds);
         }
-        let embeds: Rc<[TextEmbed]> = embedder.embeds(display, context).into();
+        let embeds: Rc<[TextEmbed]> = embedder.embeds(&display(), context).into();
         *self.embed_memo.borrow_mut() = Some((key, Rc::clone(&embeds)));
         embeds
     }
@@ -1891,12 +2140,13 @@ impl RawTextField {
     /// a character, or overlap an earlier one are left out.
     fn embed_boxes(
         &self,
-        display: &str,
+        display: Whole<'_>,
         context: &HighlightContext,
         content_width: f32,
         ctx: &BuildContext,
     ) -> Vec<EmbedBox> {
         let embeds = self.current_embeds(display, context);
+        let display = display();
         let mut boxes: Vec<EmbedBox> = Vec::with_capacity(embeds.len());
         let mut sorted: Vec<&TextEmbed> = embeds.iter().collect();
         sorted.sort_by_key(|embed| embed.range().start);

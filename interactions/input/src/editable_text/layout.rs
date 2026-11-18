@@ -208,7 +208,7 @@ impl EditableGeometry {
         text_align: TextAlign,
     ) -> Self {
         let bytes = index.line_bytes(lines.start).start..index.line_bytes(lines.end - 1).end;
-        let display: Arc<str> = Arc::from(&index.text()[bytes.clone()]);
+        let display: Arc<str> = Arc::from(&*index.text().slice(bytes.clone()));
         let grapheme_base = index.graphemes_before(lines.start);
         let grapheme_len = index.graphemes_before(lines.end) - grapheme_base;
         let y_base = index.top(lines.start) as f32;
@@ -854,7 +854,11 @@ pub(crate) fn vertical_target(lines: &[VisualLine], current: usize, direction: i
     else {
         return current;
     };
-    let target_index = line_index.saturating_add_signed(direction);
+    // A move of many lines (a page) stops at the first or last one.
+    let target_index = line_index.saturating_add_signed(direction).min(lines.len() - 1);
+    if target_index == line_index {
+        return current;
+    }
     let Some(target) = lines.get(target_index) else {
         return current;
     };

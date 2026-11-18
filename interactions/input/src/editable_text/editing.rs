@@ -31,7 +31,7 @@ pub(crate) fn delete_forward(value: &TextEditingValue) -> TextEditingValue {
         return replace_range(value, selection, "");
     }
     let caret = selection.start;
-    if caret >= value.text().len() {
+    if caret >= value.len() {
         return value.clone();
     }
     replace_range(value, caret..value.next_boundary(caret), "")
@@ -89,17 +89,18 @@ fn replace_range(
     value.splice(range, replacement, TextSelection::collapsed, None)
 }
 
-fn limited_replacement(
+fn limited_replacement<'a>(
     value: &TextEditingValue,
     range: std::ops::Range<usize>,
-    replacement: &str,
+    replacement: &'a str,
     max_length: Option<usize>,
-) -> String {
+) -> std::borrow::Cow<'a, str> {
     let Some(max_length) = max_length else {
-        return replacement.to_owned();
+        // Not copied: a paste can be megabytes.
+        return std::borrow::Cow::Borrowed(replacement);
     };
     let selected = value.grapheme_of_byte(range.end) - value.grapheme_of_byte(range.start);
     let retained = value.grapheme_count().saturating_sub(selected);
     let available = max_length.saturating_sub(retained);
-    replacement.graphemes(true).take(available).collect()
+    std::borrow::Cow::Owned(replacement.graphemes(true).take(available).collect())
 }

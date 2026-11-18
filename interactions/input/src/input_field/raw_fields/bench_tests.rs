@@ -392,3 +392,124 @@ fn bench_idle_update() {
         }
     }
 }
+
+/// What a note of many megabytes costs to open, edit and move around in, and how much memory it
+/// holds: the sizes in `BENCH_MB` (comma separated, `5,20,50` by default), in a field that scrolls
+/// inside ten lines of its own. `BENCH_KIND` is `plain` (default), `giant` (one hard line) or
+/// `markdown` (styled a line at a time).
+///
+/// ```text
+/// BENCH_MB=50 cargo nextest run -p aimer_input --run-ignored only -E 'test(bench_huge_note)' --no-capture
+/// ```
+#[test]
+#[ignore = "a timing, not a check"]
+fn bench_huge_note() {
+    fn resident_megabytes() -> f64 {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+            .output()
+            .expect("ps runs");
+        String::from_utf8_lossy(&output.stdout).trim().parse::<f64>().unwrap_or(0.0) / 1024.0
+    }
+    let sizes = std::env::var("BENCH_MB").unwrap_or_else(|_| "5,20,50".to_owned());
+    for megabytes in sizes.split(',').filter_map(|size| size.trim().parse::<usize>().ok()) {
+        let before = resident_megabytes();
+        let started = Instant::now();
+        let mut text = note(megabytes * 1000);
+        // `BENCH_KIND=giant` makes it one hard line, `markdown` styles it a line at a time.
+        let kind = std::env::var("BENCH_KIND").unwrap_or_else(|_| "plain".to_owned());
+        if kind == "giant" {
+            text = text.replace('\n', " ");
+        }
+        // `BENCH_FILE=path` with `BENCH_KIND=file` opens that file, for text that is not ASCII.
+        if kind == "file" {
+            text = std::fs::read_to_string(std::env::var("BENCH_FILE").expect("BENCH_FILE names a file")).expect("the file reads");
+        }
+        let made = started.elapsed();
+
+        let started = Instant::now();
+        let (field, controller) = scrolling_field(&text, (kind == "markdown").then(markdown_by_line));
+        let controller_made = started.elapsed();
+        let after_controller = resident_megabytes() - before;
+        let ctx = dummy_build_context(800.0, 600.0);
+
+        let open = frame(&ctx, &field);
+        let unchanged = average_frame(&ctx, &field, 5, |_| {});
+        let held = resident_megabytes() - before;
+        println!("       memory: text made {:.0} MB (the string), + controller {after_controller:.0} MB, + first frames {held:.0} MB", 0.0);
+
+        field.cursor.set_offset(text.chars().count() / 2);
+        field.cursor.set_selection_anchor(None);
+        frame(&ctx, &field);
+        let typing = average_frame(&ctx, &field, 5, |_| {
+            let _ = field.on_event(&commit("x"));
+        });
+        let end = average_frame(&ctx, &field, 1, |_| {
+            let _ = field.on_event(&key(NamedKey::End));
+        });
+        let after_typing = resident_megabytes() - before;
+        println!(
+            "{megabytes:>3} MB {kind:<8} text made {made:>8.2?}  controller {controller_made:>8.2?}  open {open:>9.2?}  unchanged {unchanged:>9.2?}  typing {typing:>9.2?}  End {end:>9.2?}  held {held:>6.0} MB, after typing {after_typing:>6.0} MB",
+        );
+        drop((field, controller));
+    }
+}
+
+#[test]
+#[ignore = "memory probe"]
+fn probe_memory_layers() {
+    fn rss() -> f64 {
+        let output = std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().expect("ps runs");
+        String::from_utf8_lossy(&output.stdout).trim().parse::<f64>().unwrap_or(0.0) / 1024.0
+    }
+    let base = rss();
+    let text = note(50_000);
+    let after_text = rss() - base;
+    let snapshot = aimer_text_buffer::TextSnapshot::from_text(&text);
+    let after_rope = rss() - base;
+    let value = crate::editable_text::TextEditingValue::with_text(&text);
+    let after_value = rss() - base;
+    let controller = crate::TextEditingController::with_text(text.clone());
+    let after_controller = rss() - base;
+    println!(
+        "text {after_text:.0} MB | + rope {:.0} | + value {:.0} | + controller {:.0}  (len {} MB, chunks {})",
+        after_rope - after_text,
+        after_value - after_rope,
+        after_controller - after_value,
+        text.len() / 1_000_000,
+        snapshot.chunk_count()
+    );
+    drop((value, controller, snapshot));
+}
+
+/// Memory of loading a text by pasting it, as the user does: an empty field takes a text of
+/// `BENCH_MB` megabytes in one commit, with a callback that keeps the text as an app would.
+#[test]
+#[ignore = "memory probe"]
+fn probe_paste_memory() {
+    fn rss() -> f64 {
+        let output = std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().expect("ps runs");
+        String::from_utf8_lossy(&output.stdout).trim().parse::<f64>().unwrap_or(0.0) / 1024.0
+    }
+    let megabytes: usize = std::env::var("BENCH_MB").ok().and_then(|value| value.parse().ok()).unwrap_or(30);
+    let text = note(megabytes * 1000);
+    let (field, controller) = scrolling_field("", None);
+    let kept = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let sink = std::rc::Rc::clone(&kept);
+    let mut field = field;
+    field.on_changed = (move |text: String| *sink.borrow_mut() = text).into();
+    let _ = &controller;
+    let ctx = dummy_build_context(800.0, 600.0);
+    frame(&ctx, &field);
+    let base = rss();
+    let _ = field.on_event(&commit(&text));
+    let committed = rss() - base;
+    frame(&ctx, &field);
+    let first_frame = rss() - base;
+    frame(&ctx, &field);
+    let second_frame = rss() - base;
+    println!(
+        "{megabytes} MB pasted: after the commit {committed:.0} MB, first frame {first_frame:.0} MB, second {second_frame:.0} MB (the text itself {} MB, the app keeps another)",
+        text.len() / 1_000_000
+    );
+}

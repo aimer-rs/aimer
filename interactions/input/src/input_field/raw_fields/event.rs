@@ -12,7 +12,7 @@ impl EventElement for RawTextField {
     }
 
     fn on_event(&self, event: &ElementEvent) -> EventResult {
-        if let Some(selection) = self.selection.borrow().as_ref().cloned()
+        if let Some(selection) = self.area_participant()
             && let Some(result) = selection.intercept(event)
         {
             self.sync_cursor_from_area();
@@ -46,7 +46,7 @@ impl EventElement for RawTextField {
                     //     self.controller.revision(),
                     // );
                     self.sync_platform_text_state();
-                    self.on_focus.call(&self.controller.text());
+                    self.on_focus.call_with(|| self.controller.text());
                     true
                 }
                 ElementEvent::FocusLost => {
@@ -65,11 +65,13 @@ impl EventElement for RawTextField {
                     if self.menu_is_open() {
                         return false;
                     }
+                    // What hangs from the caret, a menu of completions, goes with the focus.
+                    self.caret_context.dismiss_popup();
                     self.dismiss_menu();
                     self.set_focused(false);
                     self.native_session.set(0);
                     self.mouse_held.set(None);
-                    self.on_blur.call(&self.controller.text());
+                    self.on_blur.call_with(|| self.controller.text());
                     true
                 }
                 ElementEvent::TextEditingDelta(delta) => {
@@ -128,7 +130,7 @@ impl EventElement for RawTextField {
                         self.cursor.clear_selection();
                         self.cursor.reset_blink();
                         self.rebase_native_editor();
-                        self.on_submitted.call(&self.controller.text());
+                        self.on_submitted.call_with(|| self.controller.text());
                         return true;
                     }
                     let value = self.constrain_native_value(adapted.clone());
@@ -163,9 +165,9 @@ impl EventElement for RawTextField {
                     // A commit is a change even when the committed text equals
                     // the marked text byte for byte.
                     if after.composing().is_none()
-                        && (before.text() != after.text() || before.composing().is_some())
+                        && (!before.same_text(&after) || before.composing().is_some())
                     {
-                        self.on_changed.call(&self.controller.text());
+                        self.on_changed.call_with(|| self.controller.text());
                     }
                     true
                 }
@@ -178,7 +180,7 @@ impl EventElement for RawTextField {
                         // caret: it neither moves the selection it is about to
                         // act on nor starts a drag.
                         if info.button == PointerButton::Secondary {
-                            if let Some(selection) = self.selection.borrow().as_ref().cloned()
+                            if let Some(selection) = self.area_participant()
                                 && selection.open_context_menu(
                                     *pos,
                                     PointerKey::new(info.source, info.id),
@@ -197,9 +199,28 @@ impl EventElement for RawTextField {
                         self.mouse_held.set(Some(PointerKey::new(info.source, info.id)));
                         self.drag_origin.set(None);
                         self.pending_press.borrow_mut().take();
-                        self.cursor.clear_selection();
+                        // Shift and the mouse: the press extends the selection that is there, from
+                        // its anchor (or from the caret, when nothing is selected) to where it
+                        // lands, instead of starting a new one. A finger has no shift.
+                        let extending = info.source == PointerSource::Mouse && Modifiers::current().shift;
+                        self.shift_press.set(None);
+                        if extending {
+                            let anchor = self.cursor.selection_anchor().unwrap_or(self.cursor.offset());
+                            self.shift_press.set(Some(anchor));
+                            self.cursor.set_selection_anchor(Some(anchor));
+                            // A selection area mirrors its own state back into the field each
+                            // frame, so it is told the selection the press extends.
+                            if let Some(selection) = self.area_participant() {
+                                let (anchor, focus) = self.cursor_selection();
+                                let value = self.controller.value();
+                                selection.set_range(value.byte_of_grapheme(anchor), value.byte_of_grapheme(focus));
+                            }
+                        } else {
+                            self.cursor.clear_selection();
+                        }
 
-                        if let Some(selection) = self.selection.borrow().as_ref().cloned()
+                        if !extending
+                            && let Some(selection) = self.area_participant()
                             && let Some(offset) = selection.offset_at(pos.x, pos.y)
                         {
                             selection.begin(
@@ -217,7 +238,9 @@ impl EventElement for RawTextField {
                             (pos.x - previous.x).abs() <= slop
                                 && (pos.y - previous.y).abs() <= slop
                         });
-                        let new_count = if prev_count > 0
+                        // A press that extends the selection is not part of a double or triple click.
+                        let new_count = if !extending
+                            && prev_count > 0
                             && elapsed.as_millis() < 500
                             && same_position
                         {
@@ -254,7 +277,13 @@ impl EventElement for RawTextField {
                         false
                     }
                 }
-                ElementEvent::Scroll { delta, .. } => self.scroll_vertical(delta.y),
+                ElementEvent::Scroll { delta, .. } => {
+                    // Shift turns a wheel's up and down into left and right, as in most editors.
+                    let (dx, dy) = if Modifiers::current().shift && delta.x == 0.0 { (delta.y, 0.0) } else { (delta.x, delta.y) };
+                    let vertical = self.scroll_vertical(dy);
+                    let horizontal = self.scroll_horizontal(dx);
+                    vertical || horizontal
+                }
                 ElementEvent::CharInput { ch, action, .. } => {
                     if !self.is_focused() || self.read_only {
                         return false;
@@ -312,8 +341,7 @@ impl EventElement for RawTextField {
                                 if !self.input_type.is_obscured()
                                     && let Some((start, end)) = self.cursor.selection_range()
                                 {
-                                    let selected = self.controller.get_range(start, end);
-                                    clipboard_write(&selected);
+                                    self.copy_range(start, end);
                                 }
                                 true
                             }
@@ -322,8 +350,7 @@ impl EventElement for RawTextField {
                                 if !self.input_type.is_obscured()
                                     && let Some((start, end)) = self.cursor.selection_range()
                                 {
-                                    let selected = self.controller.get_range(start, end);
-                                    clipboard_write(&selected);
+                                    self.copy_range(start, end);
                                     self.replace_cursor_selection("", None);
                                 }
                                 true
@@ -333,8 +360,8 @@ impl EventElement for RawTextField {
                                 // the selection, advances the cursor by whole
                                 // grapheme clusters, honours `max_length`, and
                                 // records the paste as a single undo entry.
-                                if let Some(text) = clipboard_read() {
-                                    self.insert_text(&text);
+                                if let Some(text) = clipboard_read_shared() {
+                                    self.insert_shared(&text);
                                 }
                                 true
                             }
@@ -344,7 +371,7 @@ impl EventElement for RawTextField {
                                 // Undo
                                 if self.controller.undo() {
                                     self.sync_cursor_from_controller();
-                                    self.on_changed.call(&self.controller.text());
+                                    self.on_changed.call_with(|| self.controller.text());
                                 }
                                 true
                             }
@@ -354,7 +381,7 @@ impl EventElement for RawTextField {
                                 // Redo (Ctrl+Shift+Z)
                                 if self.controller.redo() {
                                     self.sync_cursor_from_controller();
-                                    self.on_changed.call(&self.controller.text());
+                                    self.on_changed.call_with(|| self.controller.text());
                                 }
                                 true
                             }
@@ -362,14 +389,14 @@ impl EventElement for RawTextField {
                                 // Redo (Ctrl+Y — Windows convention)
                                 if self.controller.redo() {
                                     self.sync_cursor_from_controller();
-                                    self.on_changed.call(&self.controller.text());
+                                    self.on_changed.call_with(|| self.controller.text());
                                 }
                                 true
                             }
                             NamedKey::Enter => {
                                 // Ctrl+Enter / Cmd+Enter: submit even in multi-line mode
                                 self.cursor.clear_selection();
-                                self.on_submitted.call(&self.controller.text());
+                                self.on_submitted.call_with(|| self.controller.text());
                                 true
                             }
                             _ => false,
@@ -381,7 +408,10 @@ impl EventElement for RawTextField {
                         }
                     }
 
-                    let result = match key {
+                    // Movement and the deletes that reach by word or line: see `navigation_for`.
+                    let navigated = navigation_for(key, modifiers, PLATFORM_IS_MAC)
+                        .is_some_and(|navigation| self.navigate(navigation, modifiers.shift));
+                    let result = navigated || match key {
                         NamedKey::Backspace if !self.read_only => {
                             self.delete_backward();
                             true
@@ -408,55 +438,14 @@ impl EventElement for RawTextField {
                             // Multi-line mode: Enter inserts newline. `max_lines` is how many
                             // lines are shown, and past them the field scrolls: it is not a limit
                             // on the lines the text may have.
-                            self.insert_text("\n");
+                            let prefix = self.line_break_continuation();
+                            self.insert_text(&format!("\n{prefix}"));
                             true
                         }
                         NamedKey::Enter => {
                             // Single-line mode (or Ctrl+Enter in multi-line): submit
                             self.cursor.clear_selection();
-                            self.on_submitted.call(&self.controller.text());
-                            true
-                        }
-                        NamedKey::ArrowLeft => {
-                            self.move_left(modifiers.shift);
-                            true
-                        }
-                        NamedKey::ArrowRight => {
-                            self.move_right(modifiers.shift);
-                            true
-                        }
-                        NamedKey::ArrowUp => {
-                            self.move_vertical(-1, modifiers.shift);
-                            true
-                        }
-                        NamedKey::ArrowDown => {
-                            self.move_vertical(1, modifiers.shift);
-                            true
-                        }
-                        NamedKey::Home => {
-                            if modifiers.shift {
-                                let offset = self.cursor.offset();
-                                if self.cursor.selection_anchor().is_none() {
-                                    self.cursor.set_selection_anchor(Some(offset));
-                                }
-                            } else {
-                                self.cursor.clear_selection();
-                            }
-                            self.cursor.set_offset(0);
-                            self.reveal_caret.set(true);
-                            true
-                        }
-                        NamedKey::End => {
-                            if modifiers.shift {
-                                let offset = self.cursor.offset();
-                                if self.cursor.selection_anchor().is_none() {
-                                    self.cursor.set_selection_anchor(Some(offset));
-                                }
-                            } else {
-                                self.cursor.clear_selection();
-                            }
-                            self.cursor.set_offset(self.controller.grapheme_count());
-                            self.reveal_caret.set(true);
+                            self.on_submitted.call_with(|| self.controller.text());
                             true
                         }
                         NamedKey::Escape => {
@@ -472,11 +461,36 @@ impl EventElement for RawTextField {
                     }
                     result
                 }
+                // A deep press of the trackpad on the text. It is one force click for each press that goes deep, wherever the
+                // pointer moves while it is held, and the byte under the pointer is found by the next layout.
+                ElementEvent::Pressure { pos, stage, .. } => {
+                    let before = self.force_stage.replace(*stage);
+                    if self.on_force_click.is_some()
+                        && *stage == aimer_events::element::PressureStage::Force
+                        && before != aimer_events::element::PressureStage::Force
+                        && self.cached_bounds.is_inside(pos.x, pos.y)
+                        && !self.popup_at(*pos)
+                        && !self.hole_at(*pos)
+                        && self.gutter_marker_at(*pos).is_none()
+                    {
+                        self.pending_force.set(Some(*pos));
+                        aimer_events::window::request_animation_frame();
+                        return true;
+                    }
+                    false
+                }
                 ElementEvent::PointerMove(info) => {
                     let pos = &info.pos;
                     let is_inside = self.cached_bounds.is_inside(pos.x, pos.y);
                     let was_hovered = self.is_hovered();
-                    if is_inside || self.mouse_held.get().is_some() {
+                    // An icon in the margin and what hangs from the caret are pressed like buttons: they
+                    // show an arrow, as a button does, and not the text cursor of the field they are on.
+                    // A selection that is being dragged keeps the text cursor wherever the pointer goes.
+                    let over_a_button = self.mouse_held.get().is_none() && is_inside && (self.gutter_marker_at(*pos).is_some() || self.popup_at(*pos) || self.hole_at(*pos));
+                    if over_a_button {
+                        aimer_utils::cursor::set_cursor(aimer_utils::cursor::CursorIcon::Default);
+                        self.cursor_claim.take();
+                    } else if is_inside || self.mouse_held.get().is_some() {
                         aimer_utils::cursor::set_cursor(aimer_utils::cursor::CursorIcon::Text);
                         self.cursor_claim.take();
                     } else if self.cursor_claim.release() {
@@ -493,14 +507,14 @@ impl EventElement for RawTextField {
                     {
                         self.select_word_under(*pos);
                         self.request_menu(MenuOrigin::Hold);
-                        if let Some(selection) = self.selection.borrow().as_ref().cloned() {
+                        if let Some(selection) = self.area_participant() {
                             selection.end(pointer);
                         }
                         self.mouse_held.set(None);
                         return true;
                     }
 
-                    if let Some(selection) = self.selection.borrow().as_ref().cloned()
+                    if let Some(selection) = self.area_participant()
                         && selection.active_pointer() == Some(pointer)
                     {
                         selection.extend_to_position(info.x(), info.y(), pointer);
@@ -524,7 +538,7 @@ impl EventElement for RawTextField {
                         self.select_word_under(info.pos);
                         self.request_menu(MenuOrigin::Hold);
                     }
-                    if let Some(selection) = self.selection.borrow().as_ref().cloned()
+                    if let Some(selection) = self.area_participant()
                         && selection.active_pointer() == Some(pointer)
                     {
                         selection.end(pointer);
@@ -573,7 +587,7 @@ impl EventElement for RawTextField {
                         return true;
                     }
                     self.dismiss_menu();
-                    if let Some(selection) = self.selection.borrow().as_ref().cloned() {
+                    if let Some(selection) = self.area_participant() {
                         selection.cancel();
                     }
                     self.mouse_held.set(None);
@@ -798,6 +812,37 @@ mod key_event_tests {
 
         assert!(field.on_event(&key(NamedKey::Enter)).is_consumed());
         assert_eq!(controller.text(), "\n");
+    }
+
+    #[test]
+    fn return_starts_the_new_line_with_what_the_line_break_hook_asks_for() {
+        use std::rc::Rc;
+        // A hook that continues a `/// ` comment: it is given the line up to the caret.
+        let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let recorded = Rc::clone(&seen);
+        for (text, caret, expected) in [
+            ("    /// doc", 11, "    /// doc\n    /// "),
+            ("/// doc", 3, "///\n///  doc"),
+            ("code\n/// doc more", 12, "code\n/// doc\n///  more"),
+            ("plain", 5, "plain\n"),
+        ] {
+            let controller = TextEditingController::with_text(text);
+            let mut field = focused_field(controller.clone());
+            field.min_lines = Some(3);
+            field.max_lines = None;
+            let recorded = Rc::clone(&recorded);
+            field.line_break_prefix = Some(Rc::new(move |before: &str| {
+                recorded.borrow_mut().push(before.to_owned());
+                let trimmed = before.trim_start();
+                trimmed.starts_with("///").then(|| format!("{}/// ", &before[..before.len() - trimmed.len()]))
+            }));
+            controller.select(caret, caret);
+            field.sync_cursor_from_controller();
+            assert!(field.on_event(&key(NamedKey::Enter)).is_consumed());
+            assert_eq!(controller.text(), expected, "{text:?} with the caret at {caret}");
+        }
+        // The hook is given the line before the caret and not the rest of it.
+        assert_eq!(seen.borrow()[2], "/// doc", "{:?}", seen.borrow());
     }
 }
 

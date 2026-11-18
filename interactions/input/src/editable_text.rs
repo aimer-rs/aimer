@@ -1,6 +1,7 @@
 mod controller;
 mod editing;
 mod graphemes;
+mod large_text;
 mod layout;
 mod line_index;
 mod windowed;
@@ -8,10 +9,11 @@ mod platform;
 mod value;
 
 pub(crate) use controller::ControllerAttachment;
-pub use controller::TextEditingController;
+pub(crate) use large_text::selection_source;
+pub use controller::{ControllerListener, TextEditingController};
 pub(crate) use layout::{
     DisplayText, EditableGeometry, EditableGeometryCache, EditableGeometryKey, EmbedBox, is_one_byte_graphemes,
-    vertical_target, wrap_visual_lines,
+    VisualLine, vertical_target, wrap_visual_lines,
 };
 pub(crate) use line_index::{LineIndex, LineMetrics};
 pub(crate) use platform::adapt_native_delta;

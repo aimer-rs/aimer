@@ -28,17 +28,23 @@ pub(super) struct Probe {
     /// Whether the widget consumes a release, as a button does when it completes
     /// a tap.
     consumes_release: bool,
+    /// Whether it was pressed and not yet released: a button completes the tap it began, and has
+    /// nothing to do with a release that ends a press made elsewhere.
+    armed: Rc<Cell<bool>>,
+    /// Pointer events above this height, in the field's space, are not for the widget: a widget is
+    /// only given the events over it, which a probe that has no bounds of its own cannot tell.
+    only_below: Rc<Cell<f32>>,
 }
 
 impl Probe {
     pub(super) fn new(height: f32, updated_at: Rc<Cell<(f32, f32)>>) -> Self {
-        Self { height, updated_at, presses: Rc::default(), consumes: true, consumes_release: false }
+        Self { height, updated_at, presses: Rc::default(), consumes: true, consumes_release: false, armed: Rc::default(), only_below: Rc::default() }
     }
 }
 
 impl Widget for Probe {
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
-        ProbeElement { height: self.height, updated_at: self.updated_at, presses: self.presses, consumes: self.consumes, consumes_release: self.consumes_release }.boxed()
+        ProbeElement { height: self.height, updated_at: self.updated_at, presses: self.presses, consumes: self.consumes, consumes_release: self.consumes_release, armed: self.armed, only_below: self.only_below }.boxed()
     }
 }
 
@@ -48,6 +54,8 @@ struct ProbeElement {
     presses: Rc<Cell<u32>>,
     consumes: bool,
     consumes_release: bool,
+    armed: Rc<Cell<bool>>,
+    only_below: Rc<Cell<f32>>,
 }
 
 impl Drawable for ProbeElement {
@@ -70,13 +78,19 @@ impl EventElement for ProbeElement {
     }
 
     fn on_event(&self, event: &aimer_events::element::ElementEvent) -> aimer_widget::EventResult {
+        if let aimer_events::element::ElementEvent::PointerDown(info) | aimer_events::element::ElementEvent::PointerUp(info) = event
+            && info.pos.y < self.only_below.get()
+        {
+            return aimer_widget::EventResult::ignored();
+        }
         if matches!(event, aimer_events::element::ElementEvent::PointerDown(_)) {
             self.presses.set(self.presses.get() + 1);
+            self.armed.set(true);
             if self.consumes {
                 return aimer_widget::EventResult::consumed();
             }
         }
-        if self.consumes_release && matches!(event, aimer_events::element::ElementEvent::PointerUp(_)) {
+        if self.consumes_release && matches!(event, aimer_events::element::ElementEvent::PointerUp(_)) && self.armed.replace(false) {
             return aimer_widget::EventResult::consumed();
         }
         aimer_widget::EventResult::ignored()
@@ -109,6 +123,11 @@ fn block_embedder(height: f32, updated_at: Rc<Cell<(f32, f32)>>) -> TextEmbedder
     })
 }
 
+/// The stand-in for the caret's element that a host is made with.
+pub(super) fn caret_stub() -> AnyElement {
+    ProbeElement { height: 1.0, updated_at: Rc::default(), presses: Rc::default(), consumes: true, consumes_release: false, armed: Rc::default(), only_below: Rc::default() }.boxed()
+}
+
 fn host(embedder: Option<TextEmbedder>, controller: TextEditingController) -> (RawTextFieldHost, BuildContext<'static>) {
     let mut config = field_config(controller);
     config.embedder = embedder;
@@ -116,7 +135,7 @@ fn host(embedder: Option<TextEmbedder>, controller: TextEditingController) -> (R
     // The cursor only counts as being somewhere in a field that has focus.
     let _ = field.on_event(&aimer_events::element::ElementEvent::FocusGained);
     let context = dummy_build_context(400.0, 600.0);
-    let caret = ProbeElement { height: 1.0, updated_at: Rc::default(), presses: Rc::default(), consumes: true, consumes_release: false }.boxed();
+    let caret = ProbeElement { height: 1.0, updated_at: Rc::default(), presses: Rc::default(), consumes: true, consumes_release: false, armed: Rc::default(), only_below: Rc::default() }.boxed();
     (RawTextFieldHost::new(field, caret), context)
 }
 
@@ -198,6 +217,68 @@ fn an_embed_goes_when_the_cursor_enters_its_block_and_returns_when_it_leaves() {
     assert!(host.field.computed_size(&context).height < source_height + 30.0);
 }
 
+/// A field that does not wrap, whose first line is far wider than the field, and a fenced block after it.
+fn wide_host(updated_at: Rc<Cell<(f32, f32)>>) -> (RawTextFieldHost, BuildContext<'static>) {
+    let text = format!("{}\n```\ncode\n```\nafter", "x".repeat(300));
+    let block = 301..313;
+    assert_eq!(&text[block.clone()], "```\ncode\n```");
+    let embedder = TextEmbedder::new(move |_, _| {
+        let probe = Probe::new(60.0, Rc::clone(&updated_at));
+        vec![TextEmbed::new(block.clone(), 7, move || probe.clone())]
+    });
+    let mut config = field_config(TextEditingController::with_text(text));
+    config.embedder = Some(embedder);
+    config.wrap = false;
+    let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+    let _ = field.on_event(&aimer_events::element::ElementEvent::FocusGained);
+    let context = unbounded(dummy_build_context(400.0, 600.0));
+    (RawTextFieldHost::new(field, caret_stub()), context)
+}
+
+#[test]
+fn an_embed_moves_with_the_text_when_the_field_scrolls_sideways() {
+    let (host, context) = wide_host(Rc::default());
+    assert!(host.sync_paint_state(&context));
+    let (still, _) = host.field.embeds.placement_of(7).expect("the embedded widget exists");
+    assert!((still.x - 4.0).abs() < 0.5, "unscrolled, it starts at the content's left edge: {still:?}");
+    let widest = host.field.geometry_cache.latest().expect("laid out").text_width;
+    assert!(widest > 392.0 + 50.0, "the first line is wider than the field: {widest}");
+
+    host.field.scroll_x.set(50.0);
+    assert!(host.sync_paint_state(&context));
+    let (scrolled, size) = host.field.embeds.placement_of(7).expect("the embedded widget exists");
+
+    assert!((scrolled.x - (4.0 - 50.0)).abs() < 0.5, "it goes left with the text: {scrolled:?}");
+    assert!((scrolled.y - still.y).abs() < 0.5, "and stays on its line");
+    assert!((size.width - 392.0).abs() < 0.5, "at the same width: {size:?}");
+}
+
+#[test]
+fn an_embed_is_clipped_to_the_text_so_it_does_not_cover_what_is_beside_it() {
+    let (host, context) = wide_host(Rc::default());
+    host.field.scroll_x.set(50.0);
+    assert!(host.sync_paint_state(&context));
+
+    let (x, _, width, _) = host.field.embeds.clip_of(7).expect("the embedded widget exists");
+
+    // The text's own box: the field's padding in from the left, as wide as the content.
+    assert!((x - 4.0).abs() < 0.5 && (width - 392.0).abs() < 0.5, "x {x}, width {width}");
+}
+
+#[test]
+fn a_press_beside_the_text_does_not_reach_an_embed_that_has_scrolled_under_it() {
+    let (host, context) = wide_host(Rc::default());
+    host.field.scroll_x.set(50.0);
+    assert!(host.sync_paint_state(&context));
+    let (offset, size) = host.field.embeds.placement_of(7).expect("the embedded widget exists");
+    let middle = offset.y + size.height / 2.0;
+
+    // The box starts 46 px left of the field, so it spans the 4 px padding on the left, which is
+    // where a margin of line numbers would be: not part of the text, and not the embed's.
+    assert!(!host.field.embeds.published_contains(2.0, middle), "in the margin");
+    assert!(host.field.embeds.published_contains(10.0, middle), "in the text");
+}
+
 #[test]
 fn a_field_without_focus_shows_every_embed() {
     let (host, context) = host(Some(block_embedder(60.0, Rc::default())), TextEditingController::with_text(TEXT));
@@ -260,6 +341,57 @@ fn a_highlighted_range_under_an_embed_is_dropped_and_the_embed_wins() {
     assert_eq!(spans, [(0..3, false), (12..14, false), (4..10, true)]);
     let inline_box = merged.last().unwrap().style.inline_box.unwrap();
     assert_eq!(inline_box, InlineBox::new(99.99, 40.0));
+}
+
+#[test]
+fn a_highlighted_range_that_reaches_into_an_embed_keeps_the_parts_outside_it() {
+    use aimer_text::{SpanStyle, StyledRange};
+    use aimer_widget::base::Color;
+
+    use super::{EmbedBox, with_embed_boxes};
+
+    // Told apart by their colours.
+    let style = |shade: u8| SpanStyle::new().color(Color::Rgba(shade, 0, 0, 255));
+    let ranges: Rc<[StyledRange]> = Rc::from(vec![
+        StyledRange::new(0..6, style(1)),
+        StyledRange::new(8..14, style(2)),
+        StyledRange::new(1..30, style(3)),
+        StyledRange::new(16..18, style(4)),
+        StyledRange::new(40..60, style(5)),
+    ]);
+    let boxes = [
+        EmbedBox { key: 1, range: 4..10, width: 100.0, height: 40.0 },
+        EmbedBox { key: 2, range: 20..25, width: 100.0, height: 40.0 },
+        EmbedBox { key: 3, range: 50..55, width: 100.0, height: 40.0 },
+    ];
+
+    let merged = with_embed_boxes(Some(ranges), &boxes, 1.0).unwrap();
+
+    let pieces: Vec<_> = merged
+        .iter()
+        .filter(|styled| styled.style.inline_box.is_none())
+        .map(|styled| (styled.range.clone(), styled.style.color))
+        .collect();
+    let colour = |shade: u8| Some(Color::Rgba(shade, 0, 0, 255));
+    assert_eq!(
+        pieces,
+        [
+            (0..4, colour(1)),   // the start of a range that ends inside the first embed
+            (10..14, colour(2)), // the end of one that starts inside it
+            (1..4, colour(3)),   // a range through both: its part before the first embed,
+            (10..20, colour(3)), // between the two,
+            (25..30, colour(3)), // and after the second
+            (16..18, colour(4)), // a range between embeds is whole
+            (40..50, colour(5)), // one that holds a third embed is cut in two
+            (55..60, colour(5)),
+        ]
+    );
+    let boxes: Vec<_> = merged.iter().filter(|styled| styled.style.inline_box.is_some()).map(|styled| styled.range.clone()).collect();
+    assert_eq!(boxes, [4..10, 20..25, 50..55]);
+    // Nothing is left that overlaps an embed, so the text is laid out with a box and not through one.
+    for piece in merged.iter().filter(|styled| styled.style.inline_box.is_none()) {
+        assert!(!boxes.iter().any(|embed| piece.range.start < embed.end && embed.start < piece.range.end), "{:?}", piece.range);
+    }
 }
 
 #[test]
@@ -459,6 +591,53 @@ fn a_release_over_an_embed_ends_a_drag_that_began_on_the_text() {
     let up = aimer_widget::dispatch_event(root.as_ref(), over_embed, &ElementEvent::PointerUp(PointerInfo::mouse(over_embed, PointerButton::Primary)));
 
     assert_eq!(up.capture_request(), CaptureRequest::Release(pointer), "the release ended the drag");
+}
+
+/// A widget that acts on its tap, such as a button, consumes the release, so the host never sees the
+/// release that ends the press it noted. That note must not outlive the press: the next click on the
+/// text would have its own release taken for the widget's, the field would never see it, and would
+/// believe the button still down and extend a selection to wherever the pointer goes next.
+#[test]
+fn a_tap_the_widget_handles_does_not_leave_the_next_click_on_the_text_without_its_release() {
+    use aimer_events::element::ElementEvent;
+    use aimer_events::pointer::{PointerButton, PointerInfo};
+    use aimer_widget::CaptureRequest;
+
+    let only_below = Rc::new(Cell::new(0.0));
+    let probe = Probe { consumes: false, consumes_release: true, only_below: Rc::clone(&only_below), ..Probe::new(60.0, Rc::default()) };
+    let embedder = TextEmbedder::new(move |_, context| {
+        if context.is_active(&BLOCK) {
+            return Vec::new();
+        }
+        let probe = probe.clone();
+        vec![TextEmbed::new(BLOCK, 7, move || probe.clone())]
+    });
+    let (host, context) = host(Some(embedder), TextEditingController::with_text(TEXT));
+    let context = unbounded(context);
+    let embeds = Rc::clone(&host.field.embeds);
+    let root = host.boxed();
+    root.sync_paint_state(&context);
+    root.update(&context);
+    let (offset, size) = embeds.placement_of(7).expect("the embed is placed");
+    only_below.set(offset.y);
+    let on_embed = Vec2d { x: offset.x + size.width / 2.0, y: offset.y + size.height / 2.0 };
+    let on_text = Vec2d { x: 4.0, y: 4.0 };
+    let dispatch = |at: Vec2d, event: ElementEvent| aimer_widget::dispatch_event(root.as_ref(), at, &event);
+
+    // The tap on the widget, which handles it.
+    let _ = dispatch(on_embed, ElementEvent::PointerDown(PointerInfo::mouse(on_embed, PointerButton::Primary)));
+    let _ = dispatch(on_embed, ElementEvent::PointerUp(PointerInfo::mouse(on_embed, PointerButton::Primary)));
+    root.sync_paint_state(&context);
+    assert_eq!(embeds.len(), 1, "the widget is still there: it was a tap and not an edit");
+
+    // A click on the text after it.
+    let down = dispatch(on_text, ElementEvent::PointerDown(PointerInfo::mouse(on_text, PointerButton::Primary)));
+    let CaptureRequest::Capture(pointer) = down.capture_request() else {
+        panic!("the press on the text starts a drag: {:?}", down.capture_request());
+    };
+    let up = dispatch(on_text, ElementEvent::PointerUp(PointerInfo::mouse(on_text, PointerButton::Primary)));
+
+    assert_eq!(up.capture_request(), CaptureRequest::Release(pointer), "the field saw the release and the drag ended");
 }
 
 /// Dragging a selection across an embedded widget points the head at the widget's

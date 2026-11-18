@@ -7,10 +7,10 @@ pub(crate) fn adapt_native_delta(
     value: &TextEditingValue,
     delta: &TextEditingDelta,
 ) -> Option<TextEditingValue> {
-    let replace_start = utf16_to_byte(value.text(), delta.replacement.start)?;
-    let replace_end = utf16_to_byte(value.text(), delta.replacement.end)?;
+    let replace_start = utf16_to_byte(&value.text(), delta.replacement.start)?;
+    let replace_end = utf16_to_byte(&value.text(), delta.replacement.end)?;
     let mut text = String::with_capacity(
-        value.text().len() - (replace_end - replace_start) + delta.replacement_text.len(),
+        value.len() - (replace_end - replace_start) + delta.replacement_text.len(),
     );
     text.push_str(&value.text()[..replace_start]);
     text.push_str(&delta.replacement_text);

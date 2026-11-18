@@ -19,7 +19,7 @@ use aimer_widget::{
     Semantics, Widget,
 };
 
-use crate::callback::VoidCallback;
+use crate::callback::{CallbackExecutor, VoidCallback};
 use crate::gesture::GestureEvent;
 use crate::gesture::gesture_detector::{GestureDetector, GestureDetectorBehavior};
 use crate::mouse_region::{MouseRegion, PointerState};
@@ -60,6 +60,7 @@ pub struct Button<W = RequiredChild> {
     pub on_long_press: VoidCallback,
     pub on_double_press: VoidCallback,
     pub on_right_press: VoidCallback,
+    pub on_force_press: VoidCallback,
     pub decoration: BoxDecoration,
     no_decor: bool,
     // Normal, hover, press and disabled overrides, respectively.
@@ -95,6 +96,7 @@ pub struct ButtonState<W: Widget + 'static> {
     pub on_long_press: VoidCallback,
     pub on_double_press: VoidCallback,
     pub on_right_press: VoidCallback,
+    pub on_force_press: VoidCallback,
     pub decoration: BoxDecoration,
     no_decor: bool,
     custom_decorations: [Option<Rc<dyn Decoration>>; 4],
@@ -123,6 +125,7 @@ impl Button {
             on_press: VoidCallback::default(),
             on_long_press: VoidCallback::default(),
             on_double_press: VoidCallback::default(),
+            on_force_press: VoidCallback::default(),
             on_right_press: VoidCallback::default(),
             decoration: BoxDecoration::default(),
             no_decor: false,
@@ -145,6 +148,14 @@ impl<W> Button<W> {
     /// The callback is not invoked while the button is disabled.
     pub fn on_press(mut self, on_press: impl Into<VoidCallback>) -> Self {
         self.on_press = on_press.into();
+        self
+    }
+
+    /// Sets the callback invoked when the button is force-clicked: the trackpad is pressed down hard on it, which a macOS
+    /// Force Touch trackpad reports as a deep stage. It is invoked once for each deep press, and the press is taken, so
+    /// what is behind the button does not also act on it. A button without one leaves the pressure alone.
+    pub fn on_force_press(mut self, on_force_press: impl Into<VoidCallback>) -> Self {
+        self.on_force_press = on_force_press.into();
         self
     }
 
@@ -332,6 +343,7 @@ impl<W> Button<W> {
             on_long_press: self.on_long_press,
             on_double_press: self.on_double_press,
             on_right_press: self.on_right_press,
+            on_force_press: self.on_force_press,
             decoration: self.decoration,
             no_decor: self.no_decor,
             custom_decorations: self.custom_decorations,
@@ -407,6 +419,7 @@ impl<W: Widget + 'static> State<Button<W>> for ButtonState<W> {
             on_long_press: widget.on_long_press,
             on_double_press: widget.on_double_press,
             on_right_press: widget.on_right_press,
+            on_force_press: widget.on_force_press,
             decoration: widget.decoration,
             no_decor: widget.no_decor,
             custom_decorations: widget.custom_decorations,
@@ -430,6 +443,7 @@ impl<W: Widget + 'static> State<Button<W>> for ButtonState<W> {
         self.on_long_press = new.on_long_press;
         self.on_double_press = new.on_double_press;
         self.on_right_press = new.on_right_press;
+        self.on_force_press = new.on_force_press;
         self.decoration = new.decoration;
         self.no_decor = new.no_decor;
         self.custom_decorations = new.custom_decorations;
@@ -527,7 +541,7 @@ impl<W: Widget + 'static> ButtonState<W> {
             detector = detector.on_long_press(self.on_long_press.clone());
         }
 
-        MouseRegion::new()
+        let mut region = MouseRegion::new()
             .on_hover_enter({
                 let feedback = feedback.clone();
                 move || feedback.set_hover(true)
@@ -536,9 +550,16 @@ impl<W: Widget + 'static> ButtonState<W> {
                 let feedback = feedback.clone();
                 move || feedback.set_hover(false)
             })
-            .current_state(self.current_state.clone())
-            .child(detector.child(child))
-            .boxed()
+            .current_state(self.current_state.clone());
+        // Like the other presses it is only asked for when there is something to run: a button that did not ask for the
+        // pressure of the trackpad leaves it to what is behind it.
+        if self.on_force_press.is_set() {
+            let on_force_press = self.on_force_press.clone();
+            region = region.on_force_press(move |_| {
+                let _ = on_force_press.execute(());
+            });
+        }
+        region.child(detector.child(child)).boxed()
     }
 }
 

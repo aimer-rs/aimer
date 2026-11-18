@@ -4,6 +4,10 @@
 struct EmbedPlacement {
     offset: Vec2d,
     size: ResolvedSize,
+    /// The part of the field the widget may draw in, as `(x, y, width, height)`: the box of the text,
+    /// which is not the whole field (the margin of line numbers is beside it) and which a widget
+    /// scrolled sideways or half out of the top would otherwise spill over.
+    clip: (f32, f32, f32, f32),
 }
 
 /// A rectangle the field published for an embed, in logical pixels relative to
@@ -15,6 +19,22 @@ pub(crate) struct PublishedEmbed {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+    /// The box of the text, `(x, y, width, height)`, in the same space.
+    pub clip: (f32, f32, f32, f32),
+}
+
+impl PublishedEmbed {
+    /// Whether the point `(x, y)` is on the part of the embed that shows: inside its box and inside
+    /// the clip, which a text scrolled sideways leaves the box overhanging, over the margin beside it.
+    fn covers(&self, x: f32, y: f32) -> bool {
+        let (clip_x, clip_y, clip_width, clip_height) = self.clip;
+        x >= self.x
+            && x <= self.x + self.width
+            && y >= self.y
+            && y <= self.y + self.height
+            && (clip_width <= 0.0
+                || (x >= clip_x && x <= clip_x + clip_width && y >= clip_y && y <= clip_y + clip_height))
+    }
 }
 
 /// Places an embedded widget at the rectangle its box was laid out at.
@@ -244,6 +264,7 @@ impl EmbedStore {
                 .map(|embed| EmbedPlacement {
                     offset: Vec2d { x: embed.x * scale, y: embed.y * scale },
                     size: ResolvedSize { width: embed.width * scale, height: embed.height * scale },
+                    clip: (embed.clip.0 * scale, embed.clip.1 * scale, embed.clip.2 * scale, embed.clip.3 * scale),
                 })
                 .unwrap_or_default();
             if child.placement.replace(placement) != placement {
@@ -272,11 +293,26 @@ impl EmbedStore {
     /// The embed under the point `(x, y)`, in logical pixels from the field's outer
     /// origin, by the rectangles the field published.
     pub(crate) fn published_at(&self, x: f32, y: f32) -> Option<PublishedEmbed> {
-        self.published
-            .borrow()
-            .iter()
-            .find(|embed| x >= embed.x && x <= embed.x + embed.width && y >= embed.y && y <= embed.y + embed.height)
-            .copied()
+        self.published.borrow().iter().find(|embed| embed.covers(x, y)).copied()
+    }
+
+    /// Where the embed whose element is `child` is, for the render tree: its bounds, in logical
+    /// pixels local to the field, and the clip to the box of the text, in logical pixels local to the
+    /// embed. `None` for any other child.
+    pub(crate) fn geometry_of(
+        &self,
+        child: &dyn Element,
+        scale: f32,
+    ) -> Option<(aimer_cupid::draw_cmd::Rect, aimer_cupid::draw_cmd::Rect)> {
+        use aimer_cupid::draw_cmd::Rect;
+        let placement = self.children().iter().find(|embed| embed.wrapper.id() == child.id())?.placement.get();
+        if !(scale.is_finite() && scale > 0.0) {
+            return None;
+        }
+        let (offset, size, clip) = (placement.offset, placement.size, placement.clip);
+        let bounds = Rect::new(offset.x / scale, offset.y / scale, size.width / scale, size.height / scale);
+        let clip = Rect::new((clip.0 - offset.x) / scale, (clip.1 - offset.y) / scale, clip.2 / scale, clip.3 / scale);
+        Some((bounds, clip))
     }
 
     /// Notes that a press landed on an embedded widget, or that it was let go.
@@ -294,10 +330,7 @@ impl EmbedStore {
     /// Whether the point `(x, y)`, in logical pixels from the field's outer
     /// origin, is over an embedded widget, by the rectangles the field published.
     pub(crate) fn published_contains(&self, x: f32, y: f32) -> bool {
-        self.published
-            .borrow()
-            .iter()
-            .any(|embed| x >= embed.x && x <= embed.x + embed.width && y >= embed.y && y <= embed.y + embed.height)
+        self.published.borrow().iter().any(|embed| embed.covers(x, y))
     }
 
     /// Updates every embedded widget, translated to its place.
@@ -311,6 +344,12 @@ impl EmbedStore {
         for child in self.children() {
             visitor(child.wrapper.as_ref().as_ref());
         }
+    }
+
+    /// The clip of the embed `key`, for tests.
+    #[cfg(test)]
+    pub(crate) fn clip_of(&self, key: u64) -> Option<(f32, f32, f32, f32)> {
+        self.children().iter().find(|child| child.key == key).map(|child| child.placement.get().clip)
     }
 
     /// The placement of the embed `key`, for tests.

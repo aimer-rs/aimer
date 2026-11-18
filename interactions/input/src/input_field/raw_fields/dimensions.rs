@@ -30,7 +30,7 @@ impl RawTextField {
         };
         let pad_top = self.padding.top.value(height_reference, scale);
         let pad_bottom = self.padding.bottom.value(height_reference, scale);
-        let pad_left = self.padding.left.value(width, scale);
+        let pad_left = self.padding_left_px(width, scale);
         let pad_right = self.padding.right.value(width, scale);
         let content_width = (width - pad_left - pad_right).max(1.0);
         let font_size = self.scaled_font_size(&self.text_style, scale);

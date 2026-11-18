@@ -113,15 +113,29 @@ impl RawTextField {
             return value;
         }
         let mut text = if self.max_lines == Some(1) {
-            normalize_single_line(value.text()).into_owned()
+            normalize_single_line(&value.text()).into_owned()
         } else {
-            value.text().to_owned()
+            value.text().into_owned()
         };
         if let Some(max_length) = self.max_length {
             text = truncate_graphemes(&text, max_length).to_owned();
         }
         TextEditingValue::new(text, value.selection(), None)
     }
+    /// What a new line made at the caret starts with: what the field's line-break hook says of the line
+    /// before the caret (a selection is replaced, so the line is the one before its start), or nothing.
+    fn line_break_continuation(&self) -> String {
+        let Some(hook) = &self.line_break_prefix else {
+            return String::new();
+        };
+        let value = self.controller.value();
+        let (anchor, focus) = self.cursor_selection();
+        let start = value.byte_of_grapheme(anchor.min(focus));
+        let text = value.snapshot();
+        let line = text.line_range(text.byte_to_line(start));
+        hook(&text.slice(line.start..start.max(line.start))).unwrap_or_default()
+    }
+
     fn scroll_vertical(&self, delta_y: f32) -> bool {
         if self.max_lines == Some(1) {
             return false;
@@ -133,6 +147,26 @@ impl RawTextField {
         }
         self.scroll_y.set(target);
         self.reveal_caret.set(false);
+        true
+    }
+
+    /// Scrolls a field that does not wrap sideways by a wheel or trackpad `delta_x`. A field that
+    /// wraps, or has one line, has nowhere to scroll to and answers `false`, so the event goes on
+    /// to whatever holds it.
+    fn scroll_horizontal(&self, delta_x: f32) -> bool {
+        if self.max_lines == Some(1) || !self.scrolls_horizontally() {
+            return false;
+        }
+        let (Some(geometry), Some((content_width, _))) = (self.geometry_cache.latest(), self.caret_viewport.get()) else {
+            return false;
+        };
+        let extent = (geometry.text_width - content_width).max(0.0);
+        let current = self.scroll_x.get();
+        let target = vertical_scroll_target(current, delta_x, extent);
+        if target == current {
+            return false;
+        }
+        self.scroll_x.set(target);
         true
     }
 

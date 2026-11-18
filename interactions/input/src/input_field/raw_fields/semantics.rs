@@ -21,7 +21,12 @@ impl RawTextField {
         let value = if self.input_type.is_obscured() {
             "\u{2022}".repeat(self.controller.grapheme_count())
         } else {
-            self.controller.text()
+            // A screen reader is given the start of a long text: the whole of one of megabytes is
+            // neither readable aloud nor cheap to build for each change.
+            const READABLE_BYTES: usize = 64 * 1024;
+            let value = self.controller.value();
+            let end = value.floor_to_boundary(value.len().min(READABLE_BYTES));
+            value.slice(0..end).into_owned()
         };
         let mut node = SemanticNode::new(id, Role::TextField)
             .with_value(value)

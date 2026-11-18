@@ -6,6 +6,21 @@ fn clipboard_write(text: &str) {
     let _ = aimer_clipboard::clipboard::set_text(text);
 }
 
+/// Write the text that is `pieces` one after the other to the system clipboard, without joining them
+/// into a string first where the platform allows it.
+fn clipboard_write_pieces(pieces: &[&str]) {
+    let _ = aimer_clipboard::clipboard::set_text_chunks(pieces);
+}
+
+/// Read text from the system clipboard, where the platform put it: a paste of megabytes is the
+/// bytes the pasteboard delivered, not a copy of them.
+fn clipboard_read_shared() -> Option<aimer_clipboard::clipboard::ClipboardText> {
+    if let Ok(text) = aimer_clipboard::clipboard::get_shared_text() {
+        return Some(text);
+    }
+    clipboard_read().map(|text| std::sync::Arc::new(text) as aimer_clipboard::clipboard::ClipboardText)
+}
+
 /// Read text from the system clipboard.
 ///
 /// On the web the platform clipboard is asynchronous and cannot be awaited from
@@ -88,6 +103,38 @@ impl TextFieldCallback {
                 TextFieldCb::Sync(f) => f(text.to_owned()),
                 TextFieldCb::Async(f) => {
                     let fut = f(text.to_owned());
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                            handle.spawn(fut);
+                        }
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        wasm_bindgen_futures::spawn_local(fut);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Invoke the callback if one is set, building the text it is given only then: a field with no
+    /// callback does not copy its text for each change, which for a text of megabytes is the cost
+    /// of the change.
+    pub fn call_with(&self, text: impl FnOnce() -> String) {
+        if self.0.is_some() {
+            self.call_owned(text());
+        }
+    }
+
+    /// [`call`](Self::call) with a text that is given up: the callback receives it as it is, where
+    /// `call` copies it to hand over a `String`.
+    pub fn call_owned(&self, text: String) {
+        if let Some(cb) = &self.0 {
+            match cb.as_ref() {
+                TextFieldCb::Sync(f) => f(text),
+                TextFieldCb::Async(f) => {
+                    let fut = f(text);
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         if let Ok(handle) = tokio::runtime::Handle::try_current() {

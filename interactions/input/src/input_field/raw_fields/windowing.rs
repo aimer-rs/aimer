@@ -18,33 +18,40 @@ impl RawTextField {
     ///
     /// A field does when its text is long, wraps and shows what was typed, and no input
     /// method's composition is in progress, in which case it is the text without it.
-    fn windowed_display(&self) -> Option<Arc<str>> {
-        if !self.wraps_text() || self.input_type.is_obscured() {
+    fn windowed_display(&self) -> Option<TextSnapshot> {
+        if !self.scrolls_vertically() || self.input_type.is_obscured() {
             return None;
         }
         let value = self.controller.value();
-        if value.text().len() < self.window_threshold {
+        if value.len() < self.window_threshold {
             return None;
         }
         let Some(composing) = value.composing() else {
-            return Some(Arc::clone(value.text_arc()));
+            return Some(value.snapshot());
         };
         // While an input method composes, what is laid out is the text without the composition,
-        // which is painted on its own at the caret. That is a copy of the text, made once for
-        // each change of it and not for each of the times a frame asks.
+        // which is painted on its own at the caret. That is made once for each change of the
+        // text and not for each of the times a frame asks.
         let revision = self.controller.revision();
         if let Some((memo_revision, text)) = self.composition_display_memo.borrow().as_ref()
             && *memo_revision == revision
         {
-            return Some(Arc::clone(text));
+            return Some(text.clone());
         }
-        let source = value.text();
-        let mut display = String::with_capacity(source.len() - (composing.end() - composing.start()));
-        display.push_str(&source[..composing.start()]);
-        display.push_str(&source[composing.end()..]);
-        let display: Arc<str> = Arc::from(display);
-        *self.composition_display_memo.borrow_mut() = Some((revision, Arc::clone(&display)));
+        let display = value.snapshot().with_replaced(composing.start()..composing.end(), "");
+        *self.composition_display_memo.borrow_mut() = Some((revision, display.clone()));
         Some(display)
+    }
+
+    /// The selection area's participant for this field, unless the field windows its text. A
+    /// windowed field has no layout of its whole text for an area to select in, so the area is
+    /// left out of what the pointer does: a press that began an area selection would take the
+    /// drag away from the field, and nothing would be selected.
+    fn area_participant(&self) -> Option<SelectionParticipant> {
+        if self.windowed_display().is_some() {
+            return None;
+        }
+        self.selection.borrow().as_ref().cloned()
     }
 
     /// What the retained paint of a windowed text depends on beyond the text: which lines were laid
@@ -56,17 +63,25 @@ impl RawTextField {
     }
 
     /// The index of `text`, made from the one the field had, if any.
-    fn refreshed_line_index(&self, text: &Arc<str>, metrics: LineMetrics) -> Rc<LineIndex> {
+    fn refreshed_line_index(&self, text: &TextSnapshot, metrics: LineMetrics) -> Rc<LineIndex> {
         let mut slot = self.line_index.borrow_mut();
         let index = match slot.as_ref() {
-            Some(index) if Arc::ptr_eq(index.text(), text) && index.metrics().same_wrapping(&metrics) => {
+            Some(index) if index.text().ptr_eq(text) && index.metrics().same_wrapping(&metrics) => {
                 Rc::clone(index)
             }
-            Some(index) => Rc::new(index.updated(Arc::clone(text), metrics)),
-            None => Rc::new(LineIndex::new(Arc::clone(text), metrics)),
+            Some(index) => Rc::new(index.updated(text.clone(), metrics)),
+            None => Rc::new(LineIndex::new(text.clone(), metrics)),
         };
         *slot = Some(Rc::clone(&index));
         index
+    }
+
+    /// Whether the field scrolls inside itself, so that what is shown is where it is scrolled to: a
+    /// field with a cap on its lines, and one that fills the height it is given (`expand`) with no
+    /// scrolling parent to say what part of it is seen. Any other is scrolled by what holds it.
+    fn scrolls_inside_itself(&self, ctx: &BuildContext) -> bool {
+        self.max_lines.is_some()
+            || (matches!(self.expand, ExpandDirection::Vertical | ExpandDirection::Both) && ctx.visible_rect().is_none())
     }
 
     /// The part of the text that is on screen, from top to bottom, in the heights of the
@@ -76,6 +91,14 @@ impl RawTextField {
             // A field that scrolls inside itself shows `max_lines` lines from where it has scrolled to.
             let top = f64::from(self.scroll_y.get().max(0.0));
             return (top, top + max_lines as f64 * f64::from(line_height));
+        }
+        if self.scrolls_inside_itself(ctx) {
+            // One that fills its height shows that height from where it has scrolled to. The height
+            // it is given is the viewport: more than it is, if the constraint is in logical pixels
+            // and the heights here are physical ones, which only widens the window.
+            let top = f64::from(self.scroll_y.get().max(0.0));
+            let viewport = (ctx.box_constraint.max_height * ctx.scale.max(1.0)).clamp(line_height, 16_000.0);
+            return (top, top + f64::from(viewport));
         }
         // A field that grows with its text is scrolled by what holds it, which says what
         // part of it can be seen.
@@ -104,13 +127,45 @@ impl RawTextField {
         window
     }
 
+    /// The embeds `embedder` finds in `bytes` of `text`, known again while the text, the cursor and
+    /// the bytes are the ones it was asked about last.
+    fn window_embeds(
+        &self,
+        embedder: &TextEmbedder,
+        text: &TextSnapshot,
+        bytes: Range<usize>,
+        context: &HighlightContext,
+    ) -> Rc<[TextEmbed]> {
+        let key = (self.controller.revision(), self.cursor.offset(), self.cursor.selection_anchor(), self.drag_key());
+        if let Some((memo_key, memo_bytes, focused, embeds)) = self.window_embed_memo.borrow().as_ref()
+            && *memo_key == key
+            && *memo_bytes == bytes
+            && *focused == context.selection().is_some()
+        {
+            return Rc::clone(embeds);
+        }
+        let embeds: Rc<[TextEmbed]> = embedder.embeds_window(text, bytes.clone(), context).unwrap_or_default().into();
+        *self.window_embed_memo.borrow_mut() =
+            Some((key, bytes, context.selection().is_some(), Rc::clone(&embeds)));
+        embeds
+    }
+
     /// The hard lines of `lines`, grown to take in every embed that any of them touches:
     /// an embed is laid out whole, and it can take many source lines.
-    fn lines_with_whole_embeds(index: &LineIndex, mut lines: Range<usize>, embeds: &[TextEmbed]) -> Range<usize> {
+    ///
+    /// `embeds_in` answers with the embeds that touch a range of bytes: all of them, for an
+    /// embedder that finds them in the whole text, and those of the range, for one that reads a
+    /// window. Growing the lines moves the range, so it is asked again until they stop growing.
+    fn lines_with_whole_embeds(
+        index: &LineIndex,
+        mut lines: Range<usize>,
+        embeds_in: &dyn Fn(&Range<usize>) -> Rc<[TextEmbed]>,
+    ) -> Range<usize> {
         loop {
             let bytes = index.line_bytes(lines.start).start..index.line_bytes(lines.end - 1).end;
+            let embeds = embeds_in(&bytes);
             let mut grown = false;
-            for embed in embeds {
+            for embed in embeds.iter() {
                 let range = embed.range();
                 if range.start >= range.end || range.start >= bytes.end || bytes.start >= range.end {
                     continue;
@@ -191,7 +246,8 @@ impl RawTextField {
         embeds: &[TextEmbed],
     ) -> RichWindow {
         let bytes = index.line_bytes(lines.start).start..index.line_bytes(lines.end - 1).end;
-        let text = &index.text()[bytes.clone()];
+        let window_text = index.text().slice(bytes.clone());
+        let text = &*window_text;
 
         let boxes = self.window_embed_boxes(ctx, content_width, index, &bytes, embeds);
 
@@ -211,12 +267,13 @@ impl RawTextField {
             .map(Rc::from);
         let local_ranges = with_embed_boxes(local_ranges, &boxes, ctx.scale);
 
+        let layout_width = if self.wraps_text() { content_width } else { f32::INFINITY };
         let mut layout_ctx = ctx.clone();
         layout_ctx.parent_size = ResolvedSize { width: content_width, height: ctx.parent_size.height };
         layout_ctx.box_constraint = aimer_attribute::BoxConstraint {
             min_width: 0.0,
             min_height: 0.0,
-            max_width: content_width,
+            max_width: layout_width,
             max_height: ctx.box_constraint.max_height,
         };
         let mut widget = self.build_text_widget(text, style, TextAlign::TopLeft);
@@ -234,7 +291,7 @@ impl RawTextField {
         &self,
         ctx: &BuildContext,
         content_width: f32,
-        text: Arc<str>,
+        snapshot: TextSnapshot,
     ) -> Rc<EditableGeometry> {
         let font_size = self.scaled_font_size(&self.text_style, ctx.scale);
         let style = self.field_text_style();
@@ -244,11 +301,13 @@ impl RawTextField {
         ctx.canvas.set_text_language(language);
 
         let line_height = ctx.canvas.measure_text_metrics_styled("", font_size, 0.0, family, font_style, weight).line_height;
+        // A line that does not wrap is laid out as wide as it is, and is one row tall.
+        let layout_width = if self.wraps_text() { content_width } else { f32::INFINITY };
         // What is known of how wide a grapheme is until lines have been laid out.
-        let metrics = LineMetrics { content_width, line_height, advance: font_size * 0.55 };
-        let index = self.refreshed_line_index(&text, metrics);
+        let metrics = LineMetrics { content_width: layout_width, line_height, advance: font_size * 0.55 };
+        let index = self.refreshed_line_index(&snapshot, metrics);
         let layout_line = |line: &str| {
-            ctx.canvas.layout_text_styled_shared(line, font_size, content_width, family, font_style, weight)
+            ctx.canvas.layout_text_styled_shared(line, font_size, layout_width, family, font_style, weight)
         };
 
         // Styled text and embeds are laid out as a window of text with its ranges and embeds,
@@ -256,24 +315,46 @@ impl RawTextField {
         let highlighter = self.effective_highlighter();
         let embedder = self.effective_embedder();
         let rich = highlighter.is_some() || embedder.is_some();
+        // A highlighter and an embedder made for a window are asked about the lines that are laid
+        // out and no others. The others read the whole text as a string: the text itself for a
+        // text of one chunk and a copy for a longer one, made when a memo does not hold the
+        // answer, and for a styled text only.
+        let whole = || snapshot.slice(0..snapshot.len());
+        let highlighter_windowed = highlighter.is_some_and(TextHighlighter::is_windowed);
+        let embedder_windowed = embedder.is_some_and(TextEmbedder::is_windowed);
         let context = match highlighter {
-            Some(highlighter) if highlighter.depends_on_selection() => self.highlight_context(&text, Some(&index)),
-            _ if embedder.is_some() => self.highlight_context(&text, Some(&index)),
+            Some(highlighter) if highlighter.depends_on_selection() => self.highlight_context(&whole, Some(&index)),
+            _ if embedder.is_some() => self.highlight_context(&whole, Some(&index)),
             _ => HighlightContext::default(),
         };
         let active = context.active_lines();
-        let ranges = if rich { self.highlights.resolve_in(highlighter, &text, &context) } else { None };
-        let embeds: Rc<[TextEmbed]> = if embedder.is_some() {
-            self.current_embeds(&text, &context)
+        let whole_ranges = if rich && !highlighter_windowed {
+            self.highlights.resolve_in_snapshot(highlighter, &snapshot, &context)
         } else {
-            Rc::from(Vec::new())
+            None
+        };
+        let whole_embeds: Rc<[TextEmbed]> = match embedder {
+            Some(_) if !embedder_windowed => self.current_embeds(&whole, &context),
+            _ => Rc::from(Vec::new()),
+        };
+        let ranges_in = |bytes: &Range<usize>| match highlighter {
+            Some(highlighter) if highlighter_windowed => {
+                self.highlights.resolve_window(highlighter, &snapshot, bytes.clone(), &context)
+            }
+            _ => whole_ranges.clone(),
+        };
+        let embeds_in = |bytes: &Range<usize>| match embedder {
+            Some(embedder) if embedder_windowed => {
+                self.window_embeds(embedder, &snapshot, bytes.clone(), &context)
+            }
+            _ => Rc::clone(&whole_embeds),
         };
 
         // Where the viewport is, kept on the line that is at its top: laying out lines above it
         // corrects what was estimated of them, and that moves everything below. The line
         // is the one the last frame kept the viewport on if the scroll is where that frame
         // left it, and the one at the top now if something scrolled since.
-        let multiline_scroll = self.max_lines.is_some();
+        let multiline_scroll = self.scrolls_inside_itself(ctx);
         let anchor = multiline_scroll.then(|| {
             let scroll = self.scroll_y.get();
             match self.window_anchor.get() {
@@ -325,7 +406,7 @@ impl RawTextField {
             let (top, bottom) = self.visible_text_span(ctx, line_height);
             let mut lines = self.window_lines_for(&index, top, bottom);
             if rich {
-                lines = Self::lines_with_whole_embeds(&index, lines, &embeds);
+                lines = Self::lines_with_whole_embeds(&index, lines, &embeds_in);
                 self.window_lines.set(Some((lines.start, lines.end)));
             }
             lines
@@ -335,7 +416,7 @@ impl RawTextField {
         let lines = select_lines();
         let boxes = if rich {
             let bytes = index.line_bytes(lines.start).start..index.line_bytes(lines.end - 1).end;
-            self.window_embed_boxes(ctx, content_width, &index, &bytes, &embeds)
+            self.window_embed_boxes(ctx, content_width, &index, &bytes, &embeds_in(&bytes))
         } else {
             Vec::new()
         };
@@ -356,14 +437,15 @@ impl RawTextField {
             let version = index.version();
             if rich {
                 // The window is laid out to learn its heights, and that layout is the one used.
+                let bytes = index.line_bytes(lines.start).start..index.line_bytes(lines.end - 1).end;
                 rich_window = Some(self.lay_out_rich_window(
                     ctx,
                     content_width,
                     &style,
                     &index,
                     lines.clone(),
-                    ranges.as_ref(),
-                    &embeds,
+                    ranges_in(&bytes).as_ref(),
+                    &embeds_in(&bytes),
                 ));
             } else {
                 measure_lines(&index, lines.clone(), &layout_line);

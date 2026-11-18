@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use aimer_text_buffer::TextSnapshot;
 use unicode_segmentation::UnicodeSegmentation;
 
 use aimer_animation::AnimInstant;
@@ -14,7 +15,7 @@ use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_ctxmenu::{ContextMenuShape, ModalHandle};
 use aimer_events::element::{ElementEvent, KeyAction, Modifiers, NamedKey};
-use aimer_events::pointer::PointerButton;
+use aimer_events::pointer::{PointerButton, PointerSource};
 use aimer_events::text_editing::TextEditingDelta;
 use aimer_events::window::get_window;
 use aimer_style::{BorderStyle, BoxDecoration, LayoutSpacing, TextAlign, TextOverflow, TextStyle};
@@ -30,13 +31,14 @@ use aimer_widget::{
 use crate::editable_text::{
     ControllerAttachment, DisplayText, EditableGeometry, EditableGeometryCache,
     EditableGeometryKey, EmbedBox, LineIndex, LineMetrics, adapt_native_delta, lay_out_lines,
-    measure_lines, refine_from_layout, vertical_target, wrap_visual_lines,
+    VisualLine, measure_lines, refine_from_layout, vertical_target, wrap_visual_lines,
 };
 use crate::input_field::caret::{
     CaretBlink, CaretBuilder, CaretContext, CaretGeometry, DefaultCaret,
 };
 use crate::input_field::caret_glide::{CaretGlide, CaretRect};
 use crate::input_field::chrome::{Chrome, VisualFlags};
+use crate::input_field::gutter::{GutterMarkers, LineBar, LineBars, LineNumbers, digits_of};
 use crate::input_field::embed::{EmbedHeight, TextEmbed, TextEmbedder, embedder_id};
 use crate::input_field::context_menu::{FieldAction, HoldOutcome, TouchHold};
 use crate::input_field::highlight::{
@@ -69,6 +71,8 @@ include!("raw_fields/composition.rs");
 include!("raw_fields/edit_helpers.rs");
 include!("raw_fields/dimensions.rs");
 include!("raw_fields/windowing.rs");
+include!("raw_fields/navigation.rs");
+include!("raw_fields/gutter_paint.rs");
 include!("raw_fields/platform.rs");
 
 mod menu;
@@ -93,6 +97,16 @@ mod scrolled_paint_tests;
 mod windowing_tests;
 #[cfg(test)]
 mod tab_tests;
+#[cfg(test)]
+mod shared_paste_tests;
+#[cfg(test)]
+mod navigation_tests;
+#[cfg(test)]
+mod no_wrap_tests;
+#[cfg(test)]
+mod gutter_tests;
+#[cfg(test)]
+mod marker_tests;
 
 /// Fixtures shared by the test modules living beside the logic they cover.
 #[cfg(test)]

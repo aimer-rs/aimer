@@ -305,8 +305,9 @@ fn transformed_bounds(
 /// as its text, which a long one makes far taller than the million pixels other boxes are held
 /// to; its window is all that is ever laid out and drawn. Eight million is where a 32-bit
 /// float still tells half a pixel apart, which the scroll offsets and the positions of the
-/// window's lines are kept in.
-const MAX_FIELD_HEIGHT: f32 = 8_000_000.0;
+/// window's lines are kept in. Up to sixteen million a float tells whole pixels apart, which is
+/// as far as this goes: past it a window would jump by more than one.
+const MAX_FIELD_HEIGHT: f32 = 16_000_000.0;
 
 fn field_text_context<'a>(
     ctx: &BuildContext<'a>,
@@ -356,7 +357,7 @@ impl RawTextField {
         {
             return None;
         }
-        let padding_left = self.padding.left.value(box_width, scale);
+        let padding_left = self.padding_left_px(box_width, scale);
         let padding_top = self.padding.top.value(box_height, scale);
         let padding_right = self.padding.right.value(box_width, scale);
         let padding_bottom = self.padding.bottom.value(box_height, scale);
@@ -379,9 +380,15 @@ impl RawTextField {
         if !line_height.is_finite() || line_height <= 0.0 {
             return None;
         }
-        let multiline = self.wraps_text();
+        let multiline = self.scrolls_vertically();
         let total_height = geometry.content_height(line_height);
         let base_y = vertical_block_offset(self.text_align, content_height, total_height);
+        // How far the text is scrolled sideways: a line that does not wrap can be wider than the field.
+        let clamped_scroll_x = |this: &Self| {
+            let max_scroll = (geometry.text_width - content_width).max(0.0);
+            let current = this.scroll_x.get();
+            if current.is_finite() { current.clamp(0.0, max_scroll) } else { 0.0 }
+        };
         let (scroll_x, scroll_y) = if multiline {
             let scroll_extent = vertical_scroll_extent(total_height, content_height);
             let current = self.scroll_y.get();
@@ -401,16 +408,9 @@ impl RawTextField {
                     scroll_extent,
                 );
             }
-            (0.0, scroll)
+            (if self.scrolls_horizontally() { clamped_scroll_x(self) } else { 0.0 }, scroll)
         } else {
-            let max_scroll = (geometry.text_width - content_width).max(0.0);
-            let current = self.scroll_x.get();
-            let scroll_x = if current.is_finite() {
-                current.clamp(0.0, max_scroll)
-            } else {
-                0.0
-            };
-            (scroll_x, 0.0)
+            (clamped_scroll_x(self), 0.0)
         };
 
         let text_ctx = field_text_context(
@@ -550,7 +550,7 @@ impl Drawable for RawTextField {
             return false;
         }
 
-        let padding_left = self.padding.left.value(box_width, scale);
+        let padding_left = self.padding_left_px(box_width, scale);
         let padding_top = self.padding.top.value(box_height, scale);
         let padding_right = self.padding.right.value(box_width, scale);
         let padding_bottom = self.padding.bottom.value(box_height, scale);
@@ -625,13 +625,10 @@ impl Drawable for RawTextField {
             return false;
         }
 
+        self.resolve_force_click(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
         if let Some(click_pos) = self.pending_click.take() {
             let click_x = click_pos.x * scale - abs_x - padding_left
-                + if is_multiline {
-                    0.0
-                } else {
-                    self.scroll_x.get()
-                };
+                + self.scroll_x_offset();
             let click_y = click_pos.y * scale - abs_y - padding_top - initial_base_y
                 + if is_multiline {
                     self.scroll_y.get()
@@ -653,6 +650,12 @@ impl Drawable for RawTextField {
                 self.drag_origin.set(Some(click_offset));
             }
             let click_count = self.click_count.get();
+            let extending = self.shift_press.take();
+            if let Some(anchor) = extending {
+                // The anchor the press was made with, whatever a selection area did meanwhile.
+                self.cursor.set_selection_anchor(Some(anchor));
+            }
+            let extending = extending.is_some();
             match click_count {
                 2 => self.select_word_at(click_offset),
                 3 => {
@@ -667,28 +670,34 @@ impl Drawable for RawTextField {
                     self.cursor.set_offset(click_offset);
                 }
             }
-            if let Some(selection) = self.selection.borrow().as_ref().cloned()
+            if let Some(selection) = self.area_participant()
                 && let Some(pointer) = self.mouse_held.get()
             {
-                let text = self.controller.text();
+                let value = self.controller.value();
                 let (anchor, focus) = self.cursor_selection();
-                if click_count == 1 && selection.active_pointer().is_none() {
-                    selection.begin(grapheme_byte_offset(&text, focus), pointer);
+                if extending {
+                    selection.begin_range(
+                        value.byte_of_grapheme(anchor),
+                        value.byte_of_grapheme(focus),
+                        pointer,
+                    );
+                } else if click_count == 1 && selection.active_pointer().is_none() {
+                    selection.begin(value.byte_of_grapheme(focus), pointer);
                 } else if click_count != 1 {
                     selection.begin_range(
-                        grapheme_byte_offset(&text, anchor),
-                        grapheme_byte_offset(&text, focus),
+                        value.byte_of_grapheme(anchor),
+                        value.byte_of_grapheme(focus),
                         pointer,
                     );
                 }
-            } else if click_count != 1
-                && let Some(selection) = self.selection.borrow().as_ref().cloned()
+            } else if (click_count != 1 || extending)
+                && let Some(selection) = self.area_participant()
             {
-                let text = self.controller.text();
+                let value = self.controller.value();
                 let (anchor, focus) = self.cursor_selection();
                 selection.set_range(
-                    grapheme_byte_offset(&text, anchor),
-                    grapheme_byte_offset(&text, focus),
+                    value.byte_of_grapheme(anchor),
+                    value.byte_of_grapheme(focus),
                 );
             }
             self.sync_selection_to_controller();
@@ -727,32 +736,48 @@ impl Drawable for RawTextField {
                 self.scroll_y_extent.set(0.0);
                 self.reveal_caret.set(false);
             }
-        } else if is_multiline {
-            let scroll_extent = vertical_scroll_extent(total_height, content_height);
-            let current_scroll = self.scroll_y.get();
-            if !scroll_extent.is_finite() || !current_scroll.is_finite() || current_scroll < 0.0 {
-                return false;
-            }
-            self.scroll_y_extent.set(scroll_extent);
-            let mut scroll = current_scroll.min(scroll_extent);
-            if self.reveal_caret.replace(false) {
-                scroll = scroll_to_reveal_line(
-                    scroll,
-                    geometry.reveal_span(self.cursor.offset(), line_height),
-                    content_height,
-                    scroll_extent,
-                );
-            }
-            self.scroll_y.set(scroll);
-            base_y = vertical_block_offset(self.text_align, content_height, total_height);
         } else {
-            if !self.scroll_x.get().is_finite() || self.scroll_x.get() < 0.0 {
-                return false;
+            // Asked for by whatever moved the caret or changed the text. A wheel or a drag of the
+            // scroll bar is not such a thing: it looks away from the caret on purpose, and a paint
+            // must not pull the text back to it. A single line has no wheel, so it always follows.
+            let reveal = !is_multiline || self.reveal_caret.get();
+            if is_multiline {
+                let scroll_extent = vertical_scroll_extent(total_height, content_height);
+                let current_scroll = self.scroll_y.get();
+                if !scroll_extent.is_finite() || !current_scroll.is_finite() || current_scroll < 0.0 {
+                    return false;
+                }
+                self.scroll_y_extent.set(scroll_extent);
+                let mut scroll = current_scroll.min(scroll_extent);
+                if reveal {
+                    scroll = scroll_to_reveal_line(
+                        scroll,
+                        geometry.reveal_span(self.cursor.offset(), line_height),
+                        content_height,
+                        scroll_extent,
+                    );
+                }
+                self.scroll_y.set(scroll);
+                base_y = vertical_block_offset(self.text_align, content_height, total_height);
             }
-            let composition_width = self.with_preedit(|preedit| {
-                self.preedit_width(&content_ctx, preedit)
-            });
-            self.ensure_cursor_visible(content_width, &geometry, composition_width);
+            if self.scrolls_horizontally() {
+                if !self.scroll_x.get().is_finite() || self.scroll_x.get() < 0.0 {
+                    return false;
+                }
+                if reveal {
+                    let composition_width = self.with_preedit(|preedit| {
+                        self.preedit_width(&content_ctx, preedit)
+                    });
+                    self.ensure_cursor_visible(content_width, &geometry, composition_width);
+                } else {
+                    // Only kept inside the text: it may have been made for a text that was wider.
+                    let max_scroll = (geometry.text_width - content_width).max(0.0);
+                    self.scroll_x.set(self.scroll_x.get().min(max_scroll));
+                }
+            }
+            if is_multiline {
+                self.reveal_caret.set(false);
+            }
         }
         if !self.scroll_x.get().is_finite()
             || !self.scroll_y.get().is_finite()
@@ -765,7 +790,7 @@ impl Drawable for RawTextField {
 
         // The text is copied for a selection area to hold; a windowed field gives it none.
         let text = if geometry.window.is_some() { String::new() } else { self.controller.text() };
-        let scroll_x = if is_multiline { 0.0 } else { self.scroll_x.get() };
+        let scroll_x = self.scroll_x_offset();
         let scroll_y = if is_multiline { self.scroll_y.get() } else { 0.0 };
         ctx.canvas.save();
         ctx.canvas
@@ -800,7 +825,7 @@ impl Drawable for RawTextField {
                 .set(vertical_scroll_extent(total_height, content_height));
             self.reveal_caret.set(false);
         }
-        self.publish_embeds(&layout.geometry, is_multiline, layout.base_y, layout.scroll_y, scale);
+        self.publish_embeds(&layout.geometry, is_multiline, layout.base_y, layout.scroll_x, layout.scroll_y, scale);
 
         if self.is_focused() {
             self.cursor.blink().tick(self.now());
@@ -829,14 +854,11 @@ impl Drawable for RawTextField {
                 .geometry
                 .caret_geometry(self.cursor.offset())
                 .expect("a field interaction layout has an insertion caret");
-            let (cursor_x, line_y) = if is_multiline {
-                (caret.x, layout.base_y + caret.y - layout.scroll_y)
-            } else {
-                (
-                    caret.x - layout.scroll_x,
-                    layout.base_y + caret.y,
-                )
-            };
+            // Each scroll is zero for a field that does not scroll that way.
+            let (cursor_x, line_y) = (
+                caret.x - layout.scroll_x,
+                layout.base_y + caret.y - layout.scroll_y,
+            );
             let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
             let content_origin = (abs_x + padding_left, abs_y + padding_top);
             self.publish_ime_caret(
@@ -947,7 +969,7 @@ impl Drawable for RawTextField {
         // --- Padding ---
         let pad_top = self.padding.top.value(box_height, scale);
         let pad_bottom = self.padding.bottom.value(box_height, scale);
-        let pad_left = self.padding.left.value(box_width, scale);
+        let pad_left = self.padding_left_px(box_width, scale);
         let pad_right = self.padding.right.value(box_width, scale);
         self.caret_origin.set((ol + pad_left, ot + pad_top));
 
@@ -958,11 +980,12 @@ impl Drawable for RawTextField {
         let content_width = (box_width - pad_left - pad_right).max(0.0);
         self.caret_viewport.set(Some((content_width, content_height)));
 
-        let text = self.controller.text();
-        let is_empty = text.is_empty();
+        let is_empty = self.controller.is_text_empty();
         let font_size = self.scaled_font_size(&self.text_style, scale);
 
         let geometry = self.editable_geometry(ctx, content_width);
+        // A windowed text publishes no selection geometry, which is all the text is for here.
+        let text = if geometry.window.is_some() { String::new() } else { self.controller.text() };
         let line_height = geometry
             .interaction
             .as_ref()
@@ -986,9 +1009,9 @@ impl Drawable for RawTextField {
         let is_multiline = self.max_lines != Some(1);
 
         // --- Process pending click (deferred from on_event for canvas access) ---
+        self.resolve_force_click(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
         if let Some(click_pos) = self.pending_click.take() {
-            let click_x = click_pos.x * scale - abs_x - pad_left
-                + if is_multiline { 0.0 } else { self.scroll_x.get() };
+            let click_x = click_pos.x * scale - abs_x - pad_left + self.scroll_x_offset();
             let click_y = click_pos.y * scale - abs_y - pad_top - base_y
                 + if is_multiline {
                     self.scroll_y.get()
@@ -1012,6 +1035,12 @@ impl Drawable for RawTextField {
                 self.drag_origin.set(Some(click_offset));
             }
             let click_count = self.click_count.get();
+            let extending = self.shift_press.take();
+            if let Some(anchor) = extending {
+                // The anchor the press was made with, whatever a selection area did meanwhile.
+                self.cursor.set_selection_anchor(Some(anchor));
+            }
+            let extending = extending.is_some();
             match click_count {
                 2 => self.select_word_at(click_offset),
                 3 => {
@@ -1028,28 +1057,34 @@ impl Drawable for RawTextField {
                     self.cursor.set_offset(click_offset);
                 }
             }
-            if let Some(selection) = self.selection.borrow().as_ref().cloned()
+            if let Some(selection) = self.area_participant()
                 && let Some(pointer) = self.mouse_held.get()
             {
-                let text = self.controller.text();
+                let value = self.controller.value();
                 let (anchor, focus) = self.cursor_selection();
-                if click_count == 1 && selection.active_pointer().is_none() {
-                    selection.begin(grapheme_byte_offset(&text, focus), pointer);
+                if extending {
+                    selection.begin_range(
+                        value.byte_of_grapheme(anchor),
+                        value.byte_of_grapheme(focus),
+                        pointer,
+                    );
+                } else if click_count == 1 && selection.active_pointer().is_none() {
+                    selection.begin(value.byte_of_grapheme(focus), pointer);
                 } else if click_count != 1 {
                     selection.begin_range(
-                        grapheme_byte_offset(&text, anchor),
-                        grapheme_byte_offset(&text, focus),
+                        value.byte_of_grapheme(anchor),
+                        value.byte_of_grapheme(focus),
                         pointer,
                     );
                 }
-            } else if click_count != 1
-                && let Some(selection) = self.selection.borrow().as_ref().cloned()
+            } else if (click_count != 1 || extending)
+                && let Some(selection) = self.area_participant()
             {
-                let text = self.controller.text();
+                let value = self.controller.value();
                 let (anchor, focus) = self.cursor_selection();
                 selection.set_range(
-                    grapheme_byte_offset(&text, anchor),
-                    grapheme_byte_offset(&text, focus),
+                    value.byte_of_grapheme(anchor),
+                    value.byte_of_grapheme(focus),
                 );
             }
             self.sync_selection_to_controller();
@@ -1147,7 +1182,11 @@ impl Drawable for RawTextField {
                 self.scroll_y_extent.set(scroll_extent);
 
                 let mut scroll = self.scroll_y.get().min(scroll_extent);
-                if self.reveal_caret.replace(false) {
+                // Asked for by whatever moved the caret or changed the text. A wheel or a drag of the
+                // scroll bar is not such a thing: it looks away from the caret on purpose, and the
+                // next paint must not pull the text back to it.
+                let reveal = self.reveal_caret.replace(false);
+                if reveal {
                     scroll = scroll_to_reveal_line(
                         scroll,
                         geometry.reveal_span(self.cursor.offset(), line_height),
@@ -1156,6 +1195,24 @@ impl Drawable for RawTextField {
                     );
                 }
                 self.scroll_y.set(scroll);
+
+                // A field that does not wrap scrolls sideways as a single line does.
+                let scroll_x = if self.scrolls_horizontally() {
+                    if reveal {
+                        let composition_width = self.with_preedit(|preedit| {
+                            self.preedit_width(&content_ctx, preedit)
+                        });
+                        self.ensure_cursor_visible(content_width, &geometry, composition_width);
+                    } else {
+                        // Only keep the scroll inside the text: it may have been made for a text
+                        // that was wider.
+                        let max_scroll = (geometry.text_width - content_width).max(0.0);
+                        self.scroll_x.set(self.scroll_x.get().clamp(0.0, max_scroll));
+                    }
+                    self.scroll_x.get()
+                } else {
+                    0.0
+                };
 
                 let base_y =
                     vertical_block_offset(self.text_align, content_height, total_text_height);
@@ -1172,19 +1229,19 @@ impl Drawable for RawTextField {
                     scale,
                     content_width,
                     content_height,
-                    0.0,
+                    scroll_x,
                     base_y,
                     scroll,
                 );
 
-                self.publish_embeds(&geometry, true, base_y, scroll, scale);
+                self.publish_embeds(&geometry, true, base_y, scroll_x, scroll, scale);
 
                 // Draw cursor / composition from the same canonical caret.
                 if self.is_focused() {
                     let caret = geometry
                         .caret_geometry(self.cursor.offset())
                         .expect("a non-empty interaction layout has a caret");
-                    let cursor_x = caret.x;
+                    let cursor_x = caret.x - scroll_x;
                     let line_y = base_y + caret.y - scroll;
                     let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
 
@@ -1431,6 +1488,12 @@ impl Drawable for RawTextField {
             );
         }
 
+        // The band behind the caret's line, and the margin of line numbers, are under the text and
+        // outside its clip.
+        self.paint_current_line(&canvas, &layout);
+        self.paint_line_bars(&canvas, &layout);
+        self.paint_gutter(&canvas, ctx, &layout);
+
         canvas.push_clip(
             Rect::new(
                 (layout.outline_left + layout.padding_left) / scale,
@@ -1448,7 +1511,14 @@ impl Drawable for RawTextField {
 
         if !layout.geometry.display.is_empty() {
             let style = self.field_text_style();
-            let text_context = field_text_context(ctx, layout.content_width, layout.text_box_height());
+            // A line that does not wrap can be wider than the field, and what scrolls into view is
+            // drawn: the text is given the width of its widest line, not the field's.
+            let text_width = if self.scrolls_horizontally() {
+                layout.geometry.text_width.max(layout.content_width).ceil() + 1.0
+            } else {
+                layout.content_width
+            };
+            let text_context = field_text_context(ctx, text_width, layout.text_box_height());
             let text_widget = self.build_display_widget(
                 &layout.geometry,
                 &style,

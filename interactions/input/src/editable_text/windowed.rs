@@ -97,7 +97,7 @@ pub(crate) fn lay_out_lines(
 ) -> TextInteractionLayout {
     debug_assert!(!lines.is_empty() && lines.end <= index.len());
     let window_bytes = index.line_bytes(lines.start).start..index.line_bytes(lines.end - 1).end;
-    let text = index.text()[window_bytes.clone()].to_owned();
+    let text = index.text().slice(window_bytes.clone()).into_owned();
 
     let mut laid_lines: Vec<TextLine> = Vec::new();
     let mut clusters: Vec<TextCluster> = Vec::new();
@@ -108,7 +108,7 @@ pub(crate) fn lay_out_lines(
 
     for line in lines.clone() {
         let bytes = index.line_bytes(line);
-        let layout = layout_line(&index.text()[bytes.clone()]);
+        let layout = layout_line(&index.text().slice(bytes.clone()));
         // A layout of text that ends in a line feed ends in an empty line after it. A line
         // ending in a carriage return and a line feed has none: the shaper breaks only at
         // a lone line feed, so that is not a break to it, and the next hard line is the
@@ -160,7 +160,7 @@ pub(crate) fn lay_out_lines(
         if own == 1 {
             // A line that did not wrap: its width over its graphemes is how wide one is.
             let graphemes = index.graphemes_before(line + 1) - index.graphemes_before(line);
-            let line_feed = usize::from(index.text()[bytes.clone()].ends_with('\n'));
+            let line_feed = usize::from(index.text().byte_at(bytes.end.saturating_sub(1)) == Some(b'\n') && !bytes.is_empty());
             index.observe(graphemes.saturating_sub(line_feed), layout.lines[0].width);
         }
         y_offset += height;
@@ -238,7 +238,7 @@ mod tests {
     /// An index whose every line is exact, as it is once the whole text has been laid out.
     fn exact_index(ctx: &BuildContext, text: &str) -> Rc<LineIndex> {
         let metrics = LineMetrics { content_width: WIDTH, line_height: 20.0, advance: 8.0 };
-        let index = Rc::new(LineIndex::new(Arc::from(text), metrics));
+        let index = Rc::new(LineIndex::new(aimer_text_buffer::TextSnapshot::from_text(text), metrics));
         let _ = lay_out_lines(&index, 0..index.len(), &layout_line(ctx));
         index
     }
@@ -376,7 +376,7 @@ mod tests {
         let ctx = dummy_build_context(400.0, 300.0);
         let text = note();
         let metrics = LineMetrics { content_width: WIDTH, line_height: 20.0, advance: 8.0 };
-        let index = Rc::new(LineIndex::new(Arc::from(text.as_str()), metrics));
+        let index = Rc::new(LineIndex::new(aimer_text_buffer::TextSnapshot::from_text(text.as_str()), metrics));
         let estimated = index.total_height();
         assert!(!index.is_exact(1));
 

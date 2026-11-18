@@ -14,6 +14,7 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use aimer_text_buffer::TextSnapshot;
 use aimer_widget::{AnyWidget, Widget};
 
 use crate::input_field::highlight::HighlightContext;
@@ -134,7 +135,11 @@ impl std::fmt::Debug for TextEmbed {
 pub struct TextEmbedder {
     id: u64,
     embeds: Rc<dyn Fn(&str, &HighlightContext) -> Vec<TextEmbed>>,
+    window: Option<Rc<WindowFn>>,
 }
+
+/// A function that finds the embeds in a part of a text it is given whole, as a snapshot.
+type WindowFn = dyn Fn(&TextSnapshot, Range<usize>, &HighlightContext) -> Vec<TextEmbed>;
 
 impl TextEmbedder {
     /// Creates an embedder from a function that answers with the embeds of a text.
@@ -146,7 +151,58 @@ impl TextEmbedder {
         Self {
             id: NEXT_EMBEDDER_ID.fetch_add(1, Ordering::Relaxed),
             embeds: Rc::new(embeds),
+            window: None,
         }
+    }
+
+    /// Creates an embedder that finds the embeds of the part of a text that is on screen.
+    ///
+    /// A field with a text of megabytes asks for the embeds that touch the bytes it is about to
+    /// lay out, and the function answers with them, each whole: an embed that starts before the
+    /// range, or ends after it, is returned entire, and the field lays out all of its lines. The
+    /// function receives the whole text as a [`TextSnapshot`], which it can read any part of
+    /// without a copy of the rest. Embeds that touch no part of the range may be left out.
+    ///
+    /// A key must stay the same for the same block wherever the range starts, or the block's
+    /// widget is made again when it is scrolled to.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::TextEmbedder;
+    ///
+    /// // No embeds: the shape of the function is what matters here.
+    /// let embedder = TextEmbedder::windowed(|_text, _range, _context| Vec::new());
+    /// assert!(embedder.embeds("any text", &Default::default()).is_empty());
+    /// ```
+    #[inline]
+    pub fn windowed<F>(embeds: F) -> Self
+    where
+        F: Fn(&TextSnapshot, Range<usize>, &HighlightContext) -> Vec<TextEmbed> + 'static,
+    {
+        let window = Rc::new(embeds);
+        let whole = Rc::clone(&window);
+        Self {
+            id: NEXT_EMBEDDER_ID.fetch_add(1, Ordering::Relaxed),
+            embeds: Rc::new(move |text, context| whole(&TextSnapshot::from_text(text), 0..text.len(), context)),
+            window: Some(window),
+        }
+    }
+
+    /// The embeds of `range` of `text`, when this embedder was made to find those of a window.
+    pub(crate) fn embeds_window(
+        &self,
+        text: &TextSnapshot,
+        range: Range<usize>,
+        context: &HighlightContext,
+    ) -> Option<Vec<TextEmbed>> {
+        self.window.as_ref().map(|window| window(text, range, context))
+    }
+
+    /// Whether this embedder finds the embeds of a window of a text and not of all of it.
+    #[inline]
+    pub(crate) fn is_windowed(&self) -> bool {
+        self.window.is_some()
     }
 
     /// Runs the embedder over `text` for a cursor described by `context`.

@@ -3,6 +3,7 @@ pub(crate) mod caret_glide;
 pub(crate) mod chrome;
 pub mod context_menu;
 pub mod embed;
+pub mod gutter;
 pub mod highlight;
 mod line_highlight;
 #[cfg(test)]
@@ -925,7 +926,15 @@ impl TextField {
             on_blur: self.on_blur.clone(),
             read_only: self.read_only,
             key_filter: self.key_filter.clone(),
+            line_break_prefix: None,
             tab_spaces: None,
+            wrap: true,
+            line_numbers: None,
+            gutter_markers: None,
+            pointer_holes: None,
+            on_force_click: None,
+            line_bars: None,
+            current_line: None,
             padding: self.padding,
             chrome: self.chrome(),
             visual: None,
@@ -963,7 +972,7 @@ impl TextField {
     pub(crate) fn create_state_with_config(&self, mut config: RawFieldConfig) -> TextFieldState {
         let caret = CaretBlink::new();
         let visual = Rc::new(VisualFlags::new(
-            config.chrome.is_some() && config.controller.value().text().is_empty(),
+            config.chrome.is_some() && config.controller.value().is_empty(),
         ));
         config.visual = config.chrome.is_some().then(|| visual.clone());
         TextFieldState {

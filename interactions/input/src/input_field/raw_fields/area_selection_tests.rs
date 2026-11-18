@@ -70,3 +70,26 @@ fn a_collapsed_selection_has_no_anchor() {
 
     assert_eq!((field.cursor.selection_anchor(), field.cursor.offset()), (None, 4));
 }
+
+/// A field is asked to mirror the area on every layout pass. While the area says what the field already
+/// has, nothing changes, so the view is not taken back to the caret: a user who has scrolled away from
+/// the caret keeps the view where it is when the window is resized or activated again.
+#[test]
+fn mirroring_a_selection_that_is_already_the_cursors_does_not_scroll_back_to_it() {
+    let (field, participant) = field_in_an_area();
+    participant.set_range(4, 4);
+    field.sync_cursor_from_area();
+    assert!(field.reveal_caret.get(), "a selection that moved the caret is shown");
+
+    // The view was scrolled away: the reveal was taken, or cancelled by the wheel.
+    field.reveal_caret.set(false);
+    field.sync_cursor_from_area();
+    field.sync_cursor_from_area();
+    assert!(!field.reveal_caret.get(), "the same selection, mirrored again, asked for the caret to be shown");
+
+    // A selection that moves the caret is shown again.
+    participant.set_range(2, 8);
+    field.sync_cursor_from_area();
+    assert!(field.reveal_caret.get());
+    assert_eq!((field.cursor.selection_anchor(), field.cursor.offset()), (Some(2), 8));
+}

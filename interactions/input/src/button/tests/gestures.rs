@@ -41,6 +41,14 @@ impl Mounted {
         self.send(pointer, ElementEvent::PointerUp);
     }
 
+    /// The pressure of a press on the trackpad, at the spot the button is pressed at.
+    fn pressure(&mut self, pressure: f32, stage: aimer_events::element::PressureStage) -> bool {
+        let pos = at(1.0, 1.0).pos;
+        self.dispatcher
+            .dispatch(self.root.as_ref(), pos, &ElementEvent::Pressure { pos, pressure, stage })
+            .is_consumed()
+    }
+
     /// A press held for `duration` before the release.
     fn hold(&mut self, duration: Duration) {
         let pointer = at(1.0, 1.0);
@@ -129,4 +137,31 @@ async fn a_button_that_asked_for_a_long_press_still_gets_one() {
 
     assert_eq!(longs.get(), 1);
     assert_eq!(presses.get(), 0, "a long press is not also a press");
+}
+
+#[tokio::test]
+async fn a_button_that_asked_for_a_force_press_gets_one_for_each_deep_press() {
+    use aimer_events::element::PressureStage::{Click, Force, None as Off};
+    let (forced, on_force) = counter();
+    let (presses, on_press) = counter();
+    let mut button = Mounted::new(button_with(|button| button.on_press(on_press).on_force_press(on_force)));
+
+    assert!(!button.pressure(0.3, Click), "a light press is not a force press");
+    assert!(button.pressure(0.9, Force), "a deep one is taken, so what is behind the button does not act on it");
+    button.pressure(1.0, Force);
+    assert_eq!(forced.get(), 1, "however long it is held");
+    button.pressure(0.0, Off);
+    button.pressure(0.9, Force);
+    assert_eq!(forced.get(), 2, "and again after it has been let go");
+    button.click();
+    assert_eq!(presses.get(), 1, "an ordinary click is still a press, and the force press is not one");
+}
+
+#[tokio::test]
+async fn a_button_that_did_not_ask_for_a_force_press_leaves_the_pressure_to_what_is_behind_it() {
+    use aimer_events::element::PressureStage::Force;
+    let (presses, on_press) = counter();
+    let mut button = Mounted::new(button_with(|button| button.on_press(on_press)));
+    assert!(!button.pressure(1.0, Force), "the pressure was not the button's to take");
+    assert_eq!(presses.get(), 0, "and it is not a press");
 }

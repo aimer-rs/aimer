@@ -187,6 +187,119 @@ fn scrolling_to_the_middle_paints_the_middle() {
     assert!(index.top(window.1.min(index.len() - 1)) >= f64::from(field.scroll_y.get()) + viewport);
 }
 
+/// A field that fills the height it is given (`expand`) and scrolls inside it, with no cap on its
+/// lines: a code editor's. Nothing outside it says what is shown, so the window follows its own
+/// scroll.
+fn expanding_field(text: &str) -> RawTextField {
+    let controller = TextFieldController::with_initial(text);
+    let mut field = focused_multiline_field(controller, 3);
+    field.text_style = field.text_style.text_overflow(TextOverflow::Wrap);
+    field.max_lines = None;
+    field.expand = super::ExpandDirection::Vertical;
+    field.window_threshold = 64 * 1024;
+    field.cursor.set_offset(0);
+    field.reveal_caret.set(false);
+    field
+}
+
+/// The number in the first painted line that has one (some of the note's lines are empty).
+fn first_line_number(runs: &[(String, f32, Option<f32>)]) -> usize {
+    runs.iter()
+        .flat_map(|run| run.0.lines())
+        .find_map(|line| line.strip_prefix("Line ")?.split(':').next()?.parse().ok())
+        .expect("a numbered line is painted")
+}
+
+#[test]
+fn an_expanding_windowed_field_paints_what_it_is_scrolled_to() {
+    let text = note(3000);
+    let field = expanding_field(&text);
+    let ctx = dummy_build_context(800.0, 600.0);
+    let top = frame(&field, &ctx);
+    assert_eq!(first_line_number(&top), 0);
+    let index = index_of(&field);
+    assert!(index.total_height() > 30_000.0);
+
+    for fraction in [0.25, 0.5, 0.9] {
+        field.scroll_y.set((index.total_height() * fraction) as f32);
+        let runs = frame(&field, &ctx);
+        let number = first_line_number(&runs);
+        assert!(
+            (number as f64) > 3000.0 * fraction * 0.8 - 100.0,
+            "scrolled to {fraction} of the note, painted from line {number}"
+        );
+        let window = field.window_lines.get().unwrap();
+        assert!(index.top(window.0) <= f64::from(field.scroll_y.get()), "{window:?}");
+        assert!(
+            index.top(window.1.min(index.len() - 1)) >= f64::from(field.scroll_y.get()) + 600.0,
+            "the window {window:?} does not reach the bottom of what is shown"
+        );
+    }
+}
+
+#[test]
+fn an_expanding_windowed_field_follows_its_viewport_when_it_grows_and_shrinks() {
+    // The window was laid out for a small viewport, which then grows (a window made full screen) and
+    // shrinks again: the lines laid out always cover what is shown.
+    let text = note(3000);
+    let field = expanding_field(&text);
+    let small = dummy_build_context(800.0, 300.0);
+    frame(&field, &small);
+    let big = dummy_build_context(800.0, 3000.0);
+    for (ctx, viewport) in [(&big, 3000.0_f64), (&small, 300.0), (&big, 3000.0)] {
+        field.scroll_y.set(0.0);
+        frame(&field, ctx);
+        field.scroll_y.set(2000.0);
+        frame(&field, ctx);
+        let index = index_of(&field);
+        let window = field.window_lines.get().unwrap();
+        assert!(
+            index.top(window.1.min(index.len() - 1)) >= 2000.0 + viewport,
+            "viewport {viewport}: window {window:?} stops at {}",
+            index.top(window.1.min(index.len() - 1))
+        );
+    }
+}
+
+#[test]
+fn regaining_focus_does_not_scroll_back_to_the_caret() {
+    // The window is deactivated and activated again (full screen does it): the field is told it lost
+    // and regained focus, and the view stays where the user scrolled it to, not on the caret.
+    for threshold in [64 * 1024, usize::MAX] {
+        let text = note(3000);
+        let field = field(&text, threshold);
+        field.cursor.set_offset(0);
+        let ctx = dummy_build_context(800.0, 600.0);
+        frame(&field, &ctx);
+        field.reveal_caret.set(false);
+        field.scroll_y.set(3000.0);
+        frame(&field, &ctx);
+        let scrolled = field.scroll_y.get();
+        assert!(scrolled > 1000.0, "{scrolled}");
+
+        field.set_focused(false);
+        field.set_focused(true);
+        frame(&field, &ctx);
+        assert_eq!(field.scroll_y.get(), scrolled, "threshold {threshold}: focus brought the view back to the caret");
+    }
+}
+
+#[test]
+fn a_click_or_a_key_still_scrolls_to_the_caret() {
+    let text = note(3000);
+    let field = field(&text, 64 * 1024);
+    field.cursor.set_offset(0);
+    let ctx = dummy_build_context(800.0, 600.0);
+    frame(&field, &ctx);
+    field.reveal_caret.set(false);
+    field.scroll_y.set(3000.0);
+    frame(&field, &ctx);
+    // Typing puts the caret on the line being typed on, wherever the view was.
+    let _ = field.on_event(&commit("x"));
+    frame(&field, &ctx);
+    assert!(field.scroll_y.get() < 3000.0, "{}", field.scroll_y.get());
+}
+
 #[test]
 fn the_text_stays_put_when_what_was_estimated_above_it_is_corrected() {
     let text = note(1500);
@@ -199,7 +312,7 @@ fn the_text_stays_put_when_what_was_estimated_above_it_is_corrected() {
     // An index that thinks graphemes are four times as wide as they are, so every
     // line above the viewport is much taller than it is.
     let metrics = LineMetrics { advance: before.metrics().advance * 4.0, ..before.metrics() };
-    let wrong = Rc::new(LineIndex::new(Arc::clone(before.text()), metrics));
+    let wrong = Rc::new(LineIndex::new(before.text().clone(), metrics));
     *field.line_index.borrow_mut() = Some(Rc::clone(&wrong));
     field.window_lines.set(None);
     field.window_anchor.set(None);
@@ -473,9 +586,199 @@ fn a_windowed_field_leaves_the_selection_area_alone() {
     assert_eq!(windowed.cursor.offset(), 0, "a windowed field has no layout of its text for an area to select");
 }
 
+#[test]
+fn a_drag_selects_in_a_windowed_field_inside_a_selection_area_as_it_does_in_one_laid_out_whole() {
+    use aimer_attribute::Vec2d;
+    use aimer_events::pointer::{PointerButton, PointerInfo};
+
+    let text = note(400);
+    let (whole, _) = field_in_an_area(&text, usize::MAX);
+    let (windowed, _) = field_in_an_area(&text, 0);
+    let ctx = dummy_build_context(400.0, 200.0);
+    let mut selections = Vec::new();
+    for field in [&whole, &windowed] {
+        field.cursor.set_offset(0);
+        frame(field, &ctx);
+        let from = Vec2d { x: 30.0, y: 20.0 };
+        let to = Vec2d { x: 220.0, y: 60.0 };
+        let _ = field.on_event(&ElementEvent::PointerDown(PointerInfo::mouse(from, PointerButton::Primary)));
+        field.update(&ctx);
+        let _ = field.on_event(&ElementEvent::PointerMove(PointerInfo::mouse(to, PointerButton::Primary)));
+        field.update(&ctx);
+        let _ = field.on_event(&ElementEvent::PointerUp(PointerInfo::mouse(to, PointerButton::Primary)));
+        field.update(&ctx);
+        selections.push((field.cursor.selection_anchor(), field.cursor.offset()));
+    }
+    let (anchor, focus) = selections[1];
+    assert!(anchor.is_some() && anchor != Some(focus), "the windowed field selected nothing: {selections:?}");
+    assert_eq!(selections[0], selections[1], "a drag selects the same text either way");
+}
+
+// ── Shift and a click ───────────────────────────────────────────────────────────
+
+/// Presses and releases the primary button at `at`, one frame each, as the event loop does.
+fn click_at(field: &RawTextField, ctx: &BuildContext<'_>, at: (f32, f32)) {
+    use aimer_attribute::Vec2d;
+    use aimer_events::pointer::{PointerButton, PointerInfo};
+
+    let at = Vec2d { x: at.0, y: at.1 };
+    let _ = field.on_event(&ElementEvent::PointerDown(PointerInfo::mouse(at, PointerButton::Primary)));
+    field.update(ctx);
+    let _ = field.on_event(&ElementEvent::PointerUp(PointerInfo::mouse(at, PointerButton::Primary)));
+    field.update(ctx);
+}
+
+fn hold_shift(held: bool) {
+    use aimer_events::element::Modifiers;
+    Modifiers::set_current(Modifiers { shift: held, ..Modifiers::default() });
+}
+
+/// The selection as (anchor, focus), the anchor being the caret when nothing is selected.
+fn selection_of(field: &RawTextField) -> (usize, usize) {
+    (field.cursor.selection_anchor().unwrap_or(field.cursor.offset()), field.cursor.offset())
+}
+
+#[test]
+fn a_shift_click_selects_from_the_caret_to_where_it_lands_in_a_field_laid_out_whole_or_windowed() {
+    let text = note(400);
+    for (what, threshold) in [("laid out whole", usize::MAX), ("windowed", 0)] {
+        let field = field(&text, threshold);
+        let ctx = dummy_build_context(800.0, 600.0);
+        field.cursor.set_offset(0);
+        frame(&field, &ctx);
+
+        // A plain click puts the caret, with nothing selected.
+        hold_shift(false);
+        click_at(&field, &ctx, (60.0, 20.0));
+        let caret = field.cursor.offset();
+        assert!(field.cursor.selection_range().is_none(), "{what}: a click selects nothing");
+
+        // Shift and a click somewhere else selects from the caret to there.
+        hold_shift(true);
+        click_at(&field, &ctx, (220.0, 90.0));
+        hold_shift(false);
+        let (anchor, focus) = selection_of(&field);
+        assert_eq!(anchor, caret, "{what}: the selection starts where the caret was");
+        assert!(focus > anchor, "{what}: and runs to the click: {anchor}..{focus}");
+
+        // The same selection a drag from the first point to the second makes.
+        let dragged = self::field(&text, threshold);
+        dragged.cursor.set_offset(0);
+        frame(&dragged, &ctx);
+        {
+            use aimer_attribute::Vec2d;
+            use aimer_events::pointer::{PointerButton, PointerInfo};
+            let (from, to) = (Vec2d { x: 60.0, y: 20.0 }, Vec2d { x: 220.0, y: 90.0 });
+            let _ = dragged.on_event(&ElementEvent::PointerDown(PointerInfo::mouse(from, PointerButton::Primary)));
+            dragged.update(&ctx);
+            let _ = dragged.on_event(&ElementEvent::PointerMove(PointerInfo::mouse(to, PointerButton::Primary)));
+            dragged.update(&ctx);
+            let _ = dragged.on_event(&ElementEvent::PointerUp(PointerInfo::mouse(to, PointerButton::Primary)));
+            dragged.update(&ctx);
+        }
+        assert_eq!(selection_of(&field), selection_of(&dragged), "{what}: as a drag does");
+    }
+}
+
+#[test]
+fn a_shift_click_keeps_the_anchor_and_moves_the_end_of_a_selection_either_way() {
+    let text = note(400);
+    for (what, threshold) in [("laid out whole", usize::MAX), ("windowed", 0)] {
+        let field = field(&text, threshold);
+        let ctx = dummy_build_context(800.0, 600.0);
+        field.cursor.set_offset(0);
+        frame(&field, &ctx);
+        // A selection made from the keyboard: 40 to 60.
+        field.cursor.set_selection_anchor(Some(40));
+        field.cursor.set_offset(60);
+
+        hold_shift(true);
+        click_at(&field, &ctx, (250.0, 110.0));
+        let (anchor, focus) = selection_of(&field);
+        assert_eq!(anchor, 40, "{what}: the anchor stays");
+        assert!(focus > 60, "{what}: the end moves forward to the click ({focus})");
+
+        // Back before the anchor: the selection turns around it.
+        click_at(&field, &ctx, (6.0, 6.0));
+        hold_shift(false);
+        let (anchor, focus) = selection_of(&field);
+        assert_eq!(anchor, 40, "{what}: still the anchor");
+        assert!(focus < 40, "{what}: the end is before it now ({focus})");
+    }
+}
+
+#[test]
+fn a_click_without_shift_still_clears_the_selection_and_a_shift_click_is_not_a_double_click() {
+    let text = note(400);
+    let field = field(&text, 0);
+    let ctx = dummy_build_context(800.0, 600.0);
+    field.cursor.set_offset(0);
+    frame(&field, &ctx);
+    field.cursor.set_selection_anchor(Some(10));
+    field.cursor.set_offset(30);
+
+    hold_shift(false);
+    click_at(&field, &ctx, (120.0, 60.0));
+    assert!(field.cursor.selection_range().is_none(), "a plain click clears the selection");
+
+    // Two shift clicks in the same place, quickly, are not a double click that selects a word.
+    hold_shift(true);
+    click_at(&field, &ctx, (200.0, 100.0));
+    let first = selection_of(&field);
+    click_at(&field, &ctx, (200.0, 100.0));
+    hold_shift(false);
+    assert_eq!(selection_of(&field), first, "the second shift click extends to the same place: it selects no word");
+}
+
+#[test]
+fn shift_does_not_change_what_a_finger_does() {
+    use aimer_attribute::Vec2d;
+    use aimer_events::pointer::PointerInfo;
+
+    let text = note(400);
+    let field = field(&text, 0);
+    let ctx = dummy_build_context(800.0, 600.0);
+    field.cursor.set_offset(0);
+    frame(&field, &ctx);
+    field.cursor.set_selection_anchor(Some(10));
+    field.cursor.set_offset(30);
+
+    hold_shift(true);
+    let at = Vec2d { x: 120.0, y: 60.0 };
+    let _ = field.on_event(&ElementEvent::PointerDown(PointerInfo::touch(at, 1)));
+    field.update(&ctx);
+    let _ = field.on_event(&ElementEvent::PointerUp(PointerInfo::touch(at, 1)));
+    field.update(&ctx);
+    hold_shift(false);
+    assert!(field.cursor.selection_range().is_none(), "a touch has no shift: it places the caret");
+}
+
+#[test]
+fn a_shift_click_extends_the_selection_in_a_field_inside_a_selection_area() {
+    let text = note(40);
+    let (field, _) = field_in_an_area(&text, usize::MAX);
+    let ctx = dummy_build_context(400.0, 200.0);
+    field.cursor.set_offset(0);
+    frame(&field, &ctx);
+
+    hold_shift(false);
+    click_at(&field, &ctx, (40.0, 20.0));
+    let caret = field.cursor.offset();
+    hold_shift(true);
+    click_at(&field, &ctx, (200.0, 60.0));
+    hold_shift(false);
+    let (anchor, focus) = selection_of(&field);
+    assert_eq!(anchor, caret);
+    assert!(focus > anchor, "{anchor}..{focus}");
+    // And it stays so once the area has been asked what it holds.
+    field.sync_cursor_from_area();
+    assert_eq!(selection_of(&field), (anchor, focus));
+}
+
 // ── Styled text and embeds ─────────────────────────────────────────────────────
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::ops::Range;
 
 use aimer_text::{SpanStyle, StyledRange};
 use aimer_widget::FocusNode;
@@ -678,6 +981,157 @@ fn a_windowed_note_with_embeds_is_as_tall_as_the_whole_one() {
     );
 }
 
+// ── Highlighters and embedders made for a window ────────────────────────────────
+
+/// [`markdown_highlighter`] as one that reads a window: the lines from the one that holds the
+/// start of the range, to the one that holds its end. `asked` collects the ranges it is given.
+fn windowed_markdown_highlighter(asked: Rc<RefCell<Vec<Range<usize>>>>) -> TextHighlighter {
+    let lines = markdown_highlighter();
+    TextHighlighter::windowed(move |text, range, _context| {
+        asked.borrow_mut().push(range.clone());
+        let start = text.line_range(text.byte_to_line(range.start)).start;
+        let end = text.line_range(text.byte_to_line(range.end.saturating_sub(1))).end;
+        let slice = text.slice(start..end);
+        lines
+            .highlight(&slice)
+            .into_iter()
+            .map(|styled| StyledRange::new(styled.range.start + start..styled.range.end + start, styled.style))
+            .collect()
+    })
+}
+
+#[test]
+fn a_windowed_highlighter_is_asked_for_the_lines_that_are_laid_out_and_no_others() {
+    let text = markdown(1200);
+    assert!(text.len() > 150_000);
+    let asked = Rc::new(RefCell::new(Vec::new()));
+    let field = rich_field(&text, 64 * 1024, Some(windowed_markdown_highlighter(Rc::clone(&asked))), None);
+    let by_line = rich_field(&text, 64 * 1024, Some(markdown_highlighter()), None);
+    let ctx = dummy_build_context(800.0, 600.0);
+
+    let runs = frame(&field, &ctx);
+
+    let asked = asked.borrow().clone();
+    assert!(!asked.is_empty(), "it was asked");
+    for range in &asked {
+        assert!(range.len() < text.len() / 5, "{range:?} of {}: a window, not the note", text.len());
+    }
+    // The same note styled a line at a time looks the same: the headings are as tall.
+    assert_eq!(runs, frame(&by_line, &ctx));
+    assert!(runs.iter().any(|run| run.0.contains("Heading 0")));
+}
+
+#[test]
+fn a_windowed_highlighter_is_not_asked_again_for_a_frame_that_changes_nothing() {
+    let text = markdown(1200);
+    let asked = Rc::new(RefCell::new(Vec::new()));
+    let field = rich_field(&text, 64 * 1024, Some(windowed_markdown_highlighter(Rc::clone(&asked))), None);
+    let ctx = dummy_build_context(800.0, 600.0);
+    frame(&field, &ctx);
+    let first = asked.borrow().len();
+    for _ in 0..3 {
+        frame(&field, &ctx);
+    }
+    assert_eq!(asked.borrow().len(), first);
+}
+
+#[test]
+fn a_windowed_highlighter_follows_an_edit_in_the_window() {
+    let text = markdown(1200);
+    let asked = Rc::new(RefCell::new(Vec::new()));
+    let field = rich_field(&text, 64 * 1024, Some(windowed_markdown_highlighter(Rc::clone(&asked))), None);
+    let ctx = dummy_build_context(800.0, 600.0);
+    frame(&field, &ctx);
+    let before = asked.borrow().len();
+
+    field.cursor.set_offset(0);
+    let _ = field.on_event(&commit("## "));
+    let runs = frame(&field, &ctx);
+
+    assert!(asked.borrow().len() > before, "the edited text is styled again");
+    assert!(asked.borrow().iter().all(|range| range.len() < text.len() / 5));
+    assert!(runs.iter().any(|run| run.0.contains("## ") || run.0.contains("Heading")));
+}
+
+/// [`fence_embedder`] as one that reads a window: blocks start at a line that begins "intro", so
+/// the range is read from the last of them before it, and a block is a whole fence. The key of a
+/// block is its number, wherever the range starts.
+fn windowed_fence_embedder(height: f32, asked: Rc<RefCell<Vec<Range<usize>>>>) -> TextEmbedder {
+    TextEmbedder::windowed(move |text, range, _context| {
+        asked.borrow_mut().push(range.clone());
+        let from = text.slice(range.start.saturating_sub(300)..range.start);
+        let start = range.start.saturating_sub(300) + from.rfind("intro").unwrap_or(0);
+        let start = if range.start < 300 { 0 } else { start };
+        let end = (range.end + 300).min(text.len());
+        let end = text.slice(range.end..end).find("after").map_or(end, |after| range.end + after);
+        let slice = text.slice(start..end);
+        let mut embeds = Vec::new();
+        let mut open: Option<usize> = None;
+        let mut at = start;
+        for line in slice.split_inclusive('\n') {
+            if line.starts_with("```") {
+                match open.take() {
+                    None => open = Some(at),
+                    Some(first) => {
+                        let number = text.slice(first..at).trim_start_matches("```\ncode ").trim().parse::<u64>().unwrap_or(0);
+                        let probe = Probe::new(height, Rc::default());
+                        embeds.push(TextEmbed::new(first..at + line.trim_end().len(), number, move || probe.clone()));
+                    }
+                }
+            }
+            at += line.len();
+        }
+        embeds
+    })
+}
+
+#[test]
+fn a_windowed_embedder_is_asked_for_the_lines_that_are_laid_out_and_places_only_those() {
+    let text = embedded_note(1500);
+    let asked = Rc::new(RefCell::new(Vec::new()));
+    let field = rich_field(&text, 64 * 1024, None, Some(windowed_fence_embedder(60.0, Rc::clone(&asked))));
+    let ctx = dummy_build_context(800.0, 600.0);
+
+    frame(&field, &ctx);
+    field.embeds.sync(1.0);
+
+    let first = field.embeds.len();
+    assert!(first > 0, "the embeds at the top are placed");
+    assert!(first < 100, "{first} of 1500 embeds were placed");
+    assert!(!asked.borrow().is_empty());
+    for range in asked.borrow().iter() {
+        assert!(range.len() < text.len() / 5, "{range:?}: a window, not the note");
+    }
+    assert!(field.embeds.placement_of(0).is_some(), "the first block is at the top");
+
+    // Scrolled to the middle, the embeds there are the ones placed, and by the same keys.
+    let index = index_of(&field);
+    field.reveal_caret.set(false);
+    field.scroll_y.set((index.total_height() / 2.0) as f32);
+    frame(&field, &ctx);
+    field.embeds.sync(1.0);
+    let placed = (0..1500u64).filter(|&block| field.embeds.placement_of(block).is_some()).collect::<Vec<_>>();
+    assert!(!placed.is_empty() && placed.len() < 100, "{placed:?}");
+    assert!(placed.iter().all(|&block| block > 100), "{placed:?}: the middle of the note");
+    assert!(field.embeds.placement_of(0).is_none());
+}
+
+#[test]
+fn a_windowed_note_with_embeds_is_as_tall_as_the_whole_one_with_windowed_readers() {
+    let text = embedded_note(80);
+    let whole = rich_field(&text, usize::MAX, None, Some(fence_embedder(60.0, Rc::default())));
+    let windowed = rich_field(&text, 0, None, Some(windowed_fence_embedder(60.0, Rc::default())));
+    let ctx = dummy_build_context(800.0, 600.0);
+    frame(&whole, &ctx);
+    lay_everything_out(&windowed, &ctx);
+    assert!(
+        (windowed.scroll_y_extent.get() - whole.scroll_y_extent.get()).abs() < 1.5,
+        "{} against {}",
+        windowed.scroll_y_extent.get(),
+        whole.scroll_y_extent.get()
+    );
+}
+
 // ── The caret of a field scrolled away from it ─────────────────────────────────
 
 #[test]
@@ -711,6 +1165,31 @@ fn a_caret_scrolled_out_of_its_field_is_not_drawn_outside_it() {
         field.scroll_y.set(0.0);
         frame(&field, &ctx);
         assert!(!field.caret_context.is_available(), "{what}: the caret is below the viewport");
+    }
+}
+
+#[test]
+fn a_caret_is_told_where_the_visible_part_of_its_field_ends_so_that_what_hangs_from_it_can_stay_on_screen() {
+    let text = note(400);
+    for (what, threshold) in [("laid out whole", usize::MAX), ("windowed", 0)] {
+        let field = field(&text, threshold);
+        field.cursor.set_offset(0);
+        let ctx = dummy_build_context(800.0, 600.0);
+        frame(&field, &ctx);
+        let (right, bottom) = field
+            .caret_context
+            .visible_extent()
+            .unwrap_or_else(|| panic!("{what}: a field that has been laid out says where it ends"));
+        let caret = field.caret_context.geometry();
+        assert!(caret.x >= 0.0 && caret.x + caret.width <= right + 0.5, "{what}: the caret is inside {right} across: {caret:?}");
+        assert!(caret.y >= 0.0 && caret.y + caret.height <= bottom + 0.5, "{what}: the caret is inside {bottom} down: {caret:?}");
+        // The extent is the visible part: four hundred lines are far taller than the 600 the window gives.
+        assert!(bottom <= 600.5, "{what}: the visible part ends at {bottom}, not at the end of the text");
+        // A caret that has scrolled out of view does not change where the visible part ends.
+        field.reveal_caret.set(false);
+        field.scroll_y.set(2000.0);
+        frame(&field, &ctx);
+        assert_eq!(field.caret_context.visible_extent(), Some((right, bottom)), "{what}");
     }
 }
 
