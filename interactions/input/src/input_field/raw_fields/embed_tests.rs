@@ -747,3 +747,49 @@ fn moves_that_arrive_before_the_press_is_drawn_do_not_replace_it() {
     assert!(anchor >= 19, "the drag began on the last line, but is anchored at {anchor} (head {focus})");
     assert!(focus < 6, "and its head followed the pointer up to the title: {focus}");
 }
+
+/// Where each embed's box goes is where a search from the first cluster for the cluster at the start of
+/// its range finds it: the bisection that finds it among the many clusters of a long text gives the same
+/// boxes, including for a range that starts in a cluster and for one that no cluster starts.
+#[test]
+fn the_boxes_of_many_embeds_are_where_a_search_for_the_cluster_of_each_puts_them() {
+    // A fenced block every other line, and between them lines of code.
+    let mut text = String::new();
+    let mut blocks = Vec::new();
+    for n in 0..40 {
+        text.push_str(&format!("code {n} caf\u{e9} \u{4f60}\u{597d}\n"));
+        if n % 4 == 0 {
+            let start = text.len();
+            text.push_str("```\nbody\n```\n");
+            blocks.push(start..start + "```\nbody\n```".len());
+        }
+    }
+    let embedded = blocks.clone();
+    let embedder = TextEmbedder::new(move |_, _| {
+        embedded
+            .iter()
+            .enumerate()
+            .map(|(index, range)| {
+                let probe = Probe::new(30.0, Rc::default());
+                TextEmbed::new(range.clone(), index as u64 + 1, move || probe.clone())
+            })
+            .collect()
+    });
+    let (host, context) = host(Some(embedder), TextEditingController::with_text(&text));
+    let context = unbounded(context);
+    host.sync_paint_state(&context);
+    host.update(&context);
+    let geometry = host.field.geometry_cache.latest().expect("the field laid its text out");
+    let rects = geometry.embed_rects();
+    assert_eq!(rects.len(), blocks.len(), "a box for each embed");
+    let layout = geometry.interaction.as_ref().expect("an interaction layout");
+    let y_base = geometry.window.as_ref().map_or(0.0, |window| window.y_base);
+    for (index, range) in blocks.iter().enumerate() {
+        // The reference is the search from the front.
+        let cluster = layout.clusters.iter().find(|cluster| cluster.text_range.start == range.start).expect("a cluster starts the block");
+        let rect = rects.iter().find(|rect| rect.key == index as u64 + 1).expect("the embed has a box");
+        assert_eq!(rect.x, cluster.start_x.min(cluster.end_x), "block {index}");
+        assert_eq!(rect.top, cluster.start_y - rect.height + y_base, "block {index}");
+    }
+    assert!(rects.windows(2).all(|pair| pair[0].top < pair[1].top), "boxes go down the text in the order of the embeds");
+}

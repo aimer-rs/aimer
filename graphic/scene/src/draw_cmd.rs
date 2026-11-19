@@ -30,6 +30,8 @@ mod render_order_tests;
 #[cfg(test)]
 mod sync_damage_tests;
 #[cfg(test)]
+mod sync_churn_tests;
+#[cfg(test)]
 mod sync_membership_tests;
 mod escape_index;
 mod subtree_extent;
@@ -1198,6 +1200,8 @@ impl RenderTree {
         // synchronization, and a resize synchronizes the whole window.
         let mut seen = vec![false; tree.nodes.len()];
         let mut ids = Vec::with_capacity(nodes.len());
+        // Where each listed node is in `tree.nodes` now, for the slow path to take it from there.
+        let mut positions: Vec<Option<usize>> = Vec::with_capacity(nodes.len());
         let mut next_id = tree.next_id;
 
         for (index, spec) in nodes.iter().enumerate() {
@@ -1220,9 +1224,11 @@ impl RenderTree {
                 if mem::replace(&mut seen[position], true) {
                     return Err(RenderTreeError::DuplicateNode(id));
                 }
+                positions.push(Some(position));
                 id
             } else {
                 next_id = next_id.checked_add(1).expect("render node IDs exhausted");
+                positions.push(None);
                 RenderNodeId(next_id)
             };
             ids.push(id);
@@ -1337,15 +1343,24 @@ impl RenderTree {
         let mut structural_damage_ids = structural_damage_ids.into_iter().collect::<Vec<_>>();
         structural_damage_ids.sort_unstable_by_key(|id| id.get());
         let old_damage = tree.visible_subtree_bounds_of(&structural_damage_ids);
-        let mut previous = mem::take(&mut tree.nodes)
+        // The nodes the list keeps are taken from where they are, by the positions found while it was
+        // validated, and the ones it leaves out stay behind and are dropped. Hashing every node of the
+        // tree into a map and out again was most of the cost of a window whose rows come and go.
+        let mut previous: Vec<Option<RenderNode>> = mem::take(&mut tree.nodes)
             .into_iter()
-            .map(|node| (node.id, node))
-            .collect::<HashMap<_, _>>();
+            .map(Some)
+            .collect();
         let mut synchronized = Vec::with_capacity(nodes.len());
         let mut clip_escape_count = 0;
         for (index, spec) in nodes.iter().enumerate() {
             let id = ids[index];
-            let mut node = previous.remove(&id).unwrap_or_else(|| RenderNode {
+            let kept = positions[index].map(|position| {
+                // `seen` refused a list that named a node twice, so each position is taken once.
+                previous[position]
+                    .take()
+                    .expect("a node is listed once")
+            });
+            let mut node = kept.unwrap_or_else(|| RenderNode {
                 id,
                 parent: None,
                 children: Vec::new(),
@@ -1381,12 +1396,12 @@ impl RenderTree {
         tree.geometry_edits.get_mut().overflow();
         tree.nodes = synchronized;
         tree.clip_escape_count = clip_escape_count;
-        tree.indices = tree
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(index, node)| (node.id, index))
-            .collect();
+        // The positions are all new, but the table that holds them is not: it is emptied and filled
+        // again where it is, which keeps its memory.
+        let DrawCommandList { nodes: placed, indices, .. } = &mut *tree;
+        indices.clear();
+        indices.reserve(placed.len());
+        indices.extend(placed.iter().enumerate().map(|(index, node)| (node.id, index)));
         tree.roots = roots;
         tree.next_id = next_id;
 
@@ -1881,6 +1896,18 @@ impl RenderTree {
     #[inline]
     pub fn geometry_revision(&self) -> u64 {
         self.draw_cmd.borrow().geometry_revision
+    }
+
+    /// A counter that changes whenever the parent/child structure of the tree can have: a node is
+    /// added, or the structure is synchronized.
+    ///
+    /// What is worked out from [`Self::parent_of`] (the chain of ancestors of a node) is current while
+    /// this is unchanged. Unlike [`Self::geometry_revision`] it does not move when a node is only
+    /// painted into or laid out again, so it stays still through the walk of a frame. It can advance
+    /// when nothing moved.
+    #[inline]
+    pub fn topology_revision(&self) -> u64 {
+        self.draw_cmd.borrow().topology_revision
     }
 
     /// Returns an element's current world-space layout bounds.

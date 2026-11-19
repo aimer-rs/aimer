@@ -6,6 +6,8 @@ use std::rc::Rc;
 use winit::window::{Window, WindowAttributes};
 
 #[cfg(target_os = "macos")]
+mod fullscreen_titlebar;
+#[cfg(target_os = "macos")]
 mod traffic_lights;
 
 type WindowCreated = Box<dyn for<'window> FnOnce(MacosWindowHandle<'window>)>;
@@ -122,6 +124,7 @@ fn resolve_drag_band(
 pub struct MacosWindowing {
     movable_by_window_background: Option<bool>,
     titlebar_transparent: Option<bool>,
+    fullscreen_titlebar_transparent: Option<bool>,
     title_hidden: Option<bool>,
     titlebar_hidden: Option<bool>,
     titlebar_buttons_hidden: Option<bool>,
@@ -144,6 +147,9 @@ pub struct MacosWindowing {
     /// belongs to the one window this was created for.
     #[cfg(target_os = "macos")]
     traffic_light_keeper: Option<traffic_lights::TrafficLightKeeper>,
+    /// Keeps the full-screen titlebar's backdrop clear; belongs to the one window this was created for.
+    #[cfg(target_os = "macos")]
+    fullscreen_titlebar: Option<fullscreen_titlebar::FullscreenTitlebar>,
     on_created: Option<WindowCreated>,
 }
 
@@ -154,6 +160,7 @@ impl MacosWindowing {
         Self {
             movable_by_window_background: None,
             titlebar_transparent: None,
+            fullscreen_titlebar_transparent: None,
             title_hidden: None,
             titlebar_hidden: None,
             titlebar_buttons_hidden: None,
@@ -169,6 +176,8 @@ impl MacosWindowing {
             traffic_light_layout_state: TrafficLightLayoutState::default(),
             #[cfg(target_os = "macos")]
             traffic_light_keeper: None,
+            #[cfg(target_os = "macos")]
+            fullscreen_titlebar: None,
             on_created: None,
         }
     }
@@ -187,6 +196,27 @@ impl MacosWindowing {
     #[inline]
     pub fn titlebar_transparent(mut self, transparent: bool) -> Self {
         self.titlebar_transparent = Some(transparent);
+        self
+    }
+
+    /// Controls whether the titlebar that macOS shows over a full-screen window draws a background.
+    ///
+    /// [`Self::titlebar_transparent`] only covers the window as it is on the desktop. In full screen macOS hides the
+    /// titlebar and shows it again, with the traffic lights and the menu bar, when the pointer reaches the top edge, in a
+    /// window of its own with a translucent gray backdrop, which covers the top of the content. With this on the backdrop
+    /// is clear, so the lights float over the application's own top strip, as they do on the desktop. Combine it with
+    /// [`Self::fullsize_content_view`] and keep the lights' corner of the strip free.
+    ///
+    /// When [`Self::traffic_light_position`] is set the lights also stay where it puts them in full screen, and do not
+    /// wait for the pointer to reach the top. The titlebar's own lights are hidden while the window is full screen, and
+    /// lights of the window's own are shown in their place: gray, and colored with their glyphs while the pointer is over
+    /// them, with the minimize light disabled, as a window in full screen cannot be minimized. They go when the window
+    /// leaves full screen. The titlebar's own window no longer takes the mouse, so what is under it is clicked.
+    ///
+    /// This setting has no effect outside macOS. The default is `false`.
+    #[inline]
+    pub fn fullscreen_titlebar_transparent(mut self, transparent: bool) -> Self {
+        self.fullscreen_titlebar_transparent = Some(transparent);
         self
     }
 
@@ -320,6 +350,7 @@ impl MacosWindowing {
         Self {
             movable_by_window_background: self.movable_by_window_background,
             titlebar_transparent: self.titlebar_transparent,
+            fullscreen_titlebar_transparent: self.fullscreen_titlebar_transparent,
             title_hidden: self.title_hidden,
             titlebar_hidden: self.titlebar_hidden,
             titlebar_buttons_hidden: self.titlebar_buttons_hidden,
@@ -334,6 +365,8 @@ impl MacosWindowing {
             traffic_light_layout_state: TrafficLightLayoutState::default(),
             #[cfg(target_os = "macos")]
             traffic_light_keeper: None,
+            #[cfg(target_os = "macos")]
+            fullscreen_titlebar: None,
             on_created: None,
         }
     }
@@ -490,12 +523,17 @@ impl MacosWindowing {
         if self.traffic_light_position.is_none()
             && self.on_created.is_none()
             && !self.framework_owns_titlebar_drag()
+            && self.fullscreen_titlebar_transparent != Some(true)
         {
             return;
         }
         let Some(native_window) = native_window(window) else {
             return;
         };
+        if self.fullscreen_titlebar_transparent == Some(true) {
+            self.fullscreen_titlebar =
+                Some(fullscreen_titlebar::FullscreenTitlebar::watch(&native_window, self.traffic_light_position));
+        }
 
         let traffic_light_height = self
             .traffic_light_position
@@ -534,6 +572,14 @@ impl MacosWindowing {
     #[doc(hidden)]
     #[cfg(target_os = "macos")]
     pub fn window_layout_changed(&mut self, window: &Window) {
+        if self.fullscreen_titlebar_transparent == Some(true)
+            && let Some(native_window) = native_window(window)
+        {
+            if fullscreen_titlebar::is_full_screen(&native_window) {
+                // AppKit may lay the titlebar window out again, and make its backdrop views new ones.
+                fullscreen_titlebar::clear_backdrops(self.traffic_light_position.is_some());
+            }
+        }
         let Some(position) = self.traffic_light_position else {
             return;
         };
@@ -750,6 +796,7 @@ mod tests {
     fn a_settings_copy_keeps_the_look_and_drops_what_belongs_to_one_window() {
         let mut original = MacosWindowing::new()
             .titlebar_transparent(true)
+            .fullscreen_titlebar_transparent(true)
             .title_hidden(true)
             .fullsize_content_view(true)
             .has_shadow(true)
@@ -760,6 +807,7 @@ mod tests {
         original.begin_window_drag((1.0, 2.0));
 
         let copy = original.settings_copy();
+        assert_eq!(copy.fullscreen_titlebar_transparent, Some(true));
 
         assert_eq!(copy.titlebar_transparent, Some(true));
         assert_eq!(copy.title_hidden, Some(true));

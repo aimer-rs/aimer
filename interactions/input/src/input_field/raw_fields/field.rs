@@ -198,6 +198,15 @@ pub type PointerHoles = std::rc::Rc<dyn Fn(f32, f32) -> Vec<(f32, f32, f32, f32)
 /// trackpad reports as a deep stage. It is given the byte of the text under the pointer.
 pub type ForceClick = std::rc::Rc<dyn Fn(usize)>;
 
+/// What a field calls when it is clicked with the platform's jump key held (see `Modifiers::command`). It is given the
+/// byte of the text under the pointer, as a [`ForceClick`] is.
+pub type CommandClick = ForceClick;
+
+/// Which bytes are something to jump from, when the app knows better than the field: given the byte under the pointer, the
+/// bytes of the name it is in, or `None` when it is in nothing to jump from, such as a comment or a string. A field without
+/// one takes a run of letters, digits and underscores for a name.
+pub type LinkRange = std::rc::Rc<dyn Fn(usize) -> Option<std::ops::Range<usize>>>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExpandDirection {
     Horizontal,
@@ -274,6 +283,13 @@ pub(crate) struct RawFieldConfig {
     pub pointer_holes: Option<PointerHoles>,
     /// What is called when the text is force-clicked, if anything is; see [`ForceClick`].
     pub on_force_click: Option<ForceClick>,
+    /// What is called when the text is clicked with the jump key held, if anything is; see [`CommandClick`].
+    pub on_command_click: Option<CommandClick>,
+    /// What says which bytes are links while the jump key is held, if the app has a say; see [`LinkRange`].
+    pub link_range: Option<LinkRange>,
+    /// What the mark of a range that [`TextEditingController::locate`](crate::TextEditingController::locate) shows is drawn
+    /// in. Without one it is the color of the caret, or else of the text.
+    pub locate_color: Option<Color>,
     /// The bars beside some lines, if the field has them.
     pub line_bars: Option<LineBars>,
     /// The color of the band behind the line the caret is on, if the field draws one.
@@ -482,6 +498,9 @@ pub(super) struct RetainedFieldPaintState {
     focused: bool,
     composing: bool,
     highlighter: u64,
+    link: Option<(usize, usize, u64)>,
+    /// How far along the mark of a located range is, in thousandths: it changes with every frame while there is one.
+    pulse: Option<u32>,
     /// The window a windowed text was laid out for, and the version of the heights it was placed by.
     window: Option<((usize, usize), u64)>,
 }
@@ -570,6 +589,25 @@ pub(crate) struct RawTextField {
     pub pointer_holes: Option<PointerHoles>,
     /// What is called when the text is force-clicked; see [`RawFieldConfig::on_force_click`].
     pub on_force_click: Option<ForceClick>,
+    /// What is called when the text is command-clicked; see [`RawFieldConfig::on_command_click`].
+    pub on_command_click: Option<CommandClick>,
+    /// What says which bytes are links; see [`RawFieldConfig::link_range`].
+    pub link_range: Option<LinkRange>,
+    /// What the mark of a located range is drawn in, if the app has a color for it; see [`RawFieldConfig::locate_color`].
+    pub locate_color: Option<Color>,
+    /// The range that something pointed at and is being marked: its bytes, and when the mark began; see [`RawTextField::pulse_phase`].
+    pub pulse: Cell<Option<(usize, usize, AnimInstant)>>,
+    /// The range that was asked to be shown, taken from the controller and waiting for the layout to put it in view.
+    pub locating: Cell<Option<(usize, usize)>>,
+    /// The last place the pointer was inside the field, for what depends on the pointer and a key and not on a move: the
+    /// name under it is a link when the jump key goes down.
+    pub hover_pos: Cell<Option<Vec2d>>,
+    /// Whether the name under the pointer has to be found again by the next layout.
+    pub pending_link: Cell<bool>,
+    /// The name that is shown as a link: where its bytes start and end, and the text revision they are of.
+    pub link: Cell<Option<(usize, usize, u64)>>,
+    /// Where the text was command-clicked and the byte of it is not known yet, as `pending_force` is for a force click.
+    pub pending_command: Cell<Option<Vec2d>>,
     /// Where the text was force-clicked and the byte of it is not known yet: the layout finds it, as it does for a click.
     pub pending_force: Cell<Option<Vec2d>>,
     /// How deep the press that is going on has got, so that a deep press is one force click and not one for each report.
@@ -735,6 +773,17 @@ impl Rebuildable for RawTextField {
         self.last_click_pos.set(old.last_click_pos.get());
         self.click_count.set(old.click_count.get());
         self.pending_click.set(old.pending_click.get());
+        // A force click or a command click that the layout has not placed yet is waited for across the rebuild, or it is
+        // lost: the layout is the frame after the press. The deep press that is going on stays one press, and the name
+        // under the pointer stays a link until the pointer or the key says otherwise.
+        self.pending_force.set(old.pending_force.get());
+        self.pending_command.set(old.pending_command.get());
+        self.force_stage.set(old.force_stage.get());
+        self.hover_pos.set(old.hover_pos.get());
+        self.pending_link.set(old.pending_link.get());
+        self.link.set(old.link.get());
+        self.pulse.set(old.pulse.get());
+        self.locating.set(old.locating.get());
         *self.pending_click_geometry.borrow_mut() = old.pending_click_geometry.borrow_mut().take();
         *self.line_index.borrow_mut() = old.line_index.borrow().clone();
         self.window_lines.set(old.window_lines.get());
@@ -883,6 +932,15 @@ impl RawTextField {
             gutter_markers: config.gutter_markers,
             pointer_holes: config.pointer_holes,
             on_force_click: config.on_force_click,
+            on_command_click: config.on_command_click,
+            link_range: config.link_range,
+            locate_color: config.locate_color,
+            pulse: Cell::new(None),
+            locating: Cell::new(None),
+            pending_command: Cell::new(None),
+            hover_pos: Cell::new(None),
+            pending_link: Cell::new(false),
+            link: Cell::new(None),
             pending_force: Cell::new(None),
             force_stage: Cell::new(aimer_events::element::PressureStage::None),
             line_bars: config.line_bars,
@@ -1896,21 +1954,33 @@ impl RawTextField {
         base_y: f32,
         is_multiline: bool,
     ) {
-        let Some(pos) = self.pending_force.take() else {
-            return;
-        };
-        let x = pos.x * scale - abs_x - pad_left + self.scroll_x_offset();
-        let y = pos.y * scale - abs_y - pad_top - base_y + if is_multiline { self.scroll_y.get() } else { 0.0 };
-        // What is below the last line says nothing of the text, and a pointer there is not on it.
-        let Some(grapheme) = geometry.hit_test(x, y) else {
-            return;
-        };
-        // The callback is given a byte of the text and is made on a copy of the handle, so that it may do what it likes
-        // with the field.
-        let Some(callback) = self.on_force_click.clone() else {
-            return;
-        };
-        callback(self.controller.value().byte_of_grapheme(grapheme));
+        for (pending, callback) in [(&self.pending_force, &self.on_force_click), (&self.pending_command, &self.on_command_click)] {
+            let Some(pos) = pending.take() else {
+                continue;
+            };
+            let x = pos.x * scale - abs_x - pad_left + self.scroll_x_offset();
+            let y = pos.y * scale - abs_y - pad_top - base_y + if is_multiline { self.scroll_y.get() } else { 0.0 };
+            // What is below the last line says nothing of the text, and a pointer there is not on it.
+            let Some(grapheme) = geometry.hit_test(x, y) else {
+                continue;
+            };
+            // The callback is given a byte of the text and is made on a copy of the handle, so that it may do what it
+            // likes with the field.
+            let Some(callback) = callback.clone() else {
+                continue;
+            };
+            let byte = self.controller.value().byte_of_grapheme(grapheme);
+            // A command click is one on a name, as a link is: the app's when it says which are, and a word where it does
+            // not. It is the byte of the name that is reported, wherever in the name the pointer was.
+            if std::ptr::eq(pending, &self.pending_command) {
+                let Some(name) = self.link_at(geometry, (x, y), byte) else {
+                    continue;
+                };
+                callback(name.start);
+                continue;
+            }
+            callback(byte);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

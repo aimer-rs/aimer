@@ -284,10 +284,9 @@ impl EditableGeometry {
         self.embeds
             .iter()
             .filter_map(|embed| {
-                let cluster = layout
-                    .clusters
-                    .iter()
-                    .find(|cluster| cluster.text_range.start == embed.range.start)?;
+                // The cluster a front-to-back search finds, bisected: an embed is looked for in the
+                // layout of every frame, among all the clusters of the window.
+                let cluster = self.cluster_starting_at(layout, embed.range.start)?;
                 Some(EmbedRect {
                     key: embed.key,
                     x: cluster.start_x.min(cluster.end_x),

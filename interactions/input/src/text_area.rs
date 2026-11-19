@@ -14,7 +14,7 @@ use crate::input_field::caret::CaretContext;
 use crate::input_field::chrome::TextFieldVisualState;
 use crate::input_field::gutter::{GutterMarkers, LineBars, LineNumbers};
 use crate::input_field::highlight::TextHighlighter;
-use crate::input_field::raw_fields::{ExpandDirection, ForceClick, InputType, PointerHoles, TextFieldCallback};
+use crate::input_field::raw_fields::{CommandClick, ExpandDirection, ForceClick, LinkRange, InputType, PointerHoles, TextFieldCallback};
 use crate::input_field::{TextField, TextFieldState};
 
 /// A multiline text input widget.
@@ -36,6 +36,9 @@ pub struct TextArea {
     gutter_markers: Option<GutterMarkers>,
     pointer_holes: Option<PointerHoles>,
     on_force_click: Option<ForceClick>,
+    on_command_click: Option<CommandClick>,
+    link_range: Option<LinkRange>,
+    locate_color: Option<Color>,
     line_bars: Option<LineBars>,
     line_break_prefix: Option<Rc<dyn Fn(&str) -> Option<String>>>,
     current_line: Option<Color>,
@@ -59,6 +62,9 @@ impl TextArea {
             gutter_markers: None,
             pointer_holes: None,
             on_force_click: None,
+            on_command_click: None,
+            link_range: None,
+            locate_color: None,
             line_bars: None,
             line_break_prefix: None,
             current_line: None,
@@ -224,6 +230,37 @@ impl TextArea {
     #[inline]
     pub fn on_force_click(mut self, on_force_click: impl Fn(usize) + 'static) -> Self {
         self.on_force_click = Some(std::rc::Rc::new(on_force_click));
+        self
+    }
+
+    /// Sets what is called when the text is clicked with the platform's jump key held: Command on Apple systems and
+    /// Control elsewhere (see `Modifiers::command`). It is called once for each click, with the byte of the text under
+    /// the pointer, a frame after the press, when the layout can say which it is. The click moves nothing: it does not
+    /// place the caret or change the selection. A press on something drawn over the text, such as the menu of a caret
+    /// widget or an icon in the margin, is not a press on the text.
+    #[inline]
+    pub fn on_command_click(mut self, on_command_click: impl Fn(usize) + 'static) -> Self {
+        self.on_command_click = Some(std::rc::Rc::new(on_command_click));
+        self
+    }
+
+    /// Sets the color of the mark that [`TextEditingController::locate`](crate::TextEditingController::locate) draws over the
+    /// range it shows: an outline that closes on the range and fades, with the same color faintly inside it. Without one it
+    /// is the color of the caret, or else of the text.
+    #[inline]
+    pub fn locate_color(mut self, locate_color: impl Into<Color>) -> Self {
+        self.locate_color = Some(locate_color.into());
+        self
+    }
+
+    /// Sets which bytes are something to jump from, for [`Self::on_command_click`]: given the byte under the pointer, the
+    /// bytes of the name it is in, or `None` when it is in nothing to jump from, such as a comment or a string. The
+    /// range is what is underlined while the jump key is held, and a command click on a byte that has none is not
+    /// reported. Without it, a run of letters, digits and underscores is a name. It is asked a frame after the
+    /// pointer moved or the key changed, with the byte under the pointer, so it should be quick.
+    #[inline]
+    pub fn link_range(mut self, link_range: impl Fn(usize) -> Option<std::ops::Range<usize>> + 'static) -> Self {
+        self.link_range = Some(std::rc::Rc::new(link_range));
         self
     }
 
@@ -539,6 +576,9 @@ impl TextArea {
         config.gutter_markers = self.gutter_markers.clone();
         config.pointer_holes = self.pointer_holes.clone();
         config.on_force_click = self.on_force_click.clone();
+        config.on_command_click = self.on_command_click.clone();
+        config.link_range = self.link_range.clone();
+        config.locate_color = self.locate_color;
         config.line_bars = self.line_bars.clone();
         config.line_break_prefix = self.line_break_prefix.clone();
         config.current_line = self.current_line;

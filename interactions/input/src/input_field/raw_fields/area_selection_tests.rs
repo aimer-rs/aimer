@@ -93,3 +93,31 @@ fn mirroring_a_selection_that_is_already_the_cursors_does_not_scroll_back_to_it(
     assert!(field.reveal_caret.get());
     assert_eq!((field.cursor.selection_anchor(), field.cursor.offset()), (Some(2), 8));
 }
+
+/// A jump that lands while the press that asked for it is still held, as a force click's does: the area keeps what the
+/// press selected, and mirrors it back into the field on every frame, which put the caret back where the press was.
+#[test]
+fn a_jump_ends_the_press_the_area_holds_and_the_caret_stays_where_it_went() {
+    use aimer_events::pointer::PointerSource;
+    use aimer_widget::{Drawable, PointerKey};
+
+    let (field, participant) = field_in_an_area();
+    let pointer = PointerKey::new(PointerSource::Mouse, 0);
+    participant.begin(8, pointer);
+    field.sync_cursor_from_area();
+    assert_eq!(field.cursor.offset(), 8, "the press put the caret where it was");
+    assert_eq!(participant.active_pointer(), Some(pointer), "and the area is holding it");
+
+    field.controller.locate(2..4);
+    let ctx = dummy_build_context(400.0, 200.0);
+    field.update(&ctx);
+    let _ = super::marker_tests::commands(&field, &ctx);
+
+    assert_eq!(participant.active_pointer(), None, "the jump ended the press");
+    assert_eq!(field.controller.value().selection().range(), 2..2, "the caret is on the name");
+    assert_eq!((field.cursor.offset(), field.cursor.selection_anchor()), (2, None), "and so is the field's, with nothing selected");
+    // The area says the same, so that mirroring it into the field on a later frame keeps the caret where it is.
+    field.update(&ctx);
+    field.sync_cursor_from_area();
+    assert_eq!((field.cursor.offset(), field.cursor.selection_anchor()), (2, None));
+}

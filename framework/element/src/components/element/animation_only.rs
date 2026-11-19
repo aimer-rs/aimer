@@ -536,6 +536,7 @@ pub fn with_v2_animation_only_context<R>(
             element_nodes,
             last_element_node: Cell::new(None),
             prepared_root: Cell::new(None),
+            dirty: RefCell::default(),
         })));
     });
     let _context = V2RenderContextGuard;

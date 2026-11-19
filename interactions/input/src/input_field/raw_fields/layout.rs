@@ -492,6 +492,8 @@ impl RawTextField {
             focused: self.is_focused(),
             composing: self.is_composing(),
             highlighter: highlighter_id(self.effective_highlighter()),
+            link: self.link.get(),
+            pulse: self.pulse_phase().map(|phase| (phase * 1000.0) as u32),
             window: self.window_signature(),
         }
     }
@@ -522,6 +524,7 @@ impl Drawable for RawTextField {
     }
 
     fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
+        self.begin_locate();
         if self.observed_revision.get() != self.controller.revision() {
             self.sync_cursor_from_controller();
             self.sync_preedit_from_controller();
@@ -625,7 +628,9 @@ impl Drawable for RawTextField {
             return false;
         }
 
+        self.resolve_locate(&geometry, line_height, content_height, is_multiline);
         self.resolve_force_click(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
+        self.resolve_link(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
         if let Some(click_pos) = self.pending_click.take() {
             let click_x = click_pos.x * scale - abs_x - padding_left
                 + self.scroll_x_offset();
@@ -889,6 +894,8 @@ impl Drawable for RawTextField {
     fn update_retained(&self, _ctx: &BuildContext) {}
 
     fn update(&self, ctx: &BuildContext) {
+        // Before the area is mirrored into the field: a jump that lands in the middle of a press ends the press.
+        self.begin_locate();
         if self.observed_revision.get() != self.controller.revision() {
             self.sync_cursor_from_controller();
         }
@@ -1009,7 +1016,9 @@ impl Drawable for RawTextField {
         let is_multiline = self.max_lines != Some(1);
 
         // --- Process pending click (deferred from on_event for canvas access) ---
+        self.resolve_locate(&geometry, line_height, content_height, is_multiline);
         self.resolve_force_click(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
+        self.resolve_link(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
         if let Some(click_pos) = self.pending_click.take() {
             let click_x = click_pos.x * scale - abs_x - pad_left + self.scroll_x_offset();
             let click_y = click_pos.y * scale - abs_y - pad_top - base_y
@@ -1558,6 +1567,8 @@ impl Drawable for RawTextField {
                 },
             );
             assert!(recorded, "field text v2 support must be checked before painting");
+            self.paint_link(&canvas, &text_context, &layout.geometry, &style, scale, text_origin);
+            self.paint_pulse(&canvas, &layout.geometry, scale, text_origin);
         } else if self.controller.is_text_empty() && !self.is_composing() {
             let placeholder = if !self.prompt.is_empty() {
                 Some((self.prompt.as_ref(), self.prompt_style))

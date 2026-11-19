@@ -196,6 +196,21 @@ impl EventElement for RawTextField {
                             return true;
                         }
 
+                        // The jump key and the mouse: the press is a question about what is under the pointer and not
+                        // a place for the caret, so it moves nothing. Something drawn over the text is its own.
+                        if info.source == PointerSource::Mouse
+                            && info.button == PointerButton::Primary
+                            && self.on_command_click.is_some()
+                            && Modifiers::current().command()
+                            && !self.popup_at(*pos)
+                            && !self.hole_at(*pos)
+                            && self.gutter_marker_at(*pos).is_none()
+                        {
+                            self.pending_command.set(Some(*pos));
+                            aimer_events::window::request_animation_frame();
+                            return true;
+                        }
+
                         self.mouse_held.set(Some(PointerKey::new(info.source, info.id)));
                         self.drag_origin.set(None);
                         self.pending_press.borrow_mut().take();
@@ -491,7 +506,14 @@ impl EventElement for RawTextField {
                         aimer_utils::cursor::set_cursor(aimer_utils::cursor::CursorIcon::Default);
                         self.cursor_claim.take();
                     } else if is_inside || self.mouse_held.get().is_some() {
-                        aimer_utils::cursor::set_cursor(aimer_utils::cursor::CursorIcon::Text);
+                        // A name that is a link is pointed at: the hand stays as the pointer moves in it, and is
+                        // not the text cursor for the frame it takes the layout to find the name again.
+                        let over_a_link = is_inside && self.link.get().is_some() && Modifiers::current().command();
+                        aimer_utils::cursor::set_cursor(if over_a_link {
+                            aimer_utils::cursor::CursorIcon::Pointer
+                        } else {
+                            aimer_utils::cursor::CursorIcon::Text
+                        });
                         self.cursor_claim.take();
                     } else if self.cursor_claim.release() {
                         // Only the field that put the I-beam up takes it down: a
@@ -499,6 +521,11 @@ impl EventElement for RawTextField {
                         aimer_utils::cursor::reset_cursor();
                     }
                     self.set_hovered(is_inside);
+                    // What is drawn over the text is not the text: a name under it is not a link.
+                    self.hover_pos.set((is_inside && !over_a_button).then_some(*pos));
+                    if info.source == PointerSource::Mouse && self.on_command_click.is_some() {
+                        self.request_link();
+                    }
 
                     // A finger that rested long enough asks for the menu, and
                     // stops being a drag.
@@ -551,7 +578,17 @@ impl EventElement for RawTextField {
                         held
                     }
                 }
+                ElementEvent::ModifiersChanged(_) => {
+                    if self.on_command_click.is_some() && self.hover_pos.get().is_some() {
+                        self.request_link();
+                    }
+                    false
+                }
                 ElementEvent::PointerExited(_, _) => {
+                    self.hover_pos.set(None);
+                    if self.on_command_click.is_some() {
+                        self.request_link();
+                    }
                     if self.hovered.get() {
                         self.set_hovered(false);
                         // The pointer may have moved straight onto a neighbour that set

@@ -31,6 +31,13 @@ aimer_tls::thread_local! {
 }
 
 impl Modifiers {
+    /// Whether the key that a platform jumps with is held: Command on Apple systems, where Control-click is the secondary
+    /// click, and Control everywhere else. It is the key of "go to what is under the pointer" in an editor.
+    #[inline]
+    pub const fn command(self) -> bool {
+        if cfg!(target_vendor = "apple") { self.meta } else { self.ctrl }
+    }
+
     /// The modifier keys that are held now, as the application's event loop last saw them.
     ///
     /// Keyboard events carry their own modifiers, but a pointer event does not, and some pointer
@@ -203,6 +210,12 @@ pub enum ElementEvent {
         pressure: f32,
         stage: PressureStage,
     },
+    /// The modifier keys that are held changed, to these.
+    ///
+    /// Like [`Self::Pressure`] it is routed by hit test at the cursor, which is the widget that shows what the keys
+    /// do to the pointer: a name that becomes a link while Command is held, say. A widget that does not care leaves it
+    /// unhandled. [`Modifiers::current`] says the same, already.
+    ModifiersChanged(Modifiers),
     /// A character was typed (text input).
     CharInput {
         ch: char,

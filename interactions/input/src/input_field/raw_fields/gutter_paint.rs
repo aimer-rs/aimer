@@ -138,6 +138,11 @@ impl RawTextField {
             ),
             [0.0; 4].into(),
         );
+        // Where a row's number would be, and whether it is in view. A row an embedded widget stands in for
+        // is taller than a line and has its number at the top; any other has it on the baseline.
+        let plain_top = |baseline: f32| text_top + baseline - number_top_to_baseline;
+        let tall_top = |row_top: f32| text_top + row_top + (plain_line - number_height) * 0.5;
+        let in_view = |top: f32| top + number_height > content_top && top < content_top + layout.content_height;
         // `row` is a visual row of the laid-out lines: a number on the first row of a line.
         let rows: Vec<(usize, f32, f32, f32, bool)> = match layout.geometry.interaction.as_ref() {
             Some(interaction) if !layout.geometry.visual_lines.is_empty() => layout
@@ -146,16 +151,25 @@ impl RawTextField {
                 .iter()
                 .zip(&interaction.lines)
                 .filter_map(|(row, line)| {
-                    let number = text.byte_to_line(row.byte_start.min(text.len()));
                     // The row's own box: its top, from the baseline, and how tall it is.
+                    let row_height = (line.ascent - line.descent + line.line_gap).max(1.0);
+                    // Where the row's box starts, above its baseline.
+                    let row_top = line.baseline - line.ascent - line.line_gap * 0.5;
+                    let may_be_tall = row_height > plain_line * 1.3;
+                    // A window holds many more rows than are in view. What is out of view is left before
+                    // anything is asked of the text, which is a walk of its tree for each row.
+                    if !in_view(plain_top(line.baseline)) && !(may_be_tall && in_view(tall_top(row_top))) {
+                        return None;
+                    }
+                    let number = text.byte_to_line(row.byte_start.min(text.len()));
                     (text.line_range(number).start == row.byte_start).then_some((
                         number,
                         line.baseline,
-                        (line.ascent - line.descent + line.line_gap).max(1.0),
-                        // Where the row's box starts, above its baseline.
-                        line.baseline - line.ascent - line.line_gap * 0.5,
-                        // Whether an embedded widget stands in this row.
-                        layout.geometry.embeds.iter().any(|embed| embed.range.start < row.byte_end.max(row.byte_start + 1) && row.byte_start < embed.range.end),
+                        row_height,
+                        row_top,
+                        // Whether an embedded widget stands in this row: only a row that is tall can be
+                        // drawn for one, so only for those is it looked for.
+                        may_be_tall && layout.geometry.embeds.iter().any(|embed| embed.range.start < row.byte_end.max(row.byte_start + 1) && row.byte_start < embed.range.end),
                     ))
                 })
                 .collect(),
@@ -166,12 +180,8 @@ impl RawTextField {
             // A row an embedded widget stands in for is taller than a line and has its number on
             // its first line, at the top, and not on the baseline at the bottom.
             let tall = embedded && row_height > plain_line * 1.3;
-            let top = if tall {
-                text_top + row_top + (plain_line - number_height) * 0.5
-            } else {
-                text_top + baseline - number_top_to_baseline
-            };
-            if top + number_height <= content_top || top >= content_top + layout.content_height {
+            let top = if tall { tall_top(row_top) } else { plain_top(baseline) };
+            if !in_view(top) {
                 continue;
             }
             style.color = if number == caret_line { numbers.active_color } else { numbers.color };
@@ -234,6 +244,13 @@ impl RawTextField {
         // The line a row belongs to, and what it was asked, so a line that wraps is asked once.
         let mut asked: Option<(usize, Option<LineBar>)> = None;
         for (row, line) in layout.geometry.visual_lines.iter().zip(&interaction.lines) {
+            // A window holds many more rows than are in view, and a row that is clipped away is not
+            // asked about: finding its line and its bar is for nothing.
+            let height = (line.ascent - line.descent + line.line_gap).max(1.0);
+            let top = text_top + line.baseline - line.ascent - line.line_gap * 0.5;
+            if top + height <= content_top || top >= content_top + layout.content_height {
+                continue;
+            }
             let number = text.byte_to_line(row.byte_start.min(text.len()));
             let bar = match asked {
                 Some((line_number, bar)) if line_number == number => bar,
@@ -246,11 +263,6 @@ impl RawTextField {
             let Some(bar) = bar else {
                 continue;
             };
-            let height = (line.ascent - line.descent + line.line_gap).max(1.0);
-            let top = text_top + line.baseline - line.ascent - line.line_gap * 0.5;
-            if top + height <= content_top || top >= content_top + layout.content_height {
-                continue;
-            }
             let (red, green, blue, alpha) = bar.color.to_rgba();
             canvas.fill_rect(
                 Rect::new((text_left + bar.offset * scale) / scale, top / scale, bars.width, height / scale),

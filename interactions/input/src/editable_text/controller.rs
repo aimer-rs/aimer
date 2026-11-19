@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
@@ -25,6 +26,8 @@ struct ControllerCore {
     state: RefCell<ControllerState>,
     next_attachment: Cell<u64>,
     input_language: Cell<Option<TextLanguage>>,
+    /// What a text area is to show, asked by [`TextEditingController::locate`] and taken once.
+    locate: RefCell<Option<Range<usize>>>,
 }
 
 /// Owns a UI-thread-local editable value and its transaction revision.
@@ -83,6 +86,7 @@ impl TextEditingController {
                 }),
                 next_attachment: Cell::new(0),
                 input_language: Cell::new(None),
+                locate: RefCell::new(None),
             }),
         }
     }
@@ -572,6 +576,37 @@ impl TextEditingController {
         self.apply_value(value.with_selection(selection), None)
     }
 
+    /// Puts the caret at the start of `range` and asks the text area that shows this text to show the range: in the middle
+    /// of its view, as far as the text lets it, with a mark that draws the eye to it for a moment. It is for a place that
+    /// something else has pointed at, such as the definition of a name, where the scroll that only just brings a caret
+    /// into view leaves the place at an edge.
+    ///
+    /// The ends are bytes of the text, brought to whole characters and cut to the text. It is not an edit, and the
+    /// undo history is as it was. The request is for the next frame of the text area, and is taken once.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::with_text("fn main() {}");
+    /// controller.locate(3..7);
+    /// assert_eq!(controller.value().selection().focus(), 3);
+    /// ```
+    pub fn locate(&self, range: Range<usize>) {
+        let value = self.value();
+        let start = value.floor_to_boundary(range.start.min(value.len()));
+        let end = value.ceil_to_boundary(range.end.min(value.len())).max(start);
+        self.select_bytes(start, start);
+        *self.core.locate.borrow_mut() = Some(start..end);
+    }
+
+    /// The range that [`locate`](Self::locate) asked to show, if one is waiting, and forgets it. A
+    /// [`TextArea`](crate::TextArea) takes it for its next frame; call it only from a view of the text that draws its own.
+    pub fn take_locate(&self) -> Option<Range<usize>> {
+        self.core.locate.borrow_mut().take()
+    }
+
     pub(crate) fn set_selection_graphemes(&self, anchor: usize, focus: usize) -> bool {
         let value = self.value();
         let selection = TextSelection::new(
@@ -804,6 +839,29 @@ mod tests {
         controller.select_bytes(4, 8);
         let selection = controller.value().selection();
         assert_eq!((selection.anchor(), selection.focus()), (4, 8), "whole characters are as they are");
+    }
+
+    #[test]
+    fn locating_a_range_puts_the_caret_at_its_start_and_leaves_one_request_for_the_text_area() {
+        let controller = TextEditingController::with_text("caf\u{e9} one\ntwo");
+        assert_eq!(controller.take_locate(), None, "nothing was asked");
+        controller.locate(6..9);
+        assert_eq!(controller.value().selection().range(), 6..6, "a caret at the start of the range, and not a selection");
+        assert_eq!(controller.take_locate(), Some(6..9));
+        assert_eq!(controller.take_locate(), None, "the text area takes it once");
+        assert_eq!(controller.value().text(), "caf\u{e9} one\ntwo", "it is not an edit");
+    }
+
+    #[test]
+    fn a_located_range_is_cut_to_the_text_and_to_whole_characters() {
+        let controller = TextEditingController::with_text("a\u{e9}b");
+        controller.locate(2..99);
+        assert_eq!(controller.take_locate(), Some(1..4), "inside the accent is its start, and past the end is the end");
+        controller.locate(9..3);
+        assert_eq!(controller.take_locate(), Some(4..4), "a range that ends before it starts is empty, at the end");
+        let empty = TextEditingController::new();
+        empty.locate(0..5);
+        assert_eq!(empty.take_locate(), Some(0..0));
     }
 
     #[test]

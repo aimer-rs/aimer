@@ -42,21 +42,26 @@ pub(super) struct TrafficLightKeeper {
 /// Measured from the top, so it holds for any height of the container, which
 /// AppKit changes while it animates.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct ButtonPlacement {
-    x: [f64; 3],
+pub(super) struct ButtonPlacement {
+    pub(super) x: [f64; 3],
     top: f64,
 }
 
 impl ButtonPlacement {
     /// `spacing` is the native distance from the close button to the
     /// minimize and zoom buttons, which AppKit never changes.
-    fn new(position: TrafficLightPosition, spacing: [f64; 2]) -> Self {
+    pub(super) fn new(position: TrafficLightPosition, spacing: [f64; 2]) -> Self {
         Self { x: [position.x, position.x + spacing[0], position.x + spacing[1]], top: position.y }
+    }
+
+    /// How far the top of the buttons is from the top of their container.
+    pub(super) fn top(&self) -> f64 {
+        self.top
     }
 
     /// The y of a button of `button_height` in a container `height` high, in
     /// AppKit's bottom-up coordinates.
-    fn y(&self, height: f64, button_height: f64) -> f64 {
+    pub(super) fn y(&self, height: f64, button_height: f64) -> f64 {
         height - self.top - button_height
     }
 }

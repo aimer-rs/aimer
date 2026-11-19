@@ -52,6 +52,10 @@ pub struct MenuItem {
 }
 
 impl MenuItem {
+    fn new(title: String, chord: Option<KeyChord>, action: ShortcutAction) -> Self {
+        Self { id: MenuItemId(NEXT_ITEM.fetch_add(1, Ordering::Relaxed)), title, chord, action }
+    }
+
     /// The identity a native menu reports back when the item is chosen.
     #[inline]
     pub fn id(&self) -> MenuItemId {
@@ -121,12 +125,7 @@ impl Menu {
         chord: Option<KeyChord>,
         action: impl Fn() + 'static,
     ) -> Self {
-        self.entries.push(MenuEntry::Item(MenuItem {
-            id: MenuItemId(NEXT_ITEM.fetch_add(1, Ordering::Relaxed)),
-            title: title.into(),
-            chord,
-            action: Rc::new(action),
-        }));
+        self.entries.push(MenuEntry::Item(MenuItem::new(title.into(), chord, Rc::new(action))));
         self
     }
 
@@ -150,10 +149,15 @@ impl Menu {
     }
 }
 
-/// The menus of the application, left to right.
+/// The menus of the application, left to right, and the items of the application's own menu.
+///
+/// The application's own menu is the first one of a native menu bar, the one named after the
+/// application, which holds `About`, `Hide` and `Quit`. A menu added with [`AppMenu::menu`] sits
+/// beside it; what [`AppMenu::application_item`] adds goes inside it, where `Settings…` belongs.
 #[derive(Default)]
 pub struct AppMenu {
     menus: Vec<Menu>,
+    application: Vec<MenuEntry>,
 }
 
 impl AppMenu {
@@ -174,6 +178,43 @@ impl AppMenu {
     #[inline]
     pub fn menus(&self) -> &[Menu] {
         &self.menus
+    }
+
+    /// Adds an item, bound to the chord written as text, to the application's own menu: after `About`,
+    /// and before the items the framework keeps there.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `chord` does not parse; it is a literal in the source. Use
+    /// [`AppMenu::application_item_with`] for text that comes from elsewhere.
+    #[inline]
+    pub fn application_item(self, title: impl Into<String>, chord: &str, action: impl Fn() + 'static) -> Self {
+        let chord = KeyChord::parse(chord).expect("`application_item` needs a valid key chord");
+        self.application_item_with(title, Some(chord), action)
+    }
+
+    /// Adds an item with an optional, already parsed chord to the application's own menu.
+    pub fn application_item_with(
+        mut self,
+        title: impl Into<String>,
+        chord: Option<KeyChord>,
+        action: impl Fn() + 'static,
+    ) -> Self {
+        self.application.push(MenuEntry::Item(MenuItem::new(title.into(), chord, Rc::new(action))));
+        self
+    }
+
+    /// Adds a separator line to the application's own menu.
+    #[inline]
+    pub fn application_separator(mut self) -> Self {
+        self.application.push(MenuEntry::Separator);
+        self
+    }
+
+    /// The items and separators of the application's own menu, in order.
+    #[inline]
+    pub fn application_entries(&self) -> &[MenuEntry] {
+        &self.application
     }
 }
 
@@ -245,7 +286,9 @@ pub fn activate_chord(chord: &KeyChord, repeating: bool) -> Activation {
 /// installed menu is held while it runs.
 fn find_action(mut matches: impl FnMut(&MenuItem) -> bool) -> Option<ShortcutAction> {
     with_app_menu(|menu| {
-        menu?.menus.iter().flat_map(|menu| menu.entries.iter()).find_map(|entry| match entry {
+        let menu = menu?;
+        let menus = menu.menus.iter().flat_map(|menu| menu.entries.iter());
+        menu.application.iter().chain(menus).find_map(|entry| match entry {
             MenuEntry::Item(item) if matches(item) => Some(Rc::clone(&item.action)),
             _ => None,
         })

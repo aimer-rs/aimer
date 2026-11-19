@@ -121,11 +121,22 @@ pub fn install_macos_menu() -> muda::Menu {
 
     let menu = Menu::new();
 
+    // The application's own items sit in this menu, after `About` and set apart by lines, where `Settings…` is
+    // on a Mac: `About`, the application's items, then the items of the system.
+    let application_items = aimer_shortcut::menu::with_app_menu(|app_menu| {
+        app_menu.map_or_else(Vec::new, |app_menu| app_menu.application_entries().iter().map(native_entry).collect::<Vec<_>>())
+    });
     let app_menu = Submenu::new("Aimer", true);
+    app_menu.append(&PredefinedMenuItem::about(None, None)).unwrap();
+    app_menu.append(&PredefinedMenuItem::separator()).unwrap();
+    if !application_items.is_empty() {
+        for item in &application_items {
+            app_menu.append(item.as_ref()).unwrap();
+        }
+        app_menu.append(&PredefinedMenuItem::separator()).unwrap();
+    }
     app_menu
         .append_items(&[
-            &PredefinedMenuItem::about(None, None),
-            &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::services(None),
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::hide(None),
@@ -235,27 +246,25 @@ pub fn install_macos_menu() -> muda::Menu {
 /// activates by click; only its shortcut label is missing.
 #[cfg(target_os = "macos")]
 fn user_submenu(menu: &aimer_shortcut::menu::Menu) -> muda::Submenu {
-    use aimer_shortcut::menu::MenuEntry;
-
     let submenu = muda::Submenu::new(menu.title(), true);
     for entry in menu.entries() {
-        match entry {
-            MenuEntry::Separator => {
-                submenu.append(&muda::PredefinedMenuItem::separator()).unwrap();
-            }
-            MenuEntry::Item(item) => {
-                let accelerator = item.chord().as_ref().and_then(crate::menu_accelerator::accelerator_for);
-                let native = muda::MenuItem::with_id(
-                    native_id_for_user_item(item.id()),
-                    item.title(),
-                    true,
-                    accelerator,
-                );
-                submenu.append(&native).unwrap();
-            }
-        }
+        submenu.append(native_entry(entry).as_ref()).unwrap();
     }
     submenu
+}
+
+/// The native item for one entry of the application's menus.
+#[cfg(target_os = "macos")]
+fn native_entry(entry: &aimer_shortcut::menu::MenuEntry) -> Box<dyn muda::IsMenuItem> {
+    use aimer_shortcut::menu::MenuEntry;
+
+    match entry {
+        MenuEntry::Separator => Box::new(muda::PredefinedMenuItem::separator()),
+        MenuEntry::Item(item) => {
+            let accelerator = item.chord().as_ref().and_then(crate::menu_accelerator::accelerator_for);
+            Box::new(muda::MenuItem::with_id(native_id_for_user_item(item.id()), item.title(), true, accelerator))
+        }
+    }
 }
 
 /// One `Edit` item, owned by Aimer and reachable by both click and shortcut.

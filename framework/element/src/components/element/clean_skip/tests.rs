@@ -312,3 +312,118 @@ fn leaving_a_subtree_alone_counts_as_reading_what_its_last_walk_read() {
         assert_eq!(CURSOR_READS.with(Cell::get), cursor + 1, "the pointer was not counted");
     });
 }
+
+/// A tree of `branches` chains `depth` deep under one root, an element for each node, and the element
+/// of the deepest node of each chain.
+fn forked_tree(
+    branches: usize,
+    depth: usize,
+) -> (RenderTree, ElementNodeMap, ElementId, Vec<ElementId>, Vec<Vec<ElementId>>) {
+    let tree = RenderTree::new();
+    let mut map = ElementNodeMap::default();
+    let bounds = aimer_cupid::draw_cmd::Rect::default();
+    let root_element = ElementId::next();
+    let root = tree.add_root(bounds).expect("a root");
+    map.insert(root_element, root);
+    let (mut leaves, mut chains) = (Vec::new(), Vec::new());
+    for _ in 0..branches {
+        let (mut parent, mut chain) = (root, Vec::new());
+        for _ in 0..depth {
+            let element = ElementId::next();
+            parent = tree.add_child(parent, bounds).expect("a child");
+            map.insert(element, parent);
+            chain.push(element);
+        }
+        leaves.push(*chain.last().expect("a chain"));
+        chains.push(chain);
+    }
+    (tree, map, root_element, leaves, chains)
+}
+
+fn pending_visits() -> usize {
+    PENDING_VISITS.with(Cell::get)
+}
+
+#[test]
+fn asking_whether_a_subtree_is_invalidated_does_not_walk_every_pending_invalidation_each_time() {
+    let (tree, map, root, leaves, chains) = forked_tree(100, 6);
+    // One branch has an invalidation, the other ninety-nine are only pending.
+    for leaf in &leaves {
+        mark_paint_element_invalidated(*leaf);
+    }
+    with_v2_render_tree_context(tree, Rc::new(map), None, || {
+        let before = pending_visits();
+        let answers: Vec<bool> = chains
+            .iter()
+            .flat_map(|chain| chain.iter().map(|element| invalidated_within(*element)))
+            .collect();
+        assert!(answers.iter().all(|answer| *answer), "each chain has its leaf pending below it");
+        assert!(invalidated_within(root), "and so does the root");
+        let visits = pending_visits() - before;
+        assert!(
+            visits <= leaves.len() * 2,
+            "{} questions looked at {visits} pending invalidations, which is each of them each time",
+            answers.len() + 1
+        );
+    });
+    for leaf in &leaves {
+        take_local_paint_invalidated(*leaf);
+    }
+}
+
+#[test]
+fn an_invalidation_made_after_the_answer_was_known_is_seen_and_one_resolved_is_not_missed() {
+    let (tree, map, root, leaves, chains) = forked_tree(4, 3);
+    mark_paint_element_invalidated(leaves[0]);
+    with_v2_render_tree_context(tree, Rc::new(map), None, || {
+        assert!(invalidated_within(chains[0][0]), "the branch with the pending leaf");
+        assert!(!invalidated_within(chains[1][0]), "a branch with none");
+        assert!(!invalidated_within(chains[1][2]));
+        // Something is invalidated in the branch that was clean, after it was asked about.
+        mark_paint_element_invalidated(leaves[1]);
+        assert!(invalidated_within(chains[1][0]), "the new one is seen at once");
+        assert!(invalidated_within(chains[1][2]), "down to itself");
+        assert!(!invalidated_within(chains[2][1]), "and a third branch is still clean");
+        // One that is resolved may still be answered as pending, which only walks a subtree that
+        // could have been left alone; it never leaves one that is stale.
+        assert!(take_local_paint_invalidated(leaves[0]));
+        assert!(invalidated_within(root), "the root still holds the second");
+        assert!(take_local_paint_invalidated(leaves[1]));
+        assert!(!invalidated_within(root), "nothing pending is nothing invalidated");
+    });
+}
+
+#[test]
+fn an_invalidated_element_without_a_node_and_an_empty_set_are_not_invalidation() {
+    let (tree, map, root, _, chains) = forked_tree(2, 2);
+    with_v2_render_tree_context(tree, Rc::new(map), None, || {
+        assert!(!invalidated_within(root), "nothing is pending");
+        let unmapped = ElementId::next();
+        mark_paint_element_invalidated(unmapped);
+        assert!(!invalidated_within(chains[0][0]), "an element with no node has no paint to be stale");
+        assert!(!invalidated_within(root));
+        take_local_paint_invalidated(unmapped);
+    });
+}
+
+#[test]
+fn a_change_of_the_trees_structure_makes_the_ancestors_be_collected_again() {
+    let (tree, map, root, leaves, chains) = forked_tree(3, 3);
+    mark_paint_element_invalidated(leaves[0]);
+    let handle = tree.clone();
+    with_v2_render_tree_context(tree, Rc::new(map), None, || {
+        assert!(invalidated_within(chains[0][1]));
+        let collected = pending_visits();
+        assert!(invalidated_within(root));
+        assert_eq!(pending_visits(), collected, "nothing changed, so nothing is collected again");
+        // A node added to the tree moves its topology, so what was collected from the parents is no
+        // longer trusted, whatever the new node is.
+        handle
+            .add_root(aimer_cupid::draw_cmd::Rect::default())
+            .expect("another root");
+        assert!(invalidated_within(chains[0][1]), "still right");
+        assert!(!invalidated_within(chains[1][1]), "and still clean where it was");
+        assert!(pending_visits() > collected, "but worked out again");
+    });
+    take_local_paint_invalidated(leaves[0]);
+}

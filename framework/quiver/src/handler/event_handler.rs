@@ -170,6 +170,8 @@ impl WindowEventHandler {
                     meta: state.super_key(),
                 };
                 Modifiers::set_current(app.current_modifiers);
+                // What is under the cursor may look different with the key held, and nothing else says so.
+                let _ = Self::dispatch_platform_gesture(app, ElementEvent::ModifiersChanged(app.current_modifiers));
             }
 
             WindowEvent::KeyboardInput { event, .. } => Self::handle_keyboard_input(event, app),

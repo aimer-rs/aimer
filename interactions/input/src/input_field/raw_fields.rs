@@ -75,6 +75,8 @@ include!("raw_fields/navigation.rs");
 include!("raw_fields/gutter_paint.rs");
 include!("raw_fields/platform.rs");
 
+mod link;
+mod locate;
 mod menu;
 mod semantics;
 

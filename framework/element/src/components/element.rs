@@ -224,6 +224,11 @@ aimer_tls::thread_local! {
     /// Visual event changes invalidate one element's retained list for the
     /// next collection, then are consumed without dirtying later frames.
     static EVENT_PAINT_INVALIDATIONS: RefCell<HashSet<ElementId>> = RefCell::new(HashSet::new());
+    /// Advances whenever an element may have been added to either set above, or one was replaced.
+    /// Taking an element out does not advance it: what is worked out from the sets (see
+    /// `DirtyNodes`) can then name an element that is no longer pending, which makes a walk that
+    /// was not needed and never leaves a stale one alone.
+    static PENDING_PAINT_INSERTIONS: Cell<u64> = const { Cell::new(0) };
     /// Damage accumulated by retained paint owners during the current frame.
     /// The target is thread-local because widget trees and their canvases are
     /// single-threaded; the finished [`DamageSet`] is copied into the frame
@@ -389,6 +394,9 @@ pub(crate) struct V2RenderScope {
     /// cannot go stale. An element without a node is not remembered.
     last_element_node: Cell<Option<(ElementId, RenderNodeId)>>,
     prepared_root: Cell<Option<ElementId>>,
+    /// The nodes with a pending paint invalidation at or below them, worked out once for the scope
+    /// and again only when it can have changed; see [`clean_skip`].
+    pub(crate) dirty: RefCell<clean_skip::DirtyNodes>,
 }
 
 impl std::ops::Deref for V2RenderContext {
@@ -454,6 +462,7 @@ pub fn with_v2_render_tree_context<R>(
                 element_nodes,
                 last_element_node: Cell::new(None),
                 prepared_root: Cell::new(prepared_root),
+                dirty: RefCell::default(),
             })));
     });
     let _guard = V2RenderContextGuard;
@@ -558,6 +567,7 @@ impl WindowPaintState {
                 &mut self.event_invalidations,
             )
         });
+        note_pending_paint_insertion();
         crate::element_invalidation::swap_pending(&mut self.queue);
     }
 
@@ -574,6 +584,7 @@ impl WindowPaintState {
                 .borrow_mut()
                 .extend(self.event_invalidations.drain());
         });
+        note_pending_paint_insertion();
         full |= crate::element_invalidation::absorb_pending(&mut self.queue);
         self.frame_damage = None;
         self.damage_owners.clear();
@@ -689,6 +700,7 @@ fn record_local_paint_invalidation_path(path: &[ElementId]) {
         PAINT_INVALIDATED_LOCAL_ELEMENTS.with(|elements| {
             elements.borrow_mut().insert(element);
         });
+        note_pending_paint_insertion();
     }
 }
 
@@ -787,6 +799,7 @@ pub(crate) fn mark_paint_element_invalidated(element: ElementId) {
         }
         elements.insert(element);
     });
+    note_pending_paint_insertion();
 }
 
 #[inline]
@@ -794,6 +807,7 @@ pub(crate) fn mark_event_paint_invalidated(element: ElementId) {
     EVENT_PAINT_INVALIDATIONS.with(|invalidations| {
         invalidations.borrow_mut().insert(element);
     });
+    note_pending_paint_insertion();
 }
 
 #[inline]
@@ -1078,6 +1092,18 @@ pub(crate) fn paint_revision_epoch() -> u64 {
 #[inline]
 pub(crate) fn draw_depth_is_zero() -> bool {
     DRAW_DEPTH.with(|depth| depth.get() == 0)
+}
+
+/// Says that the sets of pending paint invalidations may have gained an element.
+#[inline]
+fn note_pending_paint_insertion() {
+    PENDING_PAINT_INSERTIONS.with(|count| count.set(count.get().wrapping_add(1)));
+}
+
+/// How many times the sets of pending paint invalidations may have gained an element.
+#[inline]
+pub(crate) fn pending_paint_insertions() -> u64 {
+    PENDING_PAINT_INSERTIONS.with(Cell::get)
 }
 
 /// Whether any element's paint was invalidated and has not yet been resolved.

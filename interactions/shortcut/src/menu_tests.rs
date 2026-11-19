@@ -98,3 +98,45 @@ fn item_str_parses_the_chord_for_the_platform() {
     let MenuEntry::Item(save) = &menu.entries()[0] else { panic!("an item") };
     assert_eq!(save.chord(), Some(KeyChord::parse("Ctrl+S").unwrap()));
 }
+
+fn comma() -> KeyChord {
+    KeyChord::new(ChordMods::META, Key::Char(','))
+}
+
+#[test]
+fn application_items_keep_their_entries_in_order_and_apart_from_the_menus() {
+    let app = AppMenu::new()
+        .application_item_with("Settings…", Some(comma()), || {})
+        .application_separator()
+        .application_item_with("Check for Updates", None, || {})
+        .menu(Menu::new("File"));
+
+    assert_eq!(app.menus().len(), 1, "the application's items are not a menu of the bar");
+    let entries = app.application_entries();
+    assert_eq!(entries.len(), 3);
+    assert!(matches!(entries[1], MenuEntry::Separator));
+    let MenuEntry::Item(settings) = &entries[0] else { panic!("first entry is an item") };
+    assert_eq!((settings.title(), settings.chord()), ("Settings…", Some(comma())));
+    assert!(AppMenu::new().application_entries().is_empty());
+}
+
+#[test]
+fn an_application_item_is_activatable_by_id_and_by_chord() {
+    let (opened, open) = counter();
+    let app = AppMenu::new().application_item_with("Settings…", Some(comma()), open);
+    let MenuEntry::Item(settings) = &app.application_entries()[0] else { panic!("an item") };
+    let id = settings.id();
+    set_app_menu(app);
+
+    assert!(activate_item(id));
+    assert_eq!(activate_chord(&comma(), false), Activation::Ran);
+    assert_eq!(activate_chord(&comma(), true), Activation::Held);
+    assert_eq!(opened.get(), 2);
+}
+
+#[test]
+fn application_item_str_parses_the_chord_for_the_platform() {
+    let app = AppMenu::new().application_item("Settings…", "CmdOrCtrl+,", || {});
+    let MenuEntry::Item(settings) = &app.application_entries()[0] else { panic!("an item") };
+    assert_eq!(settings.chord(), Some(KeyChord::parse("CmdOrCtrl+,").unwrap()));
+}

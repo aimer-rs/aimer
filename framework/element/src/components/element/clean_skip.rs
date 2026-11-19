@@ -37,12 +37,13 @@
 //! differential test can compare the frames with and without it.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
 mod tests;
 
-use aimer_cupid::draw_cmd::RenderNodeState;
+use aimer_cupid::draw_cmd::{RenderNodeId, RenderNodeState};
+use aimer_cupid::utilities::IdBuildHasher;
 use aimer_cupid::utilities::Mat3;
 use aimer_attribute::position::Vec2d;
 
@@ -625,6 +626,13 @@ fn frame_blocker() -> Option<&'static str> {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many pending invalidations were looked at, so a test can tell a question that
+    /// asks of all of them each time from one that asks once.
+    static PENDING_VISITS: Cell<usize> = const { Cell::new(0) };
+}
+
 /// Whether an element whose paint was invalidated and not yet resolved sits at
 /// or below `root`.
 ///
@@ -642,20 +650,63 @@ fn invalidated_within(root: ElementId) -> bool {
     let Some(root_node) = scope.node_for_element(root) else {
         return true;
     };
-    any_pending_paint_invalidation(|pending| {
-        let Some(mut node) = scope.node_for_element(pending) else {
-            return false;
-        };
-        loop {
-            if node == root_node {
-                return true;
-            }
-            match scope.tree.parent_of(node) {
-                Ok(Some(parent)) => node = parent,
-                _ => return false,
-            }
+    scope
+        .dirty
+        .borrow_mut()
+        .holds(&scope, root_node)
+}
+
+/// The nodes that have a pending paint invalidation at or below them, for one traversal.
+///
+/// Asking each pending element whether `root` is above it costs the pending elements times the depth
+/// of the tree, and it is asked for every element that could be left alone. A scroll leaves many
+/// elements pending, so the walk of a frame did that for most of its elements. The ancestors of every
+/// pending element are collected once instead, and a question is one lookup.
+///
+/// What is collected stands while nothing it was made from changed: the pending sets only gain elements
+/// where [`pending_paint_insertions`] counts it, and the tree's parents only change where its topology
+/// revision does. The mapping of elements to nodes cannot change within a scope, which owns this.
+/// An element taken out of the sets is not noticed: the answer can then be "invalidated" for a subtree
+/// that no longer is, which is walked and not skipped. That is the safe side of being wrong.
+#[derive(Default)]
+pub(crate) struct DirtyNodes {
+    /// What the set was collected under: the insertions into the pending sets, and the topology of the
+    /// tree. `None` before it was collected.
+    made_for: Option<(u64, u64)>,
+    nodes: HashSet<RenderNodeId, IdBuildHasher>,
+}
+
+impl DirtyNodes {
+    /// Whether a pending invalidation is at or below `node`.
+    fn holds(&mut self, scope: &V2RenderScope, node: RenderNodeId) -> bool {
+        let stamp = (pending_paint_insertions(), scope.tree.topology_revision());
+        if self.made_for != Some(stamp) {
+            self.collect(scope);
+            self.made_for = Some(stamp);
         }
-    })
+        self.nodes.contains(&node)
+    }
+
+    fn collect(&mut self, scope: &V2RenderScope) {
+        self.nodes.clear();
+        let nodes = &mut self.nodes;
+        any_pending_paint_invalidation(|pending| {
+            #[cfg(test)]
+            PENDING_VISITS.with(|visits| visits.set(visits.get() + 1));
+            // An invalidated element without a node has no retained paint to be stale.
+            let Some(mut node) = scope.node_for_element(pending) else {
+                return false;
+            };
+            // Up to the first node that is held already: everything above it is too.
+            while nodes.insert(node) {
+                match scope.tree.parent_of(node) {
+                    Ok(Some(parent)) => node = parent,
+                    _ => break,
+                }
+            }
+            false
+        });
+    }
 }
 
 /// The retained tree's geometry revision, or zero when none is active.
