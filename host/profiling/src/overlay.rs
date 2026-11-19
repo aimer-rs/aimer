@@ -257,13 +257,14 @@ impl PerformanceOverlay {
             [height_for(&performance), height_for(&system), height_for(&help)],
         );
         let bounds = Rect::new(0.0, 0.0, logical_width, logical_height.min(layout.bottom));
-        // A widget-tree synchronization can remove this extra root. Recreate
-        // it after synchronization so it always paints after app and modals,
-        // using identities from the same tree as the renderer's node caches.
+        // The node is pinned, so a widget-tree synchronization keeps this extra root where it is,
+        // after the app and modals. Where it is gone all the same it is made again, using identities
+        // from the same tree as the renderer's node caches.
         let node = if node_exists {
             self.node.expect("the retained overlay node exists")
         } else {
             let node = tree.add_root(bounds)?;
+            tree.pin_root(node)?;
             self.node = Some(node);
             tree.set_paint_source(node, RenderPaintSource::LocalV2)?;
             node

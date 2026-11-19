@@ -48,6 +48,34 @@ struct RawTextAuxCache {
     /// The parent size, as `[width, height]` bits, the text was last recorded
     /// against. See [`RawTextWidget::paint_needs_recording`].
     recorded_parent_size: Option<[u32; 2]>,
+    /// What [`RawTextWidget::local_v2_paragraph_paint_data`] last worked out, and what it was
+    /// worked out from.
+    paragraph_paint: Option<ParagraphPaintMemo>,
+}
+
+/// The paint data of a paragraph, kept for the layout, scale and box it was derived for. The layout
+/// it holds is the one asked for again by identity, so it cannot be another one that is
+/// answered for: a layout that is dropped is not given to another allocation while this holds it.
+struct ParagraphPaintMemo {
+    /// The scale, the width laid out against and the height placed in, as bits.
+    key: [u32; 3],
+    paint: Rc<LocalV2ParagraphPaint>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PARAGRAPH_PAINT_COMPUTATIONS: Cell<usize> = const { Cell::new(0) };
+}
+
+/// How many times a paragraph's paint data was derived and not found remembered, on this thread.
+#[cfg(test)]
+fn paragraph_paint_computations() -> usize {
+    PARAGRAPH_PAINT_COMPUTATIONS.with(Cell::get)
+}
+
+#[cfg(test)]
+fn reset_paragraph_paint_computations() {
+    PARAGRAPH_PAINT_COMPUTATIONS.with(|count| count.set(0));
 }
 
 /// Low-level element that lays out and paints one run of text.
@@ -198,7 +226,13 @@ impl RawTextWidget {
         })
     }
 
-    fn local_v2_paragraph_paint_data(&self, ctx: &BuildContext) -> Option<LocalV2ParagraphPaint> {
+    /// What the paragraph paints from, for the box `ctx` gives it: its layout, where it goes and what
+    /// it spills outside.
+    ///
+    /// Asked on every frame by every text the walk visits (can it paint, what are its outsets), and
+    /// the same until the layout, the scale or the box change, so it is derived once for them: what
+    /// is asked each time is whether they did.
+    fn local_v2_paragraph_paint_data(&self, ctx: &BuildContext) -> Option<Rc<LocalV2ParagraphPaint>> {
         if !self.uses_paragraph_layout() {
             return None;
         }
@@ -221,6 +255,18 @@ impl RawTextWidget {
                 .supports_retained_v2_rich_text()
                 .then(|| paragraph.layout_for_paint(ctx))
         })?;
+        let key = [scale.to_bits(), width.to_bits(), height.to_bits()];
+        let remembered = self.cache.with_extra(|slot: &mut Option<RawTextAuxCache>| {
+            slot.as_ref()
+                .and_then(|aux| aux.paragraph_paint.as_ref())
+                .filter(|memo| memo.key == key && Rc::ptr_eq(&memo.paint.layout, &layout))
+                .map(|memo| Rc::clone(&memo.paint))
+        });
+        if remembered.is_some() {
+            return remembered;
+        }
+        #[cfg(test)]
+        PARAGRAPH_PAINT_COMPUTATIONS.with(|count| count.set(count.get() + 1));
         if !layout.size.width.is_finite()
             || !layout.size.height.is_finite()
             || layout.size.width < 0.0
@@ -249,14 +295,19 @@ impl RawTextWidget {
                 (height - layout.size.height).max(0.0)
             }
         };
-        Some(LocalV2ParagraphPaint {
+        let paint = Rc::new(LocalV2ParagraphPaint {
             layout,
             scale,
             width,
             height,
             outsets: paint_outsets,
             vertical_offset,
-        })
+        });
+        self.cache.with_extra(|slot: &mut Option<RawTextAuxCache>| {
+            slot.get_or_insert_with(RawTextAuxCache::default).paragraph_paint =
+                Some(ParagraphPaintMemo { key, paint: Rc::clone(&paint) });
+        });
+        Some(paint)
     }
 
     /// Records this widget's text into an existing local v2 canvas.
@@ -677,6 +728,8 @@ impl LayoutElement for RawTextWidget {
 }
 
 #[cfg(test)]
+mod paint_data_tests;
+#[cfg(test)]
 mod ranged_tests;
 
 #[cfg(test)]
@@ -846,17 +899,21 @@ mod tests {
             _typeface: Cell::new(None),
         };
 
-        let first = widget
-            .local_v2_paragraph_paint_data(&context)
-            .unwrap()
-            .layout;
+        let first = std::rc::Rc::clone(
+            &widget
+                .local_v2_paragraph_paint_data(&context)
+                .unwrap()
+                .layout,
+        );
         #[cfg(debug_assertions)]
         let first_stats = inner.text_cache_stats();
 
-        let second = widget
-            .local_v2_paragraph_paint_data(&context)
-            .unwrap()
-            .layout;
+        let second = std::rc::Rc::clone(
+            &widget
+                .local_v2_paragraph_paint_data(&context)
+                .unwrap()
+                .layout,
+        );
         #[cfg(debug_assertions)]
         let second_stats = inner.text_cache_stats();
 

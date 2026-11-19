@@ -184,7 +184,8 @@ impl Presence {
     }
 }
 
-/// A retained render node and whether it currently shows anything.
+/// A retained render node and whether it currently shows anything. The node is pinned in the tree, so
+/// a synchronization of the application's nodes leaves it be.
 #[derive(Default)]
 struct Retained {
     node: Option<RenderNodeId>,
@@ -200,6 +201,10 @@ impl Retained {
             None => {
                 let node = tree.add_root(bounds)?;
                 tree.set_paint_source(node, RenderPaintSource::LocalV2)?;
+                // The application's synchronizations do not list this node and would remove it,
+                // for it to be made again by the next frame: the structure of the tree would change
+                // on every one of them. Pinned, it stays above what they list.
+                tree.pin_root(node)?;
                 self.node = Some(node);
                 node
             }

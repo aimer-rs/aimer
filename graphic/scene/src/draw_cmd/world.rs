@@ -14,7 +14,7 @@
 
 use smallvec::SmallVec;
 
-use super::render_order::{NO_PARENT, ORPHAN_PARENT};
+use super::render_order::{NO_PARENT, ORPHAN_PARENT, Topology};
 use super::*;
 
 /// The world state a node hands to its children.
@@ -300,6 +300,9 @@ impl DrawCommandList {
     /// found and read back by every query above it.
     pub(super) fn visible_subtree_bounds_of(&self, ids: &[RenderNodeId]) -> Vec<Rect> {
         let mut known: Vec<Option<Option<Rect>>> = vec![None; self.nodes.len()];
+        // The children of a node as positions, which a walk reads as a slice; going from each child's
+        // identity to its position hashes it, for every node of every subtree walked.
+        let topology = self.topology();
         ids.iter()
             .filter_map(|id| {
                 let index = *self.indices.get(id)?;
@@ -315,7 +318,7 @@ impl DrawCommandList {
                 {
                     return Some(clip);
                 }
-                self.visible_subtree_bounds_known(index, &parent, &mut known)
+                self.visible_subtree_bounds_known(index, &parent, &mut known, &topology)
             })
             .collect()
     }
@@ -325,6 +328,7 @@ impl DrawCommandList {
         index: usize,
         parent: &WorldFrame,
         known: &mut [Option<Option<Rect>>],
+        topology: &Topology,
     ) -> Option<Rect> {
         if let Some(found) = known[index] {
             return found;
@@ -337,12 +341,9 @@ impl DrawCommandList {
         // A node without bounds hides what is below it, as it does when asked
         // alone.
         if world.bounds.is_some() {
-            for child in node.children.iter().copied() {
-                let Some(&child) = self.indices.get(&child) else {
-                    continue;
-                };
+            for &child in topology.children_of(index) {
                 if let Some(child_bounds) =
-                    self.visible_subtree_bounds_known(child, &world.frame, known)
+                    self.visible_subtree_bounds_known(child, &world.frame, known, topology)
                 {
                     bounds = Some(bounds.map_or(child_bounds, |bounds| bounds.union(child_bounds)));
                 }

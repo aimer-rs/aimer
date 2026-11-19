@@ -90,6 +90,64 @@ impl Topology {
         self.revision = Some(tree.topology_revision);
     }
 
+    /// Resolves the links of a structure that has just been synchronized from a listing, in the
+    /// order of the listing: `parents[i]` is the position of the parent of the node at position `i`,
+    /// which always comes before it. The positions are the listing's own, so no node is looked up by
+    /// identity, which is what [`Self::refresh`] pays a hash lookup for on every link.
+    pub(super) fn assign_from_listing(&mut self, revision: u64, parents: impl ExactSizeIterator<Item = Option<usize>> + Clone) {
+        let count = parents.len();
+        self.roots.clear();
+        self.parent.clear();
+        self.parent.reserve(count);
+        // `child_start[i + 1]` counts the children of node `i` first, and is then summed into where
+        // their range ends.
+        self.child_start.clear();
+        self.child_start.resize(count + 1, 0);
+        for (index, parent) in parents.clone().enumerate() {
+            match parent {
+                None => {
+                    self.roots.push(index);
+                    self.parent.push(NO_PARENT);
+                }
+                Some(parent) => {
+                    self.parent.push(parent);
+                    self.child_start[parent + 1] += 1;
+                }
+            }
+        }
+        for index in 0..count {
+            self.child_start[index + 1] += self.child_start[index];
+        }
+        self.children.clear();
+        self.children.resize(self.child_start[count], 0);
+        // A child goes after the ones before it: the listing is in paint order.
+        let mut next = self.child_start.clone();
+        for (index, parent) in parents.enumerate() {
+            if let Some(parent) = parent {
+                self.children[next[parent]] = index;
+                next[parent] += 1;
+            }
+        }
+        self.revision = Some(revision);
+    }
+
+    /// Whether the links are what resolving them from the tree gives, `None` when they were not
+    /// resolved against its current structure.
+    #[cfg(test)]
+    pub(super) fn matches_fresh(&self, tree: &DrawCommandList) -> Option<bool> {
+        if !self.is_current(tree) {
+            return None;
+        }
+        let mut fresh = Topology::default();
+        fresh.refresh(tree);
+        Some(
+            self.roots == fresh.roots
+                && self.parent == fresh.parent
+                && self.child_start == fresh.child_start
+                && self.children == fresh.children,
+        )
+    }
+
     #[inline]
     pub(super) fn children_of(&self, index: usize) -> &[usize] {
         &self.children[self.child_start[index]..self.child_start[index + 1]]

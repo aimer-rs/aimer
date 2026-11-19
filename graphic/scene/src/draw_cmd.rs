@@ -30,7 +30,11 @@ mod render_order_tests;
 #[cfg(test)]
 mod sync_damage_tests;
 #[cfg(test)]
+mod outermost_tests;
+#[cfg(test)]
 mod sync_churn_tests;
+#[cfg(test)]
+mod sync_pinned_tests;
 #[cfg(test)]
 mod sync_membership_tests;
 mod escape_index;
@@ -617,6 +621,8 @@ pub enum RenderTreeError {
     UnbalancedState,
     /// A node transform is non-finite or overflows its subtree bounds.
     InvalidTransform,
+    /// Only a root that has no children can be pinned; see [`RenderTree::pin_root`].
+    NotALeafRoot(RenderNodeId),
 }
 
 /// How one synchronized render node supplies its paint content.
@@ -810,6 +816,9 @@ pub struct DrawCommandList {
     /// it return the wrong node.
     lookup_hints: IndexHints,
     roots: Vec<RenderNodeId>,
+    /// Roots a structure synchronization keeps although its list leaves them out, in the order they
+    /// were pinned; see [`RenderTree::pin_root`].
+    pinned: Vec<RenderNodeId>,
     next_id: u64,
     clip_escape_count: usize,
     pending_damage: Vec<Rect>,
@@ -1016,6 +1025,45 @@ impl DrawCommandList {
     /// changed nodes that have no changed ancestor: walking the subtree of
     /// every changed node instead visits each node once per ancestor, which
     /// made a window resize cost the sum of all subtree sizes twice per node.
+    /// The nodes of `changed` that have no node of it above them, in the order of the tree: the only
+    /// ones whose subtrees have to be damaged, as the others are inside one of them.
+    ///
+    /// One pass over the nodes, which come after their parents, and not a walk up the ancestors of each
+    /// changed node by lookups: a scroll under embedded widgets changes every node below each, so the
+    /// walks cost the number of changed nodes times the depth. A node `changed` does not name that the
+    /// tree does not have is left out.
+    pub(super) fn outermost_changed(&self, changed: &HashSet<RenderNodeId>) -> Vec<RenderNodeId> {
+        if changed.is_empty() {
+            return Vec::new();
+        }
+        let mut own = vec![false; self.nodes.len()];
+        for id in changed {
+            if let Some(position) = self.index_of(*id) {
+                own[position] = true;
+            }
+        }
+        let topology = self.topology();
+        // Whether a node is changed or has a changed node above it.
+        let mut covered = vec![false; self.nodes.len()];
+        let mut outermost = Vec::new();
+        for (position, node) in self.nodes.iter().enumerate() {
+            let under = match topology.parent[position] {
+                render_order::NO_PARENT | render_order::ORPHAN_PARENT => false,
+                parent => {
+                    // A parent comes before its children in `nodes`: a synchronization lists them so,
+                    // and a node is added after the parent it names.
+                    debug_assert!(parent < position, "a parent is before its children");
+                    covered[parent]
+                }
+            };
+            covered[position] = under || own[position];
+            if own[position] && !under {
+                outermost.push(node.id);
+            }
+        }
+        outermost
+    }
+
     fn damage_subtrees_around<R>(
         &mut self,
         tops: &[RenderNodeId],
@@ -1061,6 +1109,40 @@ impl RenderTree {
         bounds: Rect,
     ) -> Result<RenderNodeId, RenderTreeError> {
         self.draw_cmd.borrow_mut().insert(Some(parent), bounds)
+    }
+
+    /// Keeps `root` through every structure synchronization, as if each list named it after the
+    /// last of its own entries: it stays a root, above the listed ones, with its bounds, clip and
+    /// paint as its owner left them.
+    ///
+    /// A synchronization removes the nodes its list leaves out. A tool that paints above the
+    /// application (a badge, a pointer) owns roots the application's list does not name, so without
+    /// this it lost them to every synchronization and made them again, and the structure of the tree
+    /// changed each time. Pinning an already pinned root changes nothing. Roots are kept in the order
+    /// they were pinned, and are forgotten once they are gone from the tree.
+    ///
+    /// A pinned node has no children kept for it, so only a root without any can be pinned.
+    ///
+    /// # Errors
+    ///
+    /// [`RenderTreeError::UnknownNode`] when the tree does not have it, and
+    /// [`RenderTreeError::NotALeafRoot`] when it has a parent or children.
+    pub fn pin_root(&self, root: RenderNodeId) -> Result<(), RenderTreeError> {
+        let mut tree = self.draw_cmd.borrow_mut();
+        let node = tree.node(root).ok_or(RenderTreeError::UnknownNode(root))?;
+        if node.parent.is_some() || !node.children.is_empty() {
+            return Err(RenderTreeError::NotALeafRoot(root));
+        }
+        if !tree.pinned.contains(&root) {
+            tree.pinned.push(root);
+        }
+        Ok(())
+    }
+
+    /// Lets the next structure synchronization remove `root` again if its list leaves it out.
+    /// Does nothing for a root that is not pinned.
+    pub fn unpin_root(&self, root: RenderNodeId) {
+        self.draw_cmd.borrow_mut().pinned.retain(|pinned| *pinned != root);
     }
 
     /// Synchronizes element order, parentage, and layout while retaining lists
@@ -1157,20 +1239,7 @@ impl RenderTree {
             })
             .map(|update| update.node)
             .collect();
-        let tops: Vec<RenderNodeId> = changed
-            .iter()
-            .copied()
-            .filter(|id| {
-                let mut ancestor = tree.node(*id).and_then(|node| node.parent);
-                while let Some(parent) = ancestor {
-                    if changed.contains(&parent) {
-                        return false;
-                    }
-                    ancestor = tree.node(parent).and_then(|node| node.parent);
-                }
-                true
-            })
-            .collect();
+        let tops = tree.outermost_changed(&changed);
         tree.damage_subtrees_around(&tops, |tree| {
             for update in updates {
                 if !changed.contains(&update.node) {
@@ -1185,7 +1254,57 @@ impl RenderTree {
         Ok(())
     }
 
+    /// [`Self::sync_structure_listed`] for the list and the pinned roots it leaves out, which are
+    /// added after its entries as they are; the ids returned are those of the list alone.
     fn sync_structure_inner(
+        &self,
+        nodes: &[RenderNodeSpec],
+        clip_updates: Option<&[Option<Rect>]>,
+        radius_updates: Option<&[[f32; 4]]>,
+    ) -> Result<Vec<RenderNodeId>, RenderTreeError> {
+        // What the synchronization needs of each pinned root the list leaves out: its identity, and
+        // the bounds, clip and clip radius it has, so that they are the ones it is given back.
+        let kept: Vec<(RenderNodeId, Rect, Option<Rect>, [f32; 4])> = {
+            let mut tree = self.draw_cmd.borrow_mut();
+            if tree.pinned.is_empty() {
+                Vec::new()
+            } else {
+                let live: Vec<RenderNodeId> = tree
+                    .pinned
+                    .iter()
+                    .copied()
+                    .filter(|id| tree.node(*id).is_some())
+                    .collect();
+                tree.pinned = live;
+                tree.pinned
+                    .iter()
+                    .filter(|id| !nodes.iter().any(|spec| spec.existing_id == Some(**id)))
+                    .filter_map(|id| tree.node(*id))
+                    .map(|node| (node.id, node.bounds, node.clip, node.clip_radius))
+                    .collect()
+            }
+        };
+        if kept.is_empty() {
+            return self.sync_structure_listed(nodes, clip_updates, radius_updates);
+        }
+        let mut listed = nodes.to_vec();
+        listed.extend(kept.iter().map(|(id, bounds, ..)| RenderNodeSpec::new(Some(*id), None, *bounds)));
+        let clips = clip_updates.map(|clips| {
+            let mut all = clips.to_vec();
+            all.extend(kept.iter().map(|(_, _, clip, _)| *clip));
+            all
+        });
+        let radii = radius_updates.map(|radii| {
+            let mut all = radii.to_vec();
+            all.extend(kept.iter().map(|(.., radius)| *radius));
+            all
+        });
+        let mut ids = self.sync_structure_listed(&listed, clips.as_deref(), radii.as_deref())?;
+        ids.truncate(nodes.len());
+        Ok(ids)
+    }
+
+    fn sync_structure_listed(
         &self,
         nodes: &[RenderNodeSpec],
         clip_updates: Option<&[Option<Rect>]>,
@@ -1404,6 +1523,13 @@ impl RenderTree {
         indices.extend(placed.iter().enumerate().map(|(index, node)| (node.id, index)));
         tree.roots = roots;
         tree.next_id = next_id;
+        // The links of every node are known from the list: the position of a node is its place in it.
+        // Resolving them from the tree later costs a hash lookup for each, on the next frame's first
+        // question about an ancestor, and this structure just changed.
+        let revision = tree.topology_revision;
+        tree.topology
+            .get_mut()
+            .assign_from_listing(revision, nodes.iter().map(|spec| spec.parent_index));
 
         let new_damage = tree.visible_subtree_bounds_of(&structural_damage_ids);
         for damage in old_damage.into_iter().chain(new_damage) {

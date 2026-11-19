@@ -82,8 +82,7 @@ pub use live_children::{live_children_generation, notify_live_children_changed};
 use node::ElementNode;
 pub(crate) use scoped_rebuild::rename_scoped_rebuilds_since;
 pub use scoped_rebuild::{
-    ScopedCursor, has_scoped_rebuilds_since, scoped_rebuild_cursor, scoped_rebuilds_since,
-    unscoped_element_tree_generation,
+    ScopedCursor, has_scoped_rebuilds_since, notify_subtree_changed_in_place, scoped_rebuild_cursor, scoped_rebuilds_since, unscoped_element_tree_generation,
 };
 use scoped_rebuild::{note_scoped_rebuild, note_unscoped_tree_change};
 pub use state_carry::{

@@ -86,10 +86,42 @@ fn timing_of_a_window_of_rows_that_scrolls() {
         let specs = window(first + STEP, ROWS, &known, Some(root), Some(list));
         let started = std::time::Instant::now();
         let ids = tree.sync_structure(&specs).unwrap();
+        // The first question after a structure change about the links of the nodes.
+        drop(tree.draw_cmd.borrow().topology());
         elapsed += started.elapsed();
         first += STEP;
         known = remember(first, ROWS, &ids);
         let _ = tree.take_damage();
     }
-    println!("sync_structure, {ROWS} rows of {PER_ROW} nodes, {STEP} rows replaced: {:?} per frame", elapsed / FRAMES as u32);
+    println!("sync_structure, {ROWS} rows of {PER_ROW} nodes, {STEP} rows replaced: {:?} per frame (with the first read of the links)", elapsed / FRAMES as u32);
+}
+
+/// A synchronization that changes the structure leaves the links of every node resolved, as resolving
+/// them from the tree would, so the first question asked after it does not pay to resolve them.
+#[test]
+fn the_links_are_resolved_by_the_synchronization_that_changed_them() {
+    let tree = RenderTree::new();
+    let none = HashMap::new();
+    let ids = tree.sync_structure(&window(0, 5, &none, None, None)).unwrap();
+    let (root, list) = (ids[0], ids[1]);
+    let known = remember(0, 5, &ids);
+    // Rows leave and enter: the structure changes.
+    let _ = tree.sync_structure(&window(2, 5, &known, Some(root), Some(list))).unwrap();
+    let inner = tree.draw_cmd.borrow();
+    assert_eq!(inner.topology.borrow().matches_fresh(&inner), Some(true), "resolved, and as resolving would");
+    drop(inner);
+    // Several roots, and a node that is the only child, and an empty list of nodes.
+    let forest = vec![
+        RenderNodeSpec::new(None, None, bounds(0.0)),
+        RenderNodeSpec::new(None, None, bounds(1.0)),
+        RenderNodeSpec::new(None, Some(1), bounds(2.0)),
+    ];
+    let other = RenderTree::new();
+    other.sync_structure(&forest).unwrap();
+    let inner = other.draw_cmd.borrow();
+    assert_eq!(inner.topology.borrow().matches_fresh(&inner), Some(true));
+    drop(inner);
+    other.sync_structure(&[]).unwrap();
+    let inner = other.draw_cmd.borrow();
+    assert_eq!(inner.topology.borrow().matches_fresh(&inner), Some(true), "an empty tree");
 }

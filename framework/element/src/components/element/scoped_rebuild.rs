@@ -65,6 +65,20 @@ pub(super) fn note_scoped_rebuild(root: Option<ElementId>) {
     });
 }
 
+/// Says that the subtree rooted at `root` changed in place and kept its shape: the same elements in
+/// the same arrangement, somewhere else or painted differently, with `root` itself where it was.
+///
+/// A render synchronization then revisits that subtree alone, where [`notify_retained_render_structure_changed`]
+/// has it collect every element of the window. No generation advances: nothing was added, removed or
+/// replaced, so what holds element addresses (the event paths) keeps them. A subtree that does not keep
+/// its shape is found out by the synchronization, which then does the full one.
+///
+/// [`notify_retained_render_structure_changed`]: super::notify_retained_render_structure_changed
+#[doc(hidden)]
+pub fn notify_subtree_changed_in_place(root: ElementId) {
+    note_scoped_rebuild(Some(root));
+}
+
 /// Returns how many advances of the tree generation were not contained in one
 /// replaced subtree.
 ///
@@ -157,6 +171,30 @@ mod tests {
         assert_eq!(scoped_rebuilds_since(scoped_rebuild_cursor()), Some(vec![]));
         assert!(has_scoped_rebuilds_since(late));
         assert!(!has_scoped_rebuilds_since(scoped_rebuild_cursor()));
+    }
+
+    #[test]
+    fn a_subtree_changed_in_place_is_logged_and_moves_no_generation() {
+        let _guard = test_generation_guard();
+        let generations = || {
+            (
+                unscoped_element_tree_generation(),
+                retained_render_structure_generation(),
+                element_tree_generation(),
+                layout_invalidation_generation(),
+                live_children_generation(),
+            )
+        };
+        let before = generations();
+        let cursor = scoped_rebuild_cursor();
+        let root = id();
+
+        notify_subtree_changed_in_place(root);
+        notify_subtree_changed_in_place(root);
+
+        assert_eq!(scoped_rebuilds_since(cursor), Some(vec![root, root]), "logged, as often as it was said");
+        assert!(has_scoped_rebuilds_since(cursor));
+        assert_eq!(generations(), before, "and nothing advanced: no element was added, dropped or replaced");
     }
 
     #[test]

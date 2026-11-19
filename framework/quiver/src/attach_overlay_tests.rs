@@ -782,3 +782,37 @@ fn a_turned_cursor_still_sways_about_its_hotspot() {
     let upright = Look::ResizeHorizontal.glyph().turn;
     assert!((tilt - (upright + SWAY_DEGREES.to_radians())).abs() < 1e-3, "{tilt} vs {upright}");
 }
+
+/// The application's nodes are synchronized on every change of its widgets, and the list it
+/// synchronizes from does not name the overlay's. They stay, and with them what they painted, so the
+/// frame after a synchronization is not one that makes them again, and the structure of the tree is
+/// the application's own, which is what lets a synchronization that changed nothing be one.
+#[test]
+fn a_synchronization_of_the_applications_nodes_keeps_the_badge_and_the_pointers() {
+    use aimer_cupid::draw_cmd::{Rect, RenderNodeSpec};
+
+    let tree = RenderTree::new();
+    let app = [RenderNodeSpec::new(None, None, Rect::new(0.0, 0.0, 1000.0, 600.0))];
+    let ids = tree.sync_structure(&app).expect("the application's node");
+    let mut overlay = AttachOverlay::default();
+    let t = AnimInstant::now();
+    overlay.set_names(names(&["aimer-cli"]));
+    overlay.note_pointer(pointer(false, 1, MarkerPhase::Moved, 300.0, 200.0), t);
+    prepare(&mut overlay, &tree, t);
+    let (badge, pointers) = (overlay.badge_node().expect("a badge"), overlay.pointer_node().expect("a pointer"));
+    let painted = (commands(&tree, badge), commands(&tree, pointers));
+    assert!(!painted.0.is_empty() && !painted.1.is_empty(), "premise: both are painted");
+    let painted = format!("{painted:?}");
+
+    let list = [RenderNodeSpec::new(Some(ids[0]), None, Rect::new(0.0, 0.0, 1000.0, 600.0))];
+    let revision = tree.topology_revision();
+    for _ in 0..3 {
+        tree.sync_structure(&list).expect("the same list");
+        prepare(&mut overlay, &tree, t);
+    }
+
+    assert_eq!(overlay.badge_node(), Some(badge), "the same badge node");
+    assert_eq!(overlay.pointer_node(), Some(pointers), "the same pointer node");
+    assert_eq!(format!("{:?}", (commands(&tree, badge), commands(&tree, pointers))), painted, "with what they painted");
+    assert_eq!(tree.topology_revision(), revision, "and the structure did not change, as the application's did not");
+}

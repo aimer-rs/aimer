@@ -190,6 +190,10 @@ pub(crate) struct Paragraph {
     line_height: LineHeight,
     text_indent: f32,
     layout_cache: RefCell<Option<(PreparedLayoutKey, Rc<PreparedLayout>)>>,
+    /// Whether the retained v2 recorder can paint this paragraph, which only its spans and its
+    /// line box say and which are not changed once it is made: worked out the first time it is
+    /// asked, which is on every frame of every text.
+    retained_v2_support: std::cell::OnceCell<bool>,
 }
 
 fn centered_line_baseline(top: f32, ascent: f32, descent: f32, height: f32) -> f32 {
@@ -224,6 +228,7 @@ impl Paragraph {
             line_height,
             text_indent,
             layout_cache: RefCell::new(None),
+            retained_v2_support: std::cell::OnceCell::new(),
         }
     }
 
@@ -235,6 +240,12 @@ impl Paragraph {
     }
 
     pub(crate) fn supports_retained_v2_rich_text(&self) -> bool {
+        *self
+            .retained_v2_support
+            .get_or_init(|| self.computes_retained_v2_support())
+    }
+
+    fn computes_retained_v2_support(&self) -> bool {
         self.text_indent.is_finite()
             && match self.line_height {
                 LineHeight::Normal => true,

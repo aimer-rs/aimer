@@ -793,3 +793,93 @@ fn the_boxes_of_many_embeds_are_where_a_search_for_the_cluster_of_each_puts_them
     }
     assert!(rects.windows(2).all(|pair| pair[0].top < pair[1].top), "boxes go down the text in the order of the embeds");
 }
+
+/// What moves when a field scrolls under its embedded widgets, or its caret moves, is where its own children
+/// are, not which children it has: no element was added, dropped or replaced. Saying so as a change of
+/// the structure has the window's render tree collected again from its root on every frame of a scroll,
+/// and every cached element address given up; saying that this subtree changed in place has the render
+/// tree revisit it alone.
+mod placement {
+    use aimer_widget::{
+        element_tree_generation, live_children_generation, retained_render_structure_generation,
+        scoped_rebuild_cursor, scoped_rebuilds_since, unscoped_element_tree_generation,
+    };
+
+    use super::*;
+
+    fn generations() -> (u64, u64, u64, u64) {
+        (
+            retained_render_structure_generation(),
+            live_children_generation(),
+            element_tree_generation(),
+            unscoped_element_tree_generation(),
+        )
+    }
+
+    /// The fenced block, wherever it is in the text.
+    fn fenced_embedder() -> TextEmbedder {
+        TextEmbedder::new(|text, _| {
+            let Some(start) = text.find("```") else {
+                return Vec::new();
+            };
+            let end = start + text[start..].find("```\n").map_or(text.len() - start, |at| at + 3);
+            let probe = Probe::new(60.0, Rc::default());
+            vec![TextEmbed::new(start..end, 7, move || probe.clone())]
+        })
+    }
+
+    #[test]
+    fn an_embed_that_moves_with_the_text_is_a_change_of_the_host_in_place_and_not_of_the_structure() {
+        let controller = TextEditingController::with_text("title\n```\ncode\n```\nafter");
+        let (host, context) = host(Some(fenced_embedder()), controller.clone());
+        let context = unbounded(context);
+        let embeds = Rc::clone(&host.field.embeds);
+        // Erased, as the framework walks it, so that the walk can say whose it is.
+        let root = host.boxed();
+        root.sync_paint_state(&context);
+        root.update(&context);
+        let (before_at, _) = embeds.placement_of(7).expect("the embedded widget exists");
+        let (before, cursor) = (generations(), scoped_rebuild_cursor());
+
+        // Two lines more above the block: it goes down with the text, and nothing else changes.
+        controller.replace_range(0..0, "a\nb\n");
+        root.sync_paint_state(&context);
+        root.update(&context);
+
+        let (after_at, _) = embeds.placement_of(7).expect("the embedded widget exists");
+        assert!(after_at.y > before_at.y + 1.0, "premise: it moved down: {before_at:?} to {after_at:?}");
+        assert_eq!(generations(), before, "no element was added, dropped or replaced");
+        let logged = scoped_rebuilds_since(cursor).expect("the log reaches back");
+        assert!(!logged.is_empty(), "the host said that it changed in place");
+        assert!(logged.iter().all(|logged| *logged == root.id()), "and it named itself: {logged:?}");
+    }
+
+    #[test]
+    fn a_still_field_logs_nothing() {
+        let (host, context) = wide_host(Rc::default());
+        assert!(host.sync_paint_state(&context));
+        host.sync_paint_state(&context);
+        let (before, cursor) = (generations(), scoped_rebuild_cursor());
+
+        host.sync_paint_state(&context);
+
+        assert_eq!(generations(), before);
+        assert_eq!(scoped_rebuilds_since(cursor), Some(Vec::new()), "nothing moved, so nothing is said");
+    }
+
+    #[test]
+    fn an_embed_that_goes_is_still_a_change_of_the_structure() {
+        let (host, context) = host(Some(clickable_embedder(false)), TextEditingController::with_text(TEXT));
+        let context = unbounded(context);
+        assert!(host.sync_paint_state(&context));
+        assert_eq!(host.field.embeds.len(), 1, "premise");
+        let before = generations();
+
+        // The cursor goes into the block, which then gives way to its source.
+        host.field.cursor.set_offset(10);
+        host.sync_paint_state(&context);
+
+        assert_eq!(host.field.embeds.len(), 0, "premise: the embed is gone");
+        assert_ne!(live_children_generation(), before.1, "the children of the field changed, and it was said");
+    }
+}

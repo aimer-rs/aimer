@@ -75,6 +75,10 @@ pub(crate) struct RawTextFieldHost {
     /// Moves the drawn caret to where the cursor went; see [`CaretGlide`].
     glide: RefCell<CaretGlide>,
     smooth: bool,
+    /// The identity the walk gave this element the last time it updated: an element is not handed its
+    /// own, and the synchronization of paint state, which also places the caret and the embeds, runs
+    /// outside the walk of the element.
+    walked_as: Cell<Option<aimer_widget::ElementId>>,
 }
 
 impl RawTextFieldHost {
@@ -92,6 +96,7 @@ impl RawTextFieldHost {
             caret_placement,
             glide: RefCell::new(CaretGlide::default()),
             smooth: true,
+            walked_as: Cell::new(None),
         }
     }
 
@@ -153,12 +158,33 @@ impl RawTextFieldHost {
             // caret would stay where the previous edit left it. Nothing is laid
             // out differently: the caret is out of flow, so retiring the layout
             // caches would only make the next pass measure the window again.
-            aimer_widget::notify_retained_render_structure_changed();
+            // Nor is any element added or dropped: this host changed in place, and
+            // the render tree revisits it alone, not the window from its root.
+            self.notify_changed_in_place();
         }
     }
 }
 
 impl RawTextFieldHost {
+    /// Learns who the walk in progress is, which is this element when it is updated.
+    #[inline]
+    fn learn_identity(&self) {
+        if let Some(owner) = aimer_widget::draw_invalidation_owner() {
+            self.walked_as.set(Some(owner));
+        }
+    }
+
+    /// Says that where this element's own children are changed, and that no child was added, dropped
+    /// or replaced: the render tree revisits this subtree alone. Before the element has been walked
+    /// there is no one to name, and it is said as a change of the structure, which has the whole window
+    /// collected again.
+    fn notify_changed_in_place(&self) {
+        match self.walked_as.get() {
+            Some(id) => aimer_widget::notify_subtree_changed_in_place(id),
+            None => aimer_widget::notify_retained_render_structure_changed(),
+        }
+    }
+
     /// Moves the embedded widgets to where the field laid their boxes out, and
     /// drops the ones it no longer shows.
     fn sync_embed_placement(&self, ctx: &BuildContext) {
@@ -166,8 +192,10 @@ impl RawTextFieldHost {
         if self.field.embeds.sync(scale) {
             // The render tree reads each placement when it synchronises, and a
             // synchronisation is skipped while nothing it depends on has moved,
-            // as for the caret.
-            aimer_widget::notify_retained_render_structure_changed();
+            // as for the caret. An embed that moved or went is a change of this
+            // host alone; the ones that went also said that its children changed
+            // (see `EmbedStore::sync`), which is the change of the structure.
+            self.notify_changed_in_place();
         }
     }
 }
@@ -275,6 +303,7 @@ impl Drawable for RawCaretPlacement {
 
 impl Drawable for RawTextFieldHost {
     fn update(&self, ctx: &BuildContext) {
+        self.learn_identity();
         self.field.update(ctx);
         self.sync_caret_placement(ctx);
         self.sync_embed_placement(ctx);
@@ -292,6 +321,7 @@ impl Drawable for RawTextFieldHost {
     }
 
     fn update_retained(&self, ctx: &BuildContext) {
+        self.learn_identity();
         self.field.update_retained(ctx);
         self.sync_caret_placement(ctx);
         self.sync_embed_placement(ctx);
