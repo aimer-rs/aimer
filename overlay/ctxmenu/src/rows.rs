@@ -152,6 +152,15 @@ impl Widget for ContextMenuRows {
         let style = Rc::new(self.style);
         let paint_state = Rc::new(ContextMenuRowPaintState::default());
         let row_count = items.len();
+        // Lines, hints and icons are of a list: a pill stands its items side by side.
+        let list = !self.shape.is_horizontal();
+        let gaps: Vec<f32> = items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| if list && index > 0 && item.has_separator() { style.separator_gap } else { 0.0 })
+            .collect();
+        // Every label of a list is moved over for the icons if any row has one, so that the labels stay in line.
+        let lead = if list && items.iter().any(|item| item.icon_scene().is_some()) { style.icon_size + style.icon_gap } else { 0.0 };
         let row_elements = items
             .iter()
             .enumerate()
@@ -161,6 +170,10 @@ impl Widget for ContextMenuRows {
                     row_count,
                     shape: self.shape,
                     label: Arc::from(item.label()),
+                    hint: item.hint_text().filter(|_| list).map(Arc::from),
+                    icon: item.icon_scene().filter(|_| list).cloned(),
+                    gap: gaps[index],
+                    lead,
                     enabled: item.is_enabled(),
                     style: Rc::clone(&style),
                     paint_state: Rc::clone(&paint_state),
@@ -177,6 +190,8 @@ impl Widget for ContextMenuRows {
             dismiss: self.dismiss.clone(),
             dismiss_on_select: self.dismiss_on_select,
             row_elements,
+            gaps,
+            lead,
             rows: RefCell::new(Vec::new()),
             bounds: InteractionBounds::new(),
             label_widths: RefCell::new(Vec::new()),
@@ -207,6 +222,10 @@ pub(crate) struct RawContextMenuRows {
     dismiss: ContextMenuDismiss,
     dismiss_on_select: bool,
     row_elements: Vec<AnyElement>,
+    /// The height that the line above each row adds to it, which is none for a row that is not set apart from the one before.
+    gaps: Vec<f32>,
+    /// The room an icon takes before every label of the list, which is none where no row has an icon.
+    lead: f32,
     /// Where each row was last painted, in absolute logical coordinates —
     /// the space a pointer event arrives in.
     rows: RefCell<Vec<Bounds>>,
@@ -243,6 +262,12 @@ struct RawContextMenuRow {
     row_count: usize,
     shape: ContextMenuShape,
     label: Arc<str>,
+    /// The shortcut written at the end of the row, and the icon before the label.
+    hint: Option<Arc<str>>,
+    icon: Option<Arc<aimer_cupid::svg::SvgScene>>,
+    /// The height of the line above the row, which the row's rectangle has in its top, and the room kept for an icon before the label.
+    gap: f32,
+    lead: f32,
     enabled: bool,
     style: Rc<ContextMenuStyle>,
     paint_state: Rc<ContextMenuRowPaintState>,
@@ -260,17 +285,23 @@ impl RawContextMenuRows {
             }
         }
         let font_size = self.style.label.font_size as f32 * scale;
+        let list = !self.shape.is_horizontal();
+        let measure = |text: &str| {
+            ctx.canvas.measure_text_styled(
+                text,
+                font_size,
+                self.style.label.font_family,
+                self.style.label.font_style,
+                self.style.label.font_weight.numeric(),
+            ) / scale
+        };
+        // What a row needs across: the room for an icon, the label, and where it has a hint the room kept before it and the hint.
         let widths = self
             .items
             .iter()
             .map(|item| {
-                ctx.canvas.measure_text_styled(
-                    item.label(),
-                    font_size,
-                    self.style.label.font_family,
-                    self.style.label.font_style,
-                    self.style.label.font_weight.numeric(),
-                ) / scale
+                let hint = item.hint_text().filter(|_| list).map_or(0.0, |hint| self.style.hint_gap + measure(hint));
+                self.lead + measure(item.label()) + hint
             })
             .collect::<Vec<_>>();
         *self.label_widths.borrow_mut() = widths.clone();
@@ -282,7 +313,7 @@ impl RawContextMenuRows {
     fn intrinsic_size(&self, ctx: &BuildContext) -> ResolvedSize {
         let scale = scale_of(ctx);
         let (width, height) =
-            geometry::content_size(self.shape, &self.style, &self.label_widths(ctx));
+            geometry::content_size(self.shape, &self.style, &self.label_widths(ctx), &self.gaps);
         ResolvedSize {
             width: width * scale,
             height: height * scale,
@@ -297,7 +328,7 @@ impl RawContextMenuRows {
         if needs_update {
             let widths = self.label_widths(ctx);
             *self.local_rows.borrow_mut() =
-                geometry::row_rects(self.shape, &self.style, Vec2d { x: 0.0, y: 0.0 }, &widths);
+                geometry::row_rects(self.shape, &self.style, Vec2d { x: 0.0, y: 0.0 }, &widths, &self.gaps);
             self.geometry_scale.set(scale);
         }
         self.local_rows.borrow()
@@ -349,17 +380,22 @@ impl RawContextMenuRows {
     /// arrives in: from the render tree once it supplies the menu's origin,
     /// otherwise where the canvas last painted them.
     fn hit_rows(&self) -> Vec<Bounds> {
-        if self.bounds.is_adopted()
+        let rows = if self.bounds.is_adopted()
             && let Some(origin) = self.bounds.get_bounds()
         {
-            return self
-                .local_rows
+            self.local_rows
                 .borrow()
                 .iter()
                 .map(|row| Bounds::new(row.x + origin.x, row.y + origin.y, row.width, row.height))
-                .collect();
-        }
-        self.rows.borrow().clone()
+                .collect()
+        } else {
+            self.rows.borrow().clone()
+        };
+        // A press is on the row and not on the line above it, which belongs to none.
+        rows.into_iter()
+            .enumerate()
+            .map(|(index, row)| geometry::hit_rect(self.shape, row, self.gaps.get(index).copied().unwrap_or(0.0)))
+            .collect()
     }
 
     /// The index of the *choosable* row under an absolute logical position.
@@ -596,13 +632,23 @@ impl Drawable for RawContextMenuRow {
         let metrics = self.text_metrics(ctx);
         let lit = self.paint_state.highlighted.get() == Some(self.index);
         let canvas = aimer_canvas::Canvas::of(ctx);
+        // The row's rectangle has the line that sets it apart in its top: the wash, the label and the rest are in what is under it.
+        let (top, body) = (self.gap, size.height - self.gap);
+        if self.gap > 0.0 {
+            let (red, green, blue, alpha) = self.style.separator_color.to_rgba();
+            let inset = self.style.item_padding;
+            canvas.fill_rect(
+                aimer_cupid::utilities::Rect::new(inset, top * 0.5 - 0.5, (size.width - inset * 2.0).max(0.0), 1.0),
+                [red, green, blue, alpha],
+            );
+        }
         if lit {
             let (red, green, blue, alpha) = self.style.highlight_color.to_rgba();
             let [tl, tr, br, bl] = self
                 .radii(scale, ctx.parent_size)
                 .map(|radius| radius / scale);
             canvas.fill_rect_styled(
-                aimer_cupid::utilities::Rect::new(0.0, 0.0, size.width, size.height),
+                aimer_cupid::utilities::Rect::new(0.0, top, size.width, body),
                 aimer_cupid::utilities::Color::rgba8(red, green, blue, alpha),
                 [tl, tr, br, bl],
                 [0.0; 4],
@@ -623,14 +669,19 @@ impl Drawable for RawContextMenuRow {
         } else {
             self.style.disabled_label_color
         };
+        let baseline = top + (body - (metrics.ascent - metrics.descent) / scale) * 0.5 + metrics.ascent / scale;
+        if let Some(icon) = &self.icon {
+            let side = self.style.icon_size;
+            canvas.draw_svg(
+                Arc::clone(icon),
+                aimer_cupid::utilities::Rect::new(self.style.item_padding, top + (body - side) * 0.5, side, side),
+                Arc::from([]),
+            );
+        }
         let (red, green, blue, alpha) = color.to_rgba();
         canvas.draw_text_styled(
             Arc::clone(&self.label),
-            aimer_cupid::utilities::Vec2d::new(
-                self.style.item_padding,
-                (size.height - (metrics.ascent - metrics.descent) / scale) * 0.5
-                    + metrics.ascent / scale,
-            ),
+            aimer_cupid::utilities::Vec2d::new(self.style.item_padding + self.lead, baseline),
             self.style.label.font_size as f32,
             aimer_cupid::utilities::Color::rgba8(red, green, blue, alpha),
             None,
@@ -643,6 +694,32 @@ impl Drawable for RawContextMenuRow {
             None,
             true,
         );
+        if let Some(hint) = &self.hint {
+            // At the end of the row, whatever the label's length: the hints of a list line up on the right.
+            let width = ctx.canvas.measure_text_styled(
+                hint,
+                self.style.label.font_size as f32 * scale,
+                self.style.label.font_family,
+                self.style.label.font_style,
+                self.style.label.font_weight.numeric(),
+            ) / scale;
+            let (red, green, blue, alpha) = if self.enabled { self.style.hint_color } else { self.style.disabled_label_color }.to_rgba();
+            canvas.draw_text_styled(
+                Arc::clone(hint),
+                aimer_cupid::utilities::Vec2d::new(size.width - self.style.item_padding - width, baseline),
+                self.style.label.font_size as f32,
+                aimer_cupid::utilities::Color::rgba8(red, green, blue, alpha),
+                None,
+                None,
+                aimer_cupid::text_pipeline::TextOverflowMode::Clip,
+                aimer_cupid::text_pipeline::text_layout::TextHorizontalAlign::Left,
+                self.style.label.font_family,
+                self.style.label.font_style,
+                self.style.label.font_weight.numeric(),
+                None,
+                true,
+            );
+        }
         canvas.finish();
         self.painted_highlight.set(lit);
     }
@@ -800,6 +877,8 @@ mod tests {
             dismiss,
             dismiss_on_select: true,
             row_elements: Vec::new(),
+            gaps: Vec::new(),
+            lead: 0.0,
             rows: RefCell::new(Vec::new()),
             bounds: InteractionBounds::new(),
             label_widths: RefCell::new(Vec::new()),
@@ -988,5 +1067,44 @@ mod tests {
         assert_eq!(chosen.get(), Some(1));
     }
 
-}
 
+    /// Rows of which the second has a line above it, whose rectangle takes the line in its top.
+    fn rows_with_a_line() -> RawContextMenuRows {
+        let ran = Rc::new(Cell::new(None));
+        let (first, second) = (Rc::clone(&ran), Rc::clone(&ran));
+        let element = RawContextMenuRows {
+            gaps: vec![0.0, 9.0],
+            ..rows(
+                vec![
+                    ContextMenuItem::new("Copy").on_select(move || first.set(Some(0))),
+                    ContextMenuItem::new("Rename").separated().on_select(move || second.set(Some(1))),
+                ],
+                ContextMenuDismiss::new(),
+            )
+        };
+        element.place_for_test(vec![Bounds::new(10.0, 10.0, 150.0, 28.0), Bounds::new(10.0, 38.0, 150.0, 37.0)]);
+        element
+    }
+
+    #[test]
+    fn a_press_in_the_line_between_two_groups_runs_nothing_and_a_press_on_the_row_under_it_does() {
+        let element = rows_with_a_line();
+        // The line is the top nine of the second row's rectangle.
+        assert!(element.on_event(&press(20.0, 42.0)).is_consumed(), "the panel still takes it, so the menu is not dismissed");
+        let _ = element.on_event(&release(20.0, 42.0));
+        assert_eq!(element.enabled_at(Vec2d { x: 20.0, y: 42.0 }), None);
+        assert_eq!(element.enabled_at(Vec2d { x: 20.0, y: 60.0 }), Some(1), "the row itself is under the line");
+        assert_eq!(element.enabled_at(Vec2d { x: 20.0, y: 20.0 }), Some(0));
+    }
+
+    #[test]
+    fn a_row_under_a_line_is_chosen_where_it_is_pressed() {
+        let element = rows_with_a_line();
+        let chosen = Rc::new(Cell::new(None));
+        let seen = Rc::clone(&chosen);
+        let element = RawContextMenuRows { on_select: Some(Rc::new(move |index| seen.set(Some(index)))), ..element };
+        let _ = element.on_event(&press(20.0, 60.0));
+        let _ = element.on_event(&release(20.0, 60.0));
+        assert_eq!(chosen.get(), Some(1));
+    }
+}

@@ -883,6 +883,7 @@ fn is_plain(style: &SpanStyle) -> bool {
         && style.font_weight.is_none()
         && style.color.is_none()
         && style.background_color.is_none()
+        && style.background_radius.is_none()
         && style.text_decoration.is_none()
         && style.text_transform.is_none()
         && style.letter_spacing.is_none()
@@ -905,6 +906,7 @@ fn merged(base: SpanStyle, over: SpanStyle) -> SpanStyle {
         font_weight: over.font_weight.or(base.font_weight),
         color: over.color.or(base.color),
         background_color: over.background_color.or(base.background_color),
+        background_radius: over.background_radius.or(base.background_radius),
         text_decoration,
         text_transform: over.text_transform.or(base.text_transform),
         letter_spacing: over.letter_spacing.or(base.letter_spacing),

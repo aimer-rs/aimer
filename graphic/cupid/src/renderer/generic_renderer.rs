@@ -69,6 +69,10 @@ mod damage_clear_tests;
 #[path = "generic_renderer/text_cache_tests.rs"]
 mod text_cache_tests;
 
+#[cfg(all(test, target_os = "macos", feature = "native"))]
+#[path = "generic_renderer/text_fallback_tests.rs"]
+mod text_fallback_tests;
+
 /// GPU memory and cache measurements exposed by the generic renderer.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RendererMemoryStats {

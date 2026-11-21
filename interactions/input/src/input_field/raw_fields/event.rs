@@ -12,6 +12,7 @@ impl EventElement for RawTextField {
     }
 
     fn on_event(&self, event: &ElementEvent) -> EventResult {
+        self.note_hover_event(event);
         if let Some(selection) = self.area_participant()
             && let Some(result) = selection.intercept(event)
         {
@@ -180,7 +181,10 @@ impl EventElement for RawTextField {
                         // caret: it neither moves the selection it is about to
                         // act on nor starts a drag.
                         if info.button == PointerButton::Secondary {
-                            if let Some(selection) = self.area_participant()
+                            // A field that adds to its menu keeps the right click for it: an enclosing selection area has a menu of its own,
+                            // of copying only, and the rows that are added are not in it.
+                            if self.context_menu_extras.is_none()
+                                && let Some(selection) = self.area_participant()
                                 && selection.open_context_menu(
                                     *pos,
                                     PointerKey::new(info.source, info.id),
@@ -192,6 +196,7 @@ impl EventElement for RawTextField {
                             if self.cursor.selection_range().is_none() {
                                 self.select_word_under(*pos);
                             }
+                            self.menu_hit_at.set(Some(*pos));
                             self.request_menu(MenuOrigin::Click(*pos));
                             return true;
                         }
@@ -200,7 +205,7 @@ impl EventElement for RawTextField {
                         // a place for the caret, so it moves nothing. Something drawn over the text is its own.
                         if info.source == PointerSource::Mouse
                             && info.button == PointerButton::Primary
-                            && self.on_command_click.is_some()
+                            && self.command_click_wanted()
                             && Modifiers::current().command()
                             && !self.popup_at(*pos)
                             && !self.hole_at(*pos)
@@ -293,6 +298,11 @@ impl EventElement for RawTextField {
                     }
                 }
                 ElementEvent::Scroll { delta, .. } => {
+                    // What hangs from the caret, a list, scrolls when the pointer is over it, and the field
+                    // under it stays where it is.
+                    if self.scroll_popup(delta.y) {
+                        return true;
+                    }
                     // Shift turns a wheel's up and down into left and right, as in most editors.
                     let (dx, dy) = if Modifiers::current().shift && delta.x == 0.0 { (delta.y, 0.0) } else { (delta.x, delta.y) };
                     let vertical = self.scroll_vertical(dy);
@@ -309,7 +319,11 @@ impl EventElement for RawTextField {
                     self.dismiss_menu();
 
                     let mut encoded = [0u8; 4];
-                    self.insert_text(ch.encode_utf8(&mut encoded))
+                    let text: &str = ch.encode_utf8(&mut encoded);
+                    if self.filter_text(text) {
+                        return true;
+                    }
+                    self.insert_text(text)
                 }
                 ElementEvent::TextInput { text, action, .. } => {
                     if !self.is_focused() || self.read_only {
@@ -320,6 +334,9 @@ impl EventElement for RawTextField {
                     }
                     self.dismiss_menu();
 
+                    if self.filter_text(text) {
+                        return true;
+                    }
                     self.insert_text(text)
                 }
                 ElementEvent::KeyInput {
@@ -338,6 +355,8 @@ impl EventElement for RawTextField {
                     {
                         return true;
                     }
+                    // A key that is the field's is a key in the text: what the app shows for a name goes.
+                    self.dismiss_hover();
                     self.dismiss_menu();
 
                     let is_shortcut = modifiers.ctrl || modifiers.meta;
@@ -477,12 +496,15 @@ impl EventElement for RawTextField {
                     result
                 }
                 // A deep press of the trackpad on the text. It is one force click for each press that goes deep, wherever the
-                // pointer moves while it is held, and the byte under the pointer is found by the next layout.
+                // pointer moves while it is held, and the byte under the pointer is found by the next layout. A press that
+                // the window saw go deep before this field was under the pointer is not its own: a force click that opened
+                // this text, from another, leaves the press held over it.
                 ElementEvent::Pressure { pos, stage, .. } => {
                     let before = self.force_stage.replace(*stage);
-                    if self.on_force_click.is_some()
+                    if (self.on_force_click.is_some() || self.on_force_click_at.is_some())
                         && *stage == aimer_events::element::PressureStage::Force
                         && before != aimer_events::element::PressureStage::Force
+                        && aimer_events::element::PressureStage::previous() != aimer_events::element::PressureStage::Force
                         && self.cached_bounds.is_inside(pos.x, pos.y)
                         && !self.popup_at(*pos)
                         && !self.hole_at(*pos)
@@ -502,9 +524,26 @@ impl EventElement for RawTextField {
                     // show an arrow, as a button does, and not the text cursor of the field they are on.
                     // A selection that is being dragged keeps the text cursor wherever the pointer goes.
                     let over_a_button = self.mouse_held.get().is_none() && is_inside && (self.gutter_marker_at(*pos).is_some() || self.popup_at(*pos) || self.hole_at(*pos));
+                    // A button of a label after a line is pointed at: it is a link and not an icon.
+                    let over_a_label = over_a_button && self.label_at(*pos);
+                    let label_before = self.hovered_label();
+                    self.pointer_pos.set(is_inside.then_some(*pos));
+                    if self.hovered_label() != label_before {
+                        // The button that the pointer is on is drawn in another color: it is drawn again.
+                        aimer_events::window::request_animation_frame();
+                    }
                     if over_a_button {
-                        aimer_utils::cursor::set_cursor(aimer_utils::cursor::CursorIcon::Default);
+                        self.hover_popup(*pos);
+                        aimer_utils::cursor::set_cursor(if over_a_label {
+                            aimer_utils::cursor::CursorIcon::Pointer
+                        } else {
+                            aimer_utils::cursor::CursorIcon::Default
+                        });
                         self.cursor_claim.take();
+                    } else if self.mouse_held.get().is_none() && is_inside && self.embed_at(*pos) {
+                        // An embedded widget is not the text: what the pointer is over it is for the widget to
+                        // say, which a link in it does with a hand, and the field does not put the text cursor
+                        // over it, which it would do after the widget, on the same move.
                     } else if is_inside || self.mouse_held.get().is_some() {
                         // A name that is a link is pointed at: the hand stays as the pointer moves in it, and is
                         // not the text cursor for the frame it takes the layout to find the name again.
@@ -523,7 +562,7 @@ impl EventElement for RawTextField {
                     self.set_hovered(is_inside);
                     // What is drawn over the text is not the text: a name under it is not a link.
                     self.hover_pos.set((is_inside && !over_a_button).then_some(*pos));
-                    if info.source == PointerSource::Mouse && self.on_command_click.is_some() {
+                    if info.source == PointerSource::Mouse && self.command_click_wanted() {
                         self.request_link();
                     }
 
@@ -579,14 +618,19 @@ impl EventElement for RawTextField {
                     }
                 }
                 ElementEvent::ModifiersChanged(_) => {
-                    if self.on_command_click.is_some() && self.hover_pos.get().is_some() {
+                    if self.command_click_wanted() && self.hover_pos.get().is_some() {
                         self.request_link();
                     }
                     false
                 }
                 ElementEvent::PointerExited(_, _) => {
                     self.hover_pos.set(None);
-                    if self.on_command_click.is_some() {
+                    let was_on_label = self.hovered_label().is_some();
+                    self.pointer_pos.set(None);
+                    if was_on_label {
+                        aimer_events::window::request_animation_frame();
+                    }
+                    if self.command_click_wanted() {
                         self.request_link();
                     }
                     if self.hovered.get() {

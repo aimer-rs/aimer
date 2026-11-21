@@ -307,8 +307,10 @@ impl Drawable for RawTextFieldHost {
         self.field.update(ctx);
         self.sync_caret_placement(ctx);
         self.sync_embed_placement(ctx);
-        self.caret.update(ctx);
+        // The caret is drawn last, over the embeds: what hangs from it, a completion menu, reaches over
+        // the lines below the caret, and a rendered block there must not be drawn over it.
         self.field.embeds.update(ctx);
+        self.caret.update(ctx);
     }
 
     fn sync_paint_state(&self, ctx: &BuildContext) -> bool {
@@ -325,8 +327,10 @@ impl Drawable for RawTextFieldHost {
         self.field.update_retained(ctx);
         self.sync_caret_placement(ctx);
         self.sync_embed_placement(ctx);
-        self.caret.update(ctx);
+        // The caret is drawn last, over the embeds: what hangs from it, a completion menu, reaches over
+        // the lines below the caret, and a rendered block there must not be drawn over it.
         self.field.embeds.update(ctx);
+        self.caret.update(ctx);
     }
 
     fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
@@ -375,10 +379,10 @@ impl Drawable for RawTextFieldHost {
 
 impl VisitorElement for RawTextFieldHost {
     fn visit_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
-        visitor(&self.caret);
+        // Back to front, as they are drawn: the caret, and what hangs from it, is over the embeds.
         self.field.embeds.visit(visitor);
+        visitor(&self.caret);
     }
-
 
     fn event_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         // The field is embedded and has no retained ElementId of its own.
@@ -390,8 +394,8 @@ impl VisitorElement for RawTextFieldHost {
 
     fn structural_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {
         visitor(&self.field);
-        visitor(&self.caret);
         self.field.embeds.visit(visitor);
+        visitor(&self.caret);
     }
 
     fn focus_children<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Element)) {

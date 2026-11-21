@@ -1,6 +1,9 @@
 use std::ops::Range;
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
+use std::time::Duration;
+
+use aimer_animation::AnimInstant;
 
 use aimer_cupid::font::TextLanguage;
 use aimer_text::TextSelection;
@@ -17,6 +20,11 @@ struct ControllerState {
     undo: Vec<TextEditingValue>,
     redo: Vec<TextEditingValue>,
     composition_origin: Option<TextEditingValue>,
+    /// How long may pass between two edits for them to be one undo: see [`TextEditingController::set_undo_merge_window`].
+    merge_window: Duration,
+    /// When the edit that was last recorded was made, while the next may still be taken into its undo. Not set after an
+    /// undo or a redo, nor after a text is set from outside, which begin a step of their own.
+    last_edit: Option<AnimInstant>,
 }
 
 type AttachmentCallback = Rc<dyn Fn(&TextEditingValue, u64)>;
@@ -28,6 +36,11 @@ struct ControllerCore {
     input_language: Cell<Option<TextLanguage>>,
     /// What a text area is to show, asked by [`TextEditingController::locate`] and taken once.
     locate: RefCell<Option<Range<usize>>>,
+    /// How far the text is scrolled, as a view of it last left it: see [`TextEditingController::scroll_offset`].
+    scroll: Cell<(f32, f32)>,
+    /// The time the controller is to take as now, for a test that says when each edit is made.
+    #[cfg(test)]
+    test_now: Cell<Option<AnimInstant>>,
 }
 
 /// Owns a UI-thread-local editable value and its transaction revision.
@@ -83,10 +96,15 @@ impl TextEditingController {
                     undo: Vec::new(),
                     redo: Vec::new(),
                     composition_origin: None,
+                    merge_window: Duration::ZERO,
+                    last_edit: None,
                 }),
                 next_attachment: Cell::new(0),
                 input_language: Cell::new(None),
                 locate: RefCell::new(None),
+                scroll: Cell::new((0.0, 0.0)),
+                #[cfg(test)]
+                test_now: Cell::new(None),
             }),
         }
     }
@@ -170,20 +188,73 @@ impl TextEditingController {
     pub fn set_value(&self, value: TextEditingValue) {
         let previous = self.value();
         self.core.state.borrow_mut().composition_origin = None;
+        // A text set from outside is a step of its own, which neither takes in the typing before it nor is taken into
+        // the typing after.
+        self.core.state.borrow_mut().last_edit = None;
         self.apply_value(value, Some(previous));
+        self.core.state.borrow_mut().last_edit = None;
+    }
+
+    /// Makes the edits that follow each other within `window` one undo, so that undo steps back over what was typed in a
+    /// burst and not over a character at a time.
+    ///
+    /// The window is how long may pass from one edit to the next, and not from the first of them: typing that never
+    /// pauses for as long is one undo however long it goes on. An edit made after a longer pause begins the next. Any
+    /// edit counts, a paste or a completion as much as a keystroke, and only time parts one from the next: moving the
+    /// caret does not. An undo or a redo ends a burst, as does [`set_value`](Self::set_value).
+    ///
+    /// [`Duration::ZERO`], which is what a controller starts with, makes every edit an undo of its own.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::new();
+    /// controller.set_undo_merge_window(Duration::from_secs(1));
+    /// controller.replace_range(0..0, "a");
+    /// controller.replace_range(1..1, "b");
+    /// // Both were made in an instant: one undo takes them.
+    /// assert!(controller.undo());
+    /// assert_eq!(controller.value().text(), "");
+    /// ```
+    pub fn set_undo_merge_window(&self, window: Duration) {
+        let mut state = self.core.state.borrow_mut();
+        state.merge_window = window;
+        // What was typed is not taken into what is typed under another window.
+        state.last_edit = None;
+    }
+
+    /// The time that edits are told apart by.
+    fn now(&self) -> AnimInstant {
+        #[cfg(test)]
+        if let Some(now) = self.core.test_now.get() {
+            return now;
+        }
+        AnimInstant::now()
     }
 
     fn apply_value(&self, value: TextEditingValue, history: Option<TextEditingValue>) -> bool {
+        let now = self.now();
         let (revision, attachments) = {
             let mut state = self.core.state.borrow_mut();
             if state.value == value {
                 return false;
             }
             if let Some(previous) = history {
-                state.undo.push(previous);
-                if state.undo.len() > Self::MAX_UNDO_DEPTH {
-                    state.undo.remove(0);
+                let merges = !state.merge_window.is_zero()
+                    && state
+                        .last_edit
+                        .is_some_and(|last| now.duration_since(last) <= state.merge_window);
+                // The step that is there already began before this edit: its value is the one to undo to.
+                if !(merges && !state.undo.is_empty()) {
+                    state.undo.push(previous);
+                    if state.undo.len() > Self::MAX_UNDO_DEPTH {
+                        state.undo.remove(0);
+                    }
                 }
+                state.last_edit = Some(now);
                 state.redo.clear();
             }
             state.value = value;
@@ -601,6 +672,31 @@ impl TextEditingController {
         *self.core.locate.borrow_mut() = Some(start..end);
     }
 
+    /// How far the text is scrolled, `(sideways, down)` in physical pixels, as the view of it that was last drawn left it. A text area
+    /// tells it as it is scrolled and starts from it, so that a text that is shown again after another was, as in a tab, is where it
+    /// was. It is a thing about how the text is shown and not about the text: it is not an edit and nothing listens for it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextEditingController;
+    ///
+    /// let controller = TextEditingController::with_text("one\ntwo");
+    /// assert_eq!(controller.scroll_offset(), (0.0, 0.0));
+    /// controller.set_scroll_offset((0.0, 120.0));
+    /// assert_eq!(controller.scroll_offset(), (0.0, 120.0));
+    /// ```
+    pub fn scroll_offset(&self) -> (f32, f32) {
+        self.core.scroll.get()
+    }
+
+    /// Says how far the text is scrolled; see [`scroll_offset`](Self::scroll_offset). What is not a place to scroll to, a negative
+    /// offset or one that is not a number, is the start.
+    pub fn set_scroll_offset(&self, (x, y): (f32, f32)) {
+        let place = |offset: f32| if offset.is_finite() && offset >= 0.0 { offset } else { 0.0 };
+        self.core.scroll.set((place(x), place(y)));
+    }
+
     /// The range that [`locate`](Self::locate) asked to show, if one is waiting, and forgets it. A
     /// [`TextArea`](crate::TextArea) takes it for its next frame; call it only from a view of the text that draws its own.
     pub fn take_locate(&self) -> Option<Range<usize>> {
@@ -732,6 +828,7 @@ impl TextEditingController {
             state.redo.pop()
         }?;
         let current = std::mem::replace(&mut state.value, restored);
+        state.last_edit = None;
         if undo {
             state.redo.push(current);
         } else {
@@ -1128,3 +1225,6 @@ mod bench_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod undo_window;

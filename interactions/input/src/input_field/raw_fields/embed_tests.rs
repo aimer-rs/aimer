@@ -197,6 +197,81 @@ fn the_embed_is_a_child_of_the_host() {
     assert_eq!(hit_targets, 1, "and only the embed is a target");
 }
 
+/// A widget that notes, in `log`, that it was updated or visited, under `name`: what tells which of two
+/// widgets is drawn first, and so which is drawn over the other.
+#[derive(Clone)]
+struct Logged {
+    name: &'static str,
+    log: Rc<std::cell::RefCell<Vec<&'static str>>>,
+}
+
+impl Widget for Logged {
+    fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+        LoggedElement { name: self.name, log: self.log }.boxed()
+    }
+}
+
+struct LoggedElement {
+    name: &'static str,
+    log: Rc<std::cell::RefCell<Vec<&'static str>>>,
+}
+
+impl Drawable for LoggedElement {
+    fn update(&self, _ctx: &BuildContext) {
+        self.log.borrow_mut().push(self.name);
+    }
+}
+
+impl VisitorElement for LoggedElement {}
+impl EventElement for LoggedElement {}
+impl Rebuildable for LoggedElement {}
+
+impl Element for LoggedElement {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+}
+
+impl LayoutElement for LoggedElement {
+    fn layout(&self, ctx: &BuildContext) -> ResolvedSize {
+        self.computed_size(ctx)
+    }
+
+    fn computed_size(&self, ctx: &BuildContext) -> ResolvedSize {
+        ResolvedSize { width: ctx.box_constraint.max_width, height: 60.0 * ctx.scale }
+    }
+}
+
+#[test]
+fn the_caret_is_drawn_over_the_embeds_so_what_hangs_from_it_is_not_covered_by_one() {
+    // A completion menu hangs from the caret and reaches down over the lines below it, which may be a
+    // rendered block: the widget of a block drawn after the caret would be on top of the menu.
+    let log: Rc<std::cell::RefCell<Vec<&'static str>>> = Rc::default();
+    let embedded = Logged { name: "embed", log: Rc::clone(&log) };
+    let embedder = TextEmbedder::new(move |_, _| {
+        let embedded = embedded.clone();
+        vec![TextEmbed::new(BLOCK, 7, move || embedded.clone())]
+    });
+    let mut config = field_config(TextEditingController::with_text(TEXT));
+    config.embedder = Some(embedder);
+    let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+    let caret = Logged { name: "caret", log: Rc::clone(&log) }.to_element(&dummy_build_context(400.0, 600.0));
+    let host = RawTextFieldHost::new(field, caret);
+    let context = unbounded(dummy_build_context(400.0, 600.0));
+    assert!(host.sync_paint_state(&context));
+
+    host.update(&context);
+    let mut visited = Vec::new();
+    host.visit_children(&mut |child| visited.push(child.name()));
+    let mut structure = Vec::new();
+    host.structural_children(&mut |child| structure.push(child.name()));
+
+    assert_eq!(*log.borrow(), ["embed", "caret"], "the order they are updated in is the order they are drawn in");
+    // Each is held in a placement wrapper of its own, which is what the host has as a child.
+    assert_eq!(visited, ["TextFieldEmbedPlacement", "TextFieldCaretPlacement"]);
+    assert_eq!(structure.last().copied(), Some("TextFieldCaretPlacement"), "{structure:?}");
+}
+
 #[test]
 fn an_embed_goes_when_the_cursor_enters_its_block_and_returns_when_it_leaves() {
     let (host, context) = host(Some(block_embedder(60.0, Rc::default())), TextEditingController::with_text(TEXT));
@@ -524,6 +599,97 @@ fn clickable_embedder(consumes_release: bool) -> TextEmbedder {
         let probe = probe.clone();
         vec![TextEmbed::new(BLOCK, 7, move || probe.clone())]
     })
+}
+
+/// An embedded widget that takes the pointer cursor while the mouse is over it, as text with a link in it does. It does not
+/// consume the move, so the field it is in sees it too. It has no bounds of its own, so it is told the height above which a move is not over it.
+struct Pointing(Rc<Cell<f32>>);
+
+impl Widget for Pointing {
+    fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+        PointingElement(self.0).boxed()
+    }
+}
+
+struct PointingElement(Rc<Cell<f32>>);
+
+impl Drawable for PointingElement {}
+impl VisitorElement for PointingElement {}
+impl Rebuildable for PointingElement {}
+
+impl Element for PointingElement {
+    fn name(&self) -> &'static str {
+        "PointingEmbed"
+    }
+}
+
+impl EventElement for PointingElement {
+    fn event_tree_role(&self) -> aimer_widget::EventTreeRole {
+        aimer_widget::EventTreeRole::IndexedTarget
+    }
+
+    fn on_event(&self, event: &aimer_events::element::ElementEvent) -> aimer_widget::EventResult {
+        if let aimer_events::element::ElementEvent::PointerMove(info) = event
+            && info.pos.y >= self.0.get()
+        {
+            aimer_utils::cursor::set_cursor(aimer_utils::cursor::CursorIcon::Pointer);
+        }
+        aimer_widget::EventResult::ignored()
+    }
+}
+
+impl LayoutElement for PointingElement {
+    fn layout(&self, ctx: &BuildContext) -> ResolvedSize {
+        self.computed_size(ctx)
+    }
+
+    fn computed_size(&self, ctx: &BuildContext) -> ResolvedSize {
+        ResolvedSize { width: ctx.box_constraint.max_width, height: 60.0 * ctx.scale }
+    }
+}
+
+#[test]
+fn the_pointer_cursor_an_embedded_widget_asks_for_is_not_replaced_by_the_text_cursor_of_the_field() {
+    use aimer_events::element::ElementEvent;
+    use aimer_events::pointer::{PointerButton, PointerInfo};
+    use aimer_utils::cursor::{restore_thread_cursor_handler, set_thread_cursor_handler, Cursor, CursorIcon};
+
+    let requests = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let recorded = Rc::clone(&requests);
+    let previous = set_thread_cursor_handler(move |cursor| recorded.borrow_mut().push(cursor));
+
+    let top = Rc::new(Cell::new(f32::MAX));
+    let shared = Rc::clone(&top);
+    let embedder = TextEmbedder::new(move |_, context| {
+        if context.is_active(&BLOCK) {
+            return Vec::new();
+        }
+        let top = Rc::clone(&shared);
+        vec![TextEmbed::new(BLOCK, 7, move || Pointing(Rc::clone(&top)))]
+    });
+    let (host, context) = host(Some(embedder), TextEditingController::with_text(TEXT));
+    let context = unbounded(context);
+    let embeds = Rc::clone(&host.field.embeds);
+    let root = host.boxed();
+    root.sync_paint_state(&context);
+    root.update(&context);
+    let (offset, size) = embeds.placement_of(7).expect("the embed is placed");
+    top.set(offset.y);
+    let on_embed = Vec2d { x: offset.x + size.width / 2.0, y: offset.y + size.height / 2.0 };
+    let on_text = Vec2d { x: 4.0, y: 4.0 };
+    let move_to = |at: Vec2d| {
+        let _ = aimer_widget::dispatch_event(root.as_ref(), at, &ElementEvent::PointerMove(PointerInfo::mouse(at, PointerButton::Primary)));
+    };
+    let last = || requests.borrow().last().cloned();
+
+    move_to(on_text);
+    assert_eq!(last(), Some(Cursor::Icon(CursorIcon::Text)), "over the text, the text cursor");
+    move_to(on_embed);
+    assert_eq!(last(), Some(Cursor::Icon(CursorIcon::Pointer)), "over a widget that points, the pointer is the last word");
+    move_to(on_text);
+    assert_eq!(last(), Some(Cursor::Icon(CursorIcon::Text)), "and the text cursor again off it");
+
+    restore_thread_cursor_handler(previous);
 }
 
 /// The widget has nothing to do with a click on its plain area, so the click is
@@ -882,4 +1048,38 @@ mod placement {
         assert_eq!(host.field.embeds.len(), 0, "premise: the embed is gone");
         assert_ne!(live_children_generation(), before.1, "the children of the field changed, and it was said");
     }
+}
+
+/// What the field asks of its embeds many times a frame: the height of each, for the geometry it is about to
+/// look up. A timing harness, to run by itself in the debug build
+/// (`cargo test -p aimer_input embed_height_timing -- --ignored --nocapture`).
+#[test]
+#[ignore = "a timing harness: run by itself, in the debug build"]
+fn embed_height_timing() {
+    const EMBEDS: usize = 25;
+    const ASKS: usize = 40;
+    const FRAMES: usize = 400;
+    let store = super::EmbedStore::default();
+    let context = unbounded(dummy_build_context(400.0, 600.0));
+    let embeds: Vec<TextEmbed> = (0..EMBEDS)
+        .map(|n| {
+            let probe = Probe::new(60.0, Rc::default());
+            TextEmbed::new(n * 20..n * 20 + 10, n as u64 + 1, move || probe.clone())
+        })
+        .collect();
+    // The first asks build and measure them.
+    let mut total = 0.0;
+    for embed in &embeds {
+        total += store.height(embed, 392.0, &context);
+    }
+    let started = std::time::Instant::now();
+    for _ in 0..FRAMES {
+        for _ in 0..ASKS {
+            for embed in &embeds {
+                total += store.height(embed, 392.0, &context);
+            }
+        }
+    }
+    let per_ask = started.elapsed() / (FRAMES * ASKS * EMBEDS) as u32;
+    println!("EmbedStore::height: {per_ask:?} per ask ({EMBEDS} embeds, {} asks per frame) [{total}]", ASKS * EMBEDS);
 }

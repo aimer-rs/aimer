@@ -911,6 +911,8 @@ pub struct AimerApplicationHandler<W: Widget + 'static> {
     /// secondary-button drag loses its identity halfway through.
     pub pressed_button: Option<aimer_events::pointer::PointerButton>,
     pub current_modifiers: aimer_events::element::Modifiers,
+    /// Watches the modifier keys for a double tap, which is a shortcut (`DoubleShift`).
+    pub(crate) double_tap: aimer_shortcut::DoubleTap,
     pub ime_composing: bool,
     pub window_scale: f64,
     /// Last observed window size in physical pixels, independent of screen resolution.

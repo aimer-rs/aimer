@@ -154,8 +154,9 @@ pub(crate) struct EmbedStore {
     children: std::cell::UnsafeCell<Vec<EmbedChild>>,
     /// What the field last said about where its embeds are.
     published: RefCell<Vec<PublishedEmbed>>,
-    /// Heights found by measuring, by embed key and measured width.
-    measured: RefCell<std::collections::HashMap<(u64, u32), f32>>,
+    /// Heights found by measuring, by embed key and measured width (see [`Self::measured_key`]). Asked
+    /// many times a frame, so its hasher is the one for keys that are digests, not the general one.
+    measured: RefCell<std::collections::HashMap<u128, f32, aimer_cupid::utilities::IdBuildHasher>>,
     /// Set while a press that landed on an embedded widget has not been released.
     pressed: Cell<bool>,
 }
@@ -165,7 +166,7 @@ impl Default for EmbedStore {
         Self {
             children: std::cell::UnsafeCell::new(Vec::new()),
             published: RefCell::new(Vec::new()),
-            measured: RefCell::new(std::collections::HashMap::new()),
+            measured: RefCell::new(std::collections::HashMap::default()),
             pressed: Cell::new(false),
         }
     }
@@ -182,6 +183,18 @@ impl EmbedStore {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.children().len()
+    }
+
+    /// The key a measured height is kept under: the embed's, and the width it was measured at.
+    #[inline]
+    fn measured_key(embed_key: u64, width: f32) -> u128 {
+        (u128::from(embed_key) << 32) | u128::from(width.to_bits())
+    }
+
+    /// Whether the embed `key` has its element already.
+    #[inline]
+    fn has(&self, key: u64) -> bool {
+        self.children().iter().any(|child| child.key == key)
     }
 
     /// The element of the embed `key`, built from `embed` if there is none yet.
@@ -216,15 +229,21 @@ impl EmbedStore {
     /// unbounded, and the answer is remembered for that width.
     pub(crate) fn height(&self, embed: &TextEmbed, width: f32, ctx: &BuildContext) -> f32 {
         let scale = if ctx.scale > 0.0 { ctx.scale } else { 1.0 };
-        // Whatever decides the height, the widget has to exist to be placed.
-        let child = self.ensure(embed, ctx);
+        // Whatever decides the height, the widget has to exist to be placed. It is looked for without
+        // taking a hold of it: this is asked for every embed several times a frame, and the element is
+        // only wanted by the one ask that measures.
+        let key = embed.key();
+        if !self.has(key) {
+            drop(self.ensure(embed, ctx));
+        }
         if let EmbedHeight::Fixed(height) = embed.height() {
             return if height.is_finite() { height.max(0.0) * scale } else { 0.0 };
         }
-        let cache_key = (embed.key(), width.to_bits());
+        let cache_key = Self::measured_key(key, width);
         if let Some(height) = self.measured.borrow().get(&cache_key) {
             return *height;
         }
+        let child = self.ensure(embed, ctx);
         let mut measuring = ctx.clone();
         measuring.parent_size = ResolvedSize { width, height: f32::INFINITY };
         measuring.box_constraint = aimer_attribute::BoxConstraint {
@@ -283,7 +302,7 @@ impl EmbedStore {
                 .retain(|child| published.iter().any(|embed| embed.key == child.key));
             self.measured
                 .borrow_mut()
-                .retain(|(key, _), _| published.iter().any(|embed| embed.key == *key));
+                .retain(|measured, _| published.iter().any(|embed| u128::from(embed.key) == measured >> 32));
             aimer_widget::notify_live_children_changed();
             changed = true;
         }

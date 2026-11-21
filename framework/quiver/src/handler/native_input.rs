@@ -109,6 +109,10 @@ impl WindowEventHandler {
                 app.cursor_pos = pos;
                 Self::dispatch_platform_gesture(app, event);
             }
+            // What `WindowEvent::ModifiersChanged` does, once the modifiers are recorded, which is done above.
+            ElementEvent::ModifiersChanged(held) => {
+                Self::dispatch_platform_gesture(app, ElementEvent::ModifiersChanged(held));
+            }
             ElementEvent::KeyInput { key, action, .. } => {
                 if app.ime_composing && !app.current_modifiers.ctrl && !app.current_modifiers.meta {
                     return;

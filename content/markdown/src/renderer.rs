@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use aimer_assets::{AssetImage, NetworkImage};
 use aimer_color::prelude::Color;
+use aimer_collapsible::{CollapsibleList, ListBody, ListHeader};
 use aimer_container::{Container, SizedBox};
 use aimer_flex::{BoxAlignment, Column, Expanded, OverflowBehavior, Row};
 use aimer_grid::{Grid, GridItem, GridTrack};
@@ -285,6 +286,15 @@ fn table_text_align(alignment: Alignment) -> TextAlign {
     }
 }
 
+/// Where a column places what is in it, for the words in it to be aligned as `alignment` says.
+fn box_alignment(alignment: TextAlign) -> BoxAlignment {
+    match alignment {
+        TextAlign::TopCenter | TextAlign::MidCenter | TextAlign::BotCenter => BoxAlignment::Center,
+        TextAlign::TopRight | TextAlign::MidRight | TextAlign::BotRight => BoxAlignment::End,
+        _ => BoxAlignment::Start,
+    }
+}
+
 fn table_tracks(column_count: usize) -> Vec<GridTrack> {
     std::iter::repeat_n(GridTrack::Fr(1.0), column_count).collect()
 }
@@ -505,9 +515,14 @@ fn render_block(
                     Column::new()
                         .horizontal_alignment(BoxAlignment::Start)
                         .children([
-                            build_code_header(value, language.as_ref(), theme),
+                            // The header names the language and has the button that copies the code: a theme may go without it.
+                            if theme.code_header {
+                                build_code_header(value, language.as_ref(), theme)
+                            } else {
+                                SizedBox::new().height(0).boxed()
+                            },
                             Container::new()
-                                .padding(LayoutSpacing::new().left(16).right(16).bottom(16))
+                                .padding(LayoutSpacing::new().left(16).right(16).top(if theme.code_header { 0 } else { 12 }).bottom(16))
                                 .box_child(
                                     Scrollable::new()
                                         .axis(ScrollAxis::Horizontal)
@@ -524,6 +539,87 @@ fn render_block(
                                 ),
                         ]),
                 )
+        }
+        Block::Aligned { alignment, blocks } => {
+            let text_align = table_text_align(*alignment);
+            let children = blocks
+                .iter()
+                .map(|block| match block {
+                    // The words are aligned, and the other blocks, an image or a table, are placed by the column they are in.
+                    Block::Paragraph(content) => render_inline_flow(
+                        content,
+                        theme.body,
+                        Some(text_align),
+                        theme,
+                        link_handler,
+                        image_resolver,
+                        custom_inlines,
+                        typed_custom_inlines,
+                        ctx,
+                    ),
+                    Block::Heading { depth, content } => render_inline_flow(
+                        content,
+                        theme.headings[usize::from(*depth).saturating_sub(1).min(5)],
+                        Some(text_align),
+                        theme,
+                        link_handler,
+                        image_resolver,
+                        custom_inlines,
+                        typed_custom_inlines,
+                        ctx,
+                    ),
+                    other => render_block(
+                        other,
+                        theme,
+                        link_handler,
+                        image_resolver,
+                        custom_blocks,
+                        custom_inlines,
+                        typed_custom_blocks,
+                        typed_custom_inlines,
+                        ctx,
+                    ),
+                })
+                .collect::<Vec<_>>();
+            // As wide as there is, so that there is room to place what is in it.
+            Container::new()
+                .width(aimer_attribute::Dimension::Percent(100.0))
+                .child(
+                    Column::new()
+                        .horizontal_alignment(box_alignment(text_align))
+                        .gaps(LayoutSpacing::all(theme.block_spacing))
+                        .children(children),
+                )
+                .boxed()
+        }
+        Block::Details { summary, open, blocks } => {
+            let summary = render_inline_flow(
+                summary,
+                theme.body.font_weight(FontWeight::Bold),
+                None,
+                theme,
+                link_handler,
+                image_resolver,
+                custom_inlines,
+                typed_custom_inlines,
+                ctx,
+            );
+            let body = render_blocks(
+                blocks,
+                theme,
+                link_handler,
+                image_resolver,
+                custom_blocks,
+                custom_inlines,
+                typed_custom_blocks,
+                typed_custom_inlines,
+                ctx,
+            );
+            CollapsibleList::new()
+                .expanded(*open)
+                .header(ListHeader::new().child(summary))
+                .body(ListBody::new().child(body))
+                .boxed()
         }
         Block::ThematicBreak => SizedBox::new().height(1.0).color(theme.rule_color).boxed(),
         Block::Table { alignments, rows } => render_table(
@@ -775,7 +871,7 @@ fn render_inline_flow(
             .boxed()
     } else {
         Column::new()
-            .horizontal_alignment(BoxAlignment::Start)
+            .horizontal_alignment(alignment.map_or(BoxAlignment::Start, box_alignment))
             .gaps(LayoutSpacing::all(8_u32))
             .children(children)
             .boxed()
@@ -1104,6 +1200,33 @@ mod tests {
     }
 
     #[test]
+    fn a_code_block_without_its_header_has_no_language_name_and_still_has_its_code() {
+        let resolver: ImageResolver = Rc::new(default_image_resolver);
+        let document = Document::parse("```rust\nfn main() {}\n```").unwrap();
+        let drawn = |theme: MarkdownTheme| {
+            let (ctx, _canvas) = layout_context_with_canvas(320.0, 200.0);
+            let element = render_document(&document, &theme, None, &resolver, &[], &[]).to_element(&ctx);
+            element.layout(&ctx);
+            element.update(&ctx);
+            let mut commands = Vec::new();
+            recorded_commands(element.as_ref(), &ctx, &mut commands);
+            commands
+                .iter()
+                .flat_map(|command| match command {
+                    aimer_cupid::draw_cmd::DrawCommand::DrawText { text, .. } => vec![text.as_ref()],
+                    aimer_cupid::draw_cmd::DrawCommand::DrawRichText { spans, .. } => spans.iter().map(|span| span.text.as_ref()).collect(),
+                    _ => Vec::new(),
+                })
+                .collect::<String>()
+        };
+        let with = drawn(MarkdownTheme::default());
+        assert!(with.contains("rust"), "the default has the header, which names the language");
+        let without = drawn(MarkdownTheme { code_header: false, ..MarkdownTheme::default() });
+        assert!(!without.contains("rust"), "{without:?}");
+        assert!(without.contains("fn main() {}"));
+    }
+
+    #[test]
     fn code_block_copy_forwards_the_exact_source() {
         let copied = RefCell::new(String::new());
 
@@ -1183,6 +1306,58 @@ mod tests {
             );
         }
         element.visit_children(&mut |child| recorded_commands(child, ctx, commands));
+    }
+
+    /// The commands that drawing `source` records at `width`.
+    fn drawn_commands(source: &str, width: f32) -> Vec<aimer_cupid::draw_cmd::DrawCommand> {
+        let resolver: ImageResolver = Rc::new(default_image_resolver);
+        let document = Document::parse(source).unwrap();
+        let (ctx, _canvas) = layout_context_with_canvas(width, 400.0);
+        let element = render_document(&document, &MarkdownTheme::default(), None, &resolver, &[], &[]).to_element(&ctx);
+        element.layout(&ctx);
+        element.update(&ctx);
+        let mut commands = Vec::new();
+        recorded_commands(element.as_ref(), &ctx, &mut commands);
+        commands
+    }
+
+    /// How the text `wanted` is aligned in what is drawn, as the name of the alignment.
+    fn alignment_of_drawn(commands: &[aimer_cupid::draw_cmd::DrawCommand], wanted: &str) -> Option<String> {
+        commands.iter().find_map(|command| match command {
+            aimer_cupid::draw_cmd::DrawCommand::DrawText { text, horizontal_align, .. } if text.as_ref() == wanted => Some(format!("{horizontal_align:?}")),
+            _ => None,
+        })
+    }
+
+    fn drawn_text(commands: &[aimer_cupid::draw_cmd::DrawCommand]) -> String {
+        commands
+            .iter()
+            .flat_map(|command| match command {
+                aimer_cupid::draw_cmd::DrawCommand::DrawText { text, .. } => vec![text.as_ref()],
+                aimer_cupid::draw_cmd::DrawCommand::DrawRichText { spans, .. } => spans.iter().map(|span| span.text.as_ref()).collect(),
+                _ => Vec::new(),
+            })
+            .collect::<Vec<_>>()
+            .join("|")
+    }
+
+    #[test]
+    fn a_paragraph_and_a_heading_that_html_centers_are_drawn_centered_and_the_others_are_not() {
+        let centered = drawn_commands("<div align=\"center\">\n\n# Title\n\nCentered words\n\n</div>\n\nPlain words", 400.0);
+        assert_eq!(alignment_of_drawn(&centered, "Centered words").as_deref(), Some("Center"));
+        assert_eq!(alignment_of_drawn(&centered, "Title").as_deref(), Some("Center"));
+        assert_eq!(alignment_of_drawn(&centered, "Plain words").as_deref(), Some("Left"), "what is outside is as it was");
+        let right = drawn_commands("<p align=\"right\">Right words</p>", 400.0);
+        assert_eq!(alignment_of_drawn(&right, "Right words").as_deref(), Some("Right"));
+    }
+
+    #[test]
+    fn details_show_their_summary_and_show_their_blocks_only_where_they_are_open() {
+        let shut = drawn_text(&drawn_commands("<details>\n<summary>The summary</summary>\n\nThe hidden body\n\n</details>", 400.0));
+        assert!(shut.contains("The summary"), "{shut}");
+        assert!(!shut.contains("The hidden body"), "a shut one has not made its body: {shut}");
+        let open = drawn_text(&drawn_commands("<details open>\n<summary>The summary</summary>\n\nThe shown body\n\n</details>", 400.0));
+        assert!(open.contains("The summary") && open.contains("The shown body"), "{open}");
     }
 
     #[test]

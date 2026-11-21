@@ -1022,6 +1022,21 @@ fn a_windowed_highlighter_is_asked_for_the_lines_that_are_laid_out_and_no_others
 }
 
 #[test]
+fn a_window_that_is_the_same_after_its_layout_taught_the_heights_is_laid_out_once() {
+    // The headings are taller than the lines were estimated, so laying the window out changes what
+    // the index knows. The lines wanted afterwards are the ones just laid out, and laying them out
+    // again would only repeat that.
+    let text = markdown(1200);
+    let field = rich_field(&text, 64 * 1024, Some(markdown_highlighter()), None);
+    let ctx = dummy_build_context(800.0, 600.0);
+    let before = super::rich_window_layouts();
+
+    frame(&field, &ctx);
+
+    assert_eq!(super::rich_window_layouts() - before, 1, "the window was laid out again for the same lines");
+}
+
+#[test]
 fn a_windowed_highlighter_is_not_asked_again_for_a_frame_that_changes_nothing() {
     let text = markdown(1200);
     let asked = Rc::new(RefCell::new(Vec::new()));

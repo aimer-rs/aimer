@@ -15,6 +15,8 @@ aimer_widget.workspace = true
 aimer_text.workspace = true
 aimer_container.workspace = true
 aimer_flex.workspace = true
+aimer_collapsible.workspace = true
+aimer_attribute.workspace = true
 aimer_grid.workspace = true
 aimer_scroll.workspace = true
 markdown.workspace = true
@@ -85,7 +87,6 @@ arborium = ["dep:arborium"]
 syntect = ["dep:syntect", "dep:two-face"]
 
 [dev-dependencies]
-aimer_attribute.workspace = true
 aimer_canvas.workspace = true
 aimer_cupid.workspace = true
 tokio.workspace = true

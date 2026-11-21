@@ -95,6 +95,7 @@ impl Shared {
             touch_pointer: false,
             pressed_button: None,
             current_modifiers: Default::default(),
+            double_tap: Default::default(),
             ime_composing: false,
             window_scale: 1.0,
             native_window_size: None,

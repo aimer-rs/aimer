@@ -83,3 +83,20 @@ pub(super) fn dispatch_shortcut(root: &dyn Element, event: &ElementEvent) -> Eve
     }
     EventResult::ignored()
 }
+
+/// Tells the scopes that watch the modifiers what is held now: the ones around the focused element and the window-wide ones,
+/// as for a chord. The event is not spent; it goes on to be routed as any other.
+///
+/// Costs one thread-local read when no scope exists.
+pub(super) fn notify_modifiers(root: &dyn Element, held: &aimer_events::element::Modifiers) {
+    if !scopes_alive() {
+        return;
+    }
+    let mut walk = ScopeWalk { path: SmallVec::new(), around_focus: None, window: SmallVec::new() };
+    walk.visit(root);
+    let held = aimer_shortcut::ChordMods::from_event(held);
+    let focused = walk.around_focus.iter().flat_map(|scopes| scopes.iter());
+    for scope in focused.chain(walk.window.iter()) {
+        scope.modifiers_changed(held);
+    }
+}

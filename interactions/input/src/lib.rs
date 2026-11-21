@@ -23,7 +23,13 @@ pub mod input {
     pub use crate::input_field::chrome::TextFieldVisualState;
     pub use crate::input_field::embed::{EmbedHeight, TextEmbed, TextEmbedder};
     pub use crate::input_field::highlight::{HighlightContext, TextHighlighter};
-    pub use crate::input_field::gutter::{GutterMarker, GutterMarkers, LineBar, LineBars, LineNumbers};
+    pub use crate::input_field::caret_marks::{CaretMark, CaretMarks};
+    pub use crate::input_field::hover::{HoverSpot, TextHover};
+    pub use crate::input_field::context_menu::{ContextMenuExtras, ContextMenuRequest};
+    pub use crate::input_field::gutter::{GutterMarker, GutterMarkers, LineBar, LineBars, LineNumberAlign, LineNumbers};
+    pub use crate::input_field::inlay::{Inlay, Inlays};
+    pub use crate::input_field::underline::{Underline, Underlines};
+    pub use crate::input_field::line_labels::{FieldSpot, LineLabel, LineLabels};
     pub use aimer_text_buffer::TextSnapshot;
     pub use aimer_text::{InlineBox, SpanStyle, StyledRange};
     pub use crate::input_field::{TextField, TextFieldState};

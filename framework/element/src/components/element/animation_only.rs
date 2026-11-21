@@ -471,12 +471,22 @@ pub(crate) fn stale_roots_waiting() -> bool {
     STALE_ROOTS.with(StaleRoots::waiting)
 }
 
-/// Called as a full traversal ends: drops the rebuilt roots it did not reach.
-pub(crate) fn finish_full_traversal() {
+/// Called as a full traversal ends: drops the rebuilt roots it did not reach, except the ones that
+/// `left_alone` says were inside a subtree the walk left alone, whose context stands as it was.
+pub(crate) fn finish_full_traversal(left_alone: impl Fn(ElementId) -> bool) {
     if !STALE_ROOTS.with(StaleRoots::waiting) {
         return;
     }
-    REGISTRY.with(|registry| registry.borrow_mut().retain(|_, registration| !registration.stale));
+    REGISTRY.with(|registry| {
+        registry.borrow_mut().retain(|element, registration| {
+            if !registration.stale {
+                return true;
+            }
+            // The question reads the render tree, which no registration is part of.
+            registration.stale = !left_alone(*element);
+            !registration.stale
+        })
+    });
     STALE_ROOTS.with(StaleRoots::clear);
 }
 
@@ -599,14 +609,14 @@ mod tests {
     #[test]
     fn an_empty_registry_is_a_pass_with_nothing_to_do() {
         begin_full_traversal();
-        finish_full_traversal();
+        finish_full_traversal(|_| false);
         assert_eq!(animation_only_targets(&[], |_| None).map(|targets| targets.len()), Some(0));
     }
 
     #[test]
     fn a_rebuilt_root_with_no_recorded_context_cannot_be_a_pass() {
         begin_full_traversal();
-        finish_full_traversal();
+        finish_full_traversal(|_| false);
         let unknown = ElementId::next();
         assert!(animation_only_targets(&[unknown], |_| None).is_none());
     }
@@ -797,7 +807,7 @@ mod tests {
         remember_rebuilt(root, &ctx);
         begin_full_traversal();
 
-        finish_full_traversal();
+        finish_full_traversal(|_| false);
 
         assert!(!STALE_ROOTS.with(|stale| stale.may_contain(root)));
     }
@@ -811,11 +821,29 @@ mod tests {
         begin_full_traversal();
         capture_rebuilt_root(reached, &ctx);
 
-        finish_full_traversal();
+        finish_full_traversal(|_| false);
 
         assert!(is_remembered(reached));
         assert!(!is_remembered(missed));
         assert!(!walk_is_waiting_for_roots());
+    }
+
+    #[test]
+    fn a_root_inside_a_subtree_the_walk_left_alone_is_kept_when_it_ends() {
+        let ctx = context();
+        let (left_alone, elsewhere) = (ElementId::next(), ElementId::next());
+        remember_rebuilt(left_alone, &ctx);
+        remember_rebuilt(elsewhere, &ctx);
+        begin_full_traversal();
+
+        finish_full_traversal(|root| root == left_alone);
+
+        assert!(is_remembered(left_alone), "its context is what it was: nothing was walked to change it");
+        assert!(!is_remembered(elsewhere), "a root nothing reached and nothing covered has left the tree");
+        assert!(!walk_is_waiting_for_roots());
+        // And it is not still counted stale, which would send the next pass to a full walk.
+        begin_full_traversal();
+        assert!(is_remembered(left_alone));
     }
 
     #[test]

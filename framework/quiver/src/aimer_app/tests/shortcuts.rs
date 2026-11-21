@@ -68,6 +68,34 @@ fn a_window_shortcut_runs_from_a_key_press_that_reaches_the_app() {
 }
 
 #[test]
+fn a_double_tap_shortcut_runs_when_the_window_reports_the_double_tap() {
+    let hits = Rc::new(Cell::new(0));
+    let seen = Rc::clone(&hits);
+    let mut app = AimerApp::start_headless(
+        Shortcuts::new()
+            .window(true)
+            .bind_str("DoubleShift", move || seen.set(seen.get() + 1))
+            .child(Blank),
+    );
+    app.render_frame();
+
+    // What the window's event loop sends once the detector has seen two taps: the key named for the gesture, with nothing
+    // held, since the tap that finished it is let go.
+    let double_tap = |name: &str| AimerNativePlatformEvent::NativeInput {
+        event: ElementEvent::KeyInput {
+            key: NamedKey::Other(name.into()),
+            action: KeyAction::Pressed,
+            modifiers: Modifiers::default(),
+        },
+        modifiers: Modifiers::default(),
+    };
+    app.send_user_event(double_tap("DoubleShift"));
+    app.send_user_event(double_tap("DoubleCtrl"));
+
+    assert_eq!(hits.get(), 1, "only the bound double tap runs the action");
+}
+
+#[test]
 fn a_menu_item_chosen_in_the_native_menu_runs_in_the_app() {
     let hits = Rc::new(Cell::new(0));
     let seen = Rc::clone(&hits);
@@ -112,4 +140,26 @@ fn a_tray_event_runs_its_handler_in_the_app_until_it_is_unsubscribed() {
     seen.set(None);
     app.send_user_event(AimerNativePlatformEvent::Tray { id, event: TrayEvent::Click(TrayButton::Left) });
     assert_eq!(seen.get(), None, "a tray nobody holds is ignored");
+}
+
+#[test]
+fn a_watcher_of_the_modifiers_hears_them_wherever_the_pointer_is() {
+    let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let log = Rc::clone(&seen);
+    let mut app = AimerApp::start_headless(
+        Shortcuts::new()
+            .window(true)
+            .on_modifiers(move |held| log.borrow_mut().push(held))
+            .child(Blank),
+    );
+    app.render_frame();
+
+    let changed = |modifiers: Modifiers| AimerNativePlatformEvent::NativeInput {
+        event: ElementEvent::ModifiersChanged(modifiers),
+        modifiers,
+    };
+    app.send_user_event(changed(Modifiers { shift: true, ..Modifiers::default() }));
+    app.send_user_event(changed(Modifiers::default()));
+
+    assert_eq!(&*seen.borrow(), &[ChordMods::SHIFT, ChordMods::NONE]);
 }

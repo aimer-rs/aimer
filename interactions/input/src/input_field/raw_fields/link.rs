@@ -62,7 +62,13 @@ impl RawTextField {
     /// The layout gives the nearest boundary between two characters, which is the start of the character the point is
     /// in when it is in its left half and the start of the next one when it is in its right half. So the two characters
     /// either side of it are the ones to look at, and the one whose box has the point in it is the one that is under it.
-    pub(super) fn link_at(&self, geometry: &EditableGeometry, (x, y): (f32, f32), byte: usize) -> Option<Range<usize>> {
+    pub(super) fn link_at(&self, geometry: &EditableGeometry, point: (f32, f32), byte: usize) -> Option<Range<usize>> {
+        self.name_at(geometry, point, byte, &|at| self.link_around(at))
+    }
+
+    /// The bytes of the name that is under the point `(x, y)` of the text, where `around` says which name holds a byte: see
+    /// [`link_at`](Self::link_at).
+    pub(super) fn name_at(&self, geometry: &EditableGeometry, (x, y): (f32, f32), byte: usize, around: &dyn Fn(usize) -> Option<Range<usize>>) -> Option<Range<usize>> {
         let value = self.controller.value();
         let after = (byte < value.len()).then(|| byte..value.ceil_to_boundary(byte + 1));
         let before = byte.checked_sub(1).map(|last| value.floor_to_boundary(last)..byte);
@@ -70,12 +76,12 @@ impl RawTextField {
             let rects = geometry.selection_rects(value.grapheme_of_byte(chars.start), value.grapheme_of_byte(chars.end));
             rects.iter().any(|rect| rect.x <= x && x < rect.x + rect.width && rect.y <= y && y < rect.y + rect.height)
         })?;
-        self.link_around(under.start)
+        around(under.start)
     }
 
     /// The bytes of the name that the byte `byte` is in: the app's say, when it has one, and a run of letters, digits and
     /// underscores when it has not.
-    fn link_around(&self, byte: usize) -> Option<Range<usize>> {
+    pub(super) fn link_around(&self, byte: usize) -> Option<Range<usize>> {
         if let Some(link_range) = &self.link_range {
             return link_range(byte).filter(|name| name.start <= byte && byte < name.end);
         }

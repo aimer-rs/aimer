@@ -12,6 +12,8 @@
 //! the instant is handed in — so both are asserted directly.
 
 use std::cell::Cell;
+use std::ops::Range;
+use std::rc::Rc;
 
 use aimer_animation::AnimInstant;
 use aimer_attribute::position::Vec2d;
@@ -20,6 +22,31 @@ use aimer_events::pointer::PointerSource;
 use aimer_widget::PointerKey;
 
 use crate::gesture::{LONG_PRESS_DURATION, tap_slop};
+
+/// What a field tells an app that is asked what to add to its menu: where it was opened, and what is selected.
+///
+/// The ends are bytes of the text, as the app's own text is counted, and not the graphemes the field counts in.
+#[derive(Clone, Debug)]
+pub struct ContextMenuRequest {
+    /// The byte of the text that was under the pointer, for a menu opened by a click: none for a menu a finger opened, which has no pointer
+    /// to say, and for a pointer that was not over any text.
+    pub byte: Option<usize>,
+    /// What is selected, as bytes of the text: a caret is an empty range at the caret.
+    pub selection: Range<usize>,
+    /// Where the menu opens, as a point of the field, for what is shown beside it.
+    pub spot: crate::input_field::line_labels::FieldSpot,
+}
+
+/// What an app adds to a field's menu: rows before the clipboard verbs, and rows after them. Each row does what it was given when it is
+/// chosen, and the menu closes.
+#[derive(Clone, Default)]
+pub struct ContextMenuExtras {
+    pub before: Vec<ContextMenuItem>,
+    pub after: Vec<ContextMenuItem>,
+}
+
+/// What a field calls to ask an app what to add to a menu it is about to raise.
+pub type ContextMenuExtender = Rc<dyn Fn(&ContextMenuRequest) -> ContextMenuExtras>;
 
 /// A verb one row of a field's context menu runs.
 ///
@@ -38,6 +65,8 @@ pub(crate) enum FieldAction {
     Paste,
     /// Selects the whole field.
     SelectAll,
+    /// Does nothing and closes the menu: what the row of an app is, once the app has done what it was given.
+    Dismiss,
 }
 
 impl FieldAction {
@@ -49,7 +78,24 @@ impl FieldAction {
             Self::Copy => "Copy",
             Self::Paste => "Paste",
             Self::SelectAll => "Select All",
+            Self::Dismiss => "",
         }
+    }
+
+    /// The keys that do the same as this verb, written as `mac` writes them: the command key where there is one, and the control key
+    /// elsewhere.
+    pub(crate) const fn hint(self, mac: bool) -> Option<&'static str> {
+        Some(match (self, mac) {
+            (Self::Cut, true) => "\u{2318}X",
+            (Self::Copy, true) => "\u{2318}C",
+            (Self::Paste, true) => "\u{2318}V",
+            (Self::SelectAll, true) => "\u{2318}A",
+            (Self::Cut, false) => "Ctrl+X",
+            (Self::Copy, false) => "Ctrl+C",
+            (Self::Paste, false) => "Ctrl+V",
+            (Self::SelectAll, false) => "Ctrl+A",
+            (Self::Dismiss, _) => return None,
+        })
     }
 }
 
@@ -91,13 +137,29 @@ pub(crate) fn actions_for(state: FieldMenuState) -> Vec<FieldAction> {
     actions
 }
 
-/// The menu rows for `actions`.
+/// The menu rows for `actions`, each with the keys that do the same, as `mac` writes them.
 #[inline]
-pub(crate) fn items(actions: &[FieldAction]) -> Vec<ContextMenuItem> {
+pub(crate) fn items(actions: &[FieldAction], mac: bool) -> Vec<ContextMenuItem> {
     actions
         .iter()
-        .map(|action| ContextMenuItem::new(action.label()))
+        .map(|action| match action.hint(mac) {
+            Some(hint) => ContextMenuItem::new(action.label()).hint(hint),
+            None => ContextMenuItem::new(action.label()),
+        })
         .collect()
+}
+
+/// The rows of a menu as its three groups: what an app adds before the verbs, the verbs, and what the app adds after them. A line sets each group
+/// apart from the one above it, where there is one; what an app asked for inside its own group is left as it is.
+pub(crate) fn in_groups(before: Vec<ContextMenuItem>, verbs: Vec<ContextMenuItem>, after: Vec<ContextMenuItem>) -> Vec<ContextMenuItem> {
+    let mut listed: Vec<ContextMenuItem> = Vec::with_capacity(before.len() + verbs.len() + after.len());
+    for group in [before, verbs, after] {
+        let above = !listed.is_empty();
+        for (index, row) in group.into_iter().enumerate() {
+            listed.push(if above && index == 0 { row.separated() } else { row });
+        }
+    }
+    listed
 }
 
 /// What offering a pointer event to a [`TouchHold`] meant.
@@ -313,12 +375,62 @@ mod tests {
 
     #[test]
     fn the_rows_are_labelled_after_their_verbs() {
-        let rows = items(&actions_for(state()));
+        let rows = items(&actions_for(state()), false);
 
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].label(), "Paste");
         assert_eq!(rows[1].label(), "Select All");
         assert!(rows.iter().all(|row| row.is_enabled()));
+    }
+
+    #[test]
+    fn the_clipboard_verbs_say_the_keys_that_do_the_same_for_the_platform() {
+        assert_eq!(FieldAction::Cut.hint(true), Some("\u{2318}X"));
+        assert_eq!(FieldAction::Copy.hint(true), Some("\u{2318}C"));
+        assert_eq!(FieldAction::Paste.hint(true), Some("\u{2318}V"));
+        assert_eq!(FieldAction::SelectAll.hint(true), Some("\u{2318}A"));
+        assert_eq!(FieldAction::Cut.hint(false), Some("Ctrl+X"));
+        assert_eq!(FieldAction::Paste.hint(false), Some("Ctrl+V"));
+        assert_eq!(FieldAction::SelectAll.hint(false), Some("Ctrl+A"));
+        assert_eq!(FieldAction::Dismiss.hint(true), None, "a verb that is not on the menu has no key");
+    }
+
+    #[test]
+    fn the_rows_of_the_verbs_carry_their_hints() {
+        let rows = items(&[FieldAction::Copy, FieldAction::Paste], false);
+        assert_eq!(rows.iter().map(|row| row.hint_text()).collect::<Vec<_>>(), [Some("Ctrl+C"), Some("Ctrl+V")]);
+    }
+
+    fn labelled(labels: &[&'static str]) -> Vec<ContextMenuItem> {
+        labels.iter().map(|label| ContextMenuItem::new(*label)).collect()
+    }
+
+    fn lines(rows: &[ContextMenuItem]) -> Vec<(&str, bool)> {
+        rows.iter().map(|row| (row.label(), row.has_separator())).collect()
+    }
+
+    #[test]
+    fn the_groups_of_a_menu_are_set_apart_by_a_line_where_there_is_a_group_above() {
+        let listed = in_groups(labelled(&["Actions"]), labelled(&["Copy", "Paste"]), labelled(&["Usages", "Rename"]));
+        assert_eq!(lines(&listed), [("Actions", false), ("Copy", true), ("Paste", false), ("Usages", true), ("Rename", false)]);
+    }
+
+    #[test]
+    fn a_group_that_is_not_there_leaves_no_line_and_the_first_row_never_has_one() {
+        let no_actions = in_groups(Vec::new(), labelled(&["Copy"]), labelled(&["Usages"]));
+        assert_eq!(lines(&no_actions), [("Copy", false), ("Usages", true)]);
+        let only_after = in_groups(Vec::new(), Vec::new(), labelled(&["Usages", "Rename"]));
+        assert_eq!(lines(&only_after), [("Usages", false), ("Rename", false)]);
+        let no_verbs = in_groups(labelled(&["Actions"]), Vec::new(), labelled(&["Usages"]));
+        assert_eq!(lines(&no_verbs), [("Actions", false), ("Usages", true)]);
+        assert!(in_groups(Vec::new(), Vec::new(), Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn a_line_that_the_app_asked_for_is_kept_where_the_menu_would_not_make_one() {
+        let own = vec![ContextMenuItem::new("A"), ContextMenuItem::new("B").separated()];
+        let listed = in_groups(own, Vec::new(), Vec::new());
+        assert_eq!(lines(&listed), [("A", false), ("B", true)], "the app's own lines inside its group are its own");
     }
 
     #[test]

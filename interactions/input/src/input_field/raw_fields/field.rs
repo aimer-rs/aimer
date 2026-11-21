@@ -185,6 +185,11 @@ impl Cursor {
 /// combobox uses this to move its highlight with the arrow keys.
 pub(crate) type KeyFilter = Rc<dyn Fn(&NamedKey, &Modifiers) -> bool>;
 
+/// Offered the text a focused field is about to insert because it was typed, before the field inserts it. Returning `true`
+/// says the text was dealt with, by edits made through the field's controller, and the field leaves it alone. A code
+/// editor closes a bracket this way, and steps over a closing one that is already there.
+pub(crate) type TextFilter = Rc<dyn Fn(&str) -> bool>;
+
 /// Says what a new line starts with, given the text of the line before the caret.
 pub(crate) type LineBreakPrefix = Rc<dyn Fn(&str) -> Option<String>>;
 
@@ -198,9 +203,17 @@ pub type PointerHoles = std::rc::Rc<dyn Fn(f32, f32) -> Vec<(f32, f32, f32, f32)
 /// trackpad reports as a deep stage. It is given the byte of the text under the pointer.
 pub type ForceClick = std::rc::Rc<dyn Fn(usize)>;
 
+/// What a field calls when it is force-clicked and the app wants to know where the pointer was, as well as the byte of the
+/// text under it: what a card that opens beside the name hangs from. The spot is a point, in the field's own coordinates.
+pub type ForceClickAt = std::rc::Rc<dyn Fn(usize, crate::input_field::line_labels::FieldSpot)>;
+
 /// What a field calls when it is clicked with the platform's jump key held (see `Modifiers::command`). It is given the
 /// byte of the text under the pointer, as a [`ForceClick`] is.
 pub type CommandClick = ForceClick;
+
+/// What a field calls when it is clicked with the platform's jump key held and the app wants to know where the pointer was, as
+/// well as the byte of the name under it: what a card that opens beside the name hangs from, as a [`ForceClickAt`] is.
+pub type CommandClickAt = ForceClickAt;
 
 /// Which bytes are something to jump from, when the app knows better than the field: given the byte under the pointer, the
 /// bytes of the name it is in, or `None` when it is in nothing to jump from, such as a comment or a string. A field without
@@ -251,6 +264,8 @@ pub(crate) struct RawFieldConfig {
     pub focus_decoration: Option<BoxDecoration>,
     pub disabled_decoration: Option<BoxDecoration>,
     pub selection_color: Color,
+    /// How round the corners of a selection are, in logical pixels; see [`TextField::selection_radius`].
+    pub selection_radius: f32,
     /// The builtin caret's colour; `None` follows the text colour.
     pub cursor_color: Option<Colors>,
     /// Whether the caret glides to a moved cursor instead of jumping to it.
@@ -266,10 +281,19 @@ pub(crate) struct RawFieldConfig {
     pub on_blur: TextFieldCallback,
     pub read_only: bool,
     pub key_filter: Option<KeyFilter>,
+    /// What is offered typed text before it is inserted; see [`TextFilter`].
+    pub text_filter: Option<TextFilter>,
+    /// What is boxed for the caret; see [`TextField::caret_marks`].
+    pub caret_marks: Option<CaretMarks>,
+    /// What is told of the name the pointer rests on; see [`TextField::on_hover`].
+    pub hover: Option<TextHover>,
     /// What a new line starts with, given the line up to the caret; see [`TextArea::line_break_prefix`].
     pub line_break_prefix: Option<LineBreakPrefix>,
     /// How many spaces the Tab key inserts, for a field that takes it instead of moving focus.
     pub tab_spaces: Option<usize>,
+    /// Whether the text is cut off at the padding of the field, above and below: `true` unless asked; see
+    /// [`TextArea::clip_to_padding`].
+    pub clip_to_padding: bool,
     /// Whether long lines wrap to the width of the field. A field that does not wrap scrolls
     /// sideways to its caret instead. Only a multi-line field has the choice: a single-line one
     /// never wraps.
@@ -283,8 +307,19 @@ pub(crate) struct RawFieldConfig {
     pub pointer_holes: Option<PointerHoles>,
     /// What is called when the text is force-clicked, if anything is; see [`ForceClick`].
     pub on_force_click: Option<ForceClick>,
+    /// What is called when the text is force-clicked, told where the pointer was too; see [`ForceClickAt`]. Called with
+    /// [`on_force_click`](Self::on_force_click), if there is one.
+    pub on_force_click_at: Option<ForceClickAt>,
     /// What is called when the text is clicked with the jump key held, if anything is; see [`CommandClick`].
     pub on_command_click: Option<CommandClick>,
+    /// What is asked what to add to the context menu before it is raised, if anything is; see
+    /// [`ContextMenuExtender`](crate::input_field::context_menu::ContextMenuExtender).
+    pub context_menu_extras: Option<crate::input_field::context_menu::ContextMenuExtender>,
+    /// The look of the context menu of a desktop, which is a list; a menu that a finger asks for keeps its own.
+    pub context_menu_style: Option<aimer_ctxmenu::ContextMenuStyle>,
+    /// What is called when the text is clicked with the jump key held, told where the pointer was too; see [`CommandClickAt`]. Called with
+    /// [`on_command_click`](Self::on_command_click), if there is one, and the name is a link while the key is held for either.
+    pub on_command_click_at: Option<CommandClickAt>,
     /// What says which bytes are links while the jump key is held, if the app has a say; see [`LinkRange`].
     pub link_range: Option<LinkRange>,
     /// What the mark of a range that [`TextEditingController::locate`](crate::TextEditingController::locate) shows is drawn
@@ -292,6 +327,12 @@ pub(crate) struct RawFieldConfig {
     pub locate_color: Option<Color>,
     /// The bars beside some lines, if the field has them.
     pub line_bars: Option<LineBars>,
+    /// The labels after the end of some lines, if the field has them.
+    pub line_labels: Option<crate::input_field::line_labels::LineLabels>,
+    /// The notes drawn inside lines, if the field has them.
+    pub inlays: Option<crate::input_field::inlay::Inlays>,
+    /// The lines drawn under ranges of the text, if the field has them.
+    pub underlines: Option<crate::input_field::underline::Underlines>,
     /// The color of the band behind the line the caret is on, if the field draws one.
     pub current_line: Option<Color>,
     pub padding: LayoutSpacing,
@@ -501,8 +542,15 @@ pub(super) struct RetainedFieldPaintState {
     link: Option<(usize, usize, u64)>,
     /// How far along the mark of a located range is, in thousandths: it changes with every frame while there is one.
     pulse: Option<u32>,
+    /// The same for the mark of the boxes round what the caret is next to. What they are round follows the controller's revision
+    /// and the focus, which are here already.
+    marks_pulse: Option<u32>,
     /// The window a windowed text was laid out for, and the version of the heights it was placed by.
     window: Option<((usize, usize), u64)>,
+    /// Which button of a label after a line the pointer is on, if one: it is drawn in another color.
+    label_hover: Option<usize>,
+    /// Which set of lines under the text there is: zero for none.
+    underlines: u64,
 }
 
 #[allow(dead_code)]
@@ -562,6 +610,8 @@ pub(crate) struct RawTextField {
     pub focus_decoration: Option<BoxDecoration>,
     pub disabled_decoration: Option<BoxDecoration>,
     pub selection_color: Color,
+    /// How round the corners of a selection are, in logical pixels; see [`TextField::selection_radius`].
+    pub selection_radius: f32,
     pub focus_node: FocusNode,
     pub focused: Cell<bool>,
     pub hovered: Cell<bool>,
@@ -575,12 +625,33 @@ pub(crate) struct RawTextField {
     pub on_blur: TextFieldCallback,
     pub read_only: bool,
     pub key_filter: Option<KeyFilter>,
+    /// What is offered typed text before it is inserted; see [`TextFilter`].
+    pub text_filter: Option<TextFilter>,
+    /// What is boxed for the caret; see [`RawFieldConfig::caret_marks`].
+    pub caret_marks: Option<CaretMarks>,
+    /// What is told of the name the pointer rests on; see [`RawFieldConfig::hover`].
+    pub hover: Option<TextHover>,
+    /// The name the pointer is on and is being waited on for, and since when.
+    pub hover_candidate: RefCell<Option<(Range<usize>, AnimInstant)>>,
+    /// The name that was told of, and the revision of the text it was told for.
+    pub hover_shown: RefCell<Option<(Range<usize>, u64)>>,
+    /// Whether nothing is told until the pointer moves: a press, a key or a scroll ended what was.
+    pub hover_blocked: Cell<bool>,
+    /// Whether the name under the pointer is to be found again by the next frame.
+    pub pending_hover: Cell<bool>,
+    /// What the marks were last asked for and said, so that a frame that is not a new text or caret asks nothing.
+    pub marks_asked: RefCell<Option<MarksAsked>>,
+    /// The ranges that were boxed the last time a field was drawn, and when they were first: what a mark is made of.
+    pub marks_seen: RefCell<Vec<Range<usize>>>,
+    pub marks_began: Cell<Option<AnimInstant>>,
     /// What a new line starts with; see [`RawFieldConfig::line_break_prefix`].
     pub line_break_prefix: Option<LineBreakPrefix>,
     /// How many spaces the Tab key inserts; `None` leaves Tab to move focus.
     pub tab_spaces: Option<usize>,
     /// Whether long lines wrap; see [`RawFieldConfig::wrap`].
     pub wrap: bool,
+    /// Whether the text is cut off at the padding; see [`RawFieldConfig::clip_to_padding`].
+    pub clip_to_padding: bool,
     /// The line numbers in the margin; see [`RawFieldConfig::line_numbers`].
     pub line_numbers: Option<LineNumbers>,
     /// The icons before the numbers; see [`RawFieldConfig::gutter_markers`].
@@ -589,8 +660,16 @@ pub(crate) struct RawTextField {
     pub pointer_holes: Option<PointerHoles>,
     /// What is called when the text is force-clicked; see [`RawFieldConfig::on_force_click`].
     pub on_force_click: Option<ForceClick>,
+    /// What is called when the text is force-clicked, with where; see [`RawFieldConfig::on_force_click_at`].
+    pub on_force_click_at: Option<ForceClickAt>,
     /// What is called when the text is command-clicked; see [`RawFieldConfig::on_command_click`].
     pub on_command_click: Option<CommandClick>,
+    /// What is called when the text is command-clicked, with where; see [`RawFieldConfig::on_command_click_at`].
+    pub on_command_click_at: Option<CommandClickAt>,
+    /// What is asked what to add to the context menu; see [`RawFieldConfig::context_menu_extras`].
+    pub context_menu_extras: Option<crate::input_field::context_menu::ContextMenuExtender>,
+    /// The look of the context menu of a desktop; see [`RawFieldConfig::context_menu_style`].
+    pub context_menu_style: Option<aimer_ctxmenu::ContextMenuStyle>,
     /// What says which bytes are links; see [`RawFieldConfig::link_range`].
     pub link_range: Option<LinkRange>,
     /// What the mark of a located range is drawn in, if the app has a color for it; see [`RawFieldConfig::locate_color`].
@@ -602,6 +681,9 @@ pub(crate) struct RawTextField {
     /// The last place the pointer was inside the field, for what depends on the pointer and a key and not on a move: the
     /// name under it is a link when the jump key goes down.
     pub hover_pos: Cell<Option<Vec2d>>,
+    /// The last place the pointer was inside the field, wherever it was: what a scroll, which does not say where it is,
+    /// is over.
+    pub pointer_pos: Cell<Option<Vec2d>>,
     /// Whether the name under the pointer has to be found again by the next layout.
     pub pending_link: Cell<bool>,
     /// The name that is shown as a link: where its bytes start and end, and the text revision they are of.
@@ -614,6 +696,16 @@ pub(crate) struct RawTextField {
     pub force_stage: Cell<aimer_events::element::PressureStage>,
     /// The bars beside lines; see [`RawFieldConfig::line_bars`].
     pub line_bars: Option<LineBars>,
+    /// The labels after lines; see [`RawFieldConfig::line_labels`].
+    pub line_labels: Option<crate::input_field::line_labels::LineLabels>,
+    /// The notes drawn inside lines; see [`RawFieldConfig::inlays`].
+    pub inlays: Option<crate::input_field::inlay::Inlays>,
+    /// The lines under ranges of the text; see [`RawFieldConfig::underlines`].
+    pub underlines: Option<crate::input_field::underline::Underlines>,
+    /// Where the notes go, for the text and the font they were placed for: see [`Self::placed_inlays`].
+    pub(super) inlay_memo: RefCell<Option<InlayMemo>>,
+    /// Where each button of a label was drawn the last time, in logical pixels from the field's outer origin.
+    pub label_hits: RefCell<Vec<LabelHit>>,
     /// Where each icon was drawn the last time, in logical pixels from the field's outer origin, and
     /// what pressing it does: what a press is judged by.
     pub marker_hits: RefCell<Vec<MarkerHit>>,
@@ -699,12 +791,6 @@ pub(crate) struct RawTextField {
     pub(crate) caret_scope: Option<ScopeId>,
     /// Physical canvas offset from the field origin to its text content.
     pub(crate) caret_origin: Cell<(f32, f32)>,
-    /// The open clipboard menu, or `None` while none is showing.
-    ///
-    /// The menu is a modal: the host places it above every clip and dismisses
-    /// it on an outside press, so all the field keeps is the handle that closes
-    /// it.
-    pub(crate) menu: RefCell<Option<ModalHandle>>,
     /// The shape the open menu was raised in.
     pub(crate) menu_shape: Cell<Option<ContextMenuShape>>,
     /// Watches a finger for the hold that raises that menu.
@@ -717,10 +803,12 @@ pub(crate) struct RawTextField {
     /// What the open menu is anchored to, so a verb that reshapes the
     /// selection can re-offer it in the same place.
     menu_origin: Cell<Option<MenuOrigin>>,
-    /// The verbs of the open menu, in the order it draws them.
-    menu_actions: Rc<RefCell<Vec<FieldAction>>>,
-    /// The verb the open menu was just told to run.
-    chosen_action: Rc<Cell<Option<FieldAction>>>,
+    /// What the open menu and this field share; a field made again takes it from the one before.
+    menu_shared: RefCell<Rc<menu::MenuShared>>,
+    /// Where a right-click was, waiting for the layout to say which byte is under it.
+    menu_hit_at: Cell<Option<Vec2d>>,
+    /// The byte that was under the pointer when the menu was asked for, once the layout has said.
+    menu_hit: Cell<Option<usize>>,
     /// A fixed instant for tests, so a hold's five hundred milliseconds are
     /// exercised by handing in a time rather than by sleeping — the same way
     /// `gesture::recognize::tap` keeps its thresholds testable.
@@ -759,6 +847,7 @@ impl Rebuildable for RawTextField {
         };
 
         self.highlights.adopt(&old.highlights);
+        self.adopt_menu_from(old);
         self.focused.set(old.focused.get());
         self.observed_revision.set(old.observed_revision.get());
         self.native_session.set(old.native_session.get());
@@ -780,6 +869,16 @@ impl Rebuildable for RawTextField {
         self.pending_command.set(old.pending_command.get());
         self.force_stage.set(old.force_stage.get());
         self.hover_pos.set(old.hover_pos.get());
+        self.pointer_pos.set(old.pointer_pos.get());
+        // Copied, and not taken: a field is adopted from more than once while the pointer goes over what holds it, and one that was
+        // left with nothing would show the same marks as new, and mark them again.
+        self.marks_seen.replace(old.marks_seen.borrow().clone());
+        self.marks_began.set(old.marks_began.get());
+        // Copied, like the marks: what was told of is still told of, and is not told again by the field that replaces this one.
+        self.hover_candidate.replace(old.hover_candidate.borrow().clone());
+        self.hover_shown.replace(old.hover_shown.borrow().clone());
+        self.hover_blocked.set(old.hover_blocked.get());
+        self.pending_hover.set(old.pending_hover.get());
         self.pending_link.set(old.pending_link.get());
         self.link.set(old.link.get());
         self.pulse.set(old.pulse.get());
@@ -875,6 +974,7 @@ impl RawTextField {
             .controller
             .attach(|_, _| aimer_events::window::request_animation_frame());
         let observed_revision = config.controller.revision();
+        let saved_scroll = config.controller.scroll_offset();
         let cursor = Cursor::with_blink(config.cursor_color.unwrap_or_default(), caret.clone());
         let (anchor, focus) = config.controller.selection_graphemes();
         cursor.set_offset(focus);
@@ -913,6 +1013,7 @@ impl RawTextField {
             focus_decoration: config.focus_decoration,
             disabled_decoration: config.disabled_decoration,
             selection_color: config.selection_color,
+            selection_radius: config.selection_radius,
             focus_node,
             focused: Cell::new(false),
             hovered: Cell::new(false),
@@ -925,25 +1026,46 @@ impl RawTextField {
             on_blur: config.on_blur,
             read_only: config.read_only,
             key_filter: config.key_filter,
+            text_filter: config.text_filter,
+            caret_marks: config.caret_marks,
+            hover: config.hover,
+            hover_candidate: RefCell::new(None),
+            hover_shown: RefCell::new(None),
+            hover_blocked: Cell::new(false),
+            pending_hover: Cell::new(false),
+            marks_asked: RefCell::new(None),
+            marks_seen: RefCell::new(Vec::new()),
+            marks_began: Cell::new(None),
             line_break_prefix: config.line_break_prefix,
             tab_spaces: config.tab_spaces,
             wrap: config.wrap,
+            clip_to_padding: config.clip_to_padding,
             line_numbers: config.line_numbers,
             gutter_markers: config.gutter_markers,
             pointer_holes: config.pointer_holes,
             on_force_click: config.on_force_click,
+            on_force_click_at: config.on_force_click_at,
             on_command_click: config.on_command_click,
+            on_command_click_at: config.on_command_click_at,
+            context_menu_extras: config.context_menu_extras,
+            context_menu_style: config.context_menu_style,
             link_range: config.link_range,
             locate_color: config.locate_color,
             pulse: Cell::new(None),
             locating: Cell::new(None),
             pending_command: Cell::new(None),
             hover_pos: Cell::new(None),
+            pointer_pos: Cell::new(None),
             pending_link: Cell::new(false),
             link: Cell::new(None),
             pending_force: Cell::new(None),
             force_stage: Cell::new(aimer_events::element::PressureStage::None),
             line_bars: config.line_bars,
+            line_labels: config.line_labels,
+            inlays: config.inlays,
+            underlines: config.underlines,
+            inlay_memo: RefCell::new(None),
+            label_hits: RefCell::new(Vec::new()),
             marker_hits: RefCell::new(Vec::new()),
             marker_pressed: Cell::new(false),
             popup_pressed: Cell::new(false),
@@ -966,10 +1088,12 @@ impl RawTextField {
             window_lines: Cell::new(None),
             composition_display_memo: RefCell::new(None),
             window_anchor: Cell::new(None),
-            scroll_x: Cell::new(0.0),
-            scroll_y: Cell::new(0.0),
+            // Where the text was left scrolled to, by the view of it before this one: and then the caret is not to be shown, which
+            // would take it from there.
+            scroll_x: Cell::new(saved_scroll.0),
+            scroll_y: Cell::new(saved_scroll.1),
             scroll_y_extent: Cell::new(0.0),
-            reveal_caret: Cell::new(true),
+            reveal_caret: Cell::new(saved_scroll == (0.0, 0.0)),
             preedit_text: Cell::new(String::new()),
             preedit_cursor: Cell::new(None),
             ime_enabled: Cell::new(false),
@@ -980,14 +1104,14 @@ impl RawTextField {
             caret_context,
             caret_scope,
             caret_origin: Cell::new((0.0, 0.0)),
-            menu: RefCell::new(None),
             menu_shape: Cell::new(None),
             touch_hold: TouchHold::new(),
             selection: RefCell::new(selection),
             pending_menu: Cell::new(None),
             menu_origin: Cell::new(None),
-            menu_actions: Rc::new(RefCell::new(Vec::new())),
-            chosen_action: Rc::new(Cell::new(None)),
+            menu_shared: RefCell::new(Rc::default()),
+            menu_hit_at: Cell::new(None),
+            menu_hit: Cell::new(None),
             #[cfg(test)]
             test_clock: Cell::new(None),
         }
@@ -1003,6 +1127,21 @@ impl RawTextField {
             return false;
         };
         self.caret_context.press_popup(pos.x - origin.x, pos.y - origin.y)
+    }
+
+    /// Tells what hangs from the caret that the pointer moved to `pos`, in the coordinates of the window.
+    pub(crate) fn hover_popup(&self, pos: Vec2d) {
+        if let Some(origin) = self.cached_bounds.get_bounds() {
+            self.caret_context.hover_popup(pos.x - origin.x, pos.y - origin.y);
+        }
+    }
+
+    /// Scrolls what hangs from the caret, if the pointer is on it. Whether it scrolled.
+    pub(crate) fn scroll_popup(&self, delta_y: f32) -> bool {
+        let (Some(pos), Some(origin)) = (self.pointer_pos.get(), self.cached_bounds.get_bounds()) else {
+            return false;
+        };
+        self.caret_context.scroll_popup(pos.x - origin.x, pos.y - origin.y, delta_y)
     }
 
     /// Whether `pos`, in the coordinates of the window, is on what hangs from the caret.
@@ -1571,6 +1710,23 @@ impl RawTextField {
         true
     }
 
+    /// Offers typed `text` to the text filter, if there is one. Whether it dealt with the text, which it did by editing
+    /// through the controller: the caret of the field follows. What is being composed is not offered, as it is not
+    /// text yet.
+    fn filter_text(&self, text: &str) -> bool {
+        let Some(filter) = &self.text_filter else {
+            return false;
+        };
+        if self.is_composing() || !filter(text) {
+            return false;
+        }
+        self.sync_cursor_from_controller();
+        self.cursor.reset_blink();
+        self.clear_preedit();
+        self.on_changed.call_with(|| self.controller.text());
+        true
+    }
+
     fn insert_text(&self, text: &str) -> bool {
         if text.is_empty() {
             return false;
@@ -1954,7 +2110,10 @@ impl RawTextField {
         base_y: f32,
         is_multiline: bool,
     ) {
-        for (pending, callback) in [(&self.pending_force, &self.on_force_click), (&self.pending_command, &self.on_command_click)] {
+        for (pending, callback, with_spot) in [
+            (&self.pending_force, &self.on_force_click, &self.on_force_click_at),
+            (&self.pending_command, &self.on_command_click, &self.on_command_click_at),
+        ] {
             let Some(pos) = pending.take() else {
                 continue;
             };
@@ -1964,23 +2123,69 @@ impl RawTextField {
             let Some(grapheme) = geometry.hit_test(x, y) else {
                 continue;
             };
-            // The callback is given a byte of the text and is made on a copy of the handle, so that it may do what it
-            // likes with the field.
-            let Some(callback) = callback.clone() else {
+            // The callbacks are given a byte of the text and are made on a copy of the handle, so that they may do what they
+            // like with the field.
+            let (callback, with_spot) = (callback.clone(), with_spot.clone());
+            if callback.is_none() && with_spot.is_none() {
                 continue;
-            };
+            }
             let byte = self.controller.value().byte_of_grapheme(grapheme);
             // A command click is one on a name, as a link is: the app's when it says which are, and a word where it does
-            // not. It is the byte of the name that is reported, wherever in the name the pointer was.
-            if std::ptr::eq(pending, &self.pending_command) {
+            // not. It is the byte of the name that is reported, wherever in the name the pointer was. A force click is on the
+            // byte, whatever it is.
+            let byte = if std::ptr::eq(pending, &self.pending_command) {
                 let Some(name) = self.link_at(geometry, (x, y), byte) else {
                     continue;
                 };
-                callback(name.start);
-                continue;
+                name.start
+            } else {
+                byte
+            };
+            if let Some(with_spot) = with_spot {
+                let bounds = self.cached_bounds.get_bounds();
+                let origin = bounds.map_or((0.0, 0.0), |bounds| (bounds.x, bounds.y));
+                with_spot(
+                    byte,
+                    crate::input_field::line_labels::FieldSpot {
+                        x: pos.x - origin.0,
+                        y: pos.y - origin.1,
+                        width: 0.0,
+                        height: 0.0,
+                        extent: bounds.map(|bounds| (bounds.width, bounds.height)),
+                    },
+                );
             }
-            callback(byte);
+            if let Some(callback) = callback {
+                callback(byte);
+            }
         }
+    }
+
+    /// Finds the byte of the text under the place a right click was, once the layout can say, for the app that is asked what to add to the menu.
+    /// Only what is under the pointer is found: the caret and the selection are not moved by it.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_menu_hit(
+        &self,
+        geometry: &Rc<EditableGeometry>,
+        scale: f32,
+        (abs_x, abs_y): (f32, f32),
+        (pad_left, pad_top): (f32, f32),
+        base_y: f32,
+        is_multiline: bool,
+    ) {
+        let Some(pos) = self.menu_hit_at.take() else {
+            return;
+        };
+        let x = pos.x * scale - abs_x - pad_left + self.scroll_x_offset();
+        let y = pos.y * scale - abs_y - pad_top - base_y + if is_multiline { self.scroll_y.get() } else { 0.0 };
+        // What is below the last line says nothing of the text, and a pointer there is not on it.
+        let byte = geometry.hit_test(x, y).map(|grapheme| self.controller.value().byte_of_grapheme(grapheme));
+        self.menu_hit.set(byte);
+    }
+
+    /// Whether anything is to be told of a click with the jump key held, so that the name under the pointer is a link while it is.
+    pub(super) fn command_click_wanted(&self) -> bool {
+        self.on_command_click.is_some() || self.on_command_click_at.is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2103,7 +2308,7 @@ impl RawTextField {
         };
         let active = context.active_lines();
         let embed_boxes = self.embed_boxes(&|| std::borrow::Cow::Borrowed(&*display.display), &context, content_width, ctx);
-        let embed_signature = embed_signature(embedder, &embed_boxes);
+        let embed_signature = embed_signature(embedder, &embed_boxes) ^ self.inlay_signature();
         let outer_language = ctx.canvas.text_language();
         ctx.canvas.set_text_language(language);
         let geometry = self.geometry_cache.resolve(
@@ -2144,6 +2349,8 @@ impl RawTextField {
                     &context,
                 );
                 let ranges = with_embed_boxes(ranges, &embed_boxes, ctx.scale);
+                let placed = self.placed_inlays(ctx, &display.display, 0, &embed_boxes);
+                let ranges = inlay::with_gaps(ranges, &placed, 0, ctx.scale);
                 let mut text_widget = self.build_text_widget(
                     display.display.as_ref(),
                     &style,
@@ -2160,7 +2367,8 @@ impl RawTextField {
                     self.horizontal_text_align(),
                 )
                 .with_ranges(ranges)
-                .with_embeds(embed_boxes.clone());
+                .with_embeds(embed_boxes.clone())
+                .with_inlays(placed, ctx.scale);
                 // Styled text keeps the widget it was measured with for painting. Plain
                 // text paints with a fresh one, as it always has.
                 if geometry.ranges.is_some() {
@@ -2391,6 +2599,77 @@ mod grapheme_tests {
 
         let _ = field.on_event(&key(NamedKey::ArrowLeft));
         assert_eq!(seen.get(), 1);
+    }
+
+    fn typed(ch: char) -> ElementEvent {
+        ElementEvent::CharInput { ch, action: KeyAction::Pressed, modifiers: Modifiers::default() }
+    }
+
+    #[test]
+    fn a_text_filter_that_deals_with_the_text_keeps_it_from_the_field_and_the_field_follows_its_edit() {
+        let controller = crate::TextEditingController::with_text("ab");
+        let mut field = focused_field(controller.clone());
+        controller.select_bytes(1, 1);
+        let edited = controller.clone();
+        field.text_filter = Some(std::rc::Rc::new(move |text| {
+            if text != "(" {
+                return false;
+            }
+            // A pair, with the caret between its two: one edit and then the caret.
+            let range = edited.value().selection().range();
+            let start = range.start;
+            edited.replace_ranges(&[(range, "()")], 0);
+            edited.select_bytes(start + 1, start + 1);
+            true
+        }));
+
+        assert!(field.on_event(&typed('(')).is_consumed());
+        assert_eq!(controller.text(), "a()b", "the pair, and not the key as well");
+        assert_eq!(field.cursor.offset(), 2, "the caret is where the filter put it, between the two");
+
+        // One undo takes the pair back.
+        assert!(controller.undo());
+        assert_eq!(controller.text(), "ab");
+    }
+
+    #[test]
+    fn a_text_filter_that_declines_leaves_the_text_to_the_field_and_is_told_what_was_typed() {
+        let mut field = focused_field(TextFieldController::with_initial(""));
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let log = std::rc::Rc::clone(&seen);
+        field.text_filter = Some(std::rc::Rc::new(move |text| {
+            log.borrow_mut().push(text.to_owned());
+            false
+        }));
+
+        let _ = field.on_event(&typed('x'));
+        let _ = field.on_event(&ElementEvent::TextInput { text: "\u{4f60}\u{597d}".to_owned(), action: KeyAction::Pressed, modifiers: Modifiers::default() });
+        assert_eq!(field.controller.text(), "x\u{4f60}\u{597d}");
+        assert_eq!(*seen.borrow(), ["x", "\u{4f60}\u{597d}"]);
+    }
+
+    #[test]
+    fn a_text_filter_is_not_offered_a_release_and_a_field_that_cannot_be_edited_is_not_offered_anything() {
+        let mut field = focused_field(TextFieldController::with_initial(""));
+        let seen = std::rc::Rc::new(std::cell::Cell::new(0_u32));
+        let counted = std::rc::Rc::clone(&seen);
+        field.text_filter = Some(std::rc::Rc::new(move |_| {
+            counted.set(counted.get() + 1);
+            true
+        }));
+
+        let _ = field.on_event(&ElementEvent::CharInput { ch: 'x', action: KeyAction::Released, modifiers: Modifiers::default() });
+        assert_eq!(seen.get(), 0, "a release types nothing");
+        field.read_only = true;
+        let _ = field.on_event(&typed('x'));
+        assert_eq!(seen.get(), 0, "a read-only field takes no text, so it is not asked");
+    }
+
+    #[test]
+    fn a_field_without_a_text_filter_inserts_what_is_typed_as_before() {
+        let mut field = focused_field(TextFieldController::with_initial(""));
+        let _ = field.on_event(&typed('('));
+        assert_eq!(field.controller.text(), "(");
     }
 
     #[test]

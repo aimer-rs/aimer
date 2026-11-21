@@ -13,6 +13,19 @@ const WINDOW_MARGIN_VIEWPORTS: f64 = 1.0;
 /// of a few lines has a window of more than a few.
 const WINDOW_MARGIN_MIN: f64 = 600.0;
 
+#[cfg(test)]
+thread_local! {
+    /// How many times a window of rich text was laid out, so that a test can tell a layout that is
+    /// done once from one that is done again for nothing.
+    static RICH_WINDOW_LAYOUTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many windows of rich text this thread has laid out.
+#[cfg(test)]
+fn rich_window_layouts() -> usize {
+    RICH_WINDOW_LAYOUTS.with(std::cell::Cell::get)
+}
+
 impl RawTextField {
     /// The text to lay a window of, when the field windows its text: shared, not copied.
     ///
@@ -245,6 +258,8 @@ impl RawTextField {
         ranges: Option<&Rc<[aimer_text::StyledRange]>>,
         embeds: &[TextEmbed],
     ) -> RichWindow {
+        #[cfg(test)]
+        RICH_WINDOW_LAYOUTS.with(|layouts| layouts.set(layouts.get() + 1));
         let bytes = index.line_bytes(lines.start).start..index.line_bytes(lines.end - 1).end;
         let window_text = index.text().slice(bytes.clone());
         let text = &*window_text;
@@ -266,6 +281,8 @@ impl RawTextField {
             .filter(|local| !local.is_empty())
             .map(Rc::from);
         let local_ranges = with_embed_boxes(local_ranges, &boxes, ctx.scale);
+        let placed = self.placed_inlays(ctx, text, bytes.start, &boxes);
+        let local_ranges = inlay::with_gaps(local_ranges, &placed, bytes.start, ctx.scale);
 
         let layout_width = if self.wraps_text() { content_width } else { f32::INFINITY };
         let mut layout_ctx = ctx.clone();
@@ -283,7 +300,7 @@ impl RawTextField {
         // out in chunks, the part that is not new is found.
         let interaction = aimer_text::with_chunking_min_bytes(0, || widget.interaction_layout(&layout_ctx));
         refine_from_layout(index, lines, &interaction);
-        RichWindow { interaction: (*interaction).clone(), ranges: local_ranges, boxes, widget }
+        RichWindow { interaction: (*interaction).clone(), ranges: local_ranges, boxes, placed, scale: ctx.scale, widget }
     }
 
     /// The geometry of the lines of the text that are near what is on screen.
@@ -314,7 +331,7 @@ impl RawTextField {
         // and plain text a line at a time.
         let highlighter = self.effective_highlighter();
         let embedder = self.effective_embedder();
-        let rich = highlighter.is_some() || embedder.is_some();
+        let rich = highlighter.is_some() || embedder.is_some() || self.effective_inlays().is_some();
         // A highlighter and an embedder made for a window are asked about the lines that are laid
         // out and no others. The others read the whole text as a string: the text itself for a
         // text of one chunk and a copy for a longer one, made when a memo does not hold the
@@ -382,7 +399,7 @@ impl RawTextField {
             active_start: active.as_ref().map_or(usize::MAX, |lines| lines.start),
             active_end: active.as_ref().map_or(usize::MAX, |lines| lines.end),
             // A windowed geometry is placed by the heights of the lines above it.
-            embeds: embed_signature(embedder, boxes) ^ index.version().rotate_left(29),
+            embeds: embed_signature(embedder, boxes) ^ index.version().rotate_left(29) ^ self.inlay_signature(),
             window: (lines.start, lines.end),
         };
         // The lines to lay out for where the viewport is now, found without laying out anything.
@@ -454,7 +471,13 @@ impl RawTextField {
             if index.version() == version || passes >= 3 {
                 break;
             }
-            lines = select_lines();
+            let wanted = select_lines();
+            // What was learned moved the lines below the window, not the window: these lines were
+            // just laid out, with the heights they have now, and laying them out again finds the same.
+            if wanted == lines {
+                break;
+            }
+            lines = wanted;
         }
         if let Some((line, offset)) = anchor {
             // Again, for what the last pass learned.
@@ -476,6 +499,7 @@ impl RawTextField {
                 )
                 .with_ranges(window.ranges)
                 .with_embeds(window.boxes)
+                .with_inlays(window.placed, window.scale)
                 .with_display_widget(style, TextAlign::TopLeft, widget)
             }
             None => {
@@ -502,6 +526,10 @@ struct RichWindow {
     /// The styled ranges and the embeds in it, in its own offsets.
     ranges: Option<Rc<[aimer_text::StyledRange]>>,
     boxes: Vec<EmbedBox>,
+    /// The room left in it for inlays.
+    placed: Rc<[Placed]>,
+    /// How many physical pixels a logical one was, when the room was made.
+    scale: f32,
     /// The widget that laid it out, which paints it.
     widget: Rc<RawTextWidget>,
 }

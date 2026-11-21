@@ -45,6 +45,8 @@ pub struct MarkdownTheme {
     pub comment_color: Color,
     pub number_color: Color,
     pub block_spacing: u32,
+    /// Whether a code block has a header above its code, with the name of its language and the button that copies it.
+    pub code_header: bool,
 }
 
 impl MarkdownTheme {
@@ -210,6 +212,7 @@ impl Default for MarkdownTheme {
             number_color: Color::Hex(0x0550AE),
             block_spacing: 8,
             icon_color: Color::Hex(0x0969DA),
+            code_header: true,
         }
     }
 }

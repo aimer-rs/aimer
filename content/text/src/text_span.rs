@@ -108,6 +108,10 @@ pub struct SpanStyle {
     pub color: Option<Color>,
     /// Optional inline background override inherited from the parent span.
     pub background_color: Option<Color>,
+    /// Optional corner radius, in logical pixels, of the inline background, inherited from the parent
+    /// span. Without one the background is a square. A negative or not-a-number radius is a square, and
+    /// a radius larger than half the height of the background is drawn as half of it.
+    pub background_radius: Option<f32>,
     /// Optional decoration override inherited from the parent span.
     pub text_decoration: Option<TextDecoration>,
     /// Optional Unicode transformation override inherited from the parent span.
@@ -132,6 +136,7 @@ impl SpanStyle {
             font_weight: None,
             color: None,
             background_color: None,
+            background_radius: None,
             text_decoration: None,
             text_transform: None,
             letter_spacing: None,
@@ -207,6 +212,22 @@ impl SpanStyle {
     /// Overrides the inherited inline background without affecting layout.
     pub const fn background_color(mut self, background_color: Color) -> Self {
         self.background_color = Some(background_color);
+        self
+    }
+
+    /// Rounds the corners of the inline background by `radius` logical pixels, so a run such as inline
+    /// code reads as a chip. It changes only the picture, never the layout. See
+    /// [`background_radius`](Self::background_radius).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_text::SpanStyle;
+    ///
+    /// assert_eq!(SpanStyle::new().background_radius(4.0).background_radius, Some(4.0));
+    /// ```
+    pub const fn background_radius(mut self, radius: f32) -> Self {
+        self.background_radius = Some(radius);
         self
     }
 
@@ -329,7 +350,7 @@ impl TextSpan {
     #[inline]
     pub fn flatten(&self, base_style: &TextStyle) -> Vec<ResolvedTextSpan> {
         let mut result = Vec::with_capacity(self.resolved_span_count());
-        self.flatten_into(*base_style, None, &mut result);
+        self.flatten_into(*base_style, None, None, &mut result);
         result
     }
 
@@ -346,20 +367,23 @@ impl TextSpan {
         &self,
         inherited_style: TextStyle,
         inherited_link: Option<TextSource>,
+        inherited_radius: Option<f32>,
         result: &mut Vec<ResolvedTextSpan>,
     ) {
         let style = self.style.resolve(inherited_style);
         let link = self.link.clone().or(inherited_link);
+        let radius = self.style.background_radius.or(inherited_radius);
         if !self.text.is_empty() {
             result.push(ResolvedTextSpan {
                 text: self.text.clone(),
                 style,
                 link: link.clone(),
                 inline_box: self.style.inline_box,
+                background_radius: radius,
             });
         }
         for child in &self.children {
-            child.flatten_into(style, link.clone(), result);
+            child.flatten_into(style, link.clone(), radius, result);
         }
     }
 }
@@ -371,6 +395,8 @@ pub struct ResolvedTextSpan {
     pub link: Option<TextSource>,
     /// Set when the span's text is replaced by a reserved box.
     pub inline_box: Option<InlineBox>,
+    /// The corner radius of the span's inline background; see [`SpanStyle::background_radius`].
+    pub background_radius: Option<f32>,
 }
 
 impl ResolvedTextSpan {
@@ -393,6 +419,7 @@ impl ResolvedTextSpan {
             style,
             link: None,
             inline_box: None,
+            background_radius: None,
         }
     }
 }

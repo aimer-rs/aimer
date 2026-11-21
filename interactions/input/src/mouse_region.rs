@@ -345,7 +345,14 @@ impl<E: Element> RawMouseRegion<E> {
         // The depth is kept wherever the pointer is: a press that is held deep while the pointer leaves and comes back is
         // the press that began, and not another.
         let before = force.stage.replace(stage);
-        if inside && !result.is_consumed() && stage == PressureStage::Force && before != PressureStage::Force {
+        // A press that the window saw go deep before this region was under the pointer is not its own, as it is not for a
+        // text: what a force click opened is not clicked by the press that opened it.
+        if inside
+            && !result.is_consumed()
+            && stage == PressureStage::Force
+            && before != PressureStage::Force
+            && PressureStage::previous() != PressureStage::Force
+        {
             (force.callback)(pos);
             return EventResult::consumed();
         }
@@ -378,6 +385,21 @@ impl<E: Element> RawMouseRegion<E> {
             self.sync_hover(false);
         }
 
+        // A wheel has no position of its own: the dispatcher says where the pointer is. It is the child's when the pointer is over the
+        // region, which is what lets a region hold something that scrolls.
+        if matches!(event, ElementEvent::Scroll { .. }) {
+            return match context.as_mut() {
+                Some(context) => {
+                    let at = context.position();
+                    if self.cached_bounds.is_inside(at.x, at.y) {
+                        context.dispatch_child(&self.child, at, event)
+                    } else {
+                        EventResult::ignored()
+                    }
+                }
+                None => EventResult::ignored(),
+            };
+        }
         let pos = match event {
             ElementEvent::PointerDown(info)
             | ElementEvent::PointerUp(info)
@@ -824,6 +846,24 @@ mod tests {
     }
 
     #[test]
+    fn a_press_that_went_deep_before_the_region_was_under_the_pointer_is_not_its_force_press() {
+        use aimer_events::element::PressureStage::{Click, Force, None as Off};
+        let (region, seen) = force_region();
+        // The window saw the pad go deep, and the region is new under the pointer: what a force press opened.
+        Force.record();
+        assert!(!region.on_event(&press(10.0, 1.0, Force)).is_consumed());
+        assert!(seen.borrow().is_empty());
+        // Let go, and press deep again: that one is the region's.
+        Off.record();
+        let _ = region.on_event(&press(10.0, 0.0, Off));
+        Click.record();
+        let _ = region.on_event(&press(10.0, 0.4, Click));
+        assert!(region.on_event(&press(10.0, 0.9, Force)).is_consumed());
+        assert_eq!(seen.borrow().len(), 1);
+        Off.record();
+    }
+
+    #[test]
     fn a_force_press_outside_the_region_is_not_the_regions_and_a_press_held_on_leaving_and_coming_back_is_not_a_new_one() {
         use aimer_events::element::PressureStage::{Click, Force};
         let (region, seen) = force_region();
@@ -949,6 +989,37 @@ mod tests {
 
         assert!(result.is_consumed());
         assert!(result.needs_redraw());
+    }
+
+    #[test]
+    fn a_wheel_over_the_region_reaches_its_child_and_one_beside_it_does_not() {
+        // A region holds what scrolls, such as a card of documentation, and the wheel has to get through it: it is a boundary that
+        // hands its child the events by itself, and what it did not name it dropped.
+        let bounds = InteractionBounds::new();
+        bounds.save(1.0, 0.0, 0.0, 100.0, 100.0);
+        let region = RawMouseRegion {
+            on_hover_enter: VoidCallback::default(),
+            on_hover_exit: VoidCallback::default(),
+            on_pointer_activity: None,
+            on_force_press: None,
+            cursor: None,
+            current_state: Rc::new(Cell::new(PointerState::Outside)),
+            cached_bounds: bounds,
+            child: ResultElement.boxed(),
+            window: WindowHandle::headless(PhysicalSize::new(100, 100), 1.0),
+            cursor_claim: aimer_utils::cursor::CursorClaim::new(),
+        }
+        .boxed();
+        let wheel = ElementEvent::Scroll {
+            delta: aimer_attribute::position::Vec2d { x: 0.0, y: -12.0 },
+            kind: aimer_events::element::ScrollDeltaKind::Pixel,
+            phase: aimer_events::element::TouchPhase::Moved,
+            is_direct_manipulation: false,
+        };
+        let over = EventDispatcher::new().dispatch(region.as_ref(), aimer_attribute::position::Vec2d { x: 10.0, y: 10.0 }, &wheel);
+        assert!(over.is_consumed(), "the child had it");
+        let beside = EventDispatcher::new().dispatch(region.as_ref(), aimer_attribute::position::Vec2d { x: 400.0, y: 400.0 }, &wheel);
+        assert!(!beside.is_consumed(), "a wheel that is not over the region is not its child's");
     }
 
     // Regression for "moving the cursor pins a core": a child claiming a hover

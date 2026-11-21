@@ -145,8 +145,7 @@ impl<B: GpuBackend> TextPipelineV2<B> {
                 );
                 if self
                     .layout_cache
-                    .get_with_fallback(&keys.primary, keys.fallback.as_ref())
-                    .is_some()
+                    .touch_with_fallback(&keys.primary, keys.fallback.as_ref())
                 {
                     // The layout is reused, but the shaping behind it is what a
                     // resize re-lays out from: keep it in the working set.
@@ -184,31 +183,23 @@ impl<B: GpuBackend> TextPipelineV2<B> {
         }
 
         let fallback_started = profile.is_some().then(Instant::now);
-        if !shaping_batch.jobs().is_empty() {
-            for req in requests {
-                let synthesized: [RichTextSpan; 1];
-                let spans: &[RichTextSpan] = if req.spans.is_empty() {
-                    synthesized = [RichTextSpan::new(req.text.clone())];
-                    &synthesized
-                } else {
-                    &req.spans
-                };
-                for span in spans {
-                    let font_size = span.font_size.unwrap_or(req.font_size);
-                    let font_weight = span
-                        .font_weight
-                        .or(req.font_weight)
-                        .unwrap_or(FontWeight::Normal.numeric());
-                    self.rasterizer.warm_fallbacks_for_text(
-                        &span.text,
-                        font_size,
-                        req.font_family,
-                        FontWeight::Value(u32::from(font_weight)),
-                        req.font_style,
-                        req.language,
-                    );
-                }
+        // Only the text that is about to be shaped needs its fallback faces resolved: a span read
+        // from the layout cache was resolved when it was shaped. Walking the graphemes of
+        // everything on screen here costs the whole screen on each frame a scroll brings one
+        // line in.
+        for job in shaping_batch.jobs() {
+            let input = &job.input;
+            if let Some(profile) = profile.as_deref_mut() {
+                profile.fallback_spans += 1;
             }
+            self.rasterizer.warm_fallbacks_for_text(
+                &input.text,
+                input.font_size,
+                input.font_family,
+                FontWeight::Value(u32::from(input.font_weight)),
+                input.font_style,
+                input.language,
+            );
         }
         if let (Some(profile), Some(started)) = (profile.as_deref_mut(), fallback_started) {
             let fallback_elapsed = started.elapsed();
@@ -756,6 +747,7 @@ impl<B: GpuBackend> TextPipelineV2<B> {
         self.visible_span_ranges.clear();
         self.visible_span_ranges.resize(requests.len(), 0..0);
         self.visible_span_keys.clear();
+        self.span_paints.clear();
         for (index, req) in requests.iter().enumerate() {
             // An off-screen request contributes no pixel this frame, so it
             // reserves no atlas room either; its glyphs claim theirs on the
@@ -819,37 +811,57 @@ impl<B: GpuBackend> TextPipelineV2<B> {
         self.alpha_glyph_descriptors.clear();
         self.color_glyph_descriptors.clear();
         self.seen_glyphs.clear();
+        // The generation of templates the paints found below are of: planning can move it before they
+        // are used, and they are then not.
+        let paint_epoch = self.paint_cache.epoch();
+        self.span_paints.resize(self.visible_span_keys.len(), None);
         for (index, range) in self.visible_span_ranges.iter().enumerate() {
             if !visible[index] {
                 continue;
             }
+            let req = &requests[index];
 
-            for keys in &self.visible_span_keys[range.clone()] {
+            for (offset, keys) in self.visible_span_keys[range.clone()].iter().enumerate() {
+                let (font_weight, italic) = span_paint_style(req, offset);
+                let variant = PaintVariant::new(req, font_weight, italic);
                 // The stamping read: this is the loop that walks exactly the
                 // layouts the frame draws, so it is where the working set is
-                // marked as alive.
-                let Some(distinct) = self
+                // marked as alive. One lookup stamps the layout, reads its
+                // glyphs and finds the paint remembered with it; the fields
+                // the glyphs are collected into are not the layout cache, so
+                // they are used while it is read.
+                let seen_glyphs = &mut self.seen_glyphs;
+                let rasterizer = &mut self.rasterizer;
+                let color_glyph_descriptors = &mut self.color_glyph_descriptors;
+                let alpha_glyph_descriptors = &mut self.alpha_glyph_descriptors;
+                let outcome = self
                     .layout_cache
-                    .distinct_glyphs_with_fallback(&keys.primary, keys.fallback.as_ref())
-                else {
+                    .with_layout_with_fallback(&keys.primary, keys.fallback.as_ref(), |entry| {
+                        for &(key, _) in entry.distinct_glyphs() {
+                            if !seen_glyphs.insert(key) {
+                                continue;
+                            }
+                            let Some((is_color, glyph_width, glyph_height)) =
+                                rasterizer.cached_glyph_descriptor(key)
+                            else {
+                                return None;
+                            };
+                            let descriptor = (key, glyph_width, glyph_height);
+                            if is_color {
+                                color_glyph_descriptors.push(descriptor);
+                            } else {
+                                alpha_glyph_descriptors.push(descriptor);
+                            }
+                        }
+                        Some(entry.remembered_paint(&variant, paint_epoch))
+                    });
+                // A layout that is not resident, or a glyph that is not
+                // prepared, leaves the frame for the next one to prepare.
+                let Some(Some(remembered)) = outcome else {
                     return;
                 };
-
-                for &(key, _) in distinct {
-                    if !self.seen_glyphs.insert(key) {
-                        continue;
-                    }
-                    let Some((is_color, glyph_width, glyph_height)) =
-                        self.rasterizer.cached_glyph_descriptor(key)
-                    else {
-                        return;
-                    };
-                    let descriptor = (key, glyph_width, glyph_height);
-                    if is_color {
-                        self.color_glyph_descriptors.push(descriptor);
-                    } else {
-                        self.alpha_glyph_descriptors.push(descriptor);
-                    }
+                if let Some(paint) = remembered {
+                    self.span_paints[range.start + offset] = Some((paint_epoch, paint));
                 }
             }
         }
@@ -967,37 +979,60 @@ impl<B: GpuBackend> TextPipelineV2<B> {
                 // face (no cursive glyph forms, advances unchanged). Upgrade
                 // path: load a real italic/oblique face and key the atlas by it.
                 let italic = span.italic.unwrap_or(req.italic);
-                let paint_key = TextPaintCacheKey::new(
-                    &self.visible_span_keys[key_index],
-                    req,
-                    font_weight,
-                    italic,
-                );
-                let cached = if let Some(cached) = self.paint_cache.get(&paint_key) {
+                // The paint remembered with the layout is the one this frame draws from unless the
+                // templates were cleared since it was found, which planning the atlas can do.
+                let remembered = self.span_paints[key_index]
+                    .take()
+                    .filter(|(epoch, _)| *epoch == self.paint_cache.epoch())
+                    .map(|(_, paint)| paint);
+                let cached = if let Some(cached) = remembered {
                     if let Some(profile) = profile.as_deref_mut() {
                         profile.paint_cache_hits += 1;
                     }
                     cached
                 } else {
-                    if let Some(profile) = profile.as_deref_mut() {
-                        profile.paint_cache_misses += 1;
-                    }
-                    // Cloning is limited to misses so cache hits never hold
-                    // an immutable borrow of the pipeline across template
-                    // construction.
-                    let keys = self.visible_span_keys[key_index].clone();
-                    let Some(paint) = self.build_text_paint_template_generic(
-                        backend,
+                    let paint_key = TextPaintCacheKey::new(
+                        &self.visible_span_keys[key_index],
                         req,
-                        &keys,
                         font_weight,
                         italic,
-                        profile.as_deref_mut(),
-                    ) else {
-                        return;
+                    );
+                    let cached = if let Some(cached) = self.paint_cache.get(&paint_key) {
+                        if let Some(profile) = profile.as_deref_mut() {
+                            profile.paint_cache_hits += 1;
+                        }
+                        cached
+                    } else {
+                        if let Some(profile) = profile.as_deref_mut() {
+                            profile.paint_cache_misses += 1;
+                        }
+                        // Cloning is limited to misses so cache hits never hold
+                        // an immutable borrow of the pipeline across template
+                        // construction.
+                        let keys = self.visible_span_keys[key_index].clone();
+                        let Some(paint) = self.build_text_paint_template_generic(
+                            backend,
+                            req,
+                            &keys,
+                            font_weight,
+                            italic,
+                            profile.as_deref_mut(),
+                        ) else {
+                            return;
+                        };
+                        self.paint_cache.insert(paint_key, paint.clone());
+                        paint
                     };
-                    self.paint_cache.insert(paint_key, paint.clone());
-                    paint
+                    // Remembered with the layout for the next frame to find with it.
+                    let keys = &self.visible_span_keys[key_index];
+                    self.layout_cache.remember_paint(
+                        &keys.primary,
+                        keys.fallback.as_ref(),
+                        PaintVariant::new(req, font_weight, italic),
+                        self.paint_cache.epoch(),
+                        Arc::clone(&cached),
+                    );
+                    cached
                 };
 
                 let span_coverage_exponent = coverage_exponent(color.to_unorm_array());
@@ -1277,5 +1312,18 @@ impl<B: GpuBackend> TextPipelineV2<B> {
         if let (Some(profile), Some(started)) = (profile.as_deref_mut(), profile_started) {
             profile.total = started.elapsed();
         }
+    }
+}
+
+/// The weight and the italic a span of `request` is painted with: its own where it says, the
+/// request's where it does not, and the request's for the one span a request without spans has.
+#[inline]
+fn span_paint_style(request: &TextDrawRequest, span_index: usize) -> (u16, bool) {
+    match request.spans.get(span_index) {
+        Some(span) => (
+            span.font_weight.or(request.font_weight).unwrap_or(FontWeight::Normal.numeric()),
+            span.italic.unwrap_or(request.italic),
+        ),
+        None => (request.font_weight.unwrap_or(FontWeight::Normal.numeric()), request.italic),
     }
 }

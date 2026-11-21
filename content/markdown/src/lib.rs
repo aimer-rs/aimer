@@ -2,6 +2,8 @@ mod cache;
 pub mod copy_button;
 mod custom;
 mod document;
+mod html;
+mod html_blocks;
 mod live;
 mod live_cuts;
 mod live_segments;
@@ -166,6 +168,28 @@ impl MarkdownViewer {
     /// references.
     pub fn on_link(mut self, handler: impl Fn(Rc<str>) + 'static) -> Self {
         self.link_handler = Some(Rc::new(handler));
+        self
+    }
+
+    /// Sends the links whose target starts with `prefix` to `handler`, which gets what follows the prefix. Every other link
+    /// stays with the handler the viewer had: the browser opener unless [`on_link`](Self::on_link) replaced it. For an
+    /// application that gives a link of its own a target such as `app:7` without taking over the web links.
+    pub fn on_link_with_prefix(
+        mut self,
+        prefix: &'static str,
+        handler: impl Fn(&str) + 'static,
+    ) -> Self {
+        let others = self.link_handler.take();
+        self.link_handler = Some(Rc::new(move |target: Rc<str>| {
+            match target.strip_prefix(prefix) {
+                Some(rest) => handler(rest),
+                None => {
+                    if let Some(others) = &others {
+                        others(target);
+                    }
+                }
+            }
+        }));
         self
     }
 
@@ -377,8 +401,9 @@ mod tests {
     fn document_cache_reuses_parse_errors() {
         let mut cache = DocumentCache::new(2);
 
-        let first = cache.parse(Shared::<str>::from("<div>unsupported</div>").as_share_ref());
-        let second = cache.parse(Shared::<str>::from("<div>unsupported</div>").as_share_ref());
+        // A document that still cannot be shown: `<div>` can be, now that raw HTML is converted.
+        let first = cache.parse(Shared::<str>::from("<script>unsupported</script>").as_share_ref());
+        let second = cache.parse(Shared::<str>::from("<script>unsupported</script>").as_share_ref());
 
         assert!(first.is_err());
         assert!(Shared::ptr_eq(&first, &second));
@@ -449,6 +474,35 @@ mod tests {
 
         assert!(handled.is_none());
         assert!(opened.into_inner().is_empty());
+    }
+
+    #[test]
+    fn links_with_a_prefix_go_to_their_handler_and_the_others_stay_with_the_one_before() {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let (first, second) = (Rc::clone(&seen), Rc::clone(&seen));
+        let viewer = MarkdownViewer::new()
+            .on_link(move |target| first.borrow_mut().push(format!("before {target}")))
+            .on_link_with_prefix("app:", move |rest| second.borrow_mut().push(format!("app {rest}")));
+        let handler = viewer.link_handler.clone().expect("a handler");
+
+        handler(Rc::from("app:7"));
+        handler(Rc::from("https://aimer.dev"));
+        handler(Rc::from("app:"));
+
+        assert_eq!(*seen.borrow(), ["app 7", "before https://aimer.dev", "app "]);
+    }
+
+    #[test]
+    fn a_link_that_is_not_the_prefix_does_not_reach_the_handler_of_it() {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let inner = Rc::clone(&seen);
+        let viewer = MarkdownViewer::new().on_link_with_prefix("app:", move |rest| inner.borrow_mut().push(rest.to_owned()));
+        let handler = viewer.link_handler.clone().expect("a handler");
+
+        handler(Rc::from("#footnote-1"));
+        handler(Rc::from("app:x"));
+
+        assert_eq!(*seen.borrow(), ["x"], "a footnote is not the prefix, and the default opens only web links");
     }
 
     #[test]

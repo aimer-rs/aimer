@@ -194,6 +194,42 @@ pub(crate) struct Paragraph {
     /// line box say and which are not changed once it is made: worked out the first time it is
     /// asked, which is on every frame of every text.
     retained_v2_support: std::cell::OnceCell<bool>,
+    /// What [`Self::paint_facts`] last worked out, for the layout and scale it was worked out for.
+    paint_facts: RefCell<Option<PaintFactsMemo>>,
+}
+
+/// What painting a prepared layout needs to know of it, which does not change while the layout and
+/// the scale do.
+#[derive(Clone, Copy)]
+pub(crate) struct PaintFacts {
+    /// Whether every measure of the layout is finite and in range, so that it can be painted.
+    pub finite: bool,
+    /// How far the text spills outside its box: left, top, right, bottom.
+    pub outsets: [f32; 4],
+}
+
+struct PaintFactsMemo {
+    /// The layout the facts are of, held, so that it cannot be another allocation at the same address
+    /// that is answered for.
+    layout: Rc<PreparedLayout>,
+    scale_bits: u32,
+    facts: PaintFacts,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PAINT_FACTS_COMPUTATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times the facts of a layout were worked out and not found remembered, on this thread.
+#[cfg(test)]
+pub(crate) fn paint_facts_computations() -> usize {
+    PAINT_FACTS_COMPUTATIONS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_paint_facts_computations() {
+    PAINT_FACTS_COMPUTATIONS.with(|count| count.set(0));
 }
 
 fn centered_line_baseline(top: f32, ascent: f32, descent: f32, height: f32) -> f32 {
@@ -229,6 +265,7 @@ impl Paragraph {
             text_indent,
             layout_cache: RefCell::new(None),
             retained_v2_support: std::cell::OnceCell::new(),
+            paint_facts: RefCell::new(None),
         }
     }
 
@@ -262,6 +299,46 @@ impl Paragraph {
                             && shadow.blur.is_finite()
                     })
             })
+    }
+
+    /// Whether `layout` is finite and what it spills outside its box, at `scale`.
+    ///
+    /// Asked on every frame by every text the walk visits, and the same until the layout or the scale
+    /// change, so it is worked out once for them: each ask is a comparison of the layout's identity.
+    pub(crate) fn paint_facts(&self, layout: &Rc<PreparedLayout>, scale: f32) -> PaintFacts {
+        if let Some(memo) = self.paint_facts.borrow().as_ref()
+            && Rc::ptr_eq(&memo.layout, layout)
+            && memo.scale_bits == scale.to_bits()
+        {
+            return memo.facts;
+        }
+        #[cfg(test)]
+        PAINT_FACTS_COMPUTATIONS.with(|count| count.set(count.get() + 1));
+        let finite = layout.size.width.is_finite()
+            && layout.size.height.is_finite()
+            && layout.size.width >= 0.0
+            && layout.size.height >= 0.0
+            && layout.size.width <= 1_000_000.0
+            && layout.size.height <= 1_000_000.0
+            && layout.line_heights.iter().all(|height| height.is_finite())
+            && layout.fragments.iter().all(|fragment| {
+                fragment.x.is_finite()
+                    && fragment.baseline.is_finite()
+                    && fragment.width.is_finite()
+                    && fragment.height.is_finite()
+                    && fragment.width >= 0.0
+                    && fragment.height >= 0.0
+            });
+        let facts = PaintFacts {
+            finite,
+            outsets: if finite { self.paint_outsets(layout, scale) } else { [0.0; 4] },
+        };
+        *self.paint_facts.borrow_mut() = Some(PaintFactsMemo {
+            layout: Rc::clone(layout),
+            scale_bits: scale.to_bits(),
+            facts,
+        });
+        facts
     }
 
     pub(crate) fn paint_outsets(
@@ -348,15 +425,28 @@ impl Paragraph {
     ) {
         for background in &layout.backgrounds {
             let (red, green, blue, alpha) = background.color.to_rgba();
-            canvas.fill_rect(
-                aimer_cupid::utilities::Rect::new(
-                    background.x / scale + origin_offset.x,
-                    background.y / scale + origin_offset.y,
-                    background.width / scale,
-                    background.height / scale,
-                ),
-                [red, green, blue, alpha],
+            let rect = aimer_cupid::utilities::Rect::new(
+                background.x / scale + origin_offset.x,
+                background.y / scale + origin_offset.y,
+                background.width / scale,
+                background.height / scale,
             );
+            let color = [red, green, blue, alpha];
+            if background.radius > 0.0 {
+                // A radius past half the height would overlap itself, so it stops at a pill.
+                let radius = background.radius.min(rect.height * 0.5);
+                canvas.fill_rect_styled(
+                    rect,
+                    aimer_cupid::utilities::Color::rgba8(red, green, blue, alpha),
+                    [radius; 4],
+                    [0.0; 4],
+                    aimer_cupid::utilities::Color::transparent(),
+                    [0.0; 4],
+                    aimer_cupid::utilities::Color::transparent(),
+                );
+            } else {
+                canvas.fill_rect(rect, color);
+            }
         }
     }
 
@@ -1178,6 +1268,15 @@ impl Paragraph {
         }
     }
 
+    /// Whether a line is placed by the width of the paragraph, as one that is centred or set to the
+    /// right is. The others start where the paragraph does, whatever its width.
+    fn aligns_within_width(&self) -> bool {
+        !matches!(
+            self.text_align,
+            TextAlign::TopLeft | TextAlign::MidLeft | TextAlign::BotLeft
+        )
+    }
+
     fn measure_graphemes(
         &self,
         ctx: &BuildContext,
@@ -1356,6 +1455,7 @@ mod tests {
             style: TextStyle::new().color(Color::Hex(0x0969DA)),
             link: Some(hovered.clone()),
             inline_box: None,
+            background_radius: None,
         };
         let plain = ResolvedTextSpan::plain(Rc::from(" docs"), TextStyle::default());
 
@@ -1553,6 +1653,7 @@ mod tests {
                     .text_decoration(TextDecoration::new().line(TextDecorationLine::UNDERLINE)),
                 link: Some(target.clone()),
                 inline_box: None,
+                background_radius: None,
             }],
             TextAlign::TopLeft,
             TextOverflow::Wrap,

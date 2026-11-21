@@ -8,7 +8,7 @@ use super::test_support::{dummy_build_context, focused_multiline_field};
 use super::RawTextField;
 use crate::TextEditingController;
 use crate::editable_text::TextEditingValue;
-use crate::input_field::gutter::LineNumbers;
+use crate::input_field::gutter::{LineNumberAlign, LineNumbers};
 
 const BAND: Color = Color::Rgba(40, 60, 90, 255);
 
@@ -75,6 +75,56 @@ fn a_number_is_drawn_for_each_line_left_of_the_text() {
     let text_x = runs.iter().filter(|run| run.0.contains("alpha")).map(|run| run.1).fold(f32::MAX, f32::min);
     let numbers: String = runs.iter().filter(|run| run.1 < text_x).map(|run| run.0.clone()).collect();
     assert_eq!(numbers.replace('\n', ""), "1234", "{runs:?}");
+}
+
+/// How each line number is aligned inside its box, as drawn: the runs left of the text.
+fn number_aligns(field: &RawTextField, ctx: &BuildContext<'_>) -> Vec<String> {
+    let commands = commands(field, ctx);
+    let text_x = runs(&commands).iter().filter(|run| run.0.contains("line")).map(|run| run.1).fold(f32::MAX, f32::min);
+    commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawCommand::DrawText { position, horizontal_align, .. } if position.x < text_x => Some(format!("{horizontal_align:?}")),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn numbers_are_aligned_to_the_right_unless_asked_to_go_left() {
+    let text = (1..=5).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+
+    let (right, ctx) = field(&text, Some(LineNumbers::new()), None, false);
+    let aligns = number_aligns(&right, &ctx);
+    assert_eq!(aligns.len(), 5, "a number for each line: {aligns:?}");
+    assert!(aligns.iter().all(|align| align == "Right"), "right is the default: {aligns:?}");
+
+    let (left, ctx) = field(&text, Some(LineNumbers::new().align(LineNumberAlign::Left)), None, false);
+    let aligns = number_aligns(&left, &ctx);
+    assert_eq!(aligns.len(), 5, "a number for each line: {aligns:?}");
+    assert!(aligns.iter().all(|align| align == "Left"), "numbers go left when asked: {aligns:?}");
+
+    let (center, ctx) = field(&text, Some(LineNumbers::new().align(LineNumberAlign::Center)), None, false);
+    let aligns = number_aligns(&center, &ctx);
+    assert_eq!(aligns.len(), 5, "a number for each line: {aligns:?}");
+    assert!(aligns.iter().all(|align| align == "Center"), "numbers are centered when asked: {aligns:?}");
+}
+
+#[test]
+fn centering_the_numbers_does_not_widen_the_margin_beyond_the_icons_column() {
+    let text = (1..=12).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+    let with_icons = |align| {
+        let (mut field, ctx) = field(&text, Some(LineNumbers::new().align(align)), None, false);
+        field.gutter_markers = Some(crate::input_field::gutter::GutterMarkers::new(10, |_| None));
+        field.update(&ctx);
+        field
+    };
+    let (plain, _) = field(&text, Some(LineNumbers::new().align(LineNumberAlign::Center)), None, false);
+    let centered = with_icons(LineNumberAlign::Center);
+    let right = with_icons(LineNumberAlign::Right);
+    // The icons take one column before the numbers whatever the alignment: centering must not add more.
+    assert_eq!(centered.gutter_width(1.0), plain.gutter_width(1.0) + 10.0);
+    assert_eq!(right.gutter_width(1.0), plain.gutter_width(1.0) + 10.0);
 }
 
 #[test]

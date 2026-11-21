@@ -38,6 +38,8 @@ struct FocusNodeState {
     /// Whether the element holding this node wants the Tab key for itself; see
     /// [`FocusNode::set_claims_tab`].
     claims_tab: Cell<bool>,
+    /// See [`FocusNode::set_holds_tab`].
+    holds_tab: Cell<bool>,
 }
 
 impl Drop for FocusNodeState {
@@ -99,6 +101,7 @@ impl FocusNode {
                 request: Cell::new(None),
                 announced: Cell::new(false),
                 claims_tab: Cell::new(false),
+                holds_tab: Cell::new(false),
             }),
         }
     }
@@ -143,10 +146,28 @@ impl FocusNode {
         self.state.claims_tab.set(claims);
     }
 
+    /// Sets whether the element holding this node keeps both Tab and Shift+Tab for itself while it has focus, so that focus
+    /// does not leave it by the keyboard's traversal at all: a popup that is closed with Escape, not by tabbing out of it.
+    ///
+    /// Holding is claiming, and more: [`set_claims_tab`](Self::set_claims_tab) is for the element to say what it needs of the
+    /// key, and a text field says it again each time it is made, which would undo what a popup asked for round it. Holding is
+    /// not touched by that.
+    #[inline]
+    pub fn set_holds_tab(&self, holds: bool) {
+        self.state.holds_tab.set(holds);
+    }
+
+    /// Returns whether the element holding this node keeps Shift+Tab as well as Tab: see
+    /// [`set_holds_tab`](Self::set_holds_tab).
+    #[inline]
+    pub fn holds_tab(&self) -> bool {
+        self.state.holds_tab.get()
+    }
+
     /// Returns whether the element holding this node takes the Tab key for itself.
     #[inline]
     pub fn claims_tab(&self) -> bool {
-        self.state.claims_tab.get()
+        self.state.claims_tab.get() || self.state.holds_tab.get()
     }
 
     /// Requests that this node relinquish keyboard focus.

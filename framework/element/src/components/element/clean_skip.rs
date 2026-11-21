@@ -617,8 +617,6 @@ fn slot(element: ElementId) -> usize {
 fn frame_blocker() -> Option<&'static str> {
     if is_animation_only_pass() {
         Some("skip: an animation-only pass")
-    } else if stale_roots_waiting() {
-        Some("skip: rebuilt roots are waiting to be reached")
     } else if !has_active_v2_render_tree() {
         Some("skip: no retained tree")
     } else {
@@ -814,7 +812,62 @@ pub(crate) fn try_skip(element: ElementId, ctx: &BuildContext) -> Decision {
         current.skips += 1;
         stats.set(current);
     });
+    if stale_roots_waiting() {
+        note_left_alone(element);
+    }
     Decision::Skip
+}
+
+aimer_tls::thread_local! {
+    /// The nodes of the subtrees this traversal left alone while rebuilt roots were waiting to be reached.
+    static LEFT_ALONE: RefCell<HashSet<RenderNodeId, IdBuildHasher>> = RefCell::new(HashSet::default());
+}
+
+/// Remembers that the subtree of `element` was left alone.
+///
+/// A rebuilt root is remembered with the context it was last given, and a full walk wants each reached
+/// again to refresh it. A subtree that is left alone is left alone because everything in it would be
+/// given what it was given last time, so the roots in it keep a context that is still right: the walk
+/// need not reach them. This says where such roots are, for [`left_alone_over`].
+fn note_left_alone(element: ElementId) {
+    let Some(scope) = current_v2_render_context() else {
+        return;
+    };
+    if let Some(node) = scope.node_for_element(element) {
+        LEFT_ALONE.with(|left| {
+            left.borrow_mut().insert(node);
+        });
+    }
+}
+
+/// Whether the walk that is ending left alone `element` or a subtree that holds it.
+pub(crate) fn left_alone_over(element: ElementId) -> bool {
+    let Some(scope) = current_v2_render_context() else {
+        return false;
+    };
+    let Some(mut node) = scope.node_for_element(element) else {
+        return false;
+    };
+    LEFT_ALONE.with(|left| {
+        let left = left.borrow();
+        if left.is_empty() {
+            return false;
+        }
+        loop {
+            if left.contains(&node) {
+                return true;
+            }
+            match scope.tree.parent_of(node) {
+                Ok(Some(parent)) => node = parent,
+                _ => return false,
+            }
+        }
+    })
+}
+
+/// Forgets what a finished traversal left alone.
+pub(crate) fn forget_left_alone() {
+    LEFT_ALONE.with(|left| left.borrow_mut().clear());
 }
 
 /// What the retained tree and the elements hold for one element of a subtree.

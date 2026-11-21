@@ -52,7 +52,7 @@ use crate::glyph_rasterizer::{
 };
 use crate::layout_cache::LayoutCache;
 use crate::paint_cache::{
-    CachedPaintGlyph, CachedPaintKind, CachedTextPaint, TextPaintCache, TextPaintCacheKey,
+    CachedPaintGlyph, CachedPaintKind, CachedTextPaint, PaintVariant, TextPaintCache, TextPaintCacheKey,
     sanitize_shadow,
 };
 use crate::preparation_batch::{BatchExecutor, IndexedJob, PreparationBatch};
@@ -832,6 +832,8 @@ pub struct TextPreparationProfile {
     pub shaping_jobs: usize,
     /// Number of layout jobs submitted by this call.
     pub layout_jobs: usize,
+    /// Number of spans whose fallback faces this call resolved before shaping.
+    pub fallback_spans: usize,
     /// Number of glyph runs submitted by this call.
     pub glyph_jobs: usize,
     /// Number of alpha-atlas descriptors planned by this call.
@@ -878,6 +880,9 @@ pub struct TextPipelineV2<B: crate::backend::GpuBackend> {
     request_ranges: Vec<TextRequestRange>,
     visible_span_ranges: Vec<Range<usize>>,
     visible_span_keys: Vec<SpanLayoutKeys>,
+    /// For each span of `visible_span_keys`, the paint template remembered with its layout, and the
+    /// generation of templates it is of, found while the frame stamped its layouts.
+    span_paints: Vec<Option<(u64, Arc<paint_cache::CachedTextPaint>)>>,
     alpha_glyph_descriptors: Vec<(GlyphKey, u32, u32)>,
     color_glyph_descriptors: Vec<(GlyphKey, u32, u32)>,
     planned_alpha_descriptors: Vec<(GlyphKey, u32, u32)>,
@@ -1193,6 +1198,7 @@ impl<B: crate::backend::GpuBackend> TextPipelineV2<B> {
             request_ranges: Vec::new(),
             visible_span_ranges: Vec::new(),
             visible_span_keys: Vec::new(),
+            span_paints: Vec::new(),
             alpha_glyph_descriptors: Vec::new(),
             color_glyph_descriptors: Vec::new(),
             planned_alpha_descriptors: Vec::new(),

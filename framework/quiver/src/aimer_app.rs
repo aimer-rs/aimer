@@ -878,6 +878,7 @@ impl<W: Widget + 'static> HeadlessAimerApp<W> {
                 touch_pointer: false,
                 pressed_button: None,
                 current_modifiers: Default::default(),
+                double_tap: Default::default(),
                 ime_composing: false,
                 window_scale: scale_factor,
                 native_window_size: None,
@@ -1695,6 +1696,7 @@ fn start_event_loop(
                 touch_pointer: false,
                 pressed_button: None,
                 current_modifiers: Default::default(),
+                double_tap: Default::default(),
                 ime_composing: false,
                 window_scale: 1.0,
                 native_window_size: None,
@@ -1842,6 +1844,7 @@ mod tests {
     mod autofocus_settles;
     mod focus_origin;
     mod window_drag;
+    mod force_press_handover;
     mod text_field_caret;
     mod text_field_in_scrollable;
     mod text_field_chrome;
@@ -1852,6 +1855,7 @@ mod tests {
     mod scroll_frame_kind;
     mod scroll_one_step;
     mod clean_subtree_skip;
+    mod clean_skip_stale_roots;
     mod geometry_forward;
     mod paint_owner_census;
     mod transparent_elements;

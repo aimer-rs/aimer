@@ -172,9 +172,16 @@ impl WindowEventHandler {
                 Modifiers::set_current(app.current_modifiers);
                 // What is under the cursor may look different with the key held, and nothing else says so.
                 let _ = Self::dispatch_platform_gesture(app, ElementEvent::ModifiersChanged(app.current_modifiers));
+                Self::track_double_tap(app);
             }
 
-            WindowEvent::KeyboardInput { event, .. } => Self::handle_keyboard_input(event, app),
+            WindowEvent::KeyboardInput { event, .. } => {
+                // Any key but a modifier spoils a double tap that is going; the modifiers have their own report.
+                if event.state.is_pressed() && !Self::is_modifier_key(&event.logical_key) {
+                    app.double_tap.interrupt();
+                }
+                Self::handle_keyboard_input(event, app)
+            }
 
             WindowEvent::Ime(ime) => Self::handle_ime(ime, app),
 
@@ -250,6 +257,7 @@ impl WindowEventHandler {
                     // A key released while another window had focus is never reported here.
                     app.current_modifiers = Modifiers::default();
                     Modifiers::set_current(Modifiers::default());
+                    app.double_tap.interrupt();
                 }
                 if app.active_root().is_none() {
                     return;
@@ -560,6 +568,10 @@ impl WindowEventHandler {
         // Remembered so a move or release during a drag reports the button that
         // started it, which a hover-time move has no way of knowing.
         app.pressed_button = pressed.then_some(button);
+        if pressed {
+            // A click between two taps of a modifier makes them no double tap.
+            app.double_tap.interrupt();
+        }
         if !pressed && button == PointerButton::Primary {
             app.macos_windowing.end_window_drag();
         }
@@ -642,6 +654,54 @@ impl WindowEventHandler {
                 .move_window_with_pointer(window, (pos.x, pos.y));
         }
         true
+    }
+
+    /// Whether `key` is one of the modifier keys, which a double tap is made of and so does not spoil.
+    fn is_modifier_key(key: &winit::keyboard::Key) -> bool {
+        use winit::keyboard::{Key, NamedKey as Named};
+        matches!(
+            key,
+            Key::Named(
+                Named::Shift
+                    | Named::Control
+                    | Named::Alt
+                    | Named::AltGraph
+                    | Named::Super
+                    | Named::Meta
+                    | Named::Hyper
+                    | Named::Fn
+            )
+        )
+    }
+
+    /// Tells the double-tap detector what is held now, and when that finishes a double tap of a modifier, sends the key
+    /// (`DoubleShift`) to the tree as a shortcut would be.
+    ///
+    /// Costs nothing, but a read of a thread local, in an application with no `Shortcuts`.
+    fn track_double_tap<W: Widget + 'static>(app: &mut AimerApplicationHandler<W>) {
+        if !aimer_shortcut::scopes_alive() {
+            return;
+        }
+        let held = aimer_shortcut::ChordMods::from_event(&app.current_modifiers);
+        let Some(tapped) = app.double_tap.modifiers_changed(held, std::time::Instant::now()) else {
+            return;
+        };
+        let Some(key) = aimer_shortcut::Key::double_tap(tapped) else {
+            return;
+        };
+        if app.active_root().is_none() {
+            return;
+        }
+        let event = ElementEvent::KeyInput {
+            key: NamedKey::Other(key.to_string()),
+            action: KeyAction::Pressed,
+            // The tap is the whole gesture, and the modifier it was is already let go.
+            modifiers: Modifiers::default(),
+        };
+        let result = app.dispatch_element_event(app.cursor_pos, &event);
+        if Self::should_redraw(result, result.is_consumed()) {
+            app.request_full_redraw();
+        }
     }
 
     fn handle_keyboard_input<W: Widget + 'static>(
@@ -931,12 +991,23 @@ impl WindowEventHandler {
         app: &mut AimerApplicationHandler<W>,
         event: ElementEvent,
     ) -> EventResult {
-        if app.active_root().is_none() {
-            return EventResult::ignored();
-        }
-        let result = app.dispatch_element_event(app.cursor_pos, &event);
-        if Self::should_redraw(result, result.is_consumed()) {
-            app.request_animation_frame();
+        // What stage the pad was at is told to whatever is under the pointer while the event is dispatched, and is what
+        // this one was after: see `PressureStage::previous`.
+        let pressure = match &event {
+            ElementEvent::Pressure { stage, .. } => Some(*stage),
+            _ => None,
+        };
+        let result = if app.active_root().is_none() {
+            EventResult::ignored()
+        } else {
+            let result = app.dispatch_element_event(app.cursor_pos, &event);
+            if Self::should_redraw(result, result.is_consumed()) {
+                app.request_animation_frame();
+            }
+            result
+        };
+        if let Some(stage) = pressure {
+            stage.record();
         }
         result
     }

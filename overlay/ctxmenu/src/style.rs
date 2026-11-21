@@ -67,6 +67,21 @@ pub const LIST_VERTICAL_PADDING: u32 = 5;
 /// openings; desktop menus have a floor for exactly that reason.
 pub const LIST_MIN_WIDTH: f32 = 150.0;
 
+/// The hint written at the end of a row: the shortcut that does the same.
+pub const HINT_COLOR: Color = Color::Rgba(255, 255, 255, 115);
+
+/// Room kept between the longest label of a list and the hints, in logical pixels.
+pub const LIST_HINT_GAP: f32 = 28.0;
+
+/// Height that a line between two groups of rows of a list adds above the row that it sets apart, in logical pixels.
+pub const LIST_SEPARATOR_GAP: f32 = 9.0;
+
+/// Side of the square that an icon is drawn in, in logical pixels.
+pub const ICON_SIZE: f32 = 16.0;
+
+/// Room between an icon and the label that follows it, in logical pixels.
+pub const ICON_GAP: f32 = 9.0;
+
 /// Corner radius of the list panel, in logical pixels.
 pub const LIST_RADIUS: f32 = 8.0;
 
@@ -108,8 +123,19 @@ pub struct ContextMenuStyle {
     pub disabled_label_color: Color,
     /// The wash under the row a pointer is pressing or hovering.
     pub highlight_color: Color,
-    /// The hairline drawn between two tiled items.
+    /// The hairline drawn between two tiled items, and the line between two groups of rows of a list.
     pub separator_color: Color,
+    /// The colour of a hint written at the end of a row.
+    pub hint_color: Color,
+    /// Room kept between a row's label and its hint, in logical pixels.
+    pub hint_gap: f32,
+    /// Height that the line between two groups adds above the first row of the second, in logical pixels: nothing in a pill, whose items
+    /// stand side by side.
+    pub separator_gap: f32,
+    /// Side of the square an icon is drawn in, in logical pixels.
+    pub icon_size: f32,
+    /// Room between an icon and its label, in logical pixels.
+    pub icon_gap: f32,
     /// Height of one row, in logical pixels.
     pub row_height: f32,
     /// Horizontal padding around one label, in logical pixels.
@@ -156,6 +182,11 @@ impl ContextMenuStyle {
             disabled_label_color: DISABLED_LABEL_COLOR,
             highlight_color: HIGHLIGHT_COLOR,
             separator_color: SEPARATOR_COLOR,
+            hint_color: HINT_COLOR,
+            hint_gap: 0.0,
+            separator_gap: 0.0,
+            icon_size: ICON_SIZE,
+            icon_gap: ICON_GAP,
             row_height: PILL_HEIGHT,
             item_padding: PILL_ITEM_PADDING,
             min_width: 0.0,
@@ -176,6 +207,11 @@ impl ContextMenuStyle {
             disabled_label_color: DISABLED_LABEL_COLOR,
             highlight_color: HIGHLIGHT_COLOR,
             separator_color: SEPARATOR_COLOR,
+            hint_color: HINT_COLOR,
+            hint_gap: LIST_HINT_GAP,
+            separator_gap: LIST_SEPARATOR_GAP,
+            icon_size: ICON_SIZE,
+            icon_gap: ICON_GAP,
             row_height: LIST_ROW_HEIGHT,
             item_padding: LIST_ITEM_PADDING,
             min_width: LIST_MIN_WIDTH,
@@ -223,6 +259,41 @@ impl ContextMenuStyle {
     #[inline]
     pub fn separator_color(mut self, color: Color) -> Self {
         self.separator_color = color;
+        self
+    }
+
+    /// Sets the colour of the hint written at the end of a row.
+    #[inline]
+    pub fn hint_color(mut self, color: Color) -> Self {
+        self.hint_color = color;
+        self
+    }
+
+    /// Sets the room kept between a row's label and its hint, in logical pixels.
+    #[inline]
+    pub fn hint_gap(mut self, hint_gap: f32) -> Self {
+        self.hint_gap = hint_gap;
+        self
+    }
+
+    /// Sets the height that the line between two groups adds above a row, in logical pixels.
+    #[inline]
+    pub fn separator_gap(mut self, separator_gap: f32) -> Self {
+        self.separator_gap = separator_gap;
+        self
+    }
+
+    /// Sets the side of the square an icon is drawn in, in logical pixels.
+    #[inline]
+    pub fn icon_size(mut self, icon_size: f32) -> Self {
+        self.icon_size = icon_size;
+        self
+    }
+
+    /// Sets the room between an icon and its label, in logical pixels.
+    #[inline]
+    pub fn icon_gap(mut self, icon_gap: f32) -> Self {
+        self.icon_gap = icon_gap;
         self
     }
 
@@ -344,6 +415,25 @@ mod tests {
         assert_eq!(styled.min_width, 13.0);
         assert_eq!(styled.gap, 14.0);
         assert_eq!(styled.screen_margin, 15.0);
+    }
+
+    #[test]
+    fn a_list_has_room_for_hints_separators_and_icons_by_default() {
+        let list = ContextMenuStyle::list();
+        assert_eq!(list.hint_color, HINT_COLOR);
+        assert_eq!(list.hint_gap, LIST_HINT_GAP);
+        assert_eq!(list.separator_gap, LIST_SEPARATOR_GAP);
+        assert_eq!((list.icon_size, list.icon_gap), (ICON_SIZE, ICON_GAP));
+        assert!(HINT_COLOR != LABEL_COLOR, "a hint is dimmer than a label");
+        // A pill has none of them: its items stand side by side, with their own hairlines.
+        assert_eq!(ContextMenuStyle::pill().separator_gap, 0.0);
+    }
+
+    #[test]
+    fn the_new_parts_of_the_look_can_be_replaced_too() {
+        let styled = ContextMenuStyle::list().hint_color(Color::Rgba(1, 1, 1, 1)).hint_gap(2.0).separator_gap(3.0).icon_size(4.0).icon_gap(5.0);
+        assert_eq!(styled.hint_color, Color::Rgba(1, 1, 1, 1));
+        assert_eq!((styled.hint_gap, styled.separator_gap, styled.icon_size, styled.icon_gap), (2.0, 3.0, 4.0, 5.0));
     }
 
     #[test]

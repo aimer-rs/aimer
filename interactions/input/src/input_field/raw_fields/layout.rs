@@ -31,6 +31,17 @@ struct LocalFieldLayout {
     decoration: LocalFieldDecoration,
 }
 
+/// Where the text of a field is cut at the top and the bottom: from where, and for how many pixels. By default it is the content, inside
+/// the padding; a field that does not clip to its padding shows its text over the padding as well, vertically, so that what is
+/// scrolled past the first and the last line passes through the margins and is not cut off in front of them.
+fn text_clip_rows(outline_top: f32, padding_top: f32, content_height: f32, box_height: f32, clip_to_padding: bool) -> (f32, f32) {
+    if clip_to_padding {
+        (outline_top + padding_top, content_height)
+    } else {
+        (outline_top, box_height)
+    }
+}
+
 impl LocalFieldLayout {
     /// The height of the box the field's text is recorded in, in physical pixels.
     ///
@@ -494,7 +505,10 @@ impl RawTextField {
             highlighter: highlighter_id(self.effective_highlighter()),
             link: self.link.get(),
             pulse: self.pulse_phase().map(|phase| (phase * 1000.0) as u32),
+            marks_pulse: self.marks_phase().map(|phase| (phase * 1000.0) as u32),
             window: self.window_signature(),
+            label_hover: self.hovered_label(),
+            underlines: self.effective_underlines().map_or(0, Underlines::id),
         }
     }
 }
@@ -630,7 +644,9 @@ impl Drawable for RawTextField {
 
         self.resolve_locate(&geometry, line_height, content_height, is_multiline);
         self.resolve_force_click(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
+        self.resolve_menu_hit(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
         self.resolve_link(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
+        self.resolve_hover(&geometry, scale, (abs_x, abs_y), (padding_left, padding_top), initial_base_y, is_multiline);
         if let Some(click_pos) = self.pending_click.take() {
             let click_x = click_pos.x * scale - abs_x - padding_left
                 + self.scroll_x_offset();
@@ -1018,7 +1034,9 @@ impl Drawable for RawTextField {
         // --- Process pending click (deferred from on_event for canvas access) ---
         self.resolve_locate(&geometry, line_height, content_height, is_multiline);
         self.resolve_force_click(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
+        self.resolve_menu_hit(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
         self.resolve_link(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
+        self.resolve_hover(&geometry, scale, (abs_x, abs_y), (pad_left, pad_top), base_y, is_multiline);
         if let Some(click_pos) = self.pending_click.take() {
             let click_x = click_pos.x * scale - abs_x - pad_left + self.scroll_x_offset();
             let click_y = click_pos.y * scale - abs_y - pad_top - base_y
@@ -1503,12 +1521,19 @@ impl Drawable for RawTextField {
         self.paint_line_bars(&canvas, &layout);
         self.paint_gutter(&canvas, ctx, &layout);
 
+        let (clip_top, clip_height) = text_clip_rows(
+            layout.outline_top,
+            layout.padding_top,
+            layout.content_height,
+            layout.box_height,
+            self.clip_to_padding,
+        );
         canvas.push_clip(
             Rect::new(
                 (layout.outline_left + layout.padding_left) / scale,
-                (layout.outline_top + layout.padding_top) / scale,
+                clip_top / scale,
                 layout.content_width / scale,
-                layout.content_height / scale,
+                clip_height / scale,
             ),
             layout.decoration.content_clip_radii,
         );
@@ -1544,6 +1569,14 @@ impl Drawable for RawTextField {
             };
             // A windowed text is drawn from the top of its window, which is not the top of the text.
             let window_top = layout.geometry.window.as_ref().map_or(0.0, |window| window.y_base);
+            let marks = self.current_marks();
+            // The part of the field that shows text, which the clip is: what is drawn round a range is kept inside it.
+            let content = Rect::new(
+                (layout.outline_left + layout.padding_left) / scale,
+                (layout.outline_top + layout.padding_top) / scale,
+                layout.content_width / scale,
+                layout.content_height / scale,
+            );
             let recorded = text_widget.record_local_v2_into(
                 &canvas,
                 &text_context,
@@ -1551,24 +1584,19 @@ impl Drawable for RawTextField {
                 false,
                 |canvas| {
                     if let Some((start, end)) = self.cursor.selection_range() {
-                        let (red, green, blue, alpha) = self.selection_color.to_rgba();
-                        for rect in layout.geometry.selection_rects(start, end) {
-                            canvas.fill_rect(
-                                Rect::new(
-                                    text_origin.x + rect.x / scale,
-                                    text_origin.y + rect.y / scale,
-                                    rect.width / scale,
-                                    rect.height / scale,
-                                ),
-                                [red, green, blue, alpha],
-                            );
-                        }
+                        self.paint_selection(canvas, &layout, text_origin, scale, start, end);
                     }
+                    // Behind the text, over the selection.
+                    self.paint_mark_boxes(canvas, &layout.geometry, scale, text_origin, &content, &marks);
                 },
             );
             assert!(recorded, "field text v2 support must be checked before painting");
             self.paint_link(&canvas, &text_context, &layout.geometry, &style, scale, text_origin);
-            self.paint_pulse(&canvas, &layout.geometry, scale, text_origin);
+            self.paint_pulse(&canvas, &layout.geometry, scale, text_origin, &content);
+            self.paint_mark_pulses(&canvas, &layout.geometry, scale, text_origin, &content, &marks);
+            self.paint_underlines(&canvas, &layout);
+            self.paint_inlays(&canvas, ctx, &layout);
+            self.paint_line_labels(&canvas, ctx, &layout);
         } else if self.controller.is_text_empty() && !self.is_composing() {
             let placeholder = if !self.prompt.is_empty() {
                 Some((self.prompt.as_ref(), self.prompt_style))
@@ -1676,6 +1704,8 @@ impl Drawable for RawTextField {
             canvas.pop_transform();
         }
         canvas.finish();
+        // Where the text is scrolled to is the controller's to remember, for a view of the text that comes after this one.
+        self.controller.set_scroll_offset((self.scroll_x.get(), self.scroll_y.get()));
         self.retained_v2_paint_state
             .set(Some(self.retained_v2_paint_state()));
     }
@@ -1732,6 +1762,28 @@ fn caret_band(line_y: f32, line_height: f32) -> (f32, f32) {
 #[inline]
 fn line_box_height(line: f32, tallest: f32) -> f32 {
     if line.is_finite() && line > 0.0 { line } else { tallest }
+}
+
+#[cfg(test)]
+mod clip_rows_tests {
+    use super::text_clip_rows;
+
+    #[test]
+    fn the_text_is_cut_at_the_content_when_the_padding_clips_it() {
+        // A box 100 tall at 10, with 8 of padding above and below: the text shows from 18, for 84.
+        assert_eq!(text_clip_rows(10.0, 8.0, 84.0, 100.0, true), (18.0, 84.0));
+    }
+
+    #[test]
+    fn the_text_shows_through_the_padding_when_it_does_not_clip_it() {
+        // The whole box, so that what is scrolled past the first and the last line is seen in the margins that were left there.
+        assert_eq!(text_clip_rows(10.0, 8.0, 84.0, 100.0, false), (10.0, 100.0));
+    }
+
+    #[test]
+    fn a_box_without_padding_is_cut_in_the_same_place_either_way() {
+        assert_eq!(text_clip_rows(0.0, 0.0, 50.0, 50.0, true), text_clip_rows(0.0, 0.0, 50.0, 50.0, false));
+    }
 }
 
 #[cfg(test)]

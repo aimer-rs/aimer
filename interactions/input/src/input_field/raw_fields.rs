@@ -37,9 +37,12 @@ use crate::input_field::caret::{
     CaretBlink, CaretBuilder, CaretContext, CaretGeometry, DefaultCaret,
 };
 use crate::input_field::caret_glide::{CaretGlide, CaretRect};
+use crate::input_field::hover::TextHover;
 use crate::input_field::chrome::{Chrome, VisualFlags};
-use crate::input_field::gutter::{GutterMarkers, LineBar, LineBars, LineNumbers, digits_of};
+use crate::input_field::gutter::{GutterMarkers, LineBar, LineBars, LineNumberAlign, LineNumbers, digits_of};
 use crate::input_field::embed::{EmbedHeight, TextEmbed, TextEmbedder, embedder_id};
+use crate::input_field::inlay::{self, Inlay, Inlays, Placed};
+use crate::input_field::underline::{self, Underlines};
 use crate::input_field::context_menu::{FieldAction, HoldOutcome, TouchHold};
 use crate::input_field::highlight::{
     HighlightCache, HighlightContext, RetainedDisplay, TextHighlighter, highlighter_id,
@@ -67,12 +70,18 @@ include!("raw_fields/callback.rs");
 include!("raw_fields/field.rs");
 include!("raw_fields/caret_host.rs");
 include!("raw_fields/embed_host.rs");
+include!("raw_fields/inlay_host.rs");
+include!("raw_fields/underline_paint.rs");
 include!("raw_fields/composition.rs");
 include!("raw_fields/edit_helpers.rs");
 include!("raw_fields/dimensions.rs");
 include!("raw_fields/windowing.rs");
 include!("raw_fields/navigation.rs");
 include!("raw_fields/gutter_paint.rs");
+include!("raw_fields/label_paint.rs");
+include!("raw_fields/selection_paint.rs");
+include!("raw_fields/caret_marks_paint.rs");
+include!("raw_fields/hover_resolve.rs");
 include!("raw_fields/platform.rs");
 
 mod link;
@@ -84,7 +93,19 @@ include!("raw_fields/event.rs");
 include!("raw_fields/layout.rs");
 
 #[cfg(test)]
+mod caret_marks_tests;
+#[cfg(test)]
+mod label_tests;
+#[cfg(test)]
+mod text_hover_tests;
+#[cfg(test)]
+mod scroll_memory_tests;
+#[cfg(test)]
 mod highlight_tests;
+#[cfg(test)]
+mod inlay_tests;
+#[cfg(test)]
+mod underline_tests;
 #[cfg(test)]
 mod embed_tests;
 #[cfg(test)]

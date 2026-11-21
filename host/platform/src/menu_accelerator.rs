@@ -38,6 +38,8 @@ fn code_for(key: Key) -> Option<Code> {
         Key::PageUp => Code::PageUp,
         Key::PageDown => Code::PageDown,
         Key::F(n) => return function_code(n),
+        // A menu item's accelerator is one key press; a double tap has none.
+        Key::DoubleTap(_) => return None,
     })
 }
 

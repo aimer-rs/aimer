@@ -26,7 +26,7 @@ const FILL: f32 = 0.16;
 const RADIUS: f32 = 4.0;
 
 /// How far along the mark is, from `0.0` as it begins to `1.0` as it ends, `elapsed` into it.
-fn phase_of(elapsed: Duration) -> f32 {
+pub(super) fn phase_of(elapsed: Duration) -> f32 {
     (elapsed.as_secs_f32() / DURATION.as_secs_f32()).clamp(0.0, 1.0)
 }
 
@@ -101,18 +101,28 @@ impl RawTextField {
     }
 
     /// Draws the mark over the range, closing on it and fading, and asks for the next frame while it is going.
-    pub(super) fn paint_pulse(&self, canvas: &Canvas, geometry: &EditableGeometry, scale: f32, text_origin: Vec2d) {
+    pub(super) fn paint_pulse(&self, canvas: &Canvas, geometry: &EditableGeometry, scale: f32, text_origin: Vec2d, content: &Rect) {
         let (Some(phase), Some((start, end, _))) = (self.pulse_phase(), self.pulse.get()) else {
             return;
         };
         aimer_events::window::request_animation_frame();
         let value = self.controller.value();
         let (start, end) = (start.min(value.len()), end.min(value.len()));
-        let rects = geometry.selection_rects(value.grapheme_of_byte(start), value.grapheme_of_byte(end));
-        // The box of all of the range: a name is on one line, and a range that is not is shown by the box round it.
-        let Some(first) = rects.first() else {
+        let Some(bounds) = self.range_box(geometry, start, end) else {
             return;
         };
+        let color = self.locate_color.or(self.caret_color.map(Into::into)).unwrap_or(self.text_style.color);
+        self.paint_zoom(canvas, bounds, scale, text_origin, content, color, phase);
+    }
+
+    /// The box of all of the bytes `start` to `end` of the text, as `(left, top, right, bottom)` in physical pixels from the
+    /// text's origin: a name is on one line, and a range that is not is shown by the box round it. `None` where there is
+    /// nothing of it to show.
+    pub(super) fn range_box(&self, geometry: &EditableGeometry, start: usize, end: usize) -> Option<(f32, f32, f32, f32)> {
+        let value = self.controller.value();
+        let (start, end) = (start.min(value.len()), end.min(value.len()));
+        let rects = geometry.selection_rects(value.grapheme_of_byte(start), value.grapheme_of_byte(end));
+        let first = rects.first()?;
         let (mut left, mut top, mut right, mut bottom) = (first.x, first.y, first.x + first.width, first.y + first.height);
         for rect in &rects {
             left = left.min(rect.x);
@@ -120,18 +130,30 @@ impl RawTextField {
             right = right.max(rect.x + rect.width);
             bottom = bottom.max(rect.y + rect.height);
         }
+        Some((left, top, right, bottom))
+    }
+
+    /// Draws the mark round `bounds`, `phase` of the way through it, in `color`: a line that is larger than the box and closes on
+    /// it as it fades, and the same color inside it, so faint that the text shows through.
+    ///
+    /// The mark is kept inside `content`, the part of the field that shows text: a range at the start of a line is not far enough from the
+    /// edge for the mark that begins larger than it, which the clip would cut.
+    pub(super) fn paint_zoom(&self, canvas: &Canvas, bounds: (f32, f32, f32, f32), scale: f32, text_origin: Vec2d, content: &Rect, color: aimer_widget::base::Color, phase: f32) {
+        let (left, top, right, bottom) = bounds;
         let spread = spread_at(phase);
-        let (red, green, blue, alpha) = self.locate_color.or(self.caret_color.map(Into::into)).unwrap_or(self.text_style.color).to_rgba();
+        let (red, green, blue, alpha) = color.to_rgba();
         let opacity = opacity_at(phase);
         let line = aimer_cupid::utilities::Color::rgba8(red, green, blue, (alpha as f32 * opacity).round() as u8);
-        // The same color inside, so faint that the text shows through, and fading with the line.
         let fill = aimer_cupid::utilities::Color::rgba8(red, green, blue, (alpha as f32 * FILL * opacity).round() as u8);
         canvas.fill_rect_with_border(
-            Rect::new(
-                text_origin.x + left / scale - spread,
-                text_origin.y + top / scale - spread,
-                (right - left) / scale + 2.0 * spread,
-                (bottom - top) / scale + 2.0 * spread,
+            super::within(
+                Rect::new(
+                    text_origin.x + left / scale - spread,
+                    text_origin.y + top / scale - spread,
+                    (right - left) / scale + 2.0 * spread,
+                    (bottom - top) / scale + 2.0 * spread,
+                ),
+                content,
             ),
             fill,
             [RADIUS + spread / 2.0; 4],

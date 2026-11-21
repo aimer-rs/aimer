@@ -95,6 +95,74 @@ fn the_icons_take_their_column_from_the_margin_and_are_drawn_before_the_numbers_
 }
 
 #[test]
+fn with_centered_numbers_the_icon_is_as_far_from_the_margins_edge_as_from_the_numbers_column() {
+    let mut config = field_config(TextEditingController::with_text(TEXT));
+    config.line_numbers = Some(LineNumbers::new().align(crate::input_field::gutter::LineNumberAlign::Center));
+    config.gutter_markers = Some(GutterMarkers::new(16, |line| (line == 1).then(|| GutterMarker::new(scene(), || {}))));
+    config.max_lines = Some(8);
+    config.wrap = true;
+    let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+    let ctx = dummy_build_context(400.0, 300.0);
+    field.update(&ctx);
+    let icons = svgs(&commands(&field, &ctx));
+    assert_eq!(icons.len(), 1, "{icons:?}");
+    let layout = field.local_v2_layout(&ctx).expect("laid out");
+    let margin_left = layout.padding_left - field.gutter_width(1.0);
+    // The numbers' column starts after the gap (12) and the icons' column (16).
+    let numbers_left = margin_left + 12.0 + 16.0;
+    let before = icons[0].x - margin_left;
+    let after = numbers_left - (icons[0].x + icons[0].width);
+    assert!((before - after).abs() < 0.01, "{before} before the icon, {after} after it");
+}
+
+/// The icon of a line is level with its number, on a plain row and on the row an embedded widget stands in
+/// for, where the number is on the first line of the box and not on its baseline.
+#[test]
+fn an_icon_is_centred_on_its_number_on_a_plain_row_and_on_a_row_with_an_embedded_widget() {
+    use crate::input_field::embed::{TextEmbed, TextEmbedder};
+
+    let probe = super::embed_tests::Probe::new(120.0, Rc::default());
+    let embedder = TextEmbedder::new(move |text, _| {
+        let probe = probe.clone();
+        vec![TextEmbed::new(0..text.find('\n').unwrap(), 9, move || probe.clone())]
+    });
+    let mut config = field_config(TextEditingController::with_text("alpha\nbeta\ngamma"));
+    config.line_numbers = Some(LineNumbers::new());
+    config.gutter_markers = Some(GutterMarkers::new(16, |line| (line != 1).then(|| GutterMarker::new(scene(), || {}))));
+    config.embedder = Some(embedder);
+    config.max_lines = Some(8);
+    config.wrap = true;
+    let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+    field.cursor.set_offset(8);
+    let ctx = dummy_build_context(400.0, 400.0);
+    field.update(&ctx);
+    let commands = commands(&field, &ctx);
+    let icons = svgs(&commands);
+    assert_eq!(icons.len(), 2, "lines 1 and 3 have one: {icons:?}");
+    let text_x = commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawCommand::DrawText { text, position, .. } if text.contains("beta") => Some(position.x),
+            _ => None,
+        })
+        .fold(f32::MAX, f32::min);
+    let numbers: Vec<f32> = commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawCommand::DrawText { text, position, .. } if position.x < text_x && text.trim().parse::<usize>().is_ok() => Some(position.y),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(numbers.len(), 3, "{numbers:?}");
+    // A text run is placed by its baseline. Wherever the row is and however tall, the icon is the same
+    // way above the baseline of the number it stands beside, and above it and not under it.
+    let above = |icon: Rect, baseline: f32| baseline - (icon.y + icon.height / 2.0);
+    let (embedded, plain) = (above(icons[0], numbers[0]), above(icons[1], numbers[2]));
+    assert!(embedded > 0.0 && plain > 0.0, "the icons are centred above the baselines: {embedded}, {plain}");
+    assert!((embedded - plain).abs() < 0.5, "an icon is {embedded} above its number's baseline on a row with an embedded widget, and {plain} on a plain row");
+}
+
+#[test]
 fn no_markers_means_no_icons_and_no_hit() {
     let (plain, _, ctx) = field(false);
     assert!(svgs(&commands(&plain, &ctx)).is_empty());
@@ -235,6 +303,49 @@ fn the_pointer_is_an_arrow_and_not_the_text_cursor_over_an_icon_in_the_margin_an
 }
 
 #[test]
+fn a_scroll_and_a_move_over_what_hangs_from_the_caret_are_its_own_and_not_the_fields() {
+    use aimer_events::element::{ScrollDeltaKind, TouchPhase};
+    let (plain, _, ctx) = field(false);
+    let _ = commands(&plain, &ctx);
+    let caret = plain.caret_context.geometry();
+    plain.cached_bounds.save(1.0, 0.0, 0.0, 400.0, 300.0);
+    // A menu that hangs 20 below the caret and begins at it, 120 wide and 60 tall.
+    plain.caret_context.set_popup(Some((0.0, 20.0, 120.0, 60.0)));
+    let scrolled = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let hovered = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let (log_scrolled, log_hovered) = (Rc::clone(&scrolled), Rc::clone(&hovered));
+    plain.caret_context.on_popup_scroll(Some(Rc::new(move |delta| {
+        log_scrolled.borrow_mut().push(delta);
+        true
+    })));
+    plain.caret_context.on_popup_hover(Some(Rc::new(move |x, y| log_hovered.borrow_mut().push((x, y)))));
+    let on_menu = Vec2d { x: caret.x + 10.0, y: caret.y + 50.0 };
+    let beside = Vec2d { x: caret.x + 200.0, y: caret.y + 50.0 };
+    let mouse = |at: Vec2d| PointerInfo::mouse(at, PointerButton::Primary);
+    let wheel = |dy: f32| ElementEvent::Scroll { delta: Vec2d { x: 0.0, y: dy }, kind: ScrollDeltaKind::Pixel, phase: TouchPhase::Moved, is_direct_manipulation: false };
+
+    // A scroll does not say where the pointer is: it is where the last move left it.
+    assert!(!plain.on_event(&wheel(-12.0)).is_consumed(), "no pointer has been seen, and the field has nowhere to scroll to");
+    assert!(scrolled.borrow().is_empty());
+
+    let _ = plain.on_event(&ElementEvent::PointerMove(mouse(on_menu)));
+    assert_eq!(*hovered.borrow(), [(10.0, 30.0)], "the move is told from the corner of the menu");
+    assert!(plain.on_event(&wheel(-12.0)).is_consumed(), "over the menu the scroll is taken");
+    assert_eq!(*scrolled.borrow(), [-12.0]);
+
+    let _ = plain.on_event(&ElementEvent::PointerMove(mouse(beside)));
+    assert_eq!(hovered.borrow().len(), 1, "a move beside the menu is not told to it");
+    let _ = plain.on_event(&wheel(-12.0));
+    assert_eq!(scrolled.borrow().len(), 1, "and neither is a scroll there");
+
+    // A pointer that left the field is over nothing.
+    let _ = plain.on_event(&ElementEvent::PointerMove(mouse(on_menu)));
+    let _ = plain.on_event(&ElementEvent::PointerExited(PointerSource::Mouse, 0));
+    let _ = plain.on_event(&wheel(-12.0));
+    assert_eq!(scrolled.borrow().len(), 1);
+}
+
+#[test]
 fn what_hangs_from_the_caret_is_dismissed_when_the_visible_part_of_the_field_changes_size_and_when_the_field_loses_focus() {
     let (plain, _, ctx) = field(false);
     let _ = commands(&plain, &ctx);
@@ -339,6 +450,44 @@ mod force_click {
     }
 
     #[test]
+    fn a_force_click_can_ask_to_be_told_where_the_pointer_was_as_well_as_the_byte() {
+        let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let record = Rc::clone(&seen);
+        let mut config = field_config(TextEditingController::with_text("alpha\nbeta"));
+        config.line_numbers = Some(LineNumbers::new());
+        config.max_lines = Some(8);
+        config.wrap = true;
+        // Only the one that is told where: a field with this and no other still takes the press.
+        config.on_force_click_at = Some(Rc::new(move |byte, at| record.borrow_mut().push((byte, at.x, at.y, at.extent.is_some()))));
+        let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+        let _ = field.on_event(&ElementEvent::FocusGained);
+        field.cursor.set_offset(0);
+        let ctx = dummy_build_context(400.0, 300.0);
+        field.update(&ctx);
+        let _ = commands(&field, &ctx);
+        let at = at_line(&field, &ctx, 1.0, 380.0);
+        assert!(press(&field, &ctx, at, PressureStage::Force), "the field took it");
+        assert_eq!(*seen.borrow(), vec![(10, at.x, at.y, true)], "the end of \"beta\", where the pointer was, and how far the field goes");
+    }
+
+    #[test]
+    fn a_deep_press_that_began_before_the_field_is_not_a_force_click_of_it() {
+        // A force click went to a definition, and the text it opened is under the pointer now, with the press still held: the
+        // window has seen the pad go deep, and this field has not been told.
+        let (field, seen, ctx) = field_of("alpha\nbeta");
+        let at = at_line(&field, &ctx, 0.0, 380.0);
+        PressureStage::Force.record();
+        assert!(!press(&field, &ctx, at, PressureStage::Force), "the press is not the field's");
+        assert!(seen.borrow().is_empty(), "nothing was clicked");
+        // Let go, and press deep again: a deep press of its own.
+        press(&field, &ctx, at, PressureStage::None);
+        PressureStage::None.record();
+        assert!(press(&field, &ctx, at, PressureStage::Force));
+        assert_eq!(*seen.borrow(), vec![5]);
+        PressureStage::None.record();
+    }
+
+    #[test]
     fn a_force_click_beside_the_field_is_not_the_fields() {
         let (field, seen, ctx) = field_of("alpha");
         assert!(!press(&field, &ctx, Vec2d { x: 900.0, y: 900.0 }, PressureStage::Force));
@@ -416,6 +565,133 @@ mod force_click {
         assert!(!click(&field, &ctx, Vec2d { x: 900.0, y: 900.0 }, PointerButton::Primary));
         Modifiers::set_current(Modifiers::default());
         assert_eq!(seen.borrow().len(), 2);
+    }
+
+    /// A field of `text` that records the byte and the point of each command click, from a callback that is told where, and the byte of each
+    /// from one that is not, where `plain` says to set it too.
+    #[allow(clippy::type_complexity)]
+    fn command_at_field_of(
+        text: &str,
+        plain: bool,
+    ) -> (RawTextField, Rc<std::cell::RefCell<Vec<(&'static str, usize, f32, f32, bool)>>>, BuildContext<'static>) {
+        let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let (told, bare) = (Rc::clone(&seen), Rc::clone(&seen));
+        let mut config = field_config(TextEditingController::with_text(text));
+        config.line_numbers = Some(LineNumbers::new());
+        config.max_lines = Some(8);
+        config.wrap = true;
+        config.on_command_click_at = Some(Rc::new(move |byte, at| told.borrow_mut().push(("at", byte, at.x, at.y, at.extent.is_some()))));
+        if plain {
+            config.on_command_click = Some(Rc::new(move |byte| bare.borrow_mut().push(("plain", byte, 0.0, 0.0, false))));
+        }
+        let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+        let _ = field.on_event(&ElementEvent::FocusGained);
+        field.cursor.set_offset(0);
+        let ctx = dummy_build_context(400.0, 300.0);
+        field.update(&ctx);
+        let _ = commands(&field, &ctx);
+        (field, seen, ctx)
+    }
+
+    #[test]
+    fn a_command_click_can_ask_to_be_told_where_the_pointer_was_as_well_as_the_name_it_is_on() {
+        // Only the one that is told where: a field with this and no other still takes the press, and leaves the caret.
+        let (field, seen, ctx) = command_at_field_of("alpha\nbeta\ngamma", false);
+        let layout = field.local_v2_layout(&ctx).expect("laid out");
+        let at = at_line(&field, &ctx, 1.0, layout.padding_left + 1.0);
+        Modifiers::set_current(command());
+        let consumed = click(&field, &ctx, at, PointerButton::Primary);
+        Modifiers::set_current(Modifiers::default());
+        assert!(consumed, "the field took it");
+        assert_eq!(*seen.borrow(), vec![("at", 6, at.x, at.y, true)], "the start of \"beta\" wherever in it the pointer was, and where it was");
+        assert_eq!(field.cursor.offset(), 0, "the caret stays where it was");
+    }
+
+    #[test]
+    fn both_command_click_callbacks_are_called_when_both_are_set_and_neither_where_it_is_not_on_a_name() {
+        let (field, seen, ctx) = command_at_field_of("alpha\nbeta", true);
+        let layout = field.local_v2_layout(&ctx).expect("laid out");
+        let at = at_line(&field, &ctx, 0.0, layout.padding_left + 1.0);
+        Modifiers::set_current(command());
+        click(&field, &ctx, at, PointerButton::Primary);
+        // Past the end of the line is on no name.
+        click(&field, &ctx, at_line(&field, &ctx, 0.0, 380.0), PointerButton::Primary);
+        Modifiers::set_current(Modifiers::default());
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 2, "one click on a name: told where, and told the byte: {seen:?}");
+        assert_eq!(seen[0], ("at", 0, at.x, at.y, true));
+        assert_eq!(seen[1].0, "plain");
+        assert_eq!(seen[1].1, 0);
+    }
+
+    #[test]
+    fn a_plain_click_and_a_secondary_click_are_not_command_clicks_for_the_one_that_is_told_where_either() {
+        let (field, seen, ctx) = command_at_field_of("alpha\nbeta", false);
+        let at = at_line(&field, &ctx, 0.0, 380.0);
+        click(&field, &ctx, at, PointerButton::Primary);
+        assert!(seen.borrow().is_empty(), "a plain click places the caret");
+        assert_eq!(field.cursor.offset(), 5);
+        Modifiers::set_current(command());
+        click(&field, &ctx, at, PointerButton::Secondary);
+        Modifiers::set_current(Modifiers::default());
+        assert!(seen.borrow().is_empty(), "a secondary click asks for the menu");
+    }
+
+    #[test]
+    fn the_name_under_the_pointer_is_a_link_while_the_jump_key_is_held_for_the_one_that_is_told_where_too() {
+        let (field, _, ctx) = command_at_field_of("alpha beta", false);
+        let layout = field.local_v2_layout(&ctx).expect("laid out");
+        let on_alpha = at_line(&field, &ctx, 0.0, layout.padding_left + 6.0);
+        hover(&field, &ctx, on_alpha);
+        keys(&field, &ctx, command());
+        assert_eq!(field.link_range(), Some(0..5), "a click that can be made is one that is shown");
+        keys(&field, &ctx, Modifiers::default());
+        assert_eq!(field.link_range(), None);
+    }
+
+    /// A field of `text` that records what it tells the app that is asked what to add to its context menu.
+    fn menu_field_of(text: &str) -> (RawTextField, Rc<std::cell::RefCell<Vec<crate::input_field::context_menu::ContextMenuRequest>>>, BuildContext<'static>) {
+        let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let record = Rc::clone(&seen);
+        let mut config = field_config(TextEditingController::with_text(text));
+        config.line_numbers = Some(LineNumbers::new());
+        config.max_lines = Some(8);
+        config.wrap = true;
+        config.context_menu_extras = Some(Rc::new(move |request| {
+            record.borrow_mut().push(request.clone());
+            crate::input_field::context_menu::ContextMenuExtras::default()
+        }));
+        let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+        let _ = field.on_event(&ElementEvent::FocusGained);
+        field.cursor.set_offset(0);
+        let ctx = dummy_build_context(400.0, 300.0);
+        field.update(&ctx);
+        let _ = commands(&field, &ctx);
+        (field, seen, ctx)
+    }
+
+    #[test]
+    fn a_right_click_tells_the_app_which_byte_was_under_the_pointer_and_what_the_click_selected() {
+        let (field, seen, ctx) = menu_field_of("alpha\nbeta\ngamma");
+        let layout = field.local_v2_layout(&ctx).expect("laid out");
+        // On the second letter of "beta", which starts at byte 6.
+        let at = at_line(&field, &ctx, 1.0, layout.padding_left + 1.0);
+        let consumed = click(&field, &ctx, at, PointerButton::Secondary);
+        assert!(consumed, "the field took the press");
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 1, "the app is asked once for the menu that was raised");
+        assert_eq!(seen[0].byte, Some(6), "the byte under the pointer");
+        assert_eq!(seen[0].selection, 6..10, "a right-click on a word with nothing selected selects the word");
+        assert_eq!((seen[0].spot.x, seen[0].spot.y), (at.x, at.y));
+    }
+
+    #[test]
+    fn a_right_click_past_the_end_of_a_line_is_on_no_byte_of_it_and_the_app_is_still_asked() {
+        let (field, seen, ctx) = menu_field_of("alpha\nbeta");
+        click(&field, &ctx, at_line(&field, &ctx, 0.0, 380.0), PointerButton::Secondary);
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].byte.is_none_or(|byte| byte <= 5), "at most the end of the line: {:?}", seen[0].byte);
     }
 
     fn hover(field: &RawTextField, ctx: &BuildContext<'_>, at: Vec2d) {
@@ -918,6 +1194,71 @@ mod bars {
         }
         assert!((bars[0].y - (layout.padding_top + line_height)).abs() < 1.5, "the first starts on the second row of the field: {bars:?}");
         assert!((bars[0].height - line_height).abs() < 1.5, "a row tall: {bars:?}");
+    }
+
+    /// A field whose first line has three bars, in three colors and at three places, and the second line none.
+    fn guided(text: &str) -> (RawTextField, BuildContext<'static>) {
+        let mut config = field_config(TextEditingController::with_text(text));
+        config.max_lines = Some(8);
+        config.wrap = false;
+        config.line_bars = Some(LineBars::many(1, |line, _, bars| {
+            if line == 0 {
+                bars.push(LineBar::new(Color::Rgba(250, 0, 0, 255), 0));
+                bars.push(LineBar::new(Color::Rgba(0, 250, 0, 255), 12).width(2.0));
+                bars.push(LineBar::new(Color::Rgba(0, 0, 250, 255), 24));
+            }
+        }));
+        let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+        field.cursor.set_offset(0);
+        let ctx = dummy_build_context(400.0, 300.0);
+        field.update(&ctx);
+        (field, ctx)
+    }
+
+    #[test]
+    fn a_line_may_have_several_bars_each_in_its_own_color_at_its_own_place_and_as_wide_as_it_asks() {
+        let (field, ctx) = guided("one\ntwo");
+        let commands = commands(&field, &ctx);
+        let layout = field.local_v2_layout(&ctx).expect("laid out");
+        let by = |r: u8, g: u8, b: u8| -> Vec<Rect> {
+            commands
+                .iter()
+                .filter_map(|command| match command {
+                    DrawCommand::FillRect { rect, color, .. } if *color == DrawColor::rgba8(r, g, b, 255) => Some(*rect),
+                    _ => None,
+                })
+                .collect()
+        };
+        let (red, green, blue) = (by(250, 0, 0), by(0, 250, 0), by(0, 0, 250));
+        assert_eq!((red.len(), green.len(), blue.len()), (1, 1, 1), "one of each, for the one line that has them");
+        let left = layout.padding_left;
+        assert!((red[0].x - left).abs() < 0.6 && (green[0].x - (left + 12.0)).abs() < 0.6 && (blue[0].x - (left + 24.0)).abs() < 0.6);
+        assert_eq!((red[0].width, green[0].width, blue[0].width), (1.0, 2.0, 1.0), "a bar that asks for a width has it, and the others have the bars'");
+        assert!((red[0].y - green[0].y).abs() < 0.01 && (red[0].height - blue[0].height).abs() < 0.01, "all as tall as the row");
+    }
+
+    #[test]
+    fn a_line_is_asked_once_however_many_rows_it_has_and_the_bars_are_not_kept_for_the_next_line() {
+        let asked: Rc<std::cell::RefCell<Vec<usize>>> = Rc::default();
+        let recorded = Rc::clone(&asked);
+        let mut config = field_config(TextEditingController::with_text(&format!("{}\nb", "word ".repeat(60))));
+        config.max_lines = Some(8);
+        config.wrap = true;
+        config.line_bars = Some(LineBars::many(1, move |line, _, bars| {
+            recorded.borrow_mut().push(line);
+            if line == 0 {
+                bars.push(LineBar::new(Color::Rgba(250, 0, 0, 255), 0));
+            }
+        }));
+        let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+        let ctx = dummy_build_context(400.0, 300.0);
+        field.update(&ctx);
+        let commands = commands(&field, &ctx);
+        let rows = field.geometry_cache.latest().expect("laid out").visual_lines.len();
+        assert!(rows >= 3, "the first line wraps: {rows}");
+        assert_eq!(*asked.borrow(), [0, 1], "each line once");
+        let red = commands.iter().filter(|command| matches!(command, DrawCommand::FillRect { color, .. } if *color == DrawColor::rgba8(250, 0, 0, 255))).count();
+        assert_eq!(red, rows - 1, "a bar for each row of the first line and none for the second");
     }
 
     #[test]

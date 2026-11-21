@@ -8,10 +8,22 @@ use aimer_widget::base::Color;
 
 use crate::input_field::highlight::HighlightContext;
 
+/// Which side of the margin the line numbers are set against.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LineNumberAlign {
+    /// Against the text: the last digits of the numbers line up. The default.
+    #[default]
+    Right,
+    /// Against the left edge of the margin: the first digits of the numbers line up.
+    Left,
+    /// In the middle of the column of numbers: a number has as much room before it as after it.
+    Center,
+}
+
 /// How the line numbers in the margin of a [`TextArea`](crate::TextArea) look.
 ///
 /// The margin is as wide as the largest line number needs, plus the gaps either side, and its
-/// numbers are right-aligned and in the text's own font, one on the first row of each line (a line
+/// numbers are in the text's own font, aligned as [`align`](Self::align) says (right by default), one on the first row of each line (a line
 /// that wraps shows its number once). The number of the line the caret is on is drawn in
 /// [`active_color`](Self::active_color).
 ///
@@ -34,6 +46,7 @@ pub struct LineNumbers {
     pub(crate) gap_before: f32,
     pub(crate) gap_after: f32,
     pub(crate) min_digits: usize,
+    pub(crate) align: LineNumberAlign,
 }
 
 impl LineNumbers {
@@ -46,7 +59,18 @@ impl LineNumbers {
             gap_before: 12.0,
             gap_after: 12.0,
             min_digits: 2,
+            align: LineNumberAlign::Right,
         }
+    }
+
+    /// Which side of the margin the numbers are set against: [`LineNumberAlign::Left`] puts the first
+    /// digit of every number at the same place, after the gap before, and [`LineNumberAlign::Center`]
+    /// centers each number in the column between the gaps.
+    #[inline]
+    #[must_use]
+    pub fn align(mut self, align: LineNumberAlign) -> Self {
+        self.align = align;
+        self
     }
 
     /// The color of the numbers.
@@ -162,7 +186,7 @@ impl GutterMarkers {
 /// ```
 #[derive(Clone)]
 pub struct LineBars {
-    pub(crate) of_line: Rc<dyn Fn(usize, &HighlightContext) -> Option<LineBar>>,
+    pub(crate) of_line: Rc<dyn Fn(usize, &HighlightContext, &mut Vec<LineBar>)>,
     pub(crate) width: f32,
 }
 
@@ -171,18 +195,49 @@ pub struct LineBars {
 pub struct LineBar {
     pub(crate) color: Color,
     pub(crate) offset: f32,
+    pub(crate) width: Option<f32>,
 }
 
 impl LineBar {
     /// A bar of `color`, `offset` logical pixels in from the left of the text.
     pub fn new(color: impl Into<Color>, offset: u32) -> Self {
-        Self { color: color.into(), offset: offset as f32 }
+        Self { color: color.into(), offset: offset as f32, width: None }
+    }
+
+    /// The same bar, `width` logical pixels wide and not as wide as the bars of the text area are.
+    #[inline]
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = Some(width);
+        self
     }
 }
 
 impl LineBars {
     /// Bars `width` logical pixels wide, for the lines `of_line` gives one, counted from zero.
     pub fn new(width: u32, of_line: impl Fn(usize, &HighlightContext) -> Option<LineBar> + 'static) -> Self {
+        Self::many(width, move |line, context, bars| bars.extend(of_line(line, context)))
+    }
+
+    /// Bars `width` logical pixels wide, unless a bar says otherwise, for the lines `of_line` gives any number of: it puts them
+    /// in the list it is given, which is empty. A column of guides down the indents of code is a bar for each level.
+    ///
+    /// The list is kept from one line to the next, so that asking about a line costs no allocation of its own.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::{LineBar, LineBars};
+    /// use aimer_widget::base::Color;
+    ///
+    /// // A thin guide every 28 px for as many levels as the line has, here its number.
+    /// let guides = LineBars::many(1, |line, _context, bars| {
+    ///     for level in 0..line.min(4) {
+    ///         bars.push(LineBar::new(Color::Rgba(120, 120, 140, 120), level as u32 * 28));
+    ///     }
+    /// });
+    /// # let _ = guides;
+    /// ```
+    pub fn many(width: u32, of_line: impl Fn(usize, &HighlightContext, &mut Vec<LineBar>) + 'static) -> Self {
         Self { of_line: Rc::new(of_line), width: width as f32 }
     }
 }

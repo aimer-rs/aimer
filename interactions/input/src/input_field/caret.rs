@@ -55,6 +55,8 @@ pub struct CaretContext {
     snapshot: Rc<Cell<CaretSnapshot>>,
     popup_press: Rc<RefCell<Option<Rc<dyn Fn(f32, f32)>>>>,
     popup_dismiss: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    popup_scroll: Rc<RefCell<Option<Rc<dyn Fn(f32) -> bool>>>>,
+    popup_hover: Rc<RefCell<Option<Rc<dyn Fn(f32, f32)>>>>,
     blink: CaretBlink,
     repaint: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     /// The widgets of an app that hang from the caret and want to be told too.
@@ -68,6 +70,8 @@ impl CaretContext {
             snapshot: Rc::new(Cell::new(CaretSnapshot::default())),
             popup_press: Rc::new(RefCell::new(None)),
             popup_dismiss: Rc::new(RefCell::new(None)),
+            popup_scroll: Rc::new(RefCell::new(None)),
+            popup_hover: Rc::new(RefCell::new(None)),
             blink,
             repaint: Rc::new(RefCell::new(None)),
             repaint_also: Rc::new(RefCell::new(Vec::new())),
@@ -114,6 +118,46 @@ impl CaretContext {
     /// would be put at now. What hangs from the caret is not [set](Self::set_popup) any more when this is called.
     pub fn on_popup_dismiss(&self, callback: Option<Rc<dyn Fn()>>) {
         *self.popup_dismiss.borrow_mut() = callback;
+    }
+
+    /// Sets what is called when the wheel or the trackpad scrolls over what hangs from the caret, with how far in logical
+    /// pixels, positive where the content is to move down (the way a scroll event tells it). It answers whether it scrolled:
+    /// a list that is at its end answers `false`, and the scroll goes on to the field, as it does from any scrollable
+    /// that has nowhere further to go. Without it, a scroll over what hangs from the caret scrolls the field under it.
+    pub fn on_popup_scroll(&self, callback: Option<Rc<dyn Fn(f32) -> bool>>) {
+        *self.popup_scroll.borrow_mut() = callback;
+    }
+
+    /// Sets what is called when the pointer moves over what hangs from the caret, with where, as `(x, y)` from its top-left
+    /// corner. It is told of a move and not of the pointer resting there while the popup changes under it, so that a list
+    /// that scrolls under a still pointer does not take the selection from the keys.
+    pub fn on_popup_hover(&self, callback: Option<Rc<dyn Fn(f32, f32)>>) {
+        *self.popup_hover.borrow_mut() = callback;
+    }
+
+    /// Scrolls what hangs from the caret by `delta_y` when `(x, y)`, in the coordinates of the field, is on it. Whether it
+    /// scrolled.
+    pub(crate) fn scroll_popup(&self, x: f32, y: f32, delta_y: f32) -> bool {
+        if delta_y == 0.0 || !self.popup_at(x, y) {
+            return false;
+        }
+        // Cloned out of the cell first: what is called may set it again.
+        let callback = self.popup_scroll.borrow().clone();
+        callback.is_some_and(|callback| callback(delta_y))
+    }
+
+    /// Tells what hangs from the caret that the pointer is at `(x, y)`, in the coordinates of the field, if it is on it.
+    pub(crate) fn hover_popup(&self, x: f32, y: f32) {
+        if !self.popup_at(x, y) {
+            return;
+        }
+        let snapshot = self.snapshot.get();
+        let (left, top, _, _) = snapshot.popup.expect("a popup is where the pointer is on it");
+        // Cloned out of the cell first: what is called may set it again.
+        let callback = self.popup_hover.borrow().clone();
+        if let Some(callback) = callback {
+            callback(x - snapshot.geometry.x - left, y - snapshot.geometry.y - top);
+        }
     }
 
     /// Takes away what hangs from the caret and tells what shows it, if there is anything.
@@ -670,6 +714,56 @@ mod tests {
     use super::*;
 
     const HALF: Duration = Duration::from_millis(500);
+
+    /// A context with a popup at `(10, 20)` from a caret at the field's `(100, 50)`, 200 wide and 80 tall: in the
+    /// field it covers x from 110 to 310 and y from 70 to 150.
+    fn context_with_popup() -> CaretContext {
+        let context = CaretContext::new(CaretBlink::new());
+        context.publish(CaretGeometry { x: 100.0, y: 50.0, width: 1.0, height: 16.0 }, 0, true, true, false);
+        context.set_popup(Some((10.0, 20.0, 200.0, 80.0)));
+        context
+    }
+
+    #[test]
+    fn a_scroll_over_the_popup_is_the_popups_and_one_beside_it_is_not() {
+        let context = context_with_popup();
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let log = Rc::clone(&seen);
+        context.on_popup_scroll(Some(Rc::new(move |delta| {
+            log.borrow_mut().push(delta);
+            true
+        })));
+
+        assert!(context.scroll_popup(120.0, 80.0, -30.0), "over it");
+        assert!(!context.scroll_popup(109.0, 80.0, -30.0), "just left of it");
+        assert!(!context.scroll_popup(120.0, 150.0, -30.0), "just under it");
+        assert!(!context.scroll_popup(120.0, 80.0, 0.0), "a scroll of nothing is not one");
+        assert_eq!(*seen.borrow(), [-30.0]);
+    }
+
+    #[test]
+    fn a_popup_that_cannot_scroll_further_lets_the_scroll_go_on_and_so_does_one_that_asked_for_none() {
+        let context = context_with_popup();
+        assert!(!context.scroll_popup(120.0, 80.0, 5.0), "nothing asked for it");
+        context.on_popup_scroll(Some(Rc::new(|_| false)));
+        assert!(!context.scroll_popup(120.0, 80.0, 5.0), "it is at its end");
+        context.set_popup(None);
+        context.on_popup_scroll(Some(Rc::new(|_| true)));
+        assert!(!context.scroll_popup(120.0, 80.0, 5.0), "there is no popup");
+    }
+
+    #[test]
+    fn a_move_over_the_popup_is_told_from_its_corner_and_a_move_beside_it_is_not_told() {
+        let context = context_with_popup();
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let log = Rc::clone(&seen);
+        context.on_popup_hover(Some(Rc::new(move |x, y| log.borrow_mut().push((x, y)))));
+
+        context.hover_popup(130.0, 95.0);
+        context.hover_popup(130.0, 69.0);
+        context.hover_popup(311.0, 95.0);
+        assert_eq!(*seen.borrow(), [(20.0, 25.0)]);
+    }
 
     #[test]
     fn new_caret_is_visible_before_the_first_tick() {

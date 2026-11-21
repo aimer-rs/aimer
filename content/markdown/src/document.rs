@@ -8,6 +8,8 @@ use markdown::mdast::{AlignKind, Node};
 use markdown::{Constructs, ParseOptions};
 
 use crate::custom::{BlockRule, CustomBlockData, CustomInlineData, InlineRule};
+use crate::html::tokenize;
+use crate::html_blocks::{BlockBuilder, InlineBuilder};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Document {
@@ -39,6 +41,19 @@ pub enum Block {
     },
     FootnoteDefinition {
         identifier: ShareRef<str>,
+        blocks: Vec<Block>,
+    },
+    /// Blocks that raw HTML placed to one side, as `<p align="center">`, `<div align="center">` and `<center>` do: the paragraphs and
+    /// headings in them are aligned, and the other blocks, images and tables, are placed.
+    Aligned {
+        alignment: Alignment,
+        blocks: Vec<Block>,
+    },
+    /// What raw HTML writes as `<details>`: a summary that is always shown, and blocks that it opens and shuts.
+    Details {
+        summary: Vec<Inline>,
+        /// Whether the blocks are shown before the reader has asked for them.
+        open: bool,
         blocks: Vec<Block>,
     },
     Custom(CustomBlockData),
@@ -428,20 +443,99 @@ impl Document {
                 "Markdown parser did not produce a document root",
             ));
         };
+        let mut root = Node::Root(root);
+        resolve_references(&mut root);
+        let Node::Root(root) = root else {
+            unreachable!("resolving references does not change what a node is")
+        };
         let mut blocks = convert_blocks(root.children, inline_rules)?;
         replace_custom_blocks(&mut blocks, &mut prepared.blocks);
         Ok(Self { blocks })
     }
 }
 
+/// Makes the links and images that name a definition, `[words][name]` and `[name]`, the links and images they name, and takes the
+/// definitions, `[name]: where`, out of the document: how a document says where its links go at its end, as the documentation of a
+/// library does. A definition is for the whole of the document, in a list or a quote as well, and the first of a name is the one that
+/// is meant. What is in brackets and names nothing is the words that it is.
+fn resolve_references(root: &mut Node) {
+    fn collect(node: &Node, found: &mut HashMap<String, (String, Option<String>)>) {
+        if let Node::Definition(definition) = node {
+            found.entry(definition.identifier.clone()).or_insert_with(|| (definition.url.clone(), definition.title.clone()));
+        }
+        for child in node.children().into_iter().flatten() {
+            collect(child, found);
+        }
+    }
+    fn rewrite(node: &mut Node, found: &HashMap<String, (String, Option<String>)>) {
+        let Some(children) = node.children_mut() else {
+            return;
+        };
+        let taken = std::mem::take(children);
+        for mut child in taken {
+            match child {
+                Node::Definition(_) => {}
+                Node::LinkReference(reference) => match found.get(&reference.identifier) {
+                    Some((url, title)) => {
+                        let mut link = Node::Link(markdown::mdast::Link {
+                            children: reference.children,
+                            position: reference.position,
+                            url: url.clone(),
+                            title: title.clone(),
+                        });
+                        rewrite(&mut link, found);
+                        children.push(link);
+                    }
+                    None => {
+                        // The words, in the brackets they were written in.
+                        let mut words = Node::Paragraph(markdown::mdast::Paragraph { children: reference.children, position: None });
+                        rewrite(&mut words, found);
+                        children.push(Node::Text(markdown::mdast::Text { value: "[".to_owned(), position: None }));
+                        children.extend(words.children_mut().map(std::mem::take).unwrap_or_default());
+                        children.push(Node::Text(markdown::mdast::Text { value: "]".to_owned(), position: None }));
+                    }
+                },
+                Node::ImageReference(reference) => match found.get(&reference.identifier) {
+                    Some((url, title)) => children.push(Node::Image(markdown::mdast::Image {
+                        alt: reference.alt,
+                        position: reference.position,
+                        url: url.clone(),
+                        title: title.clone(),
+                    })),
+                    None => children.push(Node::Text(markdown::mdast::Text { value: format!("[{}]", reference.alt), position: None })),
+                },
+                _ => {
+                    rewrite(&mut child, found);
+                    children.push(child);
+                }
+            }
+        }
+    }
+    let mut found = HashMap::new();
+    collect(root, &mut found);
+    rewrite(root, &found);
+}
+
 fn convert_blocks(
     nodes: Vec<Node>,
     inline_rules: &[InlineRule],
 ) -> Result<Vec<Block>, MarkdownError> {
-    nodes
-        .into_iter()
-        .map(|node| convert_block(node, inline_rules))
-        .collect()
+    // What is without HTML is converted one block at a time, as it always was.
+    if !nodes.iter().any(|node| matches!(node, Node::Html(_))) {
+        return nodes
+            .into_iter()
+            .map(|node| convert_block(node, inline_rules))
+            .collect();
+    }
+    // HTML is opened in one block and closed in another, with Markdown between: the blocks are given in order to what keeps what is open.
+    let mut builder = BlockBuilder::new();
+    for node in nodes {
+        match node {
+            Node::Html(html) => builder.html(&html.value)?,
+            other => builder.block(convert_block(other, inline_rules)?),
+        }
+    }
+    Ok(builder.finish())
 }
 
 fn convert_block(node: Node, inline_rules: &[InlineRule]) -> Result<Block, MarkdownError> {
@@ -518,8 +612,9 @@ fn convert_block(node: Node, inline_rules: &[InlineRule]) -> Result<Block, Markd
             identifier: footnote.identifier.into(),
             blocks: convert_blocks(footnote.children, inline_rules)?,
         }),
+        // HTML is converted with the blocks around it, by `convert_blocks`.
         Node::Html(_) => Err(MarkdownError::new(
-            "Raw HTML is not supported in MarkdownViewer",
+            "Raw HTML must be converted with the blocks around it",
         )),
         other => Err(MarkdownError::new(format!(
             "Unsupported Markdown block node: {}",
@@ -532,10 +627,10 @@ fn convert_inlines(
     nodes: Vec<Node>,
     inline_rules: &[InlineRule],
 ) -> Result<Vec<Inline>, MarkdownError> {
-    let mut result = Vec::new();
+    let mut result = InlineBuilder::new();
     for node in nodes {
         match node {
-            Node::Text(text) => push_text_with_soft_breaks(&mut result, text.value, inline_rules)?,
+            Node::Text(text) => push_text_with_soft_breaks(result.top(), text.value, inline_rules)?,
             Node::Break(_) => result.push(Inline::HardBreak),
             Node::Emphasis(emphasis) => result.push(Inline::Emphasis(convert_inlines(
                 emphasis.children,
@@ -563,12 +658,8 @@ fn convert_inlines(
             Node::FootnoteReference(reference) => result.push(Inline::FootnoteReference {
                 identifier: reference.identifier.into(),
             }),
-            Node::Html(item) => {
-                error!("Raw HTML is not supported in MarkdownViewer : {:?}", item);
-                return Err(MarkdownError::new(
-                    "Raw HTML is not supported in MarkdownViewer",
-                ));
-            }
+            // The tags of HTML among the words open and close what the words between them are in.
+            Node::Html(item) => result.feed(tokenize(&item.value))?,
             other => {
                 error!("Unsupported Markdown inline node: {}", node_name(&other));
                 return Err(MarkdownError::new(format!(
@@ -578,7 +669,7 @@ fn convert_inlines(
             }
         }
     }
-    Ok(result)
+    Ok(result.finish())
 }
 
 fn push_text_with_soft_breaks(
@@ -817,6 +908,11 @@ mod tests {
                     push_text_storage(identifier, output);
                     collect_block_text_storage(blocks, output);
                 }
+                Block::Aligned { blocks, .. } => collect_block_text_storage(blocks, output),
+                Block::Details { summary, blocks, .. } => {
+                    collect_inline_text_storage(summary, output);
+                    collect_block_text_storage(blocks, output);
+                }
                 Block::Custom(data) => {
                     push_text_storage(&data.name, output);
                     push_text_storage(&data.text, output);
@@ -1049,6 +1145,62 @@ mod tests {
         assert!(
             matches!(&document.blocks[1], Block::FootnoteDefinition { identifier, .. } if identifier.as_ref() == "one")
         );
+    }
+
+    #[test]
+    fn a_link_that_names_a_definition_is_the_link_it_names_and_the_definition_is_not_a_block() {
+        // As the documentation of a standard library says its links: by name, with where each goes at the end.
+        let document = parse(
+            "See [`Instant`] and [the other][o] and [Again][o].\n\n[`Instant`]: https://x.test/Instant\n[o]: https://x.test/o \"Title\"\n",
+        );
+        assert_eq!(document.blocks.len(), 1, "the definitions are not blocks: {:?}", document.blocks);
+        let Block::Paragraph(inlines) = &document.blocks[0] else {
+            panic!("expected paragraph")
+        };
+        let links: Vec<(&str, Option<&str>)> = inlines
+            .iter()
+            .filter_map(|inline| match inline {
+                Inline::Link { url, title, .. } => Some((url.as_ref(), title.as_ref().map(|title| title.as_ref()))),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(links, [("https://x.test/Instant", None), ("https://x.test/o", Some("Title")), ("https://x.test/o", Some("Title"))]);
+        let Inline::Link { content, .. } = &inlines[1] else {
+            panic!("expected the link after the first words: {inlines:?}")
+        };
+        assert!(matches!(content.as_slice(), [Inline::Code(code)] if code.as_ref() == "Instant"), "its words are what it said: {content:?}");
+    }
+
+    #[test]
+    fn an_image_that_names_a_definition_is_the_image_and_a_document_of_only_definitions_is_empty() {
+        let document = parse("![the logo][logo]\n\n[logo]: pic.png \"Caption\"");
+        assert!(matches!(
+            &document.blocks[0],
+            Block::Paragraph(inlines)
+                if matches!(inlines.as_slice(), [Inline::Image { url, title: Some(title), alt }] if url.as_ref() == "pic.png" && title.as_ref() == "Caption" && alt.as_ref() == "the logo")
+        ));
+        assert_eq!(document.blocks.len(), 1);
+        assert!(parse("[a]: https://x.test\n[b]: https://y.test").blocks.is_empty());
+    }
+
+    #[test]
+    fn a_definition_in_a_list_or_a_quote_is_found_by_a_link_outside_it_and_words_in_brackets_that_name_none_stay_words() {
+        let document = parse("> [far]: https://x.test/far\n\nGo [far] or [near] or [never].\n\n- [near]: https://x.test/near");
+        let paragraph = document.blocks.iter().find_map(|block| match block {
+            Block::Paragraph(inlines) => Some(inlines),
+            _ => None,
+        });
+        let inlines = paragraph.expect("a paragraph");
+        let urls: Vec<&str> = inlines.iter().filter_map(|inline| match inline {
+            Inline::Link { url, .. } => Some(url.as_ref()),
+            _ => None,
+        }).collect();
+        assert_eq!(urls, ["https://x.test/far", "https://x.test/near"], "definitions are for the whole document");
+        let text: String = inlines.iter().filter_map(|inline| match inline {
+            Inline::Text(text) => Some(text.as_ref()),
+            _ => None,
+        }).collect();
+        assert!(text.contains("[never]"), "brackets that name nothing are words: {text:?}");
     }
 
     #[test]

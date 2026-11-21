@@ -11,6 +11,7 @@ use aimer_style::{TextAlign, TextStyle, TextTransform};
 use aimer_text::RawTextWidget;
 
 use crate::editable_text::line_index::LineIndex;
+use crate::input_field::inlay::Placed;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// The text presented to the renderer and the source byte ranges each
@@ -81,6 +82,10 @@ pub(crate) struct EditableGeometry {
     pub ranges: Option<Rc<[aimer_text::StyledRange]>>,
     /// The boxes reserved for embedded widgets.
     pub embeds: Vec<EmbedBox>,
+    /// The room left in the lines for inlays, with the labels that are drawn in it.
+    pub inlays: Rc<[Placed]>,
+    /// How many physical pixels a logical one was when the room for inlays was made.
+    inlay_scale: f32,
     line_offsets: Vec<f32>,
     /// Where every [`GRAPHEME_STRIDE`]th grapheme of `display` starts, made the first
     /// time an offset has to be converted. See [`Self::display_byte_offset`].
@@ -190,6 +195,8 @@ impl EditableGeometry {
             source_ranges,
             ranges: None,
             embeds: Vec::new(),
+            inlays: Rc::from(Vec::new()),
+            inlay_scale: 1.0,
             line_offsets,
             grapheme_checkpoints: OnceCell::new(),
             ordered_clusters: OnceCell::new(),
@@ -273,6 +280,50 @@ impl EditableGeometry {
     pub(crate) fn with_embeds(mut self, embeds: Vec<EmbedBox>) -> Self {
         self.embeds = embeds;
         self
+    }
+
+    /// Records the room that was left for inlays.
+    #[inline]
+    pub(crate) fn with_inlays(mut self, inlays: Rc<[Placed]>, scale: f32) -> Self {
+        self.inlays = inlays;
+        self.inlay_scale = scale;
+        self
+    }
+
+    /// Puts a caret that is where an inlay goes before the inlay. The room is spread after the character before it, so a caret
+    /// that is at the start of what follows is after the room; but the insertion point is where the text is, and the inlay is a note
+    /// beside it.
+    fn before_inlay(&self, mut caret: CaretGeometry) -> CaretGeometry {
+        if let Ok(found) = self.inlays.binary_search_by_key(&caret.offset, |place| place.at)
+            && !self.inlays[found].eol
+            && !self.inlays[found].word
+        {
+            caret.x -= self.inlays[found].gap * self.inlay_scale;
+        }
+        caret
+    }
+
+    /// Where the room of `place` begins, in physical pixels from the origin of what was laid out, which for a window of a long text
+    /// is the window's: how far along its line, and the baseline of the line. `scale` is how many physical pixels a logical one is, which is what the room was asked for in.
+    ///
+    /// The room is spread by the letter spacing after the character before `place.at`, so it ends where the cluster of that
+    /// character does. None where that character is not laid out, which is a text that is windowed and not there.
+    pub(crate) fn inlay_origin(&self, place: &Placed, scale: f32) -> Option<(f32, f32)> {
+        let layout = self.interaction.as_ref()?;
+        let byte_base = self.window.as_ref().map_or(0, |window| window.byte_base);
+        let local = place.at.checked_sub(byte_base)?;
+        // The room of a space is the space's own, and begins where it does, which is where the caret before it is.
+        if place.word {
+            let cluster = self.cluster_starting_at(layout, local)?;
+            return (!cluster.level.is_rtl()).then_some((cluster.start_x, cluster.start_y));
+        }
+        let cluster = self.cluster_ending_at(layout, local)?;
+        if cluster.level.is_rtl() {
+            return None;
+        }
+        // At the end of a line the labels are after the last character, where the room is not spread.
+        let room = if place.eol { 0.0 } else { place.gap * scale };
+        Some((cluster.end_x - room, cluster.end_y))
     }
 
     /// Where each embed's box was laid out, from the cluster that stands for its
@@ -393,6 +444,12 @@ impl EditableGeometry {
     /// shaper fused adjacent graphemes into a ligature, the nearest legal
     /// cluster edge is used so the caret never cuts through the painted glyph.
     pub(crate) fn caret_geometry(&self, offset: usize) -> Option<CaretGeometry> {
+        let caret = self.shaped_caret_geometry(offset)?;
+        Some(if self.inlays.is_empty() { caret } else { self.before_inlay(caret) })
+    }
+
+    /// [`caret_geometry`](Self::caret_geometry) where it is as the layout shaped it.
+    fn shaped_caret_geometry(&self, offset: usize) -> Option<CaretGeometry> {
         let Some(window) = self.window.as_ref() else {
             return self.local_caret_geometry(offset);
         };
@@ -952,6 +1009,8 @@ mod tests {
                 source_ranges: Vec::new(),
                 ranges: None,
                 embeds: Vec::new(),
+                inlays: std::rc::Rc::from(Vec::new()),
+                inlay_scale: 1.0,
                 line_offsets: Vec::new(),
                 grapheme_checkpoints: std::cell::OnceCell::new(),
                 ordered_clusters: std::cell::OnceCell::new(),

@@ -86,4 +86,4 @@ pub fn release_window_contexts() {}
 #[inline]
 pub(crate) fn capture_rebuilt_root(_element: ElementId, _ctx: &BuildContext) {}
 
-pub(crate) fn finish_full_traversal() {}
+pub(crate) fn finish_full_traversal(_left_alone: impl Fn(ElementId) -> bool) {}

@@ -17,6 +17,8 @@ pub(crate) struct PreparedBackground {
     pub width: f32,
     pub height: f32,
     pub color: aimer_widget::base::Color,
+    /// The corner radius in logical pixels; zero is a square. Never negative or not a number.
+    pub radius: f32,
 }
 
 /// One highlight rectangle of a selection, in element-local physical pixels.
@@ -150,9 +152,14 @@ pub(crate) fn prepare_background_runs(
         }
 
         let y = fragment.baseline - fragment.ascent;
+        let radius = spans[fragment.span_index]
+            .background_radius
+            .filter(|radius| *radius > 0.0)
+            .unwrap_or(0.0);
         if let Some(previous) = runs.last_mut()
             && previous.line == fragment.line
             && previous.color == color
+            && previous.radius == radius
             && (previous.y - y).abs() <= TOUCH_EPSILON
             && (previous.height - fragment.height).abs() <= TOUCH_EPSILON
             && (previous.x + previous.width - fragment.x).abs() <= TOUCH_EPSILON
@@ -168,6 +175,7 @@ pub(crate) fn prepare_background_runs(
             width: fragment.width,
             height: fragment.height,
             color,
+            radius,
         });
     }
     runs
@@ -490,6 +498,43 @@ mod tests {
         assert_eq!((runs[1].x, runs[1].width), (40.0, 10.0));
         assert_eq!(runs[1].color, aimer_widget::base::Color::BLUE);
         assert_eq!((runs[2].x, runs[2].y, runs[2].height), (0.0, 22.0, 16.0));
+    }
+
+    #[test]
+    fn a_background_keeps_the_radius_of_its_span_and_only_merges_with_the_same_one() {
+        let red = aimer_widget::base::Color::RED;
+        let rounded = |text: &str, radius: Option<f32>| {
+            let mut span =
+                ResolvedTextSpan::plain(Rc::from(text), TextStyle::new().background_color(red));
+            span.background_radius = radius;
+            span
+        };
+        let spans = vec![
+            rounded("a", Some(3.0)),
+            rounded("b", Some(3.0)),
+            rounded("c", None),
+            rounded("d", Some(-2.0)),
+        ];
+        let fragment = |span_index: usize, x: f32| PreparedFragment {
+            span_index,
+            text: "x".into(),
+            source_range: None,
+            rendered_source_ranges: Vec::new(),
+            line: 0,
+            x,
+            baseline: 18.0,
+            width: 10.0,
+            height: 12.0,
+            ascent: 8.0,
+            descent: 4.0,
+        };
+        let fragments = vec![fragment(0, 0.0), fragment(1, 10.0), fragment(2, 20.0), fragment(3, 30.0)];
+
+        let runs = prepare_background_runs(&fragments, &spans);
+
+        assert_eq!(runs.len(), 2, "the two rounded spans merge, and the square and negative ones merge as both are square");
+        assert_eq!((runs[0].x, runs[0].width, runs[0].radius), (0.0, 20.0, 3.0));
+        assert_eq!((runs[1].x, runs[1].width, runs[1].radius), (20.0, 20.0, 0.0), "a negative radius is square");
     }
 
     #[test]

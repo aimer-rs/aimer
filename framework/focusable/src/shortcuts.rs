@@ -104,6 +104,15 @@ impl Shortcuts {
         self
     }
 
+    /// Calls `watcher` with the modifiers that are held, each time they change, while the scope is active (see
+    /// [`window`](Shortcuts::window)). It hears a `Shift` or a `Ctrl` that is held on its own, which is no chord: the way to
+    /// show a preview for as long as a key is down.
+    #[inline]
+    pub fn on_modifiers(mut self, watcher: impl Fn(aimer_shortcut::ChordMods) + 'static) -> Self {
+        self.scope = self.scope.watch_modifiers(watcher);
+        self
+    }
+
     /// Attaches the required child and completes this builder.
     #[inline]
     pub fn child<W: Widget>(self, child: W) -> Shortcuts<W> {

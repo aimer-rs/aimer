@@ -97,6 +97,24 @@ impl<K: Eq + Hash, V> RecencyCache<K, V> {
         })
     }
 
+    /// Reads the first resident entry among `primary` and `fallback` through `read`, stamping it as
+    /// used by the current frame: one question to the table when the primary is resident, which is
+    /// what a frame that draws a layout it drew before finds. Stamping with [`touch`](Self::touch)
+    /// and reading with [`peek`](Self::peek) asked twice.
+    ///
+    /// `read` gets the value and not a borrow that outlives the call: the borrow checker does not allow
+    /// a reference to be returned from one lookup and the table asked again on the miss.
+    pub(super) fn with_first<R>(&mut self, primary: &K, fallback: Option<&K>, read: impl FnOnce(&V) -> R) -> Option<R> {
+        let generation = self.generation;
+        if let Some(slot) = self.entries.get_mut(primary) {
+            slot.last_used = generation;
+            return Some(read(&slot.value));
+        }
+        let slot = self.entries.get_mut(fallback?)?;
+        slot.last_used = generation;
+        Some(read(&slot.value))
+    }
+
     /// Returns the entry for `key` without stamping it.
     ///
     /// For re-reads within a frame that already confirmed the key with
@@ -242,6 +260,65 @@ mod tests {
         assert!(cache.peek(&"b").is_some());
     }
 
+    /// A key that counts how often it is hashed, which is how many times the table was asked.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct Counted(u32);
+
+    thread_local! {
+        static HASHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    impl std::hash::Hash for Counted {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            HASHES.with(|count| count.set(count.get() + 1));
+            self.0.hash(state);
+        }
+    }
+
+    fn hashes_while<R>(work: impl FnOnce() -> R) -> (R, usize) {
+        let before = HASHES.with(std::cell::Cell::get);
+        let result = work();
+        (result, HASHES.with(std::cell::Cell::get) - before)
+    }
+
+    /// A read of a layout that is stamped and read back is one question to the table, not two.
+    #[test]
+    fn the_first_resident_of_two_keys_is_stamped_and_read_in_one_lookup_each() {
+        let mut cache = RecencyCache::new(usize::MAX, usize::MAX);
+        cache.begin_frame();
+        cache.insert(Counted(1), "one", 1);
+        cache.insert(Counted(2), "two", 1);
+        let (primary, fallback, absent) = (Counted(1), Counted(2), Counted(9));
+
+        let (read, hashed) = hashes_while(|| cache.with_first(&primary, Some(&fallback), |value| value.len()));
+        assert_eq!((read, hashed), (Some(3), 1), "the primary is resident: one lookup");
+
+        let (read, hashed) = hashes_while(|| cache.with_first(&absent, Some(&fallback), |value| *value));
+        assert_eq!((read, hashed), (Some("two"), 2), "the fallback answers after the primary missed");
+
+        let (read, hashed) = hashes_while(|| cache.with_first(&absent, None, |value| *value));
+        assert_eq!((read, hashed), (None, 1), "neither: one lookup, and no second key to ask");
+
+        let (read, hashed) = hashes_while(|| cache.with_first(&absent, Some(&Counted(8)), |value| *value));
+        assert_eq!((read, hashed), (None, 2));
+    }
+
+    #[test]
+    fn what_is_read_first_is_stamped_as_used_and_the_one_that_missed_is_not_made() {
+        let mut cache = RecencyCache::new(1, usize::MAX);
+        cache.begin_frame();
+        cache.insert(1u32, "kept", 1);
+        cache.insert(2u32, "stale", 1);
+        for _ in 0..3 {
+            cache.begin_frame();
+            assert_eq!(cache.with_first(&1, Some(&5), |value| *value), Some("kept"));
+        }
+        // Over capacity: what no frame read is shed, and what was read first stays.
+        assert!(cache.peek(&1).is_some());
+        assert!(cache.peek(&2).is_none());
+        assert_eq!(cache.len(), 1);
+    }
+
     #[test]
     fn a_stream_of_one_use_entries_stays_within_the_budget() {
         const ENTRY: usize = 1_000;
@@ -270,5 +347,79 @@ mod tests {
             assert!(cache.touch(&"static"), "evicted at frame {frame}");
             cache.insert("flood", frame, ENTRY);
         }
+    }
+
+    /// What a frame asks of the layout cache for every span of every text it draws: build the key (the text is
+    /// the `Arc<str>` a request carries, a new allocation when its text was recorded again) and look it up.
+    /// A timing harness, to run by itself in the debug build
+    /// (`cargo test -p aimer_text_pipeline layout_key_timing -- --ignored --nocapture`). In the debug build a
+    /// lookup is about a fifth building the key, a third hashing it and the rest the probe and the compare
+    /// of the text, which is `hashbrown`'s own code unoptimized: a hasher that is cheaper changes none of it.
+    #[test]
+    #[ignore = "a timing harness: run by itself, in the debug build"]
+    fn layout_key_timing() {
+        use std::sync::Arc;
+
+        use crate::cache_key::LayoutCacheKey;
+        use crate::font::{FontFamily, FontStyle};
+        use crate::text_layout::TextWritingMode;
+
+        const SPANS: usize = 4000;
+        const FRAMES: usize = 60;
+        let texts: Vec<String> = (0..SPANS).map(|n| format!("let value_{n} = compute_something({n}, \"a string\");")).collect();
+        let key = |text: Arc<str>| {
+            LayoutCacheKey::new_with_writing_mode(
+                text,
+                14.0,
+                0.0,
+                0.0,
+                FontFamily::SANS_SERIF,
+                FontStyle::Normal,
+                400,
+                None,
+                TextWritingMode::HorizontalTb,
+            )
+        };
+        let mut cache = RecencyCache::new(usize::MAX, usize::MAX);
+        cache.begin_frame();
+        for text in &texts {
+            cache.insert(key(Arc::from(text.as_str())), (), 100);
+        }
+        // The texts of the frames: equal to what the cache holds, and not the same allocations.
+        let requests: Vec<Arc<str>> = texts.iter().map(|text| Arc::from(text.as_str())).collect();
+        let started = std::time::Instant::now();
+        let mut hits = 0usize;
+        for _ in 0..FRAMES {
+            cache.begin_frame();
+            for text in &requests {
+                if cache.get(&key(Arc::clone(text))).is_some() {
+                    hits += 1;
+                }
+            }
+        }
+        let per = started.elapsed() / (FRAMES * SPANS) as u32;
+        println!("layout key build + lookup: {per:?} per span ({SPANS} spans a frame) [{hits}]");
+
+        // What a frame does for a layout it draws: stamp it, and read what it holds.
+        let keys: Vec<LayoutCacheKey> = requests.iter().map(|text| key(Arc::clone(text))).collect();
+        let started = std::time::Instant::now();
+        let mut read = 0usize;
+        for _ in 0..FRAMES {
+            cache.begin_frame();
+            for key in &keys {
+                if cache.touch(key) {
+                    read += usize::from(cache.peek(key).is_some());
+                }
+            }
+        }
+        println!("  stamp then read (touch + peek): {:?} per span", started.elapsed() / (FRAMES * SPANS) as u32);
+        let started = std::time::Instant::now();
+        for _ in 0..FRAMES {
+            cache.begin_frame();
+            for key in &keys {
+                read += usize::from(cache.with_first(key, None, |_| ()).is_some());
+            }
+        }
+        println!("  stamp and read (with_first):    {:?} per span [{read}]", started.elapsed() / (FRAMES * SPANS) as u32);
     }
 }

@@ -465,8 +465,10 @@ pub fn with_v2_render_tree_context<R>(
             })));
     });
     let _guard = V2RenderContextGuard;
+    clean_skip::forget_left_alone();
     let result = callback();
-    finish_full_traversal();
+    finish_full_traversal(clean_skip::left_alone_over);
+    clean_skip::forget_left_alone();
     result
 }
 

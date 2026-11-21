@@ -40,11 +40,30 @@ impl RawTextField {
     pub(crate) fn gutter_marker_at(&self, pos: Vec2d) -> Option<Rc<dyn Fn()>> {
         let origin = self.cached_bounds.get_bounds()?;
         let (x, y) = (pos.x - origin.x, pos.y - origin.y);
-        self.marker_hits
+        let icon = self
+            .marker_hits
             .borrow()
             .iter()
             .find(|hit| x >= hit.x && x <= hit.x + hit.size && y >= hit.y && y <= hit.y + hit.size)
-            .map(|hit| Rc::clone(&hit.on_press))
+            .map(|hit| Rc::clone(&hit.on_press));
+        // A button of a label after a line is pressed as an icon of the margin is: it is called with where it is.
+        icon.or_else(|| {
+            self.label_hits
+                .borrow()
+                .iter()
+                .find(|hit| x >= hit.x && x <= hit.x + hit.width && y >= hit.y && y <= hit.y + hit.height)
+                .map(|hit| {
+                    let press = Rc::clone(&hit.on_press);
+                    let spot = crate::input_field::line_labels::FieldSpot {
+                        x: hit.x,
+                        y: hit.y,
+                        width: hit.width,
+                        height: hit.height,
+                        extent: Some((origin.width, origin.height)),
+                    };
+                    Rc::new(move || press(spot)) as Rc<dyn Fn()>
+                })
+        })
     }
 
     /// The left padding in physical pixels: the one asked for, and the margin of line numbers.
@@ -106,9 +125,17 @@ impl RawTextField {
         let marker_column = self.marker_column_width(scale);
         let left = markers_left + marker_column;
         let inner_width = (inner_width - marker_column).max(1.0);
+        // With centered numbers the icons are centered too: in the room before the numbers' column (the
+        // gap and the icons' own column), as far from the left edge of the margin as from the numbers.
+        let icons_left = if numbers.align == LineNumberAlign::Center { markers_left - numbers.gap_before * scale * 0.5 } else { markers_left };
         self.marker_hits.borrow_mut().clear();
         let mut style = self.field_text_style();
         style.text_overflow = TextOverflow::Clip;
+        let align = match numbers.align {
+            LineNumberAlign::Left => TextAlign::TopLeft,
+            LineNumberAlign::Center => TextAlign::TopCenter,
+            LineNumberAlign::Right => TextAlign::TopRight,
+        };
 
         // The numbers' own text metrics: where a number's baseline is in its box.
         let font_size = self.scaled_font_size(&self.text_style, scale);
@@ -186,33 +213,29 @@ impl RawTextField {
             }
             style.color = if number == caret_line { numbers.active_color } else { numbers.color };
             let label = (number + 1).to_string();
-            let widget = self.build_text_widget(&label, &style, TextAlign::TopRight);
+            let widget = self.build_text_widget(&label, &style, align);
             let text_context = field_text_context(ctx, inner_width, number_height);
             let _ = widget.computed_size(&text_context);
             let origin = Vec2d { x: left / scale, y: top / scale };
             let recorded = widget.record_local_v2_into(canvas, &text_context, origin, false, |_| {});
             debug_assert!(recorded, "the line numbers are plain text");
-            let (marker_height, marker_baseline) = if tall { (plain_line, row_top + plain_line) } else { (row_height, baseline) };
-            self.paint_marker(canvas, number, text_top, marker_baseline, marker_height, markers_left, scale);
+            self.paint_marker(canvas, number, top + number_height * 0.5, icons_left, scale);
         }
         canvas.pop_clip();
     }
 
-    /// Draws the icon of line `number`, if it has one, centred on the height of its row, and notes where
-    /// it is for a press to find.
-    #[allow(clippy::too_many_arguments)]
-    fn paint_marker(&self, canvas: &Canvas, number: usize, text_top: f32, baseline: f32, row_height: f32, left: f32, scale: f32) {
+    /// Draws the icon of line `number`, if it has one, centred on `center_y` (physical pixels, from the
+    /// field's outer origin), and notes where it is for a press to find. `center_y` is the middle of the
+    /// number's own box, so the icon is level with its number on any row, plain or tall.
+    fn paint_marker(&self, canvas: &Canvas, number: usize, center_y: f32, left: f32, scale: f32) {
         let Some(markers) = self.gutter_markers.as_ref() else {
             return;
         };
         let Some(marker) = (markers.of_line)(number) else {
             return;
         };
-        // The row's box is the baseline less the line's ascent and half its gap; the icon is centred on
-        // the middle of it, which is a little above the baseline, as a lower-case letter's body is.
         let size = markers.size;
-        let center_y = (text_top + baseline - row_height * 0.5 + row_height * 0.18) / scale;
-        let rect = Rect::new(left / scale, center_y - size * 0.5, size, size);
+        let rect = Rect::new(left / scale, center_y / scale - size * 0.5, size, size);
         canvas.draw_svg(Arc::clone(&marker.scene), rect, Arc::from(Vec::new()));
         self.marker_hits.borrow_mut().push(MarkerHit { x: rect.x, y: rect.y, size, on_press: marker.on_press });
     }
@@ -241,8 +264,10 @@ impl RawTextField {
             Rect::new(content_left / scale, content_top / scale, layout.content_width / scale, layout.content_height / scale),
             [0.0; 4].into(),
         );
-        // The line a row belongs to, and what it was asked, so a line that wraps is asked once.
-        let mut asked: Option<(usize, Option<LineBar>)> = None;
+        // The line a row belongs to, and what it was asked, so a line that wraps is asked once. The list is kept from line to
+        // line, and is made empty before each is asked.
+        let mut asked: Option<usize> = None;
+        let mut list: Vec<LineBar> = Vec::new();
         for (row, line) in layout.geometry.visual_lines.iter().zip(&interaction.lines) {
             // A window holds many more rows than are in view, and a row that is clipped away is not
             // asked about: finding its line and its bar is for nothing.
@@ -252,22 +277,18 @@ impl RawTextField {
                 continue;
             }
             let number = text.byte_to_line(row.byte_start.min(text.len()));
-            let bar = match asked {
-                Some((line_number, bar)) if line_number == number => bar,
-                _ => {
-                    let bar = (bars.of_line)(number, &context);
-                    asked = Some((number, bar));
-                    bar
-                }
-            };
-            let Some(bar) = bar else {
-                continue;
-            };
-            let (red, green, blue, alpha) = bar.color.to_rgba();
-            canvas.fill_rect(
-                Rect::new((text_left + bar.offset * scale) / scale, top / scale, bars.width, height / scale),
-                [red, green, blue, alpha],
-            );
+            if asked != Some(number) {
+                list.clear();
+                (bars.of_line)(number, &context, &mut list);
+                asked = Some(number);
+            }
+            for bar in &list {
+                let (red, green, blue, alpha) = bar.color.to_rgba();
+                canvas.fill_rect(
+                    Rect::new((text_left + bar.offset * scale) / scale, top / scale, bar.width.unwrap_or(bars.width), height / scale),
+                    [red, green, blue, alpha],
+                );
+            }
         }
         canvas.pop_clip();
     }

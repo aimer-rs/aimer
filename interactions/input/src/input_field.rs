@@ -1,11 +1,17 @@
 pub mod caret;
+pub mod caret_marks;
+pub mod hover;
 pub(crate) mod caret_glide;
 pub(crate) mod chrome;
 pub mod context_menu;
 pub mod embed;
 pub mod gutter;
+pub mod line_labels;
 pub mod highlight;
+pub mod inlay;
+pub mod underline;
 mod line_highlight;
+mod selection_shape;
 #[cfg(test)]
 mod controller {
     use crate::TextEditingController;
@@ -496,11 +502,13 @@ use aimer_widget::{
 use crate::TextEditingController;
 use aimer_events::element::{Modifiers, NamedKey};
 use crate::input_field::caret::{CaretBlink, CaretBuilder, CaretContext};
+use crate::input_field::caret_marks::CaretMarks;
+use crate::input_field::hover::TextHover;
 use crate::input_field::embed::TextEmbedder;
 use crate::input_field::highlight::TextHighlighter;
 use crate::input_field::chrome::{Chrome, TextFieldVisualState, VisualBuilder, VisualFlags};
 use crate::input_field::raw_fields::{
-    CaretSlot, ExpandDirection, InputType, KeyFilter, RawFieldConfig, RawTextFieldWidget,
+    CaretSlot, ExpandDirection, InputType, KeyFilter, RawFieldConfig, TextFilter, RawTextFieldWidget,
     TextFieldCallback,
 };
 
@@ -623,6 +631,8 @@ pub struct TextField {
     /// The caller-built frame; see [`TextField::builder`].
     visual_builder: Option<VisualBuilder>,
     pub selection_color: Color,
+    /// How round the corners of a selection are, in logical pixels; `0.0`, the default, is square.
+    pub selection_radius: f32,
     /// The builtin caret's colour; `None`, the default, follows the text colour.
     pub cursor_color: Option<Colors>,
     /// Whether the caret glides to a moved cursor; see [`TextField::smooth_caret`].
@@ -638,6 +648,9 @@ pub struct TextField {
     pub on_blur: TextFieldCallback,
     pub read_only: bool,
     key_filter: Option<KeyFilter>,
+    text_filter: Option<TextFilter>,
+    caret_marks: Option<CaretMarks>,
+    hover: Option<TextHover>,
     pub padding: LayoutSpacing,
     widget_key: Option<Key>,
 }
@@ -865,6 +878,7 @@ impl TextField {
             custom_decorations: [None, None, None, None],
             visual_builder: None,
             selection_color: Color::Rgba(66, 133, 244, 100),
+            selection_radius: 0.0,
             cursor_color: None,
             smooth_caret: true,
             caret_builder: None,
@@ -876,6 +890,9 @@ impl TextField {
             on_blur: TextFieldCallback::default(),
             read_only: false,
             key_filter: None,
+            text_filter: None,
+            caret_marks: None,
+            hover: None,
             padding: LayoutSpacing::default(),
             widget_key: None,
         }
@@ -915,6 +932,7 @@ impl TextField {
             focus_decoration: self.focus_decoration.clone(),
             disabled_decoration: self.disabled_decoration.clone(),
             selection_color: self.selection_color,
+            selection_radius: self.selection_radius,
             cursor_color: self.cursor_color,
             smooth_caret: self.smooth_caret,
             caret_builder: self.caret_builder.clone(),
@@ -926,17 +944,28 @@ impl TextField {
             on_blur: self.on_blur.clone(),
             read_only: self.read_only,
             key_filter: self.key_filter.clone(),
+            text_filter: self.text_filter.clone(),
+            caret_marks: self.caret_marks.clone(),
+            hover: self.hover.clone(),
             line_break_prefix: None,
             tab_spaces: None,
             wrap: true,
+            clip_to_padding: true,
             line_numbers: None,
             gutter_markers: None,
             pointer_holes: None,
             on_force_click: None,
+            on_force_click_at: None,
             on_command_click: None,
+            on_command_click_at: None,
+            context_menu_extras: None,
+            context_menu_style: None,
             link_range: None,
             locate_color: None,
             line_bars: None,
+            line_labels: None,
+            inlays: None,
+            underlines: None,
             current_line: None,
             padding: self.padding,
             chrome: self.chrome(),
@@ -1195,6 +1224,43 @@ impl TextField {
         self
     }
 
+    /// Rounds the corners of the selection by `radius` logical pixels, and joins the selected lines into one shape: where a
+    /// line is shorter or longer than the one before it the outline curves from one to the other, and a line break that is
+    /// selected shows as a little more selection past the end of its line, so a blank line in the selection is a stub.
+    /// `0.0`, the default, paints a square rectangle for each line.
+    ///
+    /// A corner is rounded by no more than half the edge beside it, so a radius larger than the lines are tall is as round as
+    /// they allow.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::TextField;
+    ///
+    /// let field = TextField::new().selection_radius(4.0);
+    /// ```
+    #[inline]
+    pub fn selection_radius(mut self, radius: f32) -> Self {
+        self.selection_radius = radius.max(0.0);
+        self
+    }
+
+    /// Tells `hover` of the name the pointer rests on, and takes it back when the pointer goes: an editor shows what is written
+    /// of a name this way. See [`TextHover`].
+    #[inline]
+    pub fn on_hover(mut self, hover: TextHover) -> Self {
+        self.hover = Some(hover);
+        self
+    }
+
+    /// Boxes what `marks` says of where the caret is, behind the text, and marks it for a moment when it changes: an editor
+    /// boxes a bracket and the one that matches it this way. See [`CaretMarks`].
+    #[inline]
+    pub fn caret_marks(mut self, marks: CaretMarks) -> Self {
+        self.caret_marks = Some(marks);
+        self
+    }
+
     /// Sets the color of the builtin insertion cursor.
     ///
     /// Without it the cursor takes the text color, which already contrasts with
@@ -1373,6 +1439,32 @@ impl TextField {
     #[inline]
     pub fn on_key(mut self, filter: impl Fn(&NamedKey, &Modifiers) -> bool + 'static) -> Self {
         self.key_filter = Some(Rc::new(filter));
+        self
+    }
+
+    /// Offers `filter` the text that was typed, before the field inserts it, and keeps it from the field by answering
+    /// `true`. The filter has dealt with the text itself then, through the controller of the field, and the field
+    /// follows what it did: its caret is where the controller put it.
+    ///
+    /// It is offered what a key, a paste of a dead-key sequence or a finished composition inserts, one character at
+    /// a time as typed, and what the user is still composing is not offered: a phrase that is not finished is not text yet.
+    /// A field that is read-only is not offered anything. Pasting does not go through here.
+    ///
+    /// This is what lets a code editor close a bracket, step over a closing one that is there, or wrap the selection
+    /// in a pair: the controller has the selection, which the filter reads, and an edit made with
+    /// [`replace_ranges`](crate::TextEditingController::replace_ranges) is one that one undo takes back.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::input::TextField;
+    ///
+    /// // Take every `(`: the filter has to insert something, or the key does nothing.
+    /// let field = TextField::new().on_text_input(|typed| typed == "(");
+    /// ```
+    #[inline]
+    pub fn on_text_input(mut self, filter: impl Fn(&str) -> bool + 'static) -> Self {
+        self.text_filter = Some(Rc::new(filter));
         self
     }
 

@@ -351,6 +351,49 @@ fn a_focus_owner_that_claims_tab_receives_it_and_keeps_focus() {
     assert!(second_node.has_focus() && !first_node.has_focus(), "Tab traverses when not claimed");
 }
 
+#[test]
+fn a_focus_owner_that_holds_tab_keeps_focus_for_tab_and_shift_tab_whatever_it_claims() {
+    let first_node = FocusNode::new();
+    let second_node = FocusNode::new();
+    let first_lifecycle = Rc::new(RefCell::new(Vec::new()));
+    let root = IdentityBranch(vec![
+        FocusTestElement {
+            node: first_node.clone(),
+            lifecycle: Rc::clone(&first_lifecycle),
+            autofocus: false,
+        }
+        .boxed(),
+        focusable(&second_node),
+    ])
+    .boxed();
+    let mut dispatcher = EventDispatcher::new();
+    first_node.request_focus();
+    let _ = dispatcher.dispatch(root.as_ref(), Vec2d::default(), &ElementEvent::Cancel);
+
+    // A popup with a field keeps both keys, which a field of one line does not claim by itself and which its own setting of the
+    // claim, made each time it is built, would take back.
+    first_node.set_holds_tab(true);
+    first_node.set_claims_tab(false);
+    assert!(first_node.claims_tab(), "holding is claiming, and is not undone by the field's own setting");
+    let _ = tab(&mut dispatcher, root.as_ref());
+    assert!(first_node.has_focus() && !second_node.has_focus(), "Tab did not move focus");
+    let _ = dispatcher.dispatch(
+        root.as_ref(),
+        Vec2d::default(),
+        &ElementEvent::KeyInput {
+            key: NamedKey::Tab,
+            action: KeyAction::Pressed,
+            modifiers: Modifiers { shift: true, ..Modifiers::default() },
+        },
+    );
+    assert!(first_node.has_focus() && !second_node.has_focus(), "nor did Shift+Tab");
+
+    // Let go, the node is traversed again.
+    first_node.set_holds_tab(false);
+    let _ = tab(&mut dispatcher, root.as_ref());
+    assert!(second_node.has_focus(), "Tab traverses when not held");
+}
+
 struct FocusScopeElement {
     children: Vec<AnyElement>,
     traps: Cell<bool>,

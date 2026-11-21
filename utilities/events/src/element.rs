@@ -112,6 +112,10 @@ pub enum PressureStage {
     Force,
 }
 
+aimer_tls::thread_local! {
+    static PREVIOUS_PRESSURE: std::cell::Cell<PressureStage> = const { std::cell::Cell::new(PressureStage::None) };
+}
+
 impl PressureStage {
     /// The stage a platform number stands for: `0` is no press, `1` a click and `2` a force click. A number that is not one
     /// of them is the nearest, which is none for what is below `0` and force for what is above `2`.
@@ -122,6 +126,24 @@ impl PressureStage {
             1 => Self::Click,
             _ => Self::Force,
         }
+    }
+
+    /// The stage the pad was at before the pressure event that is being dispatched: [`PressureStage::None`] until the
+    /// window has seen a press.
+    ///
+    /// A widget that takes a force click waits for the stage to become [`PressureStage::Force`], and cannot tell by what it
+    /// has seen itself that it has: it may have been made under the pointer after the press went deep, as the text a
+    /// force click opens is. This is the window's word for it.
+    #[inline]
+    pub fn previous() -> Self {
+        PREVIOUS_PRESSURE.with(std::cell::Cell::get)
+    }
+
+    /// Records `self` as the stage of the pad. The event loop calls this after it has dispatched each pressure event; a
+    /// test that drives a widget with a press that is held calls it too.
+    #[inline]
+    pub fn record(self) {
+        PREVIOUS_PRESSURE.with(|previous| previous.set(self));
     }
 }
 

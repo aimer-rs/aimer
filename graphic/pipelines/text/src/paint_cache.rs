@@ -32,15 +32,14 @@ impl PaintShadowKey {
     }
 }
 
-/// A key for one span's origin-relative glyph paint.
+/// What a span's origin-relative glyph paint depends on besides the layout it is made from.
 ///
 /// Position, clip, foreground color, and `draw_glyphs` are deliberately
 /// absent: those values are patched while the cached geometry is assembled
-/// into the current frame.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub(super) struct TextPaintCacheKey {
-    primary: LayoutCacheKey,
-    fallback: Option<LayoutCacheKey>,
+/// into the current frame. It holds no text, so it is cheap to build and to compare, and
+/// the template last made for a layout is remembered with it under this.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub(super) struct PaintVariant {
     overflow: TextOverflowMode,
     horizontal_align: TextHorizontalAlign,
     writing_mode: TextWritingMode,
@@ -52,14 +51,9 @@ pub(super) struct TextPaintCacheKey {
     shadow: Option<PaintShadowKey>,
 }
 
-impl TextPaintCacheKey {
+impl PaintVariant {
     #[inline]
-    pub(super) fn new(
-        keys: &SpanLayoutKeys,
-        request: &TextDrawRequest,
-        font_weight: u16,
-        italic: bool,
-    ) -> Self {
+    pub(super) fn new(request: &TextDrawRequest, font_weight: u16, italic: bool) -> Self {
         // Left-aligned horizontal clipping does not use the request bounds for
         // paint: the layout key already captures wrapping/ellipsis extents,
         // while the renderer may synthesize a changing remaining-surface
@@ -80,8 +74,6 @@ impl TextPaintCacheKey {
             0
         };
         Self {
-            primary: keys.primary.clone(),
-            fallback: keys.fallback.clone(),
             overflow: request.overflow,
             horizontal_align: request.horizontal_align,
             writing_mode: request.writing_mode,
@@ -91,6 +83,31 @@ impl TextPaintCacheKey {
             font_weight,
             italic,
             shadow: PaintShadowKey::new(request.shadow),
+        }
+    }
+}
+
+/// A key for one span's origin-relative glyph paint: the layout it is made from, and the
+/// [`PaintVariant`].
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub(super) struct TextPaintCacheKey {
+    primary: LayoutCacheKey,
+    fallback: Option<LayoutCacheKey>,
+    variant: PaintVariant,
+}
+
+impl TextPaintCacheKey {
+    #[inline]
+    pub(super) fn new(
+        keys: &SpanLayoutKeys,
+        request: &TextDrawRequest,
+        font_weight: u16,
+        italic: bool,
+    ) -> Self {
+        Self {
+            primary: keys.primary.clone(),
+            fallback: keys.fallback.clone(),
+            variant: PaintVariant::new(request, font_weight, italic),
         }
     }
 }
@@ -148,6 +165,9 @@ pub(super) struct TextPaintCache {
     atlas_generation: u64,
     color_atlas_generation: u64,
     font_revision: u64,
+    /// Advances whenever the templates are cleared: a template that was made, and remembered
+    /// elsewhere, before it advanced is of an atlas or fonts that are gone.
+    epoch: u64,
 }
 
 impl Default for TextPaintCache {
@@ -159,6 +179,7 @@ impl Default for TextPaintCache {
             atlas_generation: 0,
             color_atlas_generation: 0,
             font_revision: 0,
+            epoch: 0,
         }
     }
 }
@@ -226,6 +247,13 @@ impl TextPaintCache {
     pub(super) fn clear(&mut self) {
         self.entries.clear();
         self.glyph_records = 0;
+        self.epoch = self.epoch.wrapping_add(1);
+    }
+
+    /// Which generation of templates this is; see the field.
+    #[inline]
+    pub(super) fn epoch(&self) -> u64 {
+        self.epoch
     }
 
     fn evict_cold_quarter(&mut self) {
@@ -380,6 +408,75 @@ mod tests {
         changed.draw_glyphs = false;
 
         assert_eq!(key(&first), key(&changed));
+    }
+
+    /// What a paint template is for, besides the layout it is made from: remembered with the layout, so
+    /// that the next frame asks a layout it already found, and not the table of templates, which builds
+    /// and hashes a key of the layout's text again.
+    #[test]
+    fn the_variant_is_what_a_key_holds_besides_the_layout_and_follows_it_exactly() {
+        use super::PaintVariant;
+
+        let base = request(0.0, Rgba8::new(0, 0, 0, 255), 240.0);
+        let variant = |request: &TextDrawRequest, weight: u16, italic: bool| PaintVariant::new(request, weight, italic);
+        let normal = FontWeight::Normal.numeric();
+        let same = variant(&base, normal, false);
+
+        // What the key leaves out, the variant does too.
+        let mut moved = request(17.5, Rgba8::new(255, 0, 0, 255), 200.0);
+        moved.clip_rect = [10.0, 4.0, 100.0, 20.0];
+        moved.draw_glyphs = false;
+        assert_eq!(variant(&moved, normal, false), same);
+        assert_eq!(key(&moved), key(&base));
+
+        // What it holds, each of them, changes it, and changes the key with it.
+        let changes: Vec<(&str, TextDrawRequest, u16, bool)> = {
+            let mut shadowed = base.clone();
+            shadowed.shadow = Some(crate::TextShadowRequest { offset_x: 1.0, offset_y: 2.0, blur: 3.0, color: Rgba8::new(0, 0, 0, 128) });
+            let mut lined = base.clone();
+            lined.line_height = Some(30.0);
+            let mut vertical = base.clone();
+            vertical.writing_mode = TextWritingMode::VerticalRl;
+            let mut centred = base.clone();
+            centred.horizontal_align = TextHorizontalAlign::Center;
+            let mut wrapped = base.clone();
+            wrapped.overflow = TextOverflowMode::Wrap;
+            vec![
+                ("a shadow", shadowed, normal, false),
+                ("a line height", lined, normal, false),
+                ("a writing mode", vertical, normal, false),
+                ("an alignment", centred, normal, false),
+                ("an overflow", wrapped, normal, false),
+                ("a weight", base.clone(), 700, false),
+                ("italic", base.clone(), normal, true),
+            ]
+        };
+        for (what, changed, weight, italic) in changes {
+            assert_ne!(variant(&changed, weight, italic), same, "{what}");
+        }
+    }
+
+    #[test]
+    fn the_epoch_moves_whenever_the_templates_are_cleared_and_only_then() {
+        let mut cache = TextPaintCache::default();
+        let start = cache.epoch();
+        cache.ensure_generations(0, 0, 0);
+        assert_eq!(cache.epoch(), start, "the generations it was made for: nothing is cleared");
+
+        cache.ensure_generations(1, 0, 0);
+        let after_atlas = cache.epoch();
+        assert_ne!(after_atlas, start, "an atlas that changed");
+        cache.ensure_generations(1, 1, 0);
+        assert_ne!(cache.epoch(), after_atlas, "a colour atlas that changed");
+        let before_font = cache.epoch();
+        cache.ensure_generations(1, 1, 5);
+        assert_ne!(cache.epoch(), before_font, "the fonts");
+        let settled = cache.epoch();
+        cache.ensure_generations(1, 1, 5);
+        assert_eq!(cache.epoch(), settled);
+
+        cache.clear();
+        assert_ne!(cache.epoch(), settled, "cleared outright");
     }
 
     #[test]

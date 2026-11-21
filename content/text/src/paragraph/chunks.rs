@@ -348,12 +348,14 @@ impl Paragraph {
     }
 
     /// Whether the paragraph is one whose hard lines lay out apart: wrapped text
-    /// (so every chunk wraps to the paragraph's own width), without a first-line
-    /// indent or case change that carries from one line to the next, and in
-    /// more than one span (a single span takes the shared shaper's geometry, which
-    /// a paragraph of several spans does not).
+    /// (so every chunk wraps to the paragraph's own width), or text that is clipped and starts
+    /// each line where the paragraph does (it has no width to wrap to, and the width the chunks
+    /// make up is that of the widest), without a first-line indent or case change that carries
+    /// from one line to the next, and in more than one span (a single span takes the shared
+    /// shaper's geometry, which a paragraph of several spans does not).
     fn lines_lay_out_apart(&self) -> bool {
-        matches!(self.overflow, TextOverflow::Wrap)
+        (matches!(self.overflow, TextOverflow::Wrap)
+            || (matches!(self.overflow, TextOverflow::Clip) && !self.aligns_within_width()))
             && self.text_indent == 0.0
             && self.spans.len() >= 2
             && self
@@ -478,6 +480,14 @@ impl Paragraph {
         chunks: &[ChunkSpec],
         parts: &[Rc<PreparedLayout>],
     ) -> Option<PreparedLayout> {
+        // Wrapped, every chunk is as wide as the paragraph is. Clipped, each is as wide as its widest
+        // line, and the paragraph as the widest of them.
+        let wrapped = matches!(self.overflow, TextOverflow::Wrap);
+        let width = if wrapped {
+            parts.first()?.size.width
+        } else {
+            parts.iter().map(|part| part.size.width).fold(0.0, f32::max)
+        };
         let fragment_count = parts.iter().map(|part| part.fragments.len()).sum();
         let cluster_count = parts
             .iter()
@@ -558,7 +568,13 @@ impl Paragraph {
                     line: line_shift(line_break.line),
                     x: line_break.x,
                     y: line_break.y + y_shift,
-                    hit_width: line_break.hit_width,
+                    // A line break can be hit out to the edge of the paragraph, which is not the
+                    // edge of the chunk when the paragraph is as wide as its widest line.
+                    hit_width: if wrapped {
+                        line_break.hit_width
+                    } else {
+                        (width - line_break.x).max(ctx.scale)
+                    },
                     selection_width: line_break.selection_width,
                     height: line_break.height,
                 });
@@ -609,7 +625,6 @@ impl Paragraph {
         }
 
         clusters.append(&mut break_clusters);
-        let width = parts.first()?.size.width;
         let height = y_offset;
         let line_count = line_heights.len().max(1);
         let decorations = prepare_decorations(&fragments, &self.spans, ctx.scale);
@@ -876,6 +891,49 @@ mod tests {
         }
     }
 
+    fn clipped(spans: Vec<ResolvedTextSpan>, align: TextAlign, height: LineHeight) -> Paragraph {
+        Paragraph::with_layout(spans, align, TextOverflow::Clip, height, 0.0)
+    }
+
+    #[test]
+    fn chunks_of_text_that_does_not_wrap_assemble_to_what_laying_it_out_whole_gives() {
+        // Without a width to wrap to, the paragraph is as wide as its widest line, which lies in one
+        // chunk or another: the chunks are laid out apart and the width is the widest of them.
+        let cases = [
+            ("left", TextAlign::TopLeft, LineHeight::default(), 300.0, 1.0, false),
+            ("trailing newline", TextAlign::TopLeft, LineHeight::default(), 300.0, 1.0, true),
+            ("fixed line height", TextAlign::MidLeft, LineHeight::Px(30.0), 300.0, 1.0, false),
+            ("scaled", TextAlign::TopLeft, LineHeight::default(), 240.0, 2.0, true),
+        ];
+        for (what, align, line_height, width, scale, trailing) in cases {
+            with_context(width, scale, |ctx| {
+                for include_graphemes in [false, true] {
+                    let whole = clipped(spans(120, trailing), align, line_height)
+                        .compute_layout_whole(ctx, include_graphemes, false);
+                    let chunked = clipped(spans(120, trailing), align, line_height)
+                        .chunked_layout(ctx, include_graphemes, 0)
+                        .unwrap_or_else(|| panic!("{what}: the paragraph was not chunked"));
+                    assert_same(&chunked, &whole, &format!("{what} graphemes={include_graphemes}"));
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn a_chunk_of_text_that_does_not_wrap_keeps_its_layout_when_the_width_it_is_given_changes() {
+        // Nothing in it depends on that width, so a resize does not lay the text out again.
+        let text = note(60);
+        let paragraph = || clipped(markdown_spans(&text), TextAlign::TopLeft, LineHeight::default());
+        with_context(300.0, 1.0, |ctx| {
+            let _ = paragraph().chunked_layout(ctx, true, 0).expect("chunked");
+        });
+        let laid_out = super::chunks_laid_out();
+        with_context(420.0, 1.0, |ctx| {
+            let _ = paragraph().chunked_layout(ctx, true, 0).expect("chunked");
+        });
+        assert_eq!(super::chunks_laid_out(), laid_out);
+    }
+
     /// `spans(lines, ..)` with a box standing for several source lines (a table, a code block)
     /// every so often: the span that holds the lines it stands for is cut out of the runs around
     /// it, as an embed does, and given a box of its own size.
@@ -1137,15 +1195,12 @@ mod tests {
                 LineHeight::default(),
             );
             assert!(single.chunked_layout(ctx, true, 0).is_none());
-            // Text that does not wrap has no width to share.
-            let clipped = Paragraph::with_layout(
-                spans(60, false),
-                TextAlign::TopLeft,
-                TextOverflow::Clip,
-                LineHeight::default(),
-                0.0,
-            );
-            assert!(clipped.chunked_layout(ctx, true, 0).is_none());
+            // Text that does not wrap is as wide as its widest line, and one that is centred or set
+            // to the right is placed by that width, which no chunk knows.
+            for align in [TextAlign::TopCenter, TextAlign::BotRight] {
+                let placed = clipped(spans(60, false), align, LineHeight::default());
+                assert!(placed.chunked_layout(ctx, true, 0).is_none(), "{align:?}");
+            }
             // Short text is not worth it.
             let short = paragraph(spans(60, false), TextAlign::TopLeft, LineHeight::default());
             assert!(short.chunked_layout(ctx, true, usize::MAX).is_none());

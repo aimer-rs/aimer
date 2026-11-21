@@ -315,6 +315,8 @@ struct LocalV2RichTextPaint {
     scale: f32,
     width: f32,
     height: f32,
+    /// How far the text spills outside its box; see [`Paragraph::paint_facts`].
+    outsets: [f32; 4],
 }
 
 impl RawRichText {
@@ -355,22 +357,8 @@ impl RawRichText {
             return None;
         }
         let layout = self.paragraph.layout_for_paint(ctx);
-        if !layout.size.width.is_finite()
-            || !layout.size.height.is_finite()
-            || layout.size.width < 0.0
-            || layout.size.height < 0.0
-            || layout.size.width > 1_000_000.0
-            || layout.size.height > 1_000_000.0
-            || layout.line_heights.iter().any(|height| !height.is_finite())
-            || layout.fragments.iter().any(|fragment| {
-                !fragment.x.is_finite()
-                    || !fragment.baseline.is_finite()
-                    || !fragment.width.is_finite()
-                    || !fragment.height.is_finite()
-                    || fragment.width < 0.0
-                    || fragment.height < 0.0
-            })
-        {
+        let facts = self.paragraph.paint_facts(&layout, scale);
+        if !facts.finite {
             return None;
         }
         Some(LocalV2RichTextPaint {
@@ -378,6 +366,7 @@ impl RawRichText {
             scale,
             width,
             height,
+            outsets: facts.outsets,
         })
     }
 
@@ -842,9 +831,7 @@ impl Drawable for RawRichText {
 
     fn paint_outsets(&self, ctx: &BuildContext) -> Option<[f32; 4]> {
         let data = self.local_v2_paint_data(ctx)?;
-        let outsets = self
-            .paragraph
-            .paint_outsets(&data.layout, data.scale);
+        let outsets = data.outsets;
         outsets
             .iter()
             .any(|outset| *outset > 0.0)
@@ -860,9 +847,7 @@ impl Drawable for RawRichText {
             .local_v2_paint_data(ctx)
             .expect("RawRichText v2 support must be checked before painting");
         let hovered_link = self.retained_v2_hovered_link(ctx, &data);
-        let outsets = self
-            .paragraph
-            .paint_outsets(&data.layout, data.scale);
+        let outsets = data.outsets;
         let origin_offset = aimer_attribute::Vec2d {
             x: outsets[0],
             y: outsets[1],
@@ -1463,6 +1448,52 @@ mod tests {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    /// What painting a layout needs to know of it (that it is finite, what it spills outside its box)
+    /// is the same until its layout, its scale or its box change. The walk asks of every text on every
+    /// frame, and walking every fragment each time is the cost of a long markdown document.
+    #[test]
+    fn what_a_layout_paints_from_is_worked_out_once_however_often_the_text_is_asked() {
+        use aimer_attribute::ResolvedSize;
+        use aimer_canvas::{FrameCanvas, InnerCanvas};
+        use aimer_widget::Drawable;
+        use aimer_widget::base::BuildContext;
+
+        use crate::paragraph::{paint_facts_computations, reset_paint_facts_computations};
+
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let context = |width: f32, height: f32, scale: f32| {
+            let inner: &'static InnerCanvas = Box::leak(Box::new(InnerCanvas::new()));
+            BuildContext::new(
+                FrameCanvas::new(inner),
+                ResolvedSize { width, height },
+                scale,
+                Vec2d::default(),
+                Vec2d::default(),
+                WindowHandle::headless(winit::dpi::PhysicalSize::new(width as u32, height as u32), 1.0),
+                runtime.handle().clone(),
+            )
+        };
+        let text = selectable_raw_text(LinkCallback::default());
+        let derive = |ctx: &BuildContext| {
+            let before = paint_facts_computations();
+            assert!(text.can_paint(ctx));
+            let _ = text.paint_outsets(ctx);
+            paint_facts_computations() - before
+        };
+        reset_paint_facts_computations();
+
+        assert_eq!(derive(&context(200.0, 100.0, 1.0)), 1, "the first time");
+        for _ in 0..10 {
+            assert_eq!(derive(&context(200.0, 100.0, 1.0)), 0, "the same layout in the same box");
+        }
+        assert_eq!(derive(&context(200.0, 100.0, 2.0)), 1, "another scale lays it out again");
+        assert_eq!(derive(&context(200.0, 100.0, 2.0)), 0);
+        assert!(!text.can_paint(&context(200.0, f32::NAN, 2.0)), "a box with no height cannot hold it");
+        assert!(text.can_paint(&context(200.0, 100.0, 2.0)), "and does not poison the next ask");
+        text.paragraph.invalidate();
+        assert_eq!(derive(&context(200.0, 100.0, 2.0)), 1, "a layout that was retired is made again");
+    }
+
     #[test]
     fn selection_highlight_starts_at_the_text_line_top() {
         use aimer_attribute::ResolvedSize;
@@ -1844,6 +1875,7 @@ mod tests {
                         style: TextStyle::default(),
                         link: Some(link_target.clone()),
                         inline_box: None,
+                        background_radius: None,
                     },
                     ResolvedTextSpan::plain(Rc::from("tail"), TextStyle::default()),
                 ],
@@ -1919,6 +1951,7 @@ mod tests {
             style: TextStyle::new().background_color(aimer_widget::base::Color::RED),
             link: Some(TextSource::from("https://aimer.dev")),
             inline_box: None,
+            background_radius: None,
         };
         let highlighted = RawRichText {
             paragraph: Paragraph::new(

@@ -32,14 +32,22 @@ pub struct TextArea {
     expand: bool,
     tab_spaces: Option<usize>,
     wrap: bool,
+    clip_to_padding: bool,
     line_numbers: Option<LineNumbers>,
     gutter_markers: Option<GutterMarkers>,
     pointer_holes: Option<PointerHoles>,
     on_force_click: Option<ForceClick>,
+    on_force_click_at: Option<crate::input_field::raw_fields::ForceClickAt>,
     on_command_click: Option<CommandClick>,
+    on_command_click_at: Option<crate::input_field::raw_fields::CommandClickAt>,
+    context_menu_extras: Option<crate::input_field::context_menu::ContextMenuExtender>,
+    context_menu_style: Option<aimer_ctxmenu::ContextMenuStyle>,
     link_range: Option<LinkRange>,
     locate_color: Option<Color>,
     line_bars: Option<LineBars>,
+    line_labels: Option<crate::input_field::line_labels::LineLabels>,
+    inlays: Option<crate::input_field::inlay::Inlays>,
+    underlines: Option<crate::input_field::underline::Underlines>,
     line_break_prefix: Option<Rc<dyn Fn(&str) -> Option<String>>>,
     current_line: Option<Color>,
 }
@@ -58,14 +66,22 @@ impl TextArea {
             expand: false,
             tab_spaces: None,
             wrap: true,
+            clip_to_padding: true,
             line_numbers: None,
             gutter_markers: None,
             pointer_holes: None,
             on_force_click: None,
+            on_force_click_at: None,
             on_command_click: None,
+            on_command_click_at: None,
+            context_menu_extras: None,
+            context_menu_style: None,
             link_range: None,
             locate_color: None,
             line_bars: None,
+            line_labels: None,
+            inlays: None,
+            underlines: None,
             line_break_prefix: None,
             current_line: None,
         }
@@ -193,6 +209,28 @@ impl TextArea {
         self
     }
 
+    /// Chooses whether the text is cut off at the padding of the area, above and below. The default is `true`: the padding is a band
+    /// that the text does not enter.
+    ///
+    /// With `false` the padding above and below is a margin of the text and not a band beside it: the first line starts below
+    /// the top padding and the last ends above the bottom one, as before, but a text that is scrolled shows through them, and
+    /// is cut only at the edge of the area. That is what a code editor wants of the room it leaves round the text, which is not to
+    /// take a strip of the view from it. The sides are not changed: a margin of line numbers is beside the text, and text that is
+    /// scrolled sideways does not go over it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_input::TextArea;
+    ///
+    /// let editor = TextArea::new().clip_to_padding(false);
+    /// ```
+    #[inline]
+    pub fn clip_to_padding(mut self, clip: bool) -> Self {
+        self.clip_to_padding = clip;
+        self
+    }
+
     /// Chooses whether long lines wrap to the width of the area. The default is `true`.
     ///
     /// An area that does not wrap shows each line on one row, however long, and scrolls sideways
@@ -233,6 +271,14 @@ impl TextArea {
         self
     }
 
+    /// Like [`on_force_click`](Self::on_force_click), and told where the pointer was as well, as a point of the field:
+    /// for what opens beside the name that was pressed. Both are called, if both are set.
+    #[inline]
+    pub fn on_force_click_at(mut self, on_force_click_at: impl Fn(usize, crate::input_field::line_labels::FieldSpot) + 'static) -> Self {
+        self.on_force_click_at = Some(std::rc::Rc::new(on_force_click_at));
+        self
+    }
+
     /// Sets what is called when the text is clicked with the platform's jump key held: Command on Apple systems and
     /// Control elsewhere (see `Modifiers::command`). It is called once for each click, with the byte of the text under
     /// the pointer, a frame after the press, when the layout can say which it is. The click moves nothing: it does not
@@ -241,6 +287,39 @@ impl TextArea {
     #[inline]
     pub fn on_command_click(mut self, on_command_click: impl Fn(usize) + 'static) -> Self {
         self.on_command_click = Some(std::rc::Rc::new(on_command_click));
+        self
+    }
+
+    /// Like [`on_command_click`](Self::on_command_click), and told where the pointer was as well, as a point of the field: for what
+    /// opens beside the name that was clicked, as [`on_force_click_at`](Self::on_force_click_at) is. Both are called, if both are set,
+    /// and the name under the pointer is a link while the jump key is held if either is.
+    #[inline]
+    pub fn on_command_click_at(mut self, on_command_click_at: impl Fn(usize, crate::input_field::line_labels::FieldSpot) + 'static) -> Self {
+        self.on_command_click_at = Some(std::rc::Rc::new(on_command_click_at));
+        self
+    }
+
+    /// Sets what is asked what to add to the context menu, each time one is raised by a right click or a long press: rows that go before the
+    /// clipboard verbs the field offers, and rows that go after them, each of which does what it was given when it is chosen. The callback is
+    /// told what is selected and where the pointer was, which is what an editor decides its rows by, such as whether the name under it can be
+    /// renamed.
+    ///
+    /// Without it the menu is only the clipboard verbs, and with it a field that has nothing to cut, copy or paste still has a menu.
+    #[inline]
+    pub fn context_menu_items(
+        mut self,
+        items: impl Fn(&crate::input_field::context_menu::ContextMenuRequest) -> crate::input_field::context_menu::ContextMenuExtras + 'static,
+    ) -> Self {
+        self.context_menu_extras = Some(std::rc::Rc::new(items));
+        self
+    }
+
+    /// Sets the look of the context menu that a right click raises: its panel, labels, rows, hints and lines, as a
+    /// [`ContextMenuStyle`](aimer_ctxmenu::ContextMenuStyle) styles any menu. It is the look of the list a desktop gets; the pill that a long
+    /// press raises on a touch screen keeps the look that suits a finger.
+    #[inline]
+    pub fn context_menu_style(mut self, style: aimer_ctxmenu::ContextMenuStyle) -> Self {
+        self.context_menu_style = Some(style);
         self
     }
 
@@ -302,10 +381,44 @@ impl TextArea {
         self
     }
 
+    /// Offers `filter` the text that was typed before the area inserts it, and keeps it from the area by answering
+    /// `true`; see [`TextField::on_text_input`]. A code editor closes a bracket this way.
+    #[inline]
+    pub fn on_text_input(mut self, filter: impl Fn(&str) -> bool + 'static) -> Self {
+        self.field = self.field.on_text_input(filter);
+        self
+    }
+
     /// Draws a bar down the left of the lines `bars` gives one, behind the text; see [`LineBars`].
     #[inline]
     pub fn line_bars(mut self, bars: impl Into<Option<LineBars>>) -> Self {
         self.line_bars = bars.into();
+        self
+    }
+
+    /// Draws the notes of `inlays` inside the lines, such as the type of a name that a language server knows; see [`Inlays`].
+    /// The text is not changed: the notes are room in a line, and are not edited, selected or copied.
+    ///
+    /// A note is not drawn at the start of a line or at the end of the text, and not in a field that hides its text.
+    #[inline]
+    pub fn inlays(mut self, inlays: impl Into<Option<crate::input_field::inlay::Inlays>>) -> Self {
+        self.inlays = inlays.into();
+        self
+    }
+
+    /// Draws the lines of `underlines` under ranges of the text, such as under what a language server says is an error. The text is
+    /// not changed: a line is not edited, selected or copied. A line is straight, a little above the bottom of the text's line, with
+    /// rounded ends, and is drawn a line of text at a time under a range that has more than one.
+    #[inline]
+    pub fn underlines(mut self, underlines: impl Into<Option<crate::input_field::underline::Underlines>>) -> Self {
+        self.underlines = underlines.into();
+        self
+    }
+
+    /// Puts a label after the end of the lines `labels` gives one, which can have buttons in it; see [`LineLabels`].
+    #[inline]
+    pub fn line_labels(mut self, labels: impl Into<Option<crate::input_field::line_labels::LineLabels>>) -> Self {
+        self.line_labels = labels.into();
         self
     }
 
@@ -404,6 +517,27 @@ impl TextArea {
     #[inline]
     pub fn selection_color(mut self, selection_color: impl Into<Color>) -> Self {
         self.field = self.field.selection_color(selection_color);
+        self
+    }
+
+    /// Tells `hover` of the name the pointer rests on, and takes it back when the pointer goes; see [`TextField::on_hover`].
+    #[inline]
+    pub fn on_hover(mut self, hover: crate::input_field::hover::TextHover) -> Self {
+        self.field = self.field.on_hover(hover);
+        self
+    }
+
+    /// Boxes what `marks` says of where the caret is, and marks it for a moment when it changes; see [`TextField::caret_marks`].
+    #[inline]
+    pub fn caret_marks(mut self, marks: crate::input_field::caret_marks::CaretMarks) -> Self {
+        self.field = self.field.caret_marks(marks);
+        self
+    }
+
+    /// Rounds the corners of the selection, and joins its lines into one shape; see [`TextField::selection_radius`].
+    #[inline]
+    pub fn selection_radius(mut self, radius: f32) -> Self {
+        self.field = self.field.selection_radius(radius);
         self
     }
 
@@ -572,14 +706,22 @@ impl TextArea {
             .map(|max_lines| max_lines.max(config.min_lines.unwrap_or(1)));
         config.tab_spaces = self.tab_spaces;
         config.wrap = self.wrap;
+        config.clip_to_padding = self.clip_to_padding;
         config.line_numbers = self.line_numbers;
         config.gutter_markers = self.gutter_markers.clone();
         config.pointer_holes = self.pointer_holes.clone();
         config.on_force_click = self.on_force_click.clone();
+        config.on_force_click_at = self.on_force_click_at.clone();
         config.on_command_click = self.on_command_click.clone();
+        config.on_command_click_at = self.on_command_click_at.clone();
+        config.context_menu_extras = self.context_menu_extras.clone();
+        config.context_menu_style = self.context_menu_style.clone();
         config.link_range = self.link_range.clone();
         config.locate_color = self.locate_color;
         config.line_bars = self.line_bars.clone();
+        config.line_labels = self.line_labels.clone();
+        config.inlays = self.inlays.clone();
+        config.underlines = self.underlines.clone();
         config.line_break_prefix = self.line_break_prefix.clone();
         config.current_line = self.current_line;
         config.expand = if self.expand {
@@ -679,6 +821,17 @@ mod tests {
         assert_eq!(state.config().tab_spaces, Some(4));
         let state = TextArea::new().tab_spaces(4).tab_spaces(None).create_state::<TextFieldState>();
         assert_eq!(state.config().tab_spaces, None);
+    }
+
+    #[test]
+    fn the_text_is_clipped_to_the_padding_unless_asked_not_to() {
+        let state = TextArea::new().create_state::<TextFieldState>();
+        assert!(state.config().clip_to_padding, "the padding is where the text is cut, as it always was");
+
+        let state = TextArea::new().clip_to_padding(false).create_state::<TextFieldState>();
+        assert!(!state.config().clip_to_padding);
+        let state = TextArea::new().clip_to_padding(false).clip_to_padding(true).create_state::<TextFieldState>();
+        assert!(state.config().clip_to_padding);
     }
 
     #[test]

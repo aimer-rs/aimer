@@ -121,6 +121,7 @@ pub(crate) fn resolve_ranges(
         }
         let mut span = plain_slice(source, start..end, style.resolve(base));
         span.inline_box = style.inline_box;
+        span.background_radius = style.background_radius;
         spans.push(span);
         cursor = end;
     }
@@ -206,6 +207,19 @@ mod tests {
         assert_eq!(pieces(&spans), ["let", " x = ", "1"]);
         assert_eq!(red_of(&spans[2]), Some(2));
         assert_eq!(red_of(&spans[1]), None);
+    }
+
+    #[test]
+    fn a_range_keeps_the_background_radius_of_its_style() {
+        let chip = SpanStyle::new()
+            .background_color(aimer_widget::base::Color::RED)
+            .background_radius(4.0);
+        let spans = resolve("a `b` c", &[StyledRange::new(2..5, chip)]);
+
+        assert_eq!(pieces(&spans), ["a ", "`b`", " c"]);
+        assert_eq!(spans[0].background_radius, None);
+        assert_eq!(spans[1].background_radius, Some(4.0));
+        assert_eq!(spans[2].background_radius, None);
     }
 
     #[test]

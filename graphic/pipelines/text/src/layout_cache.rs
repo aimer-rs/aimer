@@ -19,9 +19,11 @@
 //! transient-width entries is shed without ever taking the live screen's
 //! layouts with it.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
+use std::sync::Arc;
 
 use super::cache_key::LayoutCacheKey;
+use super::paint_cache::{CachedTextPaint, PaintVariant};
 use super::recency_cache::RecencyCache;
 use super::text_layout::{PositionedGlyph, PositionedTextLayout};
 use crate::glyph_rasterizer::GlyphKey;
@@ -35,15 +37,42 @@ use hashbrown::HashSet;
 /// same few dozen questions over and over. [`distinct_glyphs`](Self::distinct_glyphs) is that
 /// few dozen, found by one pass over the layout the first time they are wanted and kept as long
 /// as the layout is.
-struct CachedLayout {
+pub(super) struct CachedLayout {
     layout: PositionedTextLayout,
     distinct: OnceCell<Box<[(GlyphKey, f32)]>>,
+    /// The paint template last made from this layout, and what it was made for.
+    paint: RefCell<Option<PaintMemo>>,
+}
+
+/// A paint template remembered with the layout it was made from.
+struct PaintMemo {
+    variant: PaintVariant,
+    /// The generation of templates it belongs to; see `TextPaintCache::epoch`.
+    epoch: u64,
+    paint: Arc<CachedTextPaint>,
 }
 
 impl CachedLayout {
+    /// The template last remembered for this layout, if it was made for `variant` and is of the
+    /// templates' generation `epoch`: the layout is already in hand, so this is the paint without
+    /// building and hashing a key of the layout's text for the table of templates.
+    pub(super) fn remembered_paint(&self, variant: &PaintVariant, epoch: u64) -> Option<Arc<CachedTextPaint>> {
+        self.paint
+            .borrow()
+            .as_ref()
+            .filter(|memo| memo.epoch == epoch && memo.variant == *variant)
+            .map(|memo| Arc::clone(&memo.paint))
+    }
+
+    /// Remembers `paint` as made for `variant` in the templates' generation `epoch`, in place of
+    /// what was remembered. One is kept for a layout: the same text drawn two ways takes turns.
+    fn remember_paint(&self, variant: PaintVariant, epoch: u64, paint: Arc<CachedTextPaint>) {
+        *self.paint.borrow_mut() = Some(PaintMemo { variant, epoch, paint });
+    }
+
     /// Each glyph key of the layout once, in the order it is first drawn, with the font size
     /// of that first glyph.
-    fn distinct_glyphs(&self) -> &[(GlyphKey, f32)] {
+    pub(super) fn distinct_glyphs(&self) -> &[(GlyphKey, f32)] {
         self.distinct.get_or_init(|| {
             let mut seen = HashSet::new();
             self.layout
@@ -121,25 +150,17 @@ impl LayoutCache {
         self.cache.touch(key)
     }
 
-    /// Returns the first resident entry among `primary` and `fallback`,
-    /// stamping it as used by the current frame.
+    /// Whether the first of `primary` and `fallback` that is resident is, stamping it as used by
+    /// the current frame: one lookup when the primary is.
     ///
-    /// The two-key read serves canonicalized layouts: a span whose wrapping
-    /// width was canonicalized away may still be cached under the width its
-    /// shaping-less first frame keyed it by.
-    pub(super) fn get_with_fallback(
+    /// The two-key read serves canonicalized layouts: a span whose wrapping width was canonicalized
+    /// away may still be cached under the width its shaping-less first frame keyed it by.
+    pub(super) fn touch_with_fallback(
         &mut self,
         primary: &LayoutCacheKey,
         fallback: Option<&LayoutCacheKey>,
-    ) -> Option<&[PositionedGlyph]> {
-        if self.touch(primary) {
-            return self.peek(primary);
-        }
-        let fallback = fallback?;
-        if self.touch(fallback) {
-            return self.peek(fallback);
-        }
-        None
+    ) -> bool {
+        self.cache.with_first(primary, fallback, |_| ()).is_some()
     }
 
     /// Returns the first resident entry among `primary` and `fallback`
@@ -153,15 +174,32 @@ impl LayoutCache {
             .or_else(|| fallback.and_then(|key| self.peek(key)))
     }
 
-    /// The distinct glyphs of the first resident entry among `primary` and `fallback`, stamping
-    /// it as used by the current frame; see [`CachedLayout::distinct_glyphs`].
-    pub(super) fn distinct_glyphs_with_fallback(
+    /// Reads the first resident entry among `primary` and `fallback` through `read`, stamping it as
+    /// used by the current frame: its glyphs by [`CachedLayout::distinct_glyphs`] and the paint
+    /// remembered with it by [`CachedLayout::remembered_paint`]. One lookup when the primary is
+    /// resident.
+    pub(super) fn with_layout_with_fallback<R>(
         &mut self,
         primary: &LayoutCacheKey,
         fallback: Option<&LayoutCacheKey>,
-    ) -> Option<&[(GlyphKey, f32)]> {
-        let key = if self.touch(primary) { primary } else { fallback.filter(|key| self.touch(key))? };
-        self.cache.peek(key).map(CachedLayout::distinct_glyphs)
+        read: impl FnOnce(&CachedLayout) -> R,
+    ) -> Option<R> {
+        self.cache.with_first(primary, fallback, read)
+    }
+
+    /// Remembers `paint` with the first resident entry among `primary` and `fallback`, as made for
+    /// `variant` in the templates' generation `epoch`; whether there was one to remember it with.
+    pub(super) fn remember_paint(
+        &mut self,
+        primary: &LayoutCacheKey,
+        fallback: Option<&LayoutCacheKey>,
+        variant: PaintVariant,
+        epoch: u64,
+        paint: Arc<CachedTextPaint>,
+    ) -> bool {
+        self.cache
+            .with_first(primary, fallback, |entry| entry.remember_paint(variant, epoch, paint))
+            .is_some()
     }
 
     /// [`distinct_glyphs_with_fallback`](Self::distinct_glyphs_with_fallback) without stamping,
@@ -207,7 +245,7 @@ impl LayoutCache {
     pub(super) fn insert(&mut self, key: LayoutCacheKey, layout: impl Into<PositionedTextLayout>) {
         let layout = layout.into();
         let bytes = layout.heap_bytes();
-        self.cache.insert(key, CachedLayout { layout, distinct: OnceCell::new() }, bytes);
+        self.cache.insert(key, CachedLayout { layout, distinct: OnceCell::new(), paint: RefCell::new(None) }, bytes);
     }
 
     /// Inserts every layout of `layouts`, each stamped as used by the current
@@ -224,7 +262,7 @@ impl LayoutCache {
 
 #[cfg(test)]
 mod tests {
-    use super::LayoutCache;
+    use super::{CachedLayout, LayoutCache};
     use crate::glyph_rasterizer::GlyphKey;
     use crate::font::{FontFamily, FontStyle, FontWeight};
     use crate::cache_key::LayoutCacheKey;
@@ -266,7 +304,7 @@ mod tests {
         let glyphs: Vec<_> = [1, 2, 3, 1, 4, 1, 5, 1, 2, 3, 1].iter().map(|&id| glyph(id, 16.0)).chain([glyph(1, 24.0)]).collect();
         cache.insert(key("abracadabra", 100.0), glyphs);
 
-        let distinct = cache.distinct_glyphs_with_fallback(&key("abracadabra", 100.0), None).unwrap();
+        let distinct = cache.with_layout_with_fallback(&key("abracadabra", 100.0), None, |entry| entry.distinct_glyphs().to_vec()).unwrap();
 
         let ids: Vec<(u16, u32)> = distinct.iter().map(|(key, _)| (key.glyph_id, key.size_tenths)).collect();
         assert_eq!(ids, [(1, 160), (2, 160), (3, 160), (4, 160), (5, 160), (1, 240)]);
@@ -279,9 +317,10 @@ mod tests {
         cache.begin_frame();
         cache.insert(key("a", 100.0), vec![glyph(7, 16.0), glyph(7, 16.0)]);
 
-        assert_eq!(cache.distinct_glyphs_with_fallback(&key("a", 999.0), Some(&key("a", 100.0))).unwrap().len(), 1);
-        assert!(cache.distinct_glyphs_with_fallback(&key("a", 999.0), None).is_none());
-        assert!(cache.distinct_glyphs_with_fallback(&key("a", 999.0), Some(&key("b", 1.0))).is_none());
+        let distinct = |entry: &CachedLayout| entry.distinct_glyphs().len();
+        assert_eq!(cache.with_layout_with_fallback(&key("a", 999.0), Some(&key("a", 100.0)), distinct), Some(1));
+        assert!(cache.with_layout_with_fallback(&key("a", 999.0), None, distinct).is_none());
+        assert!(cache.with_layout_with_fallback(&key("a", 999.0), Some(&key("b", 1.0)), distinct).is_none());
         assert_eq!(cache.peek_distinct_glyphs_with_fallback(&key("a", 100.0), None).unwrap().len(), 1);
     }
 
@@ -292,12 +331,96 @@ mod tests {
         cache.insert(key("kept", 100.0), vec![glyph(1, 16.0)]);
         cache.insert(key("dropped", 100.0), vec![glyph(2, 16.0)]);
         cache.begin_frame();
-        assert!(cache.distinct_glyphs_with_fallback(&key("kept", 100.0), None).is_some());
+        assert!(cache.with_layout_with_fallback(&key("kept", 100.0), None, |entry| entry.distinct_glyphs().len()).is_some());
 
         cache.begin_frame();
 
         assert!(cache.peek(&key("kept", 100.0)).is_some());
         assert!(cache.peek(&key("dropped", 100.0)).is_none());
+    }
+
+    fn paint(glyphs: usize) -> std::sync::Arc<crate::paint_cache::CachedTextPaint> {
+        std::sync::Arc::new(crate::paint_cache::CachedTextPaint {
+            glyphs: Vec::with_capacity(glyphs),
+            advance_x: glyphs as f32,
+            advance_y: 0.0,
+            shadow: None,
+            shadow_coverage_exponent: 1.0,
+        })
+    }
+
+    fn variant(italic: bool) -> crate::paint_cache::PaintVariant {
+        use crate::font::{FontFamily, FontStyle};
+        use crate::text_layout::{TextHorizontalAlign, TextWritingMode};
+        use crate::utilities::Rgba8;
+        use crate::{TextDrawRequest, TextOverflowMode};
+
+        let request = TextDrawRequest {
+            x: 0.0,
+            y: 0.0,
+            text: std::sync::Arc::from("a"),
+            font_size: 16.0,
+            color: Rgba8::new(0, 0, 0, 255),
+            bounds_width: 100.0,
+            bounds_height: 20.0,
+            overflow: TextOverflowMode::Clip,
+            horizontal_align: TextHorizontalAlign::Left,
+            writing_mode: TextWritingMode::HorizontalTb,
+            line_height: None,
+            shadow: None,
+            draw_glyphs: true,
+            font_family: FontFamily::SANS_SERIF,
+            font_style: FontStyle::Normal,
+            font_weight: None,
+            language: None,
+            italic: false,
+            clip_rect: [0.0, 0.0, 100.0, 20.0],
+            clip_border_radius: [0.0; 4],
+            spans: Vec::new(),
+            alpha_ramp: None,
+        };
+        crate::paint_cache::PaintVariant::new(&request, 400, italic)
+    }
+
+    /// The template a layout was last painted from is remembered with the layout, for the variant and
+    /// the epoch it was made for and for no other, so a frame that finds the layout finds its paint.
+    #[test]
+    fn a_paint_remembered_with_a_layout_is_given_back_for_its_variant_and_epoch_only() {
+        let mut cache = LayoutCache::new(8);
+        cache.begin_frame();
+        cache.insert(key("a", 100.0), vec![glyph(1, 16.0)]);
+        let (plain, slanted) = (variant(false), variant(true));
+        let remembered = paint(3);
+        let recall = |cache: &mut LayoutCache, variant: &crate::paint_cache::PaintVariant, epoch: u64| {
+            cache.with_layout_with_fallback(&key("a", 100.0), None, |entry| entry.remembered_paint(variant, epoch)).unwrap()
+        };
+
+        assert!(recall(&mut cache, &plain, 7).is_none(), "nothing yet");
+        assert!(cache.remember_paint(&key("a", 100.0), None, plain.clone(), 7, remembered.clone()));
+        assert!(std::sync::Arc::ptr_eq(&recall(&mut cache, &plain, 7).expect("remembered"), &remembered));
+        assert!(recall(&mut cache, &slanted, 7).is_none(), "another variant is another template");
+        assert!(recall(&mut cache, &plain, 8).is_none(), "and so is another epoch: the atlas moved");
+
+        // A newer one replaces it, and what is not resident cannot remember.
+        let newer = paint(4);
+        assert!(cache.remember_paint(&key("a", 100.0), None, slanted.clone(), 7, newer.clone()));
+        assert!(std::sync::Arc::ptr_eq(&recall(&mut cache, &slanted, 7).expect("the newer"), &newer));
+        assert!(recall(&mut cache, &plain, 7).is_none(), "one template is kept for a layout");
+        assert!(!cache.remember_paint(&key("absent", 1.0), None, plain, 7, remembered));
+    }
+
+    #[test]
+    fn a_paint_is_remembered_with_the_layout_the_fallback_names_when_the_primary_is_not_resident() {
+        let mut cache = LayoutCache::new(8);
+        cache.begin_frame();
+        cache.insert(key("a", 100.0), vec![glyph(1, 16.0)]);
+        let plain = variant(false);
+        let remembered = paint(1);
+
+        assert!(cache.remember_paint(&key("a", 999.0), Some(&key("a", 100.0)), plain.clone(), 1, remembered.clone()));
+
+        let recalled = cache.with_layout_with_fallback(&key("a", 100.0), None, |entry| entry.remembered_paint(&plain, 1)).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&recalled.expect("remembered"), &remembered));
     }
 
     #[test]
