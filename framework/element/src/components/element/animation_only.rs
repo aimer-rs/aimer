@@ -574,7 +574,16 @@ pub fn run_animation_only_pass(targets: &[(ElementId, &dyn Element)], canvas: &F
             registration.touched = false;
         }
     });
-    for (id, element) in targets {
+    // Targets were resolved before the pass. Updating one can rebuild a stateful
+    // ancestor and drop the subtree holding a later target, leaving its pointer
+    // dangling, so the pass stops once the tree generation moves.
+    let generation = element_tree_generation();
+    let mut aborted_at = None;
+    for (position, (id, element)) in targets.iter().enumerate() {
+        if element_tree_generation() != generation {
+            aborted_at = Some(position);
+            break;
+        }
         // The registry is released before the element runs: it registers itself
         // again from inside `update`.
         let revisit = REGISTRY.with(|registry| {
@@ -591,6 +600,19 @@ pub fn run_animation_only_pass(targets: &[(ElementId, &dyn Element)], canvas: &F
             element.update(&ctx);
             ctx.canvas.restore();
         }
+    }
+    if let Some(position) = aborted_at {
+        // The targets not reached keep their registrations, and the next frame
+        // is requested so the full walk revisits whatever the rebuild produced.
+        REGISTRY.with(|registry| {
+            let mut registry = registry.borrow_mut();
+            for (id, _) in &targets[position..] {
+                if let Some(registration) = registry.get_mut(id) {
+                    registration.touched = true;
+                }
+            }
+        });
+        note_frame_requested();
     }
     // An animator that did not ask for another frame has finished. A rebuilt
     // root stays until the next full walk, because the next rebuild of the same

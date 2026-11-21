@@ -1,0 +1,1 @@
+CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="-Zsanitizer=address" CARGO_TARGET_DIR="../agents/target_asan" cargo +nightly run -p jaime --bin jaime --target  aarch64-apple-darwin
