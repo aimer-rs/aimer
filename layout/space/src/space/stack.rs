@@ -135,25 +135,42 @@ struct CachedHitTestIndex {
     outside: Rc<[usize]>,
 }
 
+/// Candidate range that co-owns its backing list, so a visitor that retires the
+/// cache (painting rebuilds bounds) cannot leave the walk reading freed memory.
+struct CandidateSlice {
+    list: Rc<[usize]>,
+    start: usize,
+    end: usize,
+}
+
+impl CandidateSlice {
+    #[inline]
+    fn as_slice(&self) -> &[usize] {
+        &self.list[self.start..self.end]
+    }
+}
+
 impl CachedHitTestIndex {
     #[inline]
-    fn candidates(&self, y: f32) -> Option<&[usize]> {
+    fn candidates(&self, y: f32) -> Option<CandidateSlice> {
         if self.dense || !y.is_finite() {
             return None;
         }
 
-        let candidates = if y < self.min_y || y > self.max_y {
-            self.outside.as_ref()
+        let (list, start, end) = if y < self.min_y || y > self.max_y {
+            (&self.outside, 0, self.outside.len())
         } else {
             let bin = ((y - self.min_y) / self.bin_height)
                 .floor()
                 .clamp(0.0, (HIT_TEST_BIN_COUNT - 1) as f32) as usize;
-            let start = self.offsets[bin];
-            let end = self.offsets[bin + 1];
-            &self.children[start..end]
+            (&self.children, self.offsets[bin], self.offsets[bin + 1])
         };
 
-        (candidates.len().saturating_mul(2) <= self.child_count).then_some(candidates)
+        ((end - start).saturating_mul(2) <= self.child_count).then(|| CandidateSlice {
+            list: Rc::clone(list),
+            start,
+            end,
+        })
     }
 }
 
@@ -411,6 +428,7 @@ impl RawStackElement {
                 .and_then(|index| index.candidates(pos.y))
         };
         if let Some(candidates) = candidates {
+            let candidates = candidates.as_slice();
             let reachable = self.reachable_layers(candidates.iter().copied(), candidates.len(), pos);
             self.note_pointer_covered(reachable < candidates.len());
             let candidates = &candidates[..reachable];
