@@ -106,3 +106,32 @@ fn keys_that_are_not_shortcut_material_yield_no_chord() {
     assert_eq!(KeyChord::from_event(&NamedKey::Other("".into()), &none), None);
     assert_eq!(KeyChord::from_event(&NamedKey::Other("F0".into()), &none), None);
 }
+
+#[test]
+fn a_double_tap_is_a_key_that_takes_no_modifier() {
+    let double_shift = KeyChord::new(ChordMods::NONE, Key::DoubleTap(SHIFT));
+    assert_eq!(parse("DoubleShift"), double_shift);
+    assert_eq!(parse("doubleshift").to_string(), "DoubleShift");
+    assert_eq!(parse(&double_shift.to_string()), double_shift);
+    assert_eq!(parse("DoubleCmd"), KeyChord::new(ChordMods::NONE, Key::DoubleTap(META)));
+    assert_eq!(parse("DoubleCtrl").to_string(), "DoubleCtrl");
+    assert_eq!(parse("DoubleAlt").to_string(), "DoubleAlt");
+    assert_eq!(parse("DoubleMeta").to_string(), "DoubleMeta");
+}
+
+#[test]
+fn a_double_tap_with_a_modifier_does_not_parse() {
+    // The tap is the whole gesture: nothing is held with it.
+    assert!(KeyChord::parse_with_primary("Ctrl+DoubleShift", META).is_err());
+    assert!(KeyChord::parse_with_primary("Shift+DoubleShift", META).is_err());
+}
+
+#[test]
+fn the_window_reports_a_double_tap_as_a_named_key() {
+    let none = Modifiers::default();
+    assert_eq!(
+        KeyChord::from_event(&NamedKey::Other("DoubleShift".into()), &none),
+        Some(KeyChord::new(ChordMods::NONE, Key::DoubleTap(SHIFT)))
+    );
+    assert_eq!(KeyChord::from_event(&NamedKey::Other("DoubleNothing".into()), &none), None);
+}

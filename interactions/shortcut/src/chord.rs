@@ -96,11 +96,45 @@ pub enum Key {
     PageDown,
     /// A function key, `F1` to [`Key::MAX_FUNCTION`].
     F(u8),
+    /// A modifier key tapped twice, as `DoubleShift`: the whole gesture, so a chord with this key holds no modifier.
+    ///
+    /// Holds exactly one modifier; use [`Key::double_tap`] to make one. It is recognized by [`DoubleTap`](crate::DoubleTap)
+    /// and reaches the tree as the named key `DoubleShift` (or `DoubleCtrl`, `DoubleAlt`, `DoubleMeta`).
+    DoubleTap(ChordMods),
 }
 
 impl Key {
     /// The highest function key number a chord can name.
     pub const MAX_FUNCTION: u8 = 24;
+
+    /// The double tap of `modifier`, or `None` unless it is exactly one modifier.
+    pub const fn double_tap(modifier: ChordMods) -> Option<Self> {
+        match modifier {
+            ChordMods::CTRL | ChordMods::ALT | ChordMods::SHIFT | ChordMods::META => {
+                Some(Self::DoubleTap(modifier))
+            }
+            _ => None,
+        }
+    }
+
+    /// The name a double tap goes by in text and as a named key, and the modifier it taps.
+    const DOUBLE_TAPS: [(&'static str, ChordMods); 4] = [
+        ("DoubleCtrl", ChordMods::CTRL),
+        ("DoubleAlt", ChordMods::ALT),
+        ("DoubleShift", ChordMods::SHIFT),
+        ("DoubleMeta", ChordMods::META),
+    ];
+
+    /// The double tap `name` stands for, matched without regard to case, with `DoubleCmd` as `DoubleMeta`.
+    fn double_tap_named(name: &str) -> Option<Self> {
+        if name.eq_ignore_ascii_case("DoubleCmd") {
+            return Some(Self::DoubleTap(ChordMods::META));
+        }
+        Self::DOUBLE_TAPS
+            .iter()
+            .find(|(double, _)| double.eq_ignore_ascii_case(name))
+            .map(|&(_, modifier)| Self::DoubleTap(modifier))
+    }
 
     fn from_name(name: &str) -> Option<Self> {
         let mut chars = name.chars();
@@ -125,7 +159,7 @@ impl Key {
             "end" => Self::End,
             "pageup" => Self::PageUp,
             "pagedown" => Self::PageDown,
-            _ => return Self::function_key(&lower),
+            _ => return Self::double_tap_named(name).or_else(|| Self::function_key(&lower)),
         })
     }
 
@@ -158,7 +192,8 @@ impl Key {
                     (Some(c), None) => (!c.is_control() && !c.is_whitespace())
                         .then(|| Self::Char(c.to_lowercase().next().unwrap_or(c))),
                     _ if name == "Space" => Some(Self::Space),
-                    _ => Self::function_key(&name.to_ascii_lowercase()),
+                    _ => Self::double_tap_named(name)
+                        .or_else(|| Self::function_key(&name.to_ascii_lowercase())),
                 };
             }
         })
@@ -178,6 +213,8 @@ pub enum ParseChordError {
     DuplicateModifier(String),
     /// A key was followed by more segments; the key must come last.
     KeyNotLast(String),
+    /// A double tap was written with modifiers: carries the double tap. The tap is the whole gesture.
+    ModifierWithDoubleTap(String),
 }
 
 impl fmt::Display for ParseChordError {
@@ -188,6 +225,9 @@ impl fmt::Display for ParseChordError {
             Self::MissingKey => f.write_str("key chord has modifiers but no key"),
             Self::DuplicateModifier(name) => write!(f, "modifier `{name}` appears twice"),
             Self::KeyNotLast(name) => write!(f, "key `{name}` must be the last part of a chord"),
+            Self::ModifierWithDoubleTap(name) => {
+                write!(f, "`{name}` is a gesture of its own and takes no modifier")
+            }
         }
     }
 }
@@ -274,7 +314,11 @@ impl KeyChord {
                 }
             }
         }
-        key.map(|(key, _)| Self { mods, key }).ok_or(ParseChordError::MissingKey)
+        let (key, name) = key.ok_or(ParseChordError::MissingKey)?;
+        if matches!(key, Key::DoubleTap(_)) && !mods.is_empty() {
+            return Err(ParseChordError::ModifierWithDoubleTap(name.to_owned()));
+        }
+        Ok(Self { mods, key })
     }
 
     /// Parses `text`, resolving `CmdOrCtrl` for the platform this runs on.
@@ -343,6 +387,13 @@ impl fmt::Display for Key {
             Self::PageUp => f.write_str("PageUp"),
             Self::PageDown => f.write_str("PageDown"),
             Self::F(n) => write!(f, "F{n}"),
+            Self::DoubleTap(modifier) => {
+                let name = Self::DOUBLE_TAPS
+                    .iter()
+                    .find(|(_, tapped)| tapped == modifier)
+                    .map_or("DoubleTap", |&(name, _)| name);
+                f.write_str(name)
+            }
         }
     }
 }

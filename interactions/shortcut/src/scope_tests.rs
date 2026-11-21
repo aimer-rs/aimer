@@ -63,3 +63,22 @@ fn live_scopes_are_counted_so_unused_apps_pay_nothing() {
     drop(other);
     assert!(!scopes_alive());
 }
+
+#[test]
+fn a_scope_that_watches_the_modifiers_is_told_what_is_held() {
+    let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let log = Rc::clone(&seen);
+    let scope = ShortcutScope::new().watch_modifiers(move |held| log.borrow_mut().push(held));
+
+    scope.modifiers_changed(crate::ChordMods::SHIFT);
+    scope.modifiers_changed(crate::ChordMods::NONE);
+    assert_eq!(&*seen.borrow(), &[crate::ChordMods::SHIFT, crate::ChordMods::NONE]);
+}
+
+#[test]
+fn a_scope_that_does_not_watch_the_modifiers_ignores_them() {
+    let scope = ShortcutScope::new();
+    assert!(!scope.watches_modifiers());
+    scope.modifiers_changed(crate::ChordMods::SHIFT);
+    assert!(ShortcutScope::new().watch_modifiers(|_| {}).watches_modifiers());
+}

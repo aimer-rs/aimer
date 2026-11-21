@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::{KeyChord, Keymap};
+use crate::{ChordMods, KeyChord, Keymap};
 
 /// What runs when a chord is pressed.
 pub type ShortcutAction = Rc<dyn Fn()>;
@@ -76,6 +76,7 @@ pub struct ShortcutScope {
     keymap: Keymap<ShortcutAction>,
     window: bool,
     repeat: bool,
+    modifiers: Option<Rc<dyn Fn(ChordMods)>>,
     _live: LiveToken,
 }
 
@@ -83,7 +84,7 @@ impl ShortcutScope {
     /// Creates an empty, focus-scoped scope that ignores auto-repeat.
     #[inline]
     pub fn new() -> Self {
-        Self { keymap: Keymap::new(), window: false, repeat: false, _live: LiveToken::new() }
+        Self { keymap: Keymap::new(), window: false, repeat: false, modifiers: None, _live: LiveToken::new() }
     }
 
     /// Binds `chord` to `action`; a later binding of the same chord wins.
@@ -107,6 +108,31 @@ impl ShortcutScope {
     pub fn repeat(mut self, repeat: bool) -> Self {
         self.repeat = repeat;
         self
+    }
+
+    /// Calls `watcher` with the modifiers that are held, each time they change, while the scope is active.
+    ///
+    /// A key that is no chord, such as `Shift` held to show a preview, is not a shortcut and is not offered to
+    /// [`bind`](Self::bind); this is how a region of the application hears it come and go, wherever the pointer is.
+    #[inline]
+    pub fn watch_modifiers(mut self, watcher: impl Fn(ChordMods) + 'static) -> Self {
+        self.modifiers = Some(Rc::new(watcher));
+        self
+    }
+
+    /// Whether the scope has a watcher of the modifiers.
+    #[inline]
+    pub fn watches_modifiers(&self) -> bool {
+        self.modifiers.is_some()
+    }
+
+    /// Tells the watcher of the modifiers, if there is one, that `held` is what is held now.
+    pub fn modifiers_changed(&self, held: ChordMods) {
+        if let Some(watcher) = &self.modifiers {
+            // Cloned so the watcher may rebuild the widget that owns this scope.
+            let watcher = Rc::clone(watcher);
+            watcher(held);
+        }
     }
 
     /// Whether the scope is active regardless of focus.

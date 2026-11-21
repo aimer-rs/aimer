@@ -45,6 +45,8 @@ pub(crate) fn carbon_key(key: Key) -> Option<u32> {
             20 => 0x5A,
             _ => return None,
         },
+        // A double tap is a pattern of presses over time, which the system has no hot key for.
+        Key::DoubleTap(_) => return None,
     })
 }
 
@@ -89,6 +91,8 @@ pub(crate) fn windows_key(key: Key) -> Option<u32> {
         Key::ArrowDown => 0x28,
         Key::Delete => 0x2E,
         Key::F(n) => 0x6F + u32::from(n),
+        // A double tap is a pattern of presses over time, which the system has no hot key for.
+        Key::DoubleTap(_) => return None,
     })
 }
 
@@ -129,6 +133,8 @@ pub(crate) fn x11_keysym(key: Key) -> Option<u32> {
         Key::End => 0xFF57,
         Key::Delete => 0xFFFF,
         Key::F(n) => 0xFFBD + u32::from(n),
+        // A double tap is a pattern of presses over time, which the system has no hot key for.
+        Key::DoubleTap(_) => return None,
     })
 }
 
