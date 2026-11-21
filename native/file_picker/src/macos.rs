@@ -33,15 +33,15 @@ pub(crate) fn pick(request: FilePicker) -> PickFuture<Vec<PickedFile>> {
     };
 
     let panel = NSOpenPanel::openPanel(mtm);
-    panel.setCanChooseFiles(true);
-    panel.setCanChooseDirectories(false);
+    panel.setCanChooseFiles(!request.folder);
+    panel.setCanChooseDirectories(request.folder);
     panel.setAllowsMultipleSelection(request.multiple);
     panel.setResolvesAliases(true);
     if let Some(title) = &request.title {
         panel.setMessage(Some(&NSString::from_str(title)));
     }
     let types = content_types(&request.filters);
-    if !types.is_empty() {
+    if !request.folder && !types.is_empty() {
         panel.setAllowedContentTypes(&NSArray::from_retained_slice(&types));
     }
 

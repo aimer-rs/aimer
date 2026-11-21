@@ -40,6 +40,7 @@ pub struct FilePicker {
     pub(crate) filters: Vec<FileFilter>,
     pub(crate) multiple: bool,
     pub(crate) limit: Option<usize>,
+    pub(crate) folder: bool,
 }
 
 impl FilePicker {
@@ -94,6 +95,22 @@ impl FilePicker {
         self
     }
 
+    /// Chooses folders instead of files. The default is files.
+    ///
+    /// Only macOS shows a folder picker so far; elsewhere [`pick`](Self::pick) fails with
+    /// [`PickError::Unsupported`]. Filters do not apply to a folder pick.
+    #[inline]
+    pub fn folder(mut self, folder: bool) -> Self {
+        self.folder = folder;
+        self
+    }
+
+    /// Whether the picker chooses folders.
+    #[inline]
+    pub fn is_folder(&self) -> bool {
+        self.folder
+    }
+
     /// The title, if one was set.
     #[inline]
     pub fn title_text(&self) -> Option<&str> {
@@ -134,6 +151,10 @@ impl FilePicker {
         if let Err(error) = self.validate() {
             return ready(Err(error));
         }
+        #[cfg(not(target_os = "macos"))]
+        if self.folder {
+            return ready(Err(PickError::Unsupported));
+        }
         let max = self.max_selection();
         let platform = backend::pick(self);
         Box::pin(async move {
@@ -157,6 +178,24 @@ impl FilePicker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_picker_chooses_files_unless_asked_for_folders() {
+        assert!(!FilePicker::new().is_folder());
+        assert!(FilePicker::new().folder(true).is_folder());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn a_folder_pick_is_unsupported_where_there_is_no_folder_picker() {
+        use std::task::{Context, Poll, Waker};
+
+        let mut future = FilePicker::new().folder(true).pick();
+        match future.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+            Poll::Ready(Err(PickError::Unsupported)) => {}
+            other => panic!("expected unsupported, got {other:?}"),
+        }
+    }
 
     #[test]
     fn a_picker_chooses_one_file_by_default() {
