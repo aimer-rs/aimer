@@ -81,6 +81,7 @@ mod item;
 mod menu;
 mod panel;
 mod rows;
+mod sections;
 mod shape;
 mod style;
 

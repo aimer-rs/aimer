@@ -5,6 +5,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use aimer_cupid::svg::SvgScene;
+use aimer_widget::{AnyWidget, Widget};
+
+use crate::dismiss::ContextMenuDismiss;
 
 /// A single row of a context menu.
 ///
@@ -39,6 +42,15 @@ pub struct ContextMenuItem {
     hint: Option<Cow<'static, str>>,
     separated: bool,
     icon: Option<Arc<SvgScene>>,
+    widget: Option<WidgetRow>,
+}
+
+/// What a row is that is a widget: how tall it is, how wide it needs the menu to be at least, and how it is made.
+#[derive(Clone)]
+struct WidgetRow {
+    height: f32,
+    min_width: f32,
+    build: Rc<dyn Fn(ContextMenuDismiss) -> AnyWidget>,
 }
 
 impl ContextMenuItem {
@@ -55,7 +67,65 @@ impl ContextMenuItem {
             hint: None,
             separated: false,
             icon: None,
+            widget: None,
         }
+    }
+
+    /// Creates a row whose content is a widget, `height` logical pixels tall and as wide as the menu: a strip of buttons, a header, a row of
+    /// colours, a toggle. The widget takes its own presses and everything else that happens on it, as it does anywhere; the menu does not
+    /// mark the row or choose it, and does not close because of what is done on it. A widget that is to close the menu does so with the
+    /// handle it is given.
+    ///
+    /// `build` makes the widget each time the menu is built, because a widget is made once for the place it is shown in. A row of this
+    /// kind is for a list: a pill, whose items are words side by side, leaves it out.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use aimer_container::ZeroSizedBox;
+    /// use aimer_ctxmenu::ContextMenuItem;
+    ///
+    /// let row = ContextMenuItem::widget(32.0, |_dismiss| ZeroSizedBox);
+    /// assert!(row.is_widget());
+    /// ```
+    pub fn widget<W: Widget + 'static>(height: f32, build: impl Fn(ContextMenuDismiss) -> W + 'static) -> Self {
+        Self {
+            widget: Some(WidgetRow { height, min_width: 0.0, build: Rc::new(move |dismiss| build(dismiss).boxed()) }),
+            ..Self::new("")
+        }
+    }
+
+    /// Sets how wide the menu is to be at least for this row, in logical pixels, which is for a widget that cannot be narrower. The rows that
+    /// are words keep to the width their longest needs, and the menu is as wide as the widest of them all.
+    #[inline]
+    pub fn min_width(mut self, min_width: f32) -> Self {
+        if let Some(widget) = &mut self.widget {
+            widget.min_width = min_width.max(0.0);
+        }
+        self
+    }
+
+    /// Whether the content of the row is a widget.
+    #[inline]
+    pub fn is_widget(&self) -> bool {
+        self.widget.is_some()
+    }
+
+    /// How tall the widget of the row is, in logical pixels, if the content of the row is one.
+    #[inline]
+    pub fn widget_height(&self) -> Option<f32> {
+        self.widget.as_ref().map(|widget| widget.height)
+    }
+
+    /// How wide the menu is to be at least for the widget of the row: none for a row that is not a widget, or that asked for none.
+    #[inline]
+    pub fn widget_min_width(&self) -> f32 {
+        self.widget.as_ref().map_or(0.0, |widget| widget.min_width)
+    }
+
+    /// Makes the widget of the row, to be given the handle that closes the menu it is in. None for a row that is not a widget.
+    pub fn build_widget(&self, dismiss: ContextMenuDismiss) -> Option<AnyWidget> {
+        self.widget.as_ref().map(|widget| (widget.build)(dismiss))
     }
 
     /// Sets whether the item can be chosen.
@@ -232,5 +302,50 @@ mod parts_tests {
         let item = ContextMenuItem::new("Copy").hint("\u{2318}C").separated().enabled(false);
         let copy = item.clone();
         assert_eq!((copy.label(), copy.hint_text(), copy.has_separator(), copy.is_enabled()), ("Copy", Some("\u{2318}C"), true, false));
+    }
+
+    #[test]
+    fn a_widget_row_has_a_widget_for_its_content_and_a_height_of_its_own() {
+        let item = ContextMenuItem::widget(36.0, |_| aimer_container::ZeroSizedBox);
+        assert!(item.is_widget());
+        assert_eq!(item.widget_height(), Some(36.0));
+        assert_eq!(item.widget_min_width(), 0.0, "it asks for no width unless it says so");
+        assert_eq!(item.label(), "", "its content is the widget, and not words");
+        assert!(!ContextMenuItem::new("Copy").is_widget());
+        assert_eq!(ContextMenuItem::new("Copy").widget_height(), None);
+    }
+
+    #[test]
+    fn a_widget_row_can_ask_for_a_width_and_be_set_apart_like_any_row() {
+        let item = ContextMenuItem::widget(24.0, |_| aimer_container::ZeroSizedBox).min_width(180.0).separated();
+        assert_eq!(item.widget_min_width(), 180.0);
+        assert!(item.has_separator());
+    }
+
+    #[test]
+    fn a_widget_is_made_each_time_it_is_asked_for_and_is_given_the_way_to_close_the_menu() {
+        use std::cell::Cell;
+        let made = Rc::new(Cell::new(0));
+        let count = Rc::clone(&made);
+        let item = ContextMenuItem::widget(24.0, move |dismiss| {
+            count.set(count.get() + 1);
+            // What a button in the row does: closes the menu.
+            dismiss.dismiss();
+            aimer_container::ZeroSizedBox
+        });
+        let dismiss = ContextMenuDismiss::new();
+        assert!(item.build_widget(dismiss.clone()).is_some());
+        assert!(dismiss.was_asked_to_dismiss(), "the widget was given this menu's handle");
+        let copy = item.clone();
+        assert!(copy.build_widget(ContextMenuDismiss::new()).is_some());
+        assert_eq!(made.get(), 2, "a row that is built again makes its widget again: a widget is not shared between two menus");
+        assert!(ContextMenuItem::new("Copy").build_widget(ContextMenuDismiss::new()).is_none());
+    }
+
+    #[test]
+    fn what_a_widget_row_does_not_have_is_not_there_to_be_asked() {
+        let item = ContextMenuItem::widget(24.0, |_| aimer_container::ZeroSizedBox);
+        assert!(!item.has_action(), "it is not a row that is chosen: its widget takes the press");
+        assert_eq!((item.hint_text(), item.icon_scene().is_none()), (None, true));
     }
 }

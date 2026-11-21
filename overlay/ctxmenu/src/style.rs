@@ -123,6 +123,12 @@ pub struct ContextMenuStyle {
     pub disabled_label_color: Color,
     /// The wash under the row a pointer is pressing or hovering.
     pub highlight_color: Color,
+    /// The corner radius of the wash under a row of a list, in logical pixels: none is square corners. A pill rounds its end items by the shape
+    /// of the pill, and has no use for this.
+    pub highlight_radius: f32,
+    /// How far the wash under a row of a list is kept in from the sides of the panel, in logical pixels, which a rounded one wants: none is
+    /// edge to edge.
+    pub highlight_inset: f32,
     /// The hairline drawn between two tiled items, and the line between two groups of rows of a list.
     pub separator_color: Color,
     /// The colour of a hint written at the end of a row.
@@ -182,6 +188,8 @@ impl ContextMenuStyle {
             disabled_label_color: DISABLED_LABEL_COLOR,
             highlight_color: HIGHLIGHT_COLOR,
             separator_color: SEPARATOR_COLOR,
+            highlight_radius: 0.0,
+            highlight_inset: 0.0,
             hint_color: HINT_COLOR,
             hint_gap: 0.0,
             separator_gap: 0.0,
@@ -207,6 +215,8 @@ impl ContextMenuStyle {
             disabled_label_color: DISABLED_LABEL_COLOR,
             highlight_color: HIGHLIGHT_COLOR,
             separator_color: SEPARATOR_COLOR,
+            highlight_radius: 0.0,
+            highlight_inset: 0.0,
             hint_color: HINT_COLOR,
             hint_gap: LIST_HINT_GAP,
             separator_gap: LIST_SEPARATOR_GAP,
@@ -252,6 +262,20 @@ impl ContextMenuStyle {
     #[inline]
     pub fn highlight_color(mut self, color: Color) -> Self {
         self.highlight_color = color;
+        self
+    }
+
+    /// Sets the corner radius of the wash under a row of a list, in logical pixels.
+    #[inline]
+    pub fn highlight_radius(mut self, radius: f32) -> Self {
+        self.highlight_radius = radius;
+        self
+    }
+
+    /// Sets how far the wash under a row of a list is kept in from the sides of the panel, in logical pixels.
+    #[inline]
+    pub fn highlight_inset(mut self, inset: f32) -> Self {
+        self.highlight_inset = inset;
         self
     }
 
@@ -434,6 +458,16 @@ mod tests {
         let styled = ContextMenuStyle::list().hint_color(Color::Rgba(1, 1, 1, 1)).hint_gap(2.0).separator_gap(3.0).icon_size(4.0).icon_gap(5.0);
         assert_eq!(styled.hint_color, Color::Rgba(1, 1, 1, 1));
         assert_eq!((styled.hint_gap, styled.separator_gap, styled.icon_size, styled.icon_gap), (2.0, 3.0, 4.0, 5.0));
+    }
+
+    #[test]
+    fn the_wash_under_a_row_is_square_and_edge_to_edge_unless_it_is_asked_to_be_otherwise() {
+        let list = ContextMenuStyle::list();
+        assert_eq!((list.highlight_radius, list.highlight_inset), (0.0, 0.0), "the look that menus had stays the look they have");
+        let styled = list.highlight_radius(5.0).highlight_inset(4.0);
+        assert_eq!((styled.highlight_radius, styled.highlight_inset), (5.0, 4.0));
+        let pill = ContextMenuStyle::pill();
+        assert_eq!((pill.highlight_radius, pill.highlight_inset), (0.0, 0.0), "a pill's items are rounded by the pill");
     }
 
     #[test]

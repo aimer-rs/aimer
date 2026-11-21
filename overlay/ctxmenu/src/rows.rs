@@ -9,7 +9,7 @@
 //! retained paint node. Measuring the labels once for the whole panel decides
 //! its width; a press is answered from the same row rectangles used for paint.
 
-mod geometry;
+pub(crate) mod geometry;
 
 use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
@@ -55,6 +55,7 @@ pub struct ContextMenuRows {
     on_select: Option<Rc<dyn Fn(usize)>>,
     dismiss: ContextMenuDismiss,
     dismiss_on_select: bool,
+    icon_column: bool,
 }
 
 impl Default for ContextMenuRows {
@@ -75,6 +76,7 @@ impl ContextMenuRows {
             on_select: None,
             dismiss: ContextMenuDismiss::new(),
             dismiss_on_select: true,
+            icon_column: false,
         }
     }
 
@@ -126,6 +128,14 @@ impl ContextMenuRows {
         self
     }
 
+    /// Keeps room for an icon before every label even where no row of these has one: for a run of rows in a menu where another run has, so that
+    /// the labels of the menu are in line.
+    #[inline]
+    pub fn icon_column(mut self, icon_column: bool) -> Self {
+        self.icon_column = icon_column;
+        self
+    }
+
     /// Controls whether choosing a row closes the menu.
     #[inline]
     pub fn dismiss_on_select(mut self, dismiss_on_select: bool) -> Self {
@@ -148,7 +158,16 @@ impl ContextMenuRows {
 
 impl Widget for ContextMenuRows {
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
-        let items = self.items;
+        // A widget row is not one of these: it is not a row of words, and the rows element has no room for a child that takes its own
+        // events. A menu with widgets is built by `sections`, which makes each run of words one of these; here they are left out, and a choice is
+        // told by the number its row has among all the items given.
+        let (items, on_select): (Vec<ContextMenuItem>, Option<Rc<dyn Fn(usize)>>) = if self.items.iter().any(ContextMenuItem::is_widget) {
+            let original: Vec<usize> = self.items.iter().enumerate().filter(|(_, item)| !item.is_widget()).map(|(index, _)| index).collect();
+            let on_select = self.on_select.clone().map(|on_select| Rc::new(move |index: usize| on_select(original[index])) as Rc<dyn Fn(usize)>);
+            (self.items.into_iter().filter(|item| !item.is_widget()).collect(), on_select)
+        } else {
+            (self.items, self.on_select.clone())
+        };
         let style = Rc::new(self.style);
         let paint_state = Rc::new(ContextMenuRowPaintState::default());
         let row_count = items.len();
@@ -160,7 +179,7 @@ impl Widget for ContextMenuRows {
             .map(|(index, item)| if list && index > 0 && item.has_separator() { style.separator_gap } else { 0.0 })
             .collect();
         // Every label of a list is moved over for the icons if any row has one, so that the labels stay in line.
-        let lead = if list && items.iter().any(|item| item.icon_scene().is_some()) { style.icon_size + style.icon_gap } else { 0.0 };
+        let lead = icon_lead(&style, list, &items, self.icon_column);
         let row_elements = items
             .iter()
             .enumerate()
@@ -186,7 +205,7 @@ impl Widget for ContextMenuRows {
             items,
             shape: self.shape,
             style,
-            on_select: self.on_select.clone(),
+            on_select,
             dismiss: self.dismiss.clone(),
             dismiss_on_select: self.dismiss_on_select,
             row_elements,
@@ -284,26 +303,7 @@ impl RawContextMenuRows {
                 return cached.clone();
             }
         }
-        let font_size = self.style.label.font_size as f32 * scale;
-        let list = !self.shape.is_horizontal();
-        let measure = |text: &str| {
-            ctx.canvas.measure_text_styled(
-                text,
-                font_size,
-                self.style.label.font_family,
-                self.style.label.font_style,
-                self.style.label.font_weight.numeric(),
-            ) / scale
-        };
-        // What a row needs across: the room for an icon, the label, and where it has a hint the room kept before it and the hint.
-        let widths = self
-            .items
-            .iter()
-            .map(|item| {
-                let hint = item.hint_text().filter(|_| list).map_or(0.0, |hint| self.style.hint_gap + measure(hint));
-                self.lead + measure(item.label()) + hint
-            })
-            .collect::<Vec<_>>();
+        let widths = content_widths(ctx, &self.items, &self.style, !self.shape.is_horizontal(), self.lead);
         *self.label_widths.borrow_mut() = widths.clone();
         self.measured_scale.set(scale);
         widths
@@ -594,7 +594,8 @@ impl RawContextMenuRow {
 
     fn radii(&self, scale: f32, row_size: ResolvedSize) -> [f32; 4] {
         if !self.shape.is_horizontal() {
-            return [0.0; 4];
+            // Every corner of the wash under a row of a list, in physical pixels like the radii of a pill.
+            return [self.style.highlight_radius.max(0.0) * scale; 4];
         }
         let mut panel = self.paint_state.panel_size.get();
         if panel.width <= 0.0 || panel.height <= 0.0 {
@@ -634,6 +635,7 @@ impl Drawable for RawContextMenuRow {
         let canvas = aimer_canvas::Canvas::of(ctx);
         // The row's rectangle has the line that sets it apart in its top: the wash, the label and the rest are in what is under it.
         let (top, body) = (self.gap, size.height - self.gap);
+        let inset = if self.shape.is_horizontal() { 0.0 } else { self.style.highlight_inset };
         if self.gap > 0.0 {
             let (red, green, blue, alpha) = self.style.separator_color.to_rgba();
             let inset = self.style.item_padding;
@@ -648,7 +650,8 @@ impl Drawable for RawContextMenuRow {
                 .radii(scale, ctx.parent_size)
                 .map(|radius| radius / scale);
             canvas.fill_rect_styled(
-                aimer_cupid::utilities::Rect::new(0.0, top, size.width, body),
+                // Kept in from the sides where the style says so, which a rounded wash wants: a list only, for a pill's items touch.
+                aimer_cupid::utilities::Rect::new(inset, top, (size.width - inset * 2.0).max(0.0), body),
                 aimer_cupid::utilities::Color::rgba8(red, green, blue, alpha),
                 [tl, tr, br, bl],
                 [0.0; 4],
@@ -852,6 +855,42 @@ impl Element for RawContextMenuRows {
     fn name(&self) -> &'static str {
         "ContextMenuRows"
     }
+}
+
+/// The room an icon takes before every label of a list: that of the icon and the gap after it where any row has an icon, or where `forced`,
+/// which is for a run of rows that has none of its own and is in a menu where another does; and none for a pill.
+pub(crate) fn icon_lead(style: &ContextMenuStyle, list: bool, items: &[ContextMenuItem], forced: bool) -> f32 {
+    if list && (forced || items.iter().any(|item| item.icon_scene().is_some())) {
+        style.icon_size + style.icon_gap
+    } else {
+        0.0
+    }
+}
+
+/// What each of `items` needs across, in logical pixels, measured at `scale`: the room for an icon, the label, and where it has a hint the
+/// room kept before it and the hint. A widget row needs nothing of words.
+pub(crate) fn content_widths(ctx: &BuildContext, items: &[ContextMenuItem], style: &ContextMenuStyle, list: bool, lead: f32) -> Vec<f32> {
+    let scale = scale_of(ctx);
+    let font_size = style.label.font_size as f32 * scale;
+    let measure = |text: &str| {
+        ctx.canvas.measure_text_styled(
+            text,
+            font_size,
+            style.label.font_family,
+            style.label.font_style,
+            style.label.font_weight.numeric(),
+        ) / scale
+    };
+    items
+        .iter()
+        .map(|item| {
+            if item.is_widget() {
+                return 0.0;
+            }
+            let hint = item.hint_text().filter(|_| list).map_or(0.0, |hint| style.hint_gap + measure(hint));
+            lead + measure(item.label()) + hint
+        })
+        .collect()
 }
 
 /// The device pixel ratio, never zero.
@@ -1106,5 +1145,18 @@ mod tests {
         let _ = element.on_event(&press(20.0, 60.0));
         let _ = element.on_event(&release(20.0, 60.0));
         assert_eq!(chosen.get(), Some(1));
+    }
+
+    #[test]
+    fn a_list_with_an_icon_on_any_row_keeps_room_for_one_on_every_row() {
+        let style = ContextMenuStyle::list();
+        let scene = Arc::new(aimer_cupid::svg::parse_svg(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>"#).expect("a scene"));
+        let plain = [ContextMenuItem::new("Copy")];
+        let drawn = [ContextMenuItem::new("Copy"), ContextMenuItem::new("Find").icon(scene)];
+        let room = style.icon_size + style.icon_gap;
+        assert_eq!(icon_lead(&style, true, &plain, false), 0.0);
+        assert_eq!(icon_lead(&style, true, &drawn, false), room);
+        assert_eq!(icon_lead(&style, true, &plain, true), room, "a run of rows that has no icon keeps the room when another run has: the labels of the menu stay in line");
+        assert_eq!(icon_lead(&style, false, &drawn, true), 0.0, "a pill has none");
     }
 }

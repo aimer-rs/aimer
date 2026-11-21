@@ -305,6 +305,10 @@ impl TextArea {
     /// renamed.
     ///
     /// Without it the menu is only the clipboard verbs, and with it a field that has nothing to cut, copy or paste still has a menu.
+    ///
+    /// A row can show more than words: a [`hint`](aimer_ctxmenu::ContextMenuItem::hint) and an [`icon`](aimer_ctxmenu::ContextMenuItem::icon), a
+    /// line before it with [`separated`](aimer_ctxmenu::ContextMenuItem::separated), or a whole widget with
+    /// [`ContextMenuItem::widget`](aimer_ctxmenu::ContextMenuItem::widget), which takes its own events: a strip of buttons, a toggle, a header.
     #[inline]
     pub fn context_menu_items(
         mut self,

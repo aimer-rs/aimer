@@ -11,6 +11,7 @@ use crate::dismiss::ContextMenuDismiss;
 use crate::item::ContextMenuItem;
 use crate::panel::RawContextMenuPanel;
 use crate::rows::ContextMenuRows;
+use crate::sections::{self, Sections};
 use crate::shape::ContextMenuShape;
 use crate::style::ContextMenuStyle;
 
@@ -306,6 +307,15 @@ impl Widget for ContextMenu {
         let style = self.style.clone();
         let content = match self.child.take() {
             Some(child) => child.to_element(ctx),
+            // A list with widgets among its rows is a column of runs of rows and of the widgets; any other is the rows alone.
+            None if !self.shape.is_horizontal() && sections::has_widgets(&self.items) => Sections {
+                items: &self.items,
+                style: &self.style,
+                dismiss: &self.dismiss,
+                dismiss_on_select: self.dismiss_on_select,
+                on_select: self.on_select.as_ref(),
+            }
+            .element(ctx),
             None => self.rows().to_element(ctx),
         };
         RawContextMenuPanel::element(content, style)
