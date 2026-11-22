@@ -644,6 +644,7 @@ pub(crate) struct RawTextField {
     /// The ranges that were boxed the last time a field was drawn, and when they were first: what a mark is made of.
     pub marks_seen: RefCell<Vec<Range<usize>>>,
     pub marks_began: Cell<Option<AnimInstant>>,
+    pub marks_value: RefCell<Option<TextEditingValue>>,
     /// What a new line starts with; see [`RawFieldConfig::line_break_prefix`].
     pub line_break_prefix: Option<LineBreakPrefix>,
     /// How many spaces the Tab key inserts; `None` leaves Tab to move focus.
@@ -874,6 +875,7 @@ impl Rebuildable for RawTextField {
         // left with nothing would show the same marks as new, and mark them again.
         self.marks_seen.replace(old.marks_seen.borrow().clone());
         self.marks_began.set(old.marks_began.get());
+        self.marks_value.replace(old.marks_value.borrow().clone());
         // Copied, like the marks: what was told of is still told of, and is not told again by the field that replaces this one.
         self.hover_candidate.replace(old.hover_candidate.borrow().clone());
         self.hover_shown.replace(old.hover_shown.borrow().clone());
@@ -1036,6 +1038,7 @@ impl RawTextField {
             marks_asked: RefCell::new(None),
             marks_seen: RefCell::new(Vec::new()),
             marks_began: Cell::new(None),
+            marks_value: RefCell::new(None),
             line_break_prefix: config.line_break_prefix,
             tab_spaces: config.tab_spaces,
             wrap: config.wrap,

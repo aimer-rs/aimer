@@ -514,7 +514,7 @@ pub(crate) fn adjusted_grapheme_advance(
     } else {
         0.0
     };
-    let spacing = if index + 1 < count {
+    let spacing = if index + 1 < count || count == 1 {
         letter_spacing
     } else {
         0.0

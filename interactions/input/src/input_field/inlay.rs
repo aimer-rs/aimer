@@ -5,11 +5,10 @@
 //! every offset the field gives are those of the text alone. What the field does is leave room: the label is as wide as the
 //! space that is left after the character before `offset`, and is drawn in it.
 //!
-//! The room is left by the one thing that text layout already does for a gap: the letter spacing of a span, which is added
-//! between two characters of the span and not after its last. So the gap is a span of the character before `offset` and the one
-//! after it, with the label's width as its letter spacing. That is why an inlay cannot be at the start of a line, where there is no
-//! character before it on the line. One at the end of a line needs no room, as nothing follows it there: it is drawn after the last
-//! character, in the free space of the line.
+//! The room is left by the one thing that text layout already does for a gap: the letter spacing of a span.
+//! So the gap is a span of the character before `offset`, with the label's width as its letter spacing. That is why an inlay
+//! cannot be at the start of a line, where there is no character before it on the line. One at the end of a line needs no room,
+//! as nothing follows it there: it is drawn after the last character, in the free space of the line.
 
 use std::ops::Range;
 use std::rc::Rc;
@@ -246,7 +245,7 @@ impl Inlays {
 pub(crate) struct Placed {
     /// The byte the labels go before, in the whole text.
     pub at: usize,
-    /// The bytes of the two characters the gap is spread between: the one before `at` and the one after it. For labels at the end of
+    /// The bytes of the character the gap is spread after (or for a space, the space itself). For labels at the end of
     /// a line, only the one before.
     pub span: Range<usize>,
     /// How wide the room is for all of the labels at `at`, in logical pixels.
@@ -374,13 +373,13 @@ fn gap_span(text: &str, at: usize) -> Option<(Range<usize>, Spot)> {
     if after.chars().all(char::is_whitespace) {
         return Some((at..end, Spot::Space));
     }
-    Some((start..end, Spot::Between))
+    Some((start..at, Spot::Between))
 }
 
 /// What `ranges` say with the room for each of `placed` in them. `text` is what the ranges are of, and starts at the byte `base`
 /// of the whole text.
 ///
-/// The characters of a place take the style of the one before `at`, and spread the room between them. The ranges are taken as the
+/// The character before `at` takes the style it has and spreads the room after it. The ranges are taken as the
 /// text takes them, with the one that starts earlier keeping the bytes that two share. `scale` is how many physical pixels a
 /// logical one is: the room is logical, and the letter spacing that makes it is physical.
 pub(crate) fn with_gaps(
@@ -497,9 +496,9 @@ mod tests {
     #[test]
     fn a_label_goes_between_the_character_before_it_and_the_one_after() {
         let found = placed(&[hint(5, ": i32")], "let x = 1", 0);
-        // After `(`, before `1`: neither is a space, so the room is spread between them.
+        // After `(`, before `1`: neither is a space, so the room is spread after `(`.
         let found = placed(&[hint(4, ": i32")], "foo(1)", 0);
-        assert_eq!(found, vec![Placed { at: 4, span: 3..5, gap: 5.0, widths: vec![5.0], eol: false, word: false, items: 0..1 }]);
+        assert_eq!(found, vec![Placed { at: 4, span: 3..4, gap: 5.0, widths: vec![5.0], eol: false, word: false, items: 0..1 }]);
     }
 
     #[test]
@@ -637,7 +636,7 @@ mod tests {
     }
 
     fn gap_of(from: usize, to: usize, gap: f32) -> Placed {
-        Placed { at: from + 1, span: from..to, gap, widths: vec![gap], eol: false, word: false, items: 0..1 }
+        Placed { at: to, span: from..to, gap, widths: vec![gap], eol: false, word: false, items: 0..1 }
     }
 
     fn summary(ranges: &Option<Rc<[StyledRange]>>) -> Vec<(Range<usize>, Option<Color>, Option<f32>)> {
@@ -652,42 +651,42 @@ mod tests {
 
     #[test]
     fn the_room_is_a_range_of_the_two_characters_even_where_nothing_was_styled() {
-        let found = with_gaps(None, &[gap_of(4, 6, 5.0)], 0, 1.0);
-        assert_eq!(summary(&found), vec![(4..6, None, Some(5.0))]);
+        let found = with_gaps(None, &[gap_of(4, 5, 5.0)], 0, 1.0);
+        assert_eq!(summary(&found), vec![(4..5, None, Some(5.0))]);
         assert_eq!(with_gaps(None, &[], 0, 1.0), None, "no room, and nothing styled, is nothing");
     }
 
     #[test]
     fn the_room_takes_the_style_of_the_character_before_it_and_cuts_what_it_is_in() {
         let ranges: Rc<[StyledRange]> = vec![range(0, 9, red())].into();
-        let found = with_gaps(Some(ranges), &[gap_of(4, 6, 5.0)], 0, 1.0);
+        let found = with_gaps(Some(ranges), &[gap_of(4, 5, 5.0)], 0, 1.0);
         let red = red().color;
-        assert_eq!(summary(&found), vec![(0..4, red, None), (4..6, red, Some(5.0)), (6..9, red, None)]);
+        assert_eq!(summary(&found), vec![(0..4, red, None), (4..5, red, Some(5.0)), (5..9, red, None)]);
     }
 
     #[test]
-    fn the_character_after_takes_the_style_of_the_one_before_and_the_ranges_around_are_kept() {
+    fn the_character_after_keeps_its_own_style_and_the_room_takes_the_style_of_the_one_before() {
         let ranges: Rc<[StyledRange]> = vec![range(0, 3, red()), range(4, 5, blue()), range(5, 9, red())].into();
-        let found = with_gaps(Some(ranges), &[gap_of(4, 6, 5.0)], 0, 1.0);
+        let found = with_gaps(Some(ranges), &[gap_of(4, 5, 5.0)], 0, 1.0);
         let (red, blue) = (red().color, blue().color);
-        assert_eq!(summary(&found), vec![(0..3, red, None), (4..6, blue, Some(5.0)), (6..9, red, None)]);
+        assert_eq!(summary(&found), vec![(0..3, red, None), (4..5, blue, Some(5.0)), (5..9, red, None)]);
     }
 
     #[test]
     fn a_range_that_starts_earlier_keeps_the_bytes_two_share() {
         let ranges: Rc<[StyledRange]> = vec![range(2, 8, blue()), range(0, 5, red())].into();
-        let found = with_gaps(Some(ranges), &[gap_of(3, 5, 2.0)], 0, 1.0);
+        let found = with_gaps(Some(ranges), &[gap_of(3, 4, 2.0)], 0, 1.0);
         let (red, blue) = (red().color, blue().color);
         // The red one starts first, so it has the bytes up to 5 and the blue one what is after.
-        assert_eq!(summary(&found), vec![(0..3, red, None), (3..5, red, Some(2.0)), (5..8, blue, None)]);
+        assert_eq!(summary(&found), vec![(0..3, red, None), (3..4, red, Some(2.0)), (4..5, red, None), (5..8, blue, None)]);
     }
 
     #[test]
     fn a_window_of_the_text_has_its_ranges_in_its_own_offsets_and_the_room_is_found_there() {
         let ranges: Rc<[StyledRange]> = vec![range(0, 9, red())].into();
-        let found = with_gaps(Some(ranges), &[gap_of(104, 106, 5.0)], 100, 1.0);
+        let found = with_gaps(Some(ranges), &[gap_of(104, 105, 5.0)], 100, 1.0);
         let red = red().color;
-        assert_eq!(summary(&found), vec![(0..4, red, None), (4..6, red, Some(5.0)), (6..9, red, None)]);
+        assert_eq!(summary(&found), vec![(0..4, red, None), (4..5, red, Some(5.0)), (5..9, red, None)]);
     }
 
     fn word_gap_of(at: usize, gap: f32) -> Placed {
@@ -722,18 +721,18 @@ mod tests {
 
     #[test]
     fn the_room_is_in_physical_pixels_at_the_scale_given() {
-        let found = with_gaps(None, &[gap_of(4, 6, 5.0)], 0, 2.0);
-        assert_eq!(summary(&found), vec![(4..6, None, Some(10.0))]);
+        let found = with_gaps(None, &[gap_of(4, 5, 5.0)], 0, 2.0);
+        assert_eq!(summary(&found), vec![(4..5, None, Some(10.0))]);
     }
 
     #[test]
     fn two_places_are_each_cut_out() {
         let ranges: Rc<[StyledRange]> = vec![range(0, 12, red())].into();
-        let found = with_gaps(Some(ranges), &[gap_of(2, 4, 1.0), gap_of(8, 10, 2.0)], 0, 1.0);
+        let found = with_gaps(Some(ranges), &[gap_of(2, 3, 1.0), gap_of(8, 9, 2.0)], 0, 1.0);
         let red = red().color;
         assert_eq!(
             summary(&found),
-            vec![(0..2, red, None), (2..4, red, Some(1.0)), (4..8, red, None), (8..10, red, Some(2.0)), (10..12, red, None)]
+            vec![(0..2, red, None), (2..3, red, Some(1.0)), (3..8, red, None), (8..9, red, Some(2.0)), (9..12, red, None)]
         );
     }
 }

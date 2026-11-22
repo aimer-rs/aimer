@@ -289,3 +289,26 @@ fn an_underlined_name_is_underlined_to_where_it_ends_and_not_under_the_hint_that
     assert!(spaced.style.word_spacing.is_some_and(|room| room > 0.0));
     assert!(spaced.style.text_decoration.is_none());
 }
+
+#[test]
+fn a_hint_between_styled_tokens_does_not_change_the_color_of_the_character_after_it() {
+    use crate::input_field::highlight::TextHighlighter;
+    use aimer_text::{SpanStyle, StyledRange};
+
+    let ctx = dummy_build_context(400.0, 200.0);
+    let code = "_slice(response);";
+    // `_slice(` is blue, `response` is green.
+    let paren_end = 7;
+    let blue = Color::Rgba(0, 0, 255, 255);
+    let green = Color::Rgba(0, 255, 0, 255);
+    let mut hinted = field(code, Some(hint(paren_end, "src: ")));
+    hinted.highlighter = Some(TextHighlighter::new(move |_| {
+        vec![
+            StyledRange::new(0..paren_end, SpanStyle::new().color(blue)),
+            StyledRange::new(paren_end..paren_end + 8, SpanStyle::new().color(green)),
+        ]
+    }));
+    let ranges = hinted.editable_geometry(&ctx, 380.0).ranges.clone().expect("styled");
+    let r_style = ranges.iter().find(|run| run.range.contains(&paren_end)).expect("the character after hint");
+    assert_eq!(r_style.style.color, Some(green), "the character after the hint keeps its own color");
+}

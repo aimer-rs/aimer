@@ -91,9 +91,9 @@ fn a_box_is_drawn_round_each_range_in_its_color_and_a_mark_goes_over_each_as_the
     let (field, controller, ctx, _) = field();
     move_caret(&field, &controller, 4);
     let first = boxes(&frame(&field, &ctx));
-    assert_eq!(first.len(), 4, "a box and a mark for each of the two: {first:?}");
-    assert_eq!(first.iter().filter(|(color, _)| *color == (255, 92, 150)).count(), 2, "the first range's two are in its color");
-    assert_eq!(first.iter().filter(|(color, _)| *color == (84, 205, 236)).count(), 2, "and the second's in its own");
+    assert_eq!(first.len(), 2, "a mark for each of the two: {first:?}");
+    assert_eq!(first.iter().filter(|(color, _)| *color == (255, 92, 150)).count(), 1, "the first range is in its color");
+    assert_eq!(first.iter().filter(|(color, _)| *color == (84, 205, 236)).count(), 1, "and the second in its own");
     assert!(field.marks_phase().is_some_and(|phase| phase < 0.1), "the mark has begun");
     later(&field, Duration::from_secs(5));
     let settled = boxes(&frame(&field, &ctx));
@@ -115,14 +115,15 @@ fn the_mark_fades_and_the_boxes_do_not() {
             .collect()
     };
     let early = alpha_of(&frame(&field, &ctx));
-    later(&field, Duration::from_millis(400));
+    assert_eq!(early[0], 255, "starts at 1.0 opacity");
+    later(&field, Duration::from_millis(500));
     let middle = alpha_of(&frame(&field, &ctx));
-    assert_eq!(early.len(), 4);
-    assert_eq!(middle.len(), 4);
-    assert!(early.iter().max() > middle.iter().min(), "the mark has faded: {early:?} then {middle:?}");
+    assert!(middle[0] < early[0], "the mark has faded towards 0.3: {early:?} then {middle:?}");
     later(&field, Duration::from_secs(5));
     let settled = alpha_of(&frame(&field, &ctx));
+    assert_eq!(settled.len(), 2);
     assert!(settled.iter().all(|alpha| *alpha > 0), "a box is there for as long as the caret is: {settled:?}");
+    assert_eq!(settled[0], 77, "the box line has 0.3 opacity");
 }
 
 #[test]
@@ -185,7 +186,10 @@ fn a_range_past_the_end_of_the_text_is_drawn_as_far_as_the_text_goes_and_none_is
     let ctx = dummy_build_context(400.0, 300.0);
     field.update(&ctx);
     let drawn = boxes(&commands(&field, &ctx));
-    assert_eq!(drawn.len(), 2, "one box and one mark, for the one range that has any text: {drawn:?}");
+    assert_eq!(drawn.len(), 1, "one mark before 60%, for the one range that has any text: {drawn:?}");
+    later(&field, Duration::from_secs(5));
+    let settled = boxes(&frame(&field, &ctx));
+    assert_eq!(settled.len(), 1, "one box when settled: {settled:?}");
 }
 
 #[test]
@@ -290,7 +294,7 @@ fn a_box_and_a_mark_at_the_edge_of_the_text_are_kept_inside_it_and_not_cut_by_th
             .collect()
     };
     let early = rects(&frame(&field, &ctx));
-    assert_eq!(early.len(), 2, "a box and a mark");
+    assert_eq!(early.len(), 1, "a mark during pulse");
     for (x, y) in early {
         assert!(x >= left - 0.01 && y >= top - 0.01, "({x}, {y}) is inside the content, which begins at ({left}, {top})");
     }
@@ -322,3 +326,74 @@ fn what_a_field_knows_of_its_marks_is_copied_to_the_next_one_and_not_taken_from_
         assert_eq!(rebuilt.marks_phase(), None, "round {round}: the marks are not new");
     }
 }
+
+#[test]
+fn typing_near_a_bracket_does_not_begin_the_mark_pulse() {
+    let controller = TextEditingController::with_text("a(b)c");
+    let mut config = field_config(controller.clone());
+    config.max_lines = Some(4);
+    config.wrap = false;
+    config.caret_marks = Some(CaretMarks::new(move |text: &TextSnapshot, selection: Range<usize>| {
+        if (1..=text.len()).contains(&selection.start) {
+            vec![CaretMark::new(1..2, PINK)]
+        } else {
+            Vec::new()
+        }
+    }));
+    let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+    field.test_clock.set(Some(AnimInstant::now()));
+    let _ = field.on_event(&ElementEvent::FocusGained);
+    let ctx = dummy_build_context(400.0, 300.0);
+    field.update(&ctx);
+    move_caret(&field, &controller, 3);
+    frame(&field, &ctx);
+    assert!(field.marks_phase().is_some(), "moving caret onto bracket triggers mark pulse");
+    later(&field, Duration::from_secs(5));
+    frame(&field, &ctx);
+    assert_eq!(field.marks_phase(), None, "mark pulse settled");
+
+    // Typing near the bracket edits the text:
+    controller.insert_str("d", 3);
+    field.sync_cursor_from_controller();
+    frame(&field, &ctx);
+    assert_eq!(field.marks_phase(), None, "typing near bracket does not trigger mark pulse");
+}
+
+#[test]
+fn brace_highlight_starts_transition_at_60_percent_progress_and_settles_at_point_three_opacity() {
+    let (field, controller, ctx, _) = field();
+    let border_alphas = |commands: &[DrawCommand]| -> Vec<u8> {
+        commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::FillRect { border_width, border_color, .. } if border_width.iter().any(|width| *width > 0.0) => Some(border_color.a),
+                _ => None,
+            })
+            .collect()
+    };
+    move_caret(&field, &controller, 4);
+
+    // First frame anchors pulse at t0. At 0ms (0% progress), 2 pulse marks at 1.0 opacity (alpha 255).
+    let at_start = border_alphas(&frame(&field, &ctx));
+    assert_eq!(at_start.len(), 2);
+    assert_eq!(at_start[0], 255, "1.0 opacity at start");
+
+    // DURATION = 650ms. 60% is 390ms.
+    // At 300ms (~46% progress), phase < 0.6: still at 1.0 opacity (alpha 255).
+    later(&field, Duration::from_millis(300));
+    let pre_60 = border_alphas(&frame(&field, &ctx));
+    assert_eq!(pre_60[0], 255, "still at 1.0 opacity before 60%");
+
+    // At 500ms (~77% progress), phase >= 0.6: transitioning down towards 0.3.
+    later(&field, Duration::from_millis(200));
+    let during = border_alphas(&frame(&field, &ctx));
+    assert!(during[0] < 255 && during[0] > 77, "transitioning from 1.0 down to 0.3: {}", during[0]);
+
+    // Once settled (after 650ms): pulse is over, boxes settle at 0.3 opacity (77).
+    later(&field, Duration::from_secs(2));
+    let settled = border_alphas(&frame(&field, &ctx));
+    assert_eq!(settled.len(), 2, "only the 2 highlight boxes stay");
+    assert_eq!(settled[0], 77, "box line has 0.3 opacity after animation end");
+    assert_eq!(settled[1], 77, "box line has 0.3 opacity after animation end");
+}
+

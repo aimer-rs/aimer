@@ -12,15 +12,19 @@ pub(crate) struct MarksAsked {
 }
 
 /// How much of its color the inside of a box has, out of `1.0`.
-const BOX_FILL: f32 = 0.16;
+const BOX_FILL: f32 = 0.32;
 /// How much of its color the line of a box has, out of `1.0`.
-const BOX_LINE: f32 = 0.85;
+const BOX_LINE: f32 = 1.0;
 /// How far a box is from its range, on each side, in logical pixels.
 const BOX_SPREAD: f32 = 1.0;
 /// How round the corners of a box are, in logical pixels.
 const BOX_RADIUS: f32 = 3.0;
 /// How thick the line of a box is, in logical pixels.
 const BOX_STROKE: f32 = 1.0;
+/// What progress of the mark pulse the transition to settled opacity starts at.
+const TRANSITION_START: f32 = 0.6;
+/// The opacity of the mark box after it settles, out of `1.0`.
+const SETTLED_OPACITY: f32 = 0.3;
 
 /// `rect` cut to `content`, the part of the field that shows text: a box that reaches past the text's edge, as one round a character at
 /// the start of a line does, is pulled in and not cut off by the clip, which would take its side away.
@@ -64,7 +68,16 @@ impl RawTextField {
             })
             .collect();
         let ranges: Vec<Range<usize>> = marks.iter().map(|mark| mark.range.clone()).collect();
-        if *self.marks_seen.borrow() != ranges {
+        let edited = self
+            .marks_value
+            .borrow()
+            .as_ref()
+            .is_some_and(|prev| !value.same_text(prev));
+        *self.marks_value.borrow_mut() = Some(value.clone());
+        if edited {
+            self.marks_began.set(None);
+            *self.marks_seen.borrow_mut() = ranges;
+        } else if *self.marks_seen.borrow() != ranges {
             let any = !ranges.is_empty();
             *self.marks_seen.borrow_mut() = ranges;
             self.marks_began.set(any.then(|| self.now()));
@@ -86,14 +99,18 @@ impl RawTextField {
         Some(phase)
     }
 
-    /// Draws a rounded box round each of `marks`, in its color, behind the text.
+    /// Draws a rounded box round each of `marks`, in its color at settled opacity, behind the text.
+    /// Only drawn when the mark pulse is not active (e.g. after animation ends, or while typing).
     fn paint_mark_boxes(&self, canvas: &Canvas, geometry: &EditableGeometry, scale: f32, origin: Vec2d, content: &Rect, marks: &[CaretMark]) {
+        if self.marks_phase().is_some() {
+            return;
+        }
         for mark in marks {
             let Some((left, top, right, bottom)) = self.range_box(geometry, mark.range.start, mark.range.end) else {
                 continue;
             };
             let (red, green, blue, alpha) = mark.color.to_rgba();
-            let tint = |share: f32| aimer_cupid::utilities::Color::rgba8(red, green, blue, (alpha as f32 * share).round() as u8);
+            let tint = |share: f32| aimer_cupid::utilities::Color::rgba8(red, green, blue, (alpha as f32 * share * SETTLED_OPACITY).round() as u8);
             canvas.fill_rect_with_border(
                 within(
                     Rect::new(
@@ -112,16 +129,46 @@ impl RawTextField {
         }
     }
 
-    /// Draws the mark over each of `marks`, closing on it and fading, and asks for the next frame while it is going.
+    /// Draws the mark over each of `marks`, closing on it: starting at 1.0 opacity, transitioning to 0.3
+    /// opacity starting at 60% progress, and settling at 0.3 opacity.
     fn paint_mark_pulses(&self, canvas: &Canvas, geometry: &EditableGeometry, scale: f32, origin: Vec2d, content: &Rect, marks: &[CaretMark]) {
         let Some(phase) = self.marks_phase() else {
             return;
         };
         aimer_events::window::request_animation_frame();
+        const GROW: f32 = 14.0;
+        let opacity = if phase < TRANSITION_START {
+            1.0
+        } else {
+            let t = ((phase - TRANSITION_START) / (1.0 - TRANSITION_START)).clamp(0.0, 1.0);
+            1.0 - (1.0 - SETTLED_OPACITY) * t
+        };
+        let eased = 1.0 - (1.0 - phase).powi(3);
+        let spread = BOX_SPREAD + GROW * (1.0 - eased);
+        let radius = BOX_RADIUS + (spread - BOX_SPREAD) * 0.5;
+
         for mark in marks {
-            if let Some(bounds) = self.range_box(geometry, mark.range.start, mark.range.end) {
-                self.paint_zoom(canvas, bounds, scale, origin, content, mark.color, phase);
-            }
+            let Some((left, top, right, bottom)) = self.range_box(geometry, mark.range.start, mark.range.end) else {
+                continue;
+            };
+            let (red, green, blue, alpha) = mark.color.to_rgba();
+            let line = aimer_cupid::utilities::Color::rgba8(red, green, blue, (alpha as f32 * BOX_LINE * opacity).round() as u8);
+            let fill = aimer_cupid::utilities::Color::rgba8(red, green, blue, (alpha as f32 * BOX_FILL * opacity).round() as u8);
+            canvas.fill_rect_with_border(
+                within(
+                    Rect::new(
+                        origin.x + left / scale - spread,
+                        origin.y + top / scale - spread,
+                        (right - left) / scale + 2.0 * spread,
+                        (bottom - top) / scale + 2.0 * spread,
+                    ),
+                    content,
+                ),
+                fill,
+                [radius; 4],
+                BOX_STROKE,
+                line,
+            );
         }
     }
 }
