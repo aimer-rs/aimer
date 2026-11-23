@@ -59,6 +59,6 @@ pub use aimer_window as windows;
 mod desktop_host;
 #[cfg(not(any(target_os = "ios", target_os = "android", target_arch = "wasm32")))]
 mod window_memory;
-
+pub use handler::RefreshRate;
 pub use winit;
 

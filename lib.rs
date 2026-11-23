@@ -22,7 +22,6 @@ pub use aimer_ctxmenu::{
 };
 
 pub use aimer_grid as grid;
-
 pub use aimer_arrlist::list;
 
 #[cfg(feature = "cupid")]
@@ -119,7 +118,13 @@ pub use aimer_daemon as daemon;
 pub use aimer_lucide as icons;
 #[cfg(feature = "icons")]
 pub use aimer_lucide::Icons;
-pub use aimer_screen as screen;
+
+pub mod screen {
+    pub use aimer_quiver::RefreshRate;
+    pub use aimer_screen::*;
+}
+
+
 /// A system tray icon with a menu; see [`tray::Tray`].
 pub use aimer_platform::tray;
 /// System notifications with a title, buttons, delay, permission and push
