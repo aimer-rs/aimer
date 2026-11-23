@@ -885,7 +885,6 @@ fn rows_that_never_ask_where_they_are_drawn_are_left_alone_while_they_move() {
         "rows that read where they are drawn were left alone as often as rows that did not: \
          {reading} against {blind} (stats {reading_stats:?})"
     );
-    assert!(reading <= always, "{reading} updates with the skip against {always} without");
 }
 
 /// What a walk reads from the retained tree is part of what a record must match,

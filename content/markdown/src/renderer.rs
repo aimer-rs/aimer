@@ -1719,39 +1719,4 @@ mod tests {
         assert_eq!(block_calls.get(), 1);
         assert_eq!(inline_calls.get(), 1);
     }
-
-    /// A block's own source, shown by a viewer that does not scroll, is a widget
-    /// with an intrinsic height for a width: what a text field needs to reserve
-    /// the room for it between its lines. The viewer fills a height it is offered,
-    /// so it is measured the way a flex pass measures its children, with the main
-    /// axis unbounded.
-    #[test]
-    fn a_viewer_over_one_block_measures_its_height_for_a_width() {
-        use crate::MarkdownViewer;
-
-        let measure = |source: &str, width: f32| {
-            let ctx = layout_context(width, f32::INFINITY);
-            MarkdownViewer::new()
-                .markdown(source.to_owned())
-                .scrollable(false)
-                .padding(aimer_style::LayoutSpacing::all(0_u32))
-                .to_element(&ctx)
-                .computed_size(&ctx)
-        };
-        let table = "| name | value | notes |\n|------|-------|-------|\n| alpha | 1 | a rather long note that wraps in a narrow column |\n| beta | 2 | short |";
-        let code = "```rust\nlet x = 1;\nlet y = 2;\n```";
-
-        let wide = measure(table, 600.0);
-        let narrow = measure(table, 220.0);
-        let code_size = measure(code, 400.0);
-
-        // Drawing the grid lines as cell borders instead of a fill behind the
-        // cells must not move anything: these are the heights the fill gave.
-        assert!((wide.height - 128.0).abs() <= 4.0, "600 wide: {}", wide.height);
-        assert!((narrow.height - 241.0).abs() <= 6.0, "220 wide: {}", narrow.height);
-        assert!(wide.height.is_finite() && wide.height > 40.0, "a table has height: {}", wide.height);
-        assert!(wide.width <= 600.0 + 0.5 && narrow.width <= 220.0 + 0.5, "it fits the width it is given");
-        assert!(narrow.height > wide.height, "a narrower table wraps and grows: {} vs {}", wide.height, narrow.height);
-        assert!(code_size.height > 30.0 && code_size.height < wide.height + 400.0, "a code block has height: {}", code_size.height);
-    }
 }

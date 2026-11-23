@@ -93,7 +93,26 @@ impl RawTextField {
             );
             let label_height = (metrics.ascent - metrics.descent + metrics.line_gap).max(1.0);
             let top = text_top + line.baseline - (metrics.ascent + metrics.line_gap * 0.5);
-            let mut left = text_left + line.width + labels.gap * scale;
+            // End-of-line inlay hints are drawn after the last character without widening `line.width`,
+            // so start the label after them.
+            let mut line_end = line.width;
+            if let Ok(found) = layout
+                .geometry
+                .inlays
+                .binary_search_by_key(&row.byte_end, |place| place.at)
+            {
+                let place = &layout.geometry.inlays[found];
+                if place.eol {
+                    let inlay_end = layout
+                        .geometry
+                        .inlay_origin(place, scale)
+                        .map_or(line.width + place.gap * scale, |(gap_left, _)| {
+                            gap_left + place.gap * scale
+                        });
+                    line_end = line_end.max(inlay_end);
+                }
+            }
+            let mut left = text_left + line_end + labels.gap * scale;
             for part in &label.parts {
                 let width = ctx
                     .canvas

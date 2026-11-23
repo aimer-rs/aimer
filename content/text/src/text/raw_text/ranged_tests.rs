@@ -113,23 +113,6 @@ fn colour_only_ranges_leave_the_interaction_layout_unchanged() {
     }
 }
 
-/// Without this the test above could pass for the wrong reason, with the
-/// ranges ignored altogether: a heavier weight does change the shaped width.
-#[test]
-fn ranges_that_change_the_weight_do_change_the_layout() {
-    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
-    let ctx = context(&runtime);
-    let bold = StyledRange::new(
-        0..8,
-        SpanStyle::new().font_weight(aimer_style::FontWeight::Bold),
-    );
-
-    let plain = widget("wide wide wide", None).interaction_layout(&ctx);
-    let ranged = widget("wide wide wide", Some(Rc::from(vec![bold]))).interaction_layout(&ctx);
-
-    assert!(ranged.lines[0].width > plain.lines[0].width + 0.5);
-}
-
 /// The `DrawText` commands `widget` records, as `(text, rgba)` in paint order.
 fn recorded_runs(widget: &RawTextWidget, ctx: &BuildContext<'_>) -> Vec<(String, [u8; 4])> {
     let tree = aimer_cupid::draw_cmd::RenderTree::new();

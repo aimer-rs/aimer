@@ -348,3 +348,67 @@ fn the_hover_color_is_kept_by_the_label_and_a_label_that_has_none_says_so() {
     assert_eq!(LineLabel::new(REST).hover_color(HOT).hover(), Some(HOT));
     assert_eq!(LineLabel::new(REST).hover(), None);
 }
+
+#[test]
+fn a_label_is_placed_after_an_end_of_line_inlay_hint_without_overlapping_it() {
+    use crate::input_field::inlay::{Inlay, Inlays};
+
+    let pressed = Rc::new(Cell::new(false));
+    let pressed_in = Rc::clone(&pressed);
+    let label = Rc::new(
+        LineLabel::new(Color::Rgba(120, 124, 135, 255))
+            .button("2 usages", move |_| pressed_in.set(true)),
+    );
+    let mut config = field_config(TextEditingController::with_text(TEXT));
+    config.line_numbers = Some(LineNumbers::new());
+    config.max_lines = Some(8);
+    config.wrap = false;
+    config.line_labels = Some(LineLabels::new(GAP, move |line| (line == 1).then(|| Rc::clone(&label))));
+    // End of line 1 ("beta") is byte 10 ("alpha\nbeta").
+    let eol_offset = 10;
+    config.inlays = Some(Inlays::new(vec![
+        Inlay::new(eol_offset, "&AsciiSet", Color::Rgba(238, 190, 212, 255))
+            .padded(true, false)
+            .background(Color::Rgba(255, 92, 150, 76)),
+    ]));
+    let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+    let ctx = dummy_build_context(400.0, 300.0);
+    field.update(&ctx);
+
+    let drawn = commands(&field, &ctx);
+    let layout = field.local_v2_layout(&ctx).expect("laid out");
+    let place = layout
+        .geometry
+        .inlays
+        .iter()
+        .find(|p| p.at == eol_offset && p.eol)
+        .expect("end-of-line inlay is placed");
+    let (gap_left, _) = layout.geometry.inlay_origin(place, layout.scale).expect("inlay origin");
+    let inlay_right = (layout.outline_left + layout.padding_left - layout.scroll_x + gap_left) / layout.scale + place.gap;
+    let (label_x, _) = drawn_text(&drawn, "2 usages").expect("label is drawn");
+    assert!(
+        label_x >= inlay_right + GAP as f32 - 1.0,
+        "label at {label_x} overlaps end-of-line inlay ending at {inlay_right} (gap {GAP})"
+    );
+
+    let hits = field.label_hits.borrow().clone();
+    assert_eq!(hits.len(), 1);
+    assert!(
+        hits[0].x >= inlay_right + GAP as f32 - 1.0,
+        "label hit box at {} should match shifted label position past {inlay_right}",
+        hits[0].x
+    );
+    let over_inlay = Vec2d {
+        x: inlay_right - place.gap * 0.5,
+        y: hits[0].y + hits[0].height / 2.0,
+    };
+    assert!(
+        field.gutter_marker_at(over_inlay).is_none(),
+        "the inlay hint itself is not covered by the label button"
+    );
+    let press = field
+        .gutter_marker_at(center(&hits[0]))
+        .expect("shifted label button is hit");
+    press();
+    assert!(pressed.get(), "pressing the shifted label button fires its callback");
+}

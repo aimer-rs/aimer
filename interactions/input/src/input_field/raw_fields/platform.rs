@@ -268,15 +268,15 @@ impl RawTextField {
         let session_id = self.native_session.get();
         let value = self.controller.value();
         let selection = (
-            crate::editable_text::byte_to_utf16(value.text(), value.selection().anchor())
+            crate::editable_text::byte_to_utf16(&value.text(), value.selection().anchor())
                 .unwrap_or(0),
-            crate::editable_text::byte_to_utf16(value.text(), value.selection().focus())
+            crate::editable_text::byte_to_utf16(&value.text(), value.selection().focus())
                 .unwrap_or(0),
         );
         let composing = value.composing().map(|range| {
             (
-                crate::editable_text::byte_to_utf16(value.text(), range.start()).unwrap_or(0),
-                crate::editable_text::byte_to_utf16(value.text(), range.end()).unwrap_or(0),
+                crate::editable_text::byte_to_utf16(&value.text(), range.start()).unwrap_or(0),
+                crate::editable_text::byte_to_utf16(&value.text(), range.end()).unwrap_or(0),
             )
         });
         let secure = self.input_type.is_obscured();
@@ -285,7 +285,7 @@ impl RawTextField {
         ios_keyboard::sync_text_state(
             session_id,
             self.controller.revision(),
-            value.text(),
+            &value.text(),
             selection,
             composing,
             secure,
@@ -295,7 +295,7 @@ impl RawTextField {
         android_keyboard::sync_text_state(
             session_id,
             self.controller.revision(),
-            value.text(),
+            &value.text(),
             selection,
             composing,
             secure,
