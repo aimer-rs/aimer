@@ -649,6 +649,15 @@ impl<E: Element> Drawable for RawScrollableContainer<E> {
                 false
             };
             if should_dispatch_hover {
+                // `draw_content` may have just rebuilt dirty descendants (such
+                // as a row whose hover state changed on the previous frame)
+                // within the same event frame that already checked this
+                // dispatcher during pre-paint input (e.g. a wheel event).
+                // Advance the event frame so `dispatch` refreshes its path
+                // index against the post-rebuild tree instead of silently
+                // failing to resolve the previous hover chain and dropping
+                // its exits.
+                aimer_widget::begin_event_frame();
                 let event = ElementEvent::PointerMove(PointerInfo::mouse(
                     ctx.cursor_pos(),
                     PointerButton::Primary,

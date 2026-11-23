@@ -1682,6 +1682,7 @@ impl<'a, W: Widget + 'static> FrameDrawer<'a, W> {
         let mut prepared_root = None;
         if let Some(root) = root {
             root.rebuild_if_dirty(&build_ctx);
+            begin_event_frame();
             prepared_root = Some(root.id());
         }
 
