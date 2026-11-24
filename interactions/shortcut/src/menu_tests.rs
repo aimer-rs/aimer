@@ -140,3 +140,19 @@ fn application_item_str_parses_the_chord_for_the_platform() {
     let MenuEntry::Item(settings) = &app.application_entries()[0] else { panic!("an item") };
     assert_eq!(settings.chord(), Some(KeyChord::parse("CmdOrCtrl+,").unwrap()));
 }
+
+#[test]
+fn menu_change_listener_fires_on_set_and_clear_and_stops_when_cleared() {
+    let (hits, bump) = counter();
+    set_on_menu_change(bump);
+
+    set_app_menu(AppMenu::new());
+    assert_eq!(hits.get(), 1);
+
+    clear_app_menu();
+    assert_eq!(hits.get(), 2);
+
+    clear_on_menu_change();
+    set_app_menu(AppMenu::new());
+    assert_eq!(hits.get(), 2);
+}

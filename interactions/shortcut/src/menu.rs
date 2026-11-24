@@ -226,6 +226,32 @@ struct Installed {
 
 aimer_tls::thread_local! {
     static INSTALLED: RefCell<Option<Installed>> = const { RefCell::new(None) };
+    static ON_CHANGE: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
+}
+
+/// Registers a UI-thread hook notified whenever [`set_app_menu`] or [`clear_app_menu`] runs.
+///
+/// Used by native platform hosts (such as macOS) to rebuild the system menu bar live.
+#[doc(hidden)]
+pub fn set_on_menu_change(listener: impl Fn() + 'static) {
+    ON_CHANGE.with(|slot| {
+        *slot.borrow_mut() = Some(Rc::new(listener));
+    });
+}
+
+/// Removes any menu-change listener installed with [`set_on_menu_change`].
+#[doc(hidden)]
+pub fn clear_on_menu_change() {
+    ON_CHANGE.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
+}
+
+fn notify_menu_changed() {
+    let listener = ON_CHANGE.with(|slot| slot.borrow().clone());
+    if let Some(cb) = listener {
+        cb();
+    }
 }
 
 /// Makes `menu` the application's menu, replacing any earlier one.
@@ -239,12 +265,14 @@ pub fn set_app_menu(menu: AppMenu) {
     // things whose drop reaches back here.
     let old = INSTALLED.with(|slot| slot.borrow_mut().replace(installed));
     drop(old);
+    notify_menu_changed();
 }
 
 /// Removes the application menu.
 pub fn clear_app_menu() {
     let old = INSTALLED.with(|slot| slot.borrow_mut().take());
     drop(old);
+    notify_menu_changed();
 }
 
 /// Reads the installed menu, if there is one.

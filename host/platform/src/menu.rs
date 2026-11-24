@@ -105,16 +105,56 @@ pub fn user_item_for_menu_id(id: &str) -> Option<aimer_shortcut::menu::MenuItemI
     Some(aimer_shortcut::menu::MenuItemId::from_raw(raw))
 }
 
+#[cfg(target_os = "macos")]
+thread_local! {
+    /// Retains the most recently rebuilt `muda::Menu` after a runtime `set_app_menu` call.
+    static REBUILT_MACOS_MENU: std::cell::RefCell<Option<muda::Menu>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// Builds the application menu and starts forwarding its editing shortcuts.
 ///
 /// The returned [`muda::Menu`] owns the native objects and must be kept alive
 /// for as long as the application runs.
 #[cfg(target_os = "macos")]
 pub fn install_macos_menu() -> muda::Menu {
-    use muda::accelerator::{Accelerator, Code, Modifiers as Accel};
-    use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+    use muda::MenuEvent;
 
     use crate::event::{AimerNativePlatformEvent, EVENT_PROXY};
+
+    let menu = build_macos_menu();
+    menu.init_for_nsapp();
+
+    // The handler runs on the main thread, inside AppKit's own dispatch of the
+    // menu command, so the work is handed to the event loop instead of being
+    // done here: it is the loop that owns the widget tree.
+    MenuEvent::set_event_handler(Some(|event: MenuEvent| {
+        let Some(proxy) = EVENT_PROXY.get() else {
+            return;
+        };
+        if let Some(shortcut) = shortcut_for_menu_id(event.id.as_ref()) {
+            let _ = proxy.send_event(AimerNativePlatformEvent::MenuShortcut(shortcut));
+        } else if let Some(item) = user_item_for_menu_id(event.id.as_ref()) {
+            let _ = proxy.send_event(AimerNativePlatformEvent::MenuItem(item));
+        }
+    }));
+
+    // Rebuild and re-install the native NSMenu whenever the app swaps its `AppMenu` at runtime.
+    aimer_shortcut::menu::set_on_menu_change(|| {
+        let next = build_macos_menu();
+        next.init_for_nsapp();
+        REBUILT_MACOS_MENU.with(|slot| {
+            *slot.borrow_mut() = Some(next);
+        });
+    });
+
+    menu
+}
+
+#[cfg(target_os = "macos")]
+fn build_macos_menu() -> muda::Menu {
+    use muda::accelerator::{Accelerator, Code, Modifiers as Accel};
+    use muda::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 
     /// `Cmd` alone, the modifier every editing shortcut on macOS is built on.
     const CMD: Accel = Accel::META;
@@ -220,22 +260,6 @@ pub fn install_macos_menu() -> muda::Menu {
         menu.append(submenu).unwrap();
     }
     menu.append_items(&[&view_menu, &window_menu, &help_menu]).unwrap();
-
-    menu.init_for_nsapp();
-
-    // The handler runs on the main thread, inside AppKit's own dispatch of the
-    // menu command, so the work is handed to the event loop instead of being
-    // done here: it is the loop that owns the widget tree.
-    MenuEvent::set_event_handler(Some(|event: MenuEvent| {
-        let Some(proxy) = EVENT_PROXY.get() else {
-            return;
-        };
-        if let Some(shortcut) = shortcut_for_menu_id(event.id.as_ref()) {
-            let _ = proxy.send_event(AimerNativePlatformEvent::MenuShortcut(shortcut));
-        } else if let Some(item) = user_item_for_menu_id(event.id.as_ref()) {
-            let _ = proxy.send_event(AimerNativePlatformEvent::MenuItem(item));
-        }
-    }));
 
     menu
 }

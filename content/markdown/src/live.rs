@@ -89,6 +89,7 @@ pub struct LivePreview {
     cuts: Rc<RefCell<CutIndex>>,
     title: Option<SpanStyle>,
     image_height: f32,
+    base_dir: Option<std::path::PathBuf>,
 }
 
 impl LivePreview {
@@ -102,6 +103,7 @@ impl LivePreview {
             cuts: Rc::new(RefCell::new(CutIndex::new())),
             title: None,
             image_height: DEFAULT_IMAGE_HEIGHT,
+            base_dir: None,
         }
     }
 
@@ -127,6 +129,15 @@ impl LivePreview {
     #[must_use]
     pub fn image_height(mut self, height: f32) -> Self {
         self.image_height = height;
+        self
+    }
+
+    /// Sets the directory relative image paths in the markdown are resolved against
+    /// (typically the folder containing the markdown file). Without one, relative
+    /// paths are resolved against the process's current working directory.
+    #[must_use]
+    pub fn base_dir(mut self, dir: impl Into<std::path::PathBuf>) -> Self {
+        self.base_dir = Some(dir.into());
         self
     }
 
@@ -330,7 +341,9 @@ impl LivePreview {
                 continue;
             };
             let picture = single_image(node);
+            let inline_svg = inline_svg_markup(node, text, &range);
             let embeddable = picture
+                || inline_svg.is_some()
                 || match node {
                     Node::Table(_) => true,
                     Node::Code(_) => {
@@ -353,13 +366,28 @@ impl LivePreview {
             let key = hash_of(&*source, *occurrence);
             let theme = self.theme;
             let image_height = self.image_height;
+            if let Some(svg_markup) = inline_svg {
+                if let Ok(doc) = aimer_svg::SvgDocument::from_svg(svg_markup.as_bytes()) {
+                    let h = svg_display_height(&doc, image_height);
+                    let embed = TextEmbed::new(range, key, move || {
+                        aimer_svg::Svg::new(doc.clone()).height(h)
+                    })
+                    .fixed_height(h);
+                    embeds.push(embed);
+                }
+                continue;
+            }
+            let base_dir = self.base_dir.clone();
             let embed = TextEmbed::new(range, key, move || {
+                let base_dir = base_dir.clone();
                 crate::MarkdownViewer::new()
                     .markdown(source.to_string())
                     .theme(theme)
                     .scrollable(false)
                     .padding(aimer_style::LayoutSpacing::all(0_u32))
-                    .image_resolver(move |image| picture_widget(image, image_height))
+                    .image_resolver(move |image| {
+                        picture_widget(image, image_height, base_dir.as_deref())
+                    })
             });
             embeds.push(if picture { embed.fixed_height(self.image_height) } else { embed });
         }
@@ -394,9 +422,104 @@ fn single_image(node: &Node) -> bool {
     pictures == 1
 }
 
-/// The widget for a picture in a box `height` tall: a file read from disk or a
+/// Resolves a local markdown image target against `base_dir` when it is relative,
+/// stripping any `file://` prefix and decoding percent-encoded bytes (such as `%20`).
+fn resolve_image_path(source: &str, base_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+    let raw = source.strip_prefix("file://").unwrap_or(source);
+    let decoded = percent_decode(raw);
+    let path = std::path::PathBuf::from(decoded);
+    if path.is_relative()
+        && let Some(dir) = base_dir
+    {
+        dir.join(path)
+    } else {
+        path
+    }
+}
+
+fn percent_decode(input: &str) -> String {
+    if !input.contains('%') {
+        return input.to_owned();
+    }
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(hi), Some(lo)) = (hex_nibble(bytes[i + 1]), hex_nibble(bytes[i + 2]))
+        {
+            out.push((hi << 4) | lo);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| input.to_owned())
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Returns the raw `<svg ...>...</svg>` markup if `node` is a standalone SVG block (either a
+/// CommonMark HTML block or a paragraph containing only inline SVG HTML nodes).
+fn inline_svg_markup<'a>(node: &'a Node, text: &'a str, range: &Range<usize>) -> Option<&'a str> {
+    match node {
+        Node::Html(html) if is_inline_svg(&html.value) => Some(html.value.as_str()),
+        Node::Paragraph(paragraph) => {
+            let only_html = paragraph.children.iter().all(|child| match child {
+                Node::Html(_) => true,
+                Node::Text(t) => t.value.trim().is_empty(),
+                _ => false,
+            });
+            if !only_html {
+                return None;
+            }
+            let raw = text.get(range.clone())?;
+            is_inline_svg(raw).then_some(raw)
+        }
+        _ => None,
+    }
+}
+
+/// Whether an HTML block in markdown is a standalone `<svg ...>...</svg>` element.
+fn is_inline_svg(html: &str) -> bool {
+    let trimmed = html.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("<svg") && lower.contains("</svg>")
+}
+
+/// Computes a sensible display height for an SVG document within `max_height`.
+fn svg_display_height(doc: &aimer_svg::SvgDocument, max_height: f32) -> f32 {
+    let intrinsic = doc.scene().viewport.height;
+    if intrinsic.is_finite() && intrinsic > 0.0 {
+        intrinsic.clamp(16.0, max_height)
+    } else {
+        max_height
+    }
+}
+
+/// Whether `path` has an `.svg` extension (ASCII case-insensitive).
+fn is_svg_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
+}
+
+/// The widget for a picture in a box `height` tall: a file read from disk (raster or SVG) or a
 /// web address, fitted inside the box with its proportions kept.
-fn picture_widget(image: &crate::MarkdownImage, height: f32) -> aimer_widget::AnyWidget {
+fn picture_widget(
+    image: &crate::MarkdownImage,
+    height: f32,
+    base_dir: Option<&std::path::Path>,
+) -> aimer_widget::AnyWidget {
     use aimer_style::BoxFit;
     use aimer_widget::Widget;
 
@@ -404,8 +527,22 @@ fn picture_widget(image: &crate::MarkdownImage, height: f32) -> aimer_widget::An
     if source.starts_with("http://") || source.starts_with("https://") {
         aimer_assets::NetworkImage::new(source).height(height).fit(BoxFit::Contain).boxed()
     } else {
-        // A path on disk, as the picker hands it over, and not a bundled asset.
-        let path = source.strip_prefix("file://").unwrap_or(&source).to_owned();
+        // A path on disk, resolved relative to the markdown file's directory when relative.
+        let path = resolve_image_path(&source, base_dir);
+        if is_svg_path(&path) {
+            if let Ok(bytes) = std::fs::read(&path)
+                && let Ok(doc) = aimer_svg::SvgDocument::from_svg(&bytes)
+            {
+                let h = svg_display_height(&doc, height);
+                return aimer_svg::Svg::new(doc).height(h).boxed();
+            }
+            let fallback = if image.alt.is_empty() {
+                format!("[SVG: {}]", image.source)
+            } else {
+                format!("[{}]", image.alt)
+            };
+            return aimer_text::Text::new(fallback).boxed();
+        }
         aimer_assets::Image::new(path).height(height).fit(BoxFit::Contain).boxed()
     }
 }
@@ -1384,6 +1521,51 @@ mod tests {
     #[test]
     fn the_cursor_on_an_image_line_shows_its_markdown() {
         assert!(embeds_at(PICTURE, offset(PICTURE, "cat")).is_empty());
+    }
+
+    #[test]
+    fn relative_image_paths_resolve_against_base_dir_and_decode_percent_escapes() {
+        use std::path::{Path, PathBuf};
+
+        let base = Path::new("/workspace/docs");
+        assert_eq!(
+            resolve_image_path("assets/shot.png", Some(base)),
+            PathBuf::from("/workspace/docs/assets/shot.png")
+        );
+        assert_eq!(
+            resolve_image_path("./my%20shot.png", Some(base)),
+            PathBuf::from("/workspace/docs/./my shot.png")
+        );
+        assert_eq!(
+            resolve_image_path("/abs/pic.png", Some(base)),
+            PathBuf::from("/abs/pic.png")
+        );
+        assert_eq!(
+            resolve_image_path("file:///abs/my%20pic.png", Some(base)),
+            PathBuf::from("/abs/my pic.png")
+        );
+        assert_eq!(
+            resolve_image_path("assets/shot.png", None),
+            PathBuf::from("assets/shot.png")
+        );
+    }
+
+    #[test]
+    fn inline_svg_blocks_and_svg_file_paths_are_detected_and_embedded() {
+        use std::path::Path;
+
+        assert!(is_svg_path(Path::new("logo.svg")));
+        assert!(is_svg_path(Path::new("icons/ARROW.SVG")));
+        assert!(!is_svg_path(Path::new("photo.png")));
+
+        let md = "# Title\n\n<svg viewBox=\"0 0 100 60\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"100\" height=\"60\" fill=\"#ff0088\"/></svg>\n\nend";
+        let embeds = embeds_at(md, md.len());
+        assert_eq!(embeds.len(), 1, "inline <svg> block is embedded directly");
+        assert_eq!(embeds[0].height(), aimer_input::input::EmbedHeight::Fixed(60.0));
+
+        // When the cursor is on the <svg> block, it shows raw markdown for editing.
+        let svg_pos = offset(md, "<svg");
+        assert!(embeds_at(md, svg_pos).is_empty());
     }
 
     #[test]
