@@ -112,6 +112,13 @@ pub struct SpanStyle {
     /// span. Without one the background is a square. A negative or not-a-number radius is a square, and
     /// a radius larger than half the height of the background is drawn as half of it.
     pub background_radius: Option<f32>,
+    /// Optional outline color for the inline background box, inherited from the parent span.
+    /// Drawn when paired with a positive [`border_width`](Self::border_width), even without a
+    /// [`background_color`](Self::background_color) fill.
+    pub border_color: Option<Color>,
+    /// Optional outline stroke width, in logical pixels, for the inline background box, inherited from
+    /// the parent span. Non-positive or NaN widths draw no border.
+    pub border_width: Option<f32>,
     /// Optional decoration override inherited from the parent span.
     pub text_decoration: Option<TextDecoration>,
     /// Optional Unicode transformation override inherited from the parent span.
@@ -137,6 +144,8 @@ impl SpanStyle {
             color: None,
             background_color: None,
             background_radius: None,
+            border_color: None,
+            border_width: None,
             text_decoration: None,
             text_transform: None,
             letter_spacing: None,
@@ -228,6 +237,21 @@ impl SpanStyle {
     /// ```
     pub const fn background_radius(mut self, radius: f32) -> Self {
         self.background_radius = Some(radius);
+        self
+    }
+
+    /// Sets the outline color of the inline background box; see [`border_color`](Self::border_color).
+    #[inline]
+    pub const fn border_color(mut self, color: Color) -> Self {
+        self.border_color = Some(color);
+        self
+    }
+
+    /// Sets the outline stroke width of the inline background box in logical pixels; see
+    /// [`border_width`](Self::border_width).
+    #[inline]
+    pub const fn border_width(mut self, width: f32) -> Self {
+        self.border_width = Some(width);
         self
     }
 
@@ -350,7 +374,7 @@ impl TextSpan {
     #[inline]
     pub fn flatten(&self, base_style: &TextStyle) -> Vec<ResolvedTextSpan> {
         let mut result = Vec::with_capacity(self.resolved_span_count());
-        self.flatten_into(*base_style, None, None, &mut result);
+        self.flatten_into(*base_style, None, None, None, None, &mut result);
         result
     }
 
@@ -368,11 +392,15 @@ impl TextSpan {
         inherited_style: TextStyle,
         inherited_link: Option<TextSource>,
         inherited_radius: Option<f32>,
+        inherited_border_color: Option<Color>,
+        inherited_border_width: Option<f32>,
         result: &mut Vec<ResolvedTextSpan>,
     ) {
         let style = self.style.resolve(inherited_style);
         let link = self.link.clone().or(inherited_link);
         let radius = self.style.background_radius.or(inherited_radius);
+        let border_color = self.style.border_color.or(inherited_border_color);
+        let border_width = self.style.border_width.or(inherited_border_width);
         if !self.text.is_empty() {
             result.push(ResolvedTextSpan {
                 text: self.text.clone(),
@@ -380,10 +408,19 @@ impl TextSpan {
                 link: link.clone(),
                 inline_box: self.style.inline_box,
                 background_radius: radius,
+                border_color,
+                border_width,
             });
         }
         for child in &self.children {
-            child.flatten_into(style, link.clone(), radius, result);
+            child.flatten_into(
+                style,
+                link.clone(),
+                radius,
+                border_color,
+                border_width,
+                result,
+            );
         }
     }
 }
@@ -397,6 +434,10 @@ pub struct ResolvedTextSpan {
     pub inline_box: Option<InlineBox>,
     /// The corner radius of the span's inline background; see [`SpanStyle::background_radius`].
     pub background_radius: Option<f32>,
+    /// The outline color of the span's inline background box; see [`SpanStyle::border_color`].
+    pub border_color: Option<Color>,
+    /// The outline stroke width of the span's inline background box; see [`SpanStyle::border_width`].
+    pub border_width: Option<f32>,
 }
 
 impl ResolvedTextSpan {
@@ -420,6 +461,8 @@ impl ResolvedTextSpan {
             link: None,
             inline_box: None,
             background_radius: None,
+            border_color: None,
+            border_width: None,
         }
     }
 }

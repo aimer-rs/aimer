@@ -122,6 +122,8 @@ pub(crate) fn resolve_ranges(
         let mut span = plain_slice(source, start..end, style.resolve(base));
         span.inline_box = style.inline_box;
         span.background_radius = style.background_radius;
+        span.border_color = style.border_color;
+        span.border_width = style.border_width;
         spans.push(span);
         cursor = end;
     }
@@ -220,6 +222,22 @@ mod tests {
         assert_eq!(spans[0].background_radius, None);
         assert_eq!(spans[1].background_radius, Some(4.0));
         assert_eq!(spans[2].background_radius, None);
+    }
+
+    #[test]
+    fn a_range_keeps_the_border_of_its_style() {
+        let outline = SpanStyle::new()
+            .border_color(aimer_widget::base::Color::RED)
+            .border_width(1.5)
+            .background_radius(3.0);
+        let spans = resolve("a foo c", &[StyledRange::new(2..5, outline)]);
+
+        assert_eq!(pieces(&spans), ["a ", "foo", " c"]);
+        assert_eq!(spans[0].border_color, None);
+        assert_eq!(spans[1].border_color, Some(aimer_widget::base::Color::RED));
+        assert_eq!(spans[1].border_width, Some(1.5));
+        assert_eq!(spans[1].background_radius, Some(3.0));
+        assert_eq!(spans[2].border_color, None);
     }
 
     #[test]

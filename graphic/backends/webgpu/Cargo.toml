@@ -9,9 +9,9 @@ workspace = true
 
 [dependencies]
 
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys.workspace = true
+aimer_cupid_gpu.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 web-sys = { workspace = true, features = [

@@ -39,7 +39,6 @@ mod animation_only;
 #[cfg(target_arch = "wasm32")]
 #[path = "element/animation_only_stub.rs"]
 mod animation_only;
-#[cfg(not(target_arch = "wasm32"))]
 mod clean_skip;
 mod compositor_applied;
 mod event;

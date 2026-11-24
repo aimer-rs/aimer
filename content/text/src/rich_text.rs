@@ -1876,6 +1876,8 @@ mod tests {
                         link: Some(link_target.clone()),
                         inline_box: None,
                         background_radius: None,
+                        border_color: None,
+                        border_width: None,
                     },
                     ResolvedTextSpan::plain(Rc::from("tail"), TextStyle::default()),
                 ],
@@ -1952,6 +1954,8 @@ mod tests {
             link: Some(TextSource::from("https://aimer.dev")),
             inline_box: None,
             background_radius: None,
+            border_color: None,
+            border_width: None,
         };
         let highlighted = RawRichText {
             paragraph: Paragraph::new(

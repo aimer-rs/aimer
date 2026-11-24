@@ -2309,7 +2309,10 @@ impl RawTextField {
             _ if embedder.is_some() => self.highlight_context(&|| std::borrow::Cow::Borrowed(&*display.display), None),
             _ => HighlightContext::default(),
         };
-        let active = context.active_lines();
+        let active = match self.effective_highlighter() {
+            Some(highlighter) if highlighter.tracks_exact_selection() => context.selection(),
+            _ => context.active_lines(),
+        };
         let embed_boxes = self.embed_boxes(&|| std::borrow::Cow::Borrowed(&*display.display), &context, content_width, ctx);
         let embed_signature = embed_signature(embedder, &embed_boxes) ^ self.inlay_signature();
         let outer_language = ctx.canvas.text_language();

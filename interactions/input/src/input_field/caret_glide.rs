@@ -54,7 +54,7 @@ pub(crate) struct CaretGlide {
 impl CaretGlide {
     /// How long a caret takes to reach its new position. Short enough that it
     /// never trails fast typing, long enough to read as motion.
-    pub(crate) const DURATION: Duration = Duration::from_millis(90);
+    pub(crate) const DURATION: Duration = Duration::from_millis(120);
 
     /// Forgets where the caret was, so the next one appears where it belongs.
     #[inline]

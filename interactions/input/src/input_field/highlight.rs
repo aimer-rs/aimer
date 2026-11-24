@@ -79,6 +79,7 @@ pub struct TextHighlighter {
     id: u64,
     highlight: Rc<dyn Fn(&str, &HighlightContext) -> Vec<StyledRange>>,
     by_selection: bool,
+    exact_selection: bool,
     window: Option<Rc<WindowFn>>,
 }
 
@@ -98,6 +99,7 @@ impl TextHighlighter {
             id: NEXT_HIGHLIGHTER_ID.fetch_add(1, Ordering::Relaxed),
             highlight: Rc::new(move |text, _| highlight(text)),
             by_selection: false,
+            exact_selection: false,
             window: None,
         }
     }
@@ -193,6 +195,7 @@ impl TextHighlighter {
             id: NEXT_HIGHLIGHTER_ID.fetch_add(1, Ordering::Relaxed),
             highlight: Rc::new(highlight),
             by_selection: true,
+            exact_selection: false,
             window: None,
         }
     }
@@ -250,8 +253,19 @@ impl TextHighlighter {
             id: NEXT_HIGHLIGHTER_ID.fetch_add(1, Ordering::Relaxed),
             highlight: Rc::new(move |text, context| whole(&TextSnapshot::from_text(text), 0..text.len(), context)),
             by_selection: true,
+            exact_selection: false,
             window: Some(window),
         }
+    }
+
+    /// Marks this highlighter as sensitive to the exact caret/selection byte range (not only the
+    /// active lines), so moving the caret within a line refreshes highlighted ranges in place
+    /// without rebuilding the widget.
+    #[inline]
+    pub fn track_selection(mut self) -> Self {
+        self.by_selection = true;
+        self.exact_selection = true;
+        self
     }
 
     /// Runs the highlighter over `text` with no cursor, as in a field that does
@@ -288,6 +302,13 @@ impl TextHighlighter {
     #[inline]
     pub(crate) fn depends_on_selection(&self) -> bool {
         self.by_selection
+    }
+
+    /// Whether the ranges depend on the exact caret/selection byte range rather than only the
+    /// active lines.
+    #[inline]
+    pub(crate) fn tracks_exact_selection(&self) -> bool {
+        self.exact_selection
     }
 
     /// The identity shared by this highlighter and its clones.
@@ -476,10 +497,13 @@ impl HighlightCache {
         if text.is_empty() {
             return None;
         }
-        let active = highlighter
-            .depends_on_selection()
-            .then(|| context.active_lines())
-            .flatten();
+        let active = if highlighter.tracks_exact_selection() {
+            context.selection()
+        } else if highlighter.depends_on_selection() {
+            context.active_lines()
+        } else {
+            None
+        };
         let mut cached = self.cached.borrow_mut();
         if let Some(hit) = cached.as_ref()
             && hit.highlighter == highlighter.id()
@@ -511,7 +535,13 @@ impl HighlightCache {
         if text.is_empty() {
             return None;
         }
-        let active = highlighter.depends_on_selection().then(|| context.active_lines()).flatten();
+        let active = if highlighter.tracks_exact_selection() {
+            context.selection()
+        } else if highlighter.depends_on_selection() {
+            context.active_lines()
+        } else {
+            None
+        };
         let mut cached = self.cached.borrow_mut();
         if let Some(hit) = cached.as_ref()
             && hit.highlighter == highlighter.id()
@@ -543,7 +573,11 @@ impl HighlightCache {
         if text.is_empty() {
             return None;
         }
-        let active = context.active_lines();
+        let active = if highlighter.tracks_exact_selection() {
+            context.selection()
+        } else {
+            context.active_lines()
+        };
         let mut cached = self.windowed.borrow_mut();
         if let Some(hit) = cached.as_ref()
             && hit.highlighter == highlighter.id()
@@ -868,5 +902,30 @@ mod tests {
         cache.resolve_in(Some(&highlighter), &source, &HighlightContext::default());
 
         assert_eq!(runs.get(), 1);
+    }
+
+    #[test]
+    fn a_track_selection_windowed_highlighter_runs_again_when_caret_moves_within_a_line() {
+        let runs = Rc::new(Cell::new(0));
+        let counted = Rc::clone(&runs);
+        let highlighter = TextHighlighter::windowed(move |_text, _range, context| {
+            counted.set(counted.get() + 1);
+            context
+                .selection()
+                .map(|sel| vec![StyledRange::new(sel.start..sel.end.max(sel.start + 1), SpanStyle::new())])
+                .unwrap_or_default()
+        })
+        .track_selection();
+        let cache = HighlightCache::default();
+        let snap = TextSnapshot::from_text("const NOT_ENCODE = 1;\n");
+
+        cache.resolve_window(&highlighter, &snap, 0..snap.len(), &HighlightContext::new("const NOT_ENCODE = 1;\n", 2..2));
+        assert_eq!(runs.get(), 1);
+        // Same selection -> cached.
+        cache.resolve_window(&highlighter, &snap, 0..snap.len(), &HighlightContext::new("const NOT_ENCODE = 1;\n", 2..2));
+        assert_eq!(runs.get(), 1);
+        // Caret moves within the same line -> re-runs.
+        cache.resolve_window(&highlighter, &snap, 0..snap.len(), &HighlightContext::new("const NOT_ENCODE = 1;\n", 8..8));
+        assert_eq!(runs.get(), 2);
     }
 }

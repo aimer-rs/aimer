@@ -19,6 +19,10 @@ pub(crate) struct PreparedBackground {
     pub color: aimer_widget::base::Color,
     /// The corner radius in logical pixels; zero is a square. Never negative or not a number.
     pub radius: f32,
+    /// Optional outline color; drawn when [`border_width`](Self::border_width) is positive.
+    pub border_color: Option<aimer_widget::base::Color>,
+    /// Outline stroke width in logical pixels; zero means no border. Never negative or NaN.
+    pub border_width: f32,
 }
 
 /// One highlight rectangle of a selection, in element-local physical pixels.
@@ -141,18 +145,34 @@ pub(crate) fn prepare_background_runs(
 
     let mut runs: Vec<PreparedBackground> = Vec::new();
     for fragment in fragments {
-        if spans[fragment.span_index].inline_box.is_some() {
+        let span = &spans[fragment.span_index];
+        if span.inline_box.is_some() || fragment.width <= 0.0 || fragment.height <= 0.0 {
             continue;
         }
-        let Some(color) = spans[fragment.span_index].style.background_color else {
-            continue;
+        let color = span
+            .style
+            .background_color
+            .filter(|c| c.as_u32() >> 24 != 0)
+            .unwrap_or(aimer_widget::base::Color::Transparent);
+        let border_width = span
+            .border_width
+            .filter(|width| *width > 0.0)
+            .unwrap_or(0.0);
+        let border_color = (border_width > 0.0)
+            .then_some(span.border_color)
+            .flatten()
+            .filter(|c| c.as_u32() >> 24 != 0);
+        let border_width = if border_color.is_some() {
+            border_width
+        } else {
+            0.0
         };
-        if color.as_u32() >> 24 == 0 || fragment.width <= 0.0 || fragment.height <= 0.0 {
+        if color.as_u32() >> 24 == 0 && border_color.is_none() {
             continue;
         }
 
         let y = fragment.baseline - fragment.ascent;
-        let radius = spans[fragment.span_index]
+        let radius = span
             .background_radius
             .filter(|radius| *radius > 0.0)
             .unwrap_or(0.0);
@@ -160,6 +180,8 @@ pub(crate) fn prepare_background_runs(
             && previous.line == fragment.line
             && previous.color == color
             && previous.radius == radius
+            && previous.border_color == border_color
+            && previous.border_width == border_width
             && (previous.y - y).abs() <= TOUCH_EPSILON
             && (previous.height - fragment.height).abs() <= TOUCH_EPSILON
             && (previous.x + previous.width - fragment.x).abs() <= TOUCH_EPSILON
@@ -176,6 +198,8 @@ pub(crate) fn prepare_background_runs(
             height: fragment.height,
             color,
             radius,
+            border_color,
+            border_width,
         });
     }
     runs
@@ -558,5 +582,38 @@ mod tests {
         }];
 
         assert!(prepare_background_runs(&fragments, &spans).is_empty());
+    }
+
+    #[test]
+    fn border_only_spans_create_merged_outline_runs() {
+        let pink = aimer_widget::base::Color::Rgb(255, 92, 150);
+        let outlined = |text: &str| {
+            let mut span = ResolvedTextSpan::plain(Rc::from(text), TextStyle::default());
+            span.border_color = Some(pink);
+            span.border_width = Some(1.0);
+            span.background_radius = Some(3.0);
+            span
+        };
+        let spans = vec![outlined("a"), outlined("b")];
+        let fragment = |span_index: usize, x: f32| PreparedFragment {
+            span_index,
+            text: "x".into(),
+            source_range: None,
+            rendered_source_ranges: Vec::new(),
+            line: 0,
+            x,
+            baseline: 18.0,
+            width: 10.0,
+            height: 12.0,
+            ascent: 8.0,
+            descent: 4.0,
+        };
+        let runs = prepare_background_runs(&[fragment(0, 0.0), fragment(1, 10.0)], &spans);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].color, aimer_widget::base::Color::Transparent);
+        assert_eq!(runs[0].border_color, Some(pink));
+        assert_eq!(runs[0].border_width, 1.0);
+        assert_eq!(runs[0].radius, 3.0);
+        assert_eq!(runs[0].width, 20.0);
     }
 }

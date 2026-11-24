@@ -432,15 +432,27 @@ impl Paragraph {
                 background.height / scale,
             );
             let color = [red, green, blue, alpha];
-            if background.radius > 0.0 {
+            if background.radius > 0.0 || background.border_width > 0.0 {
                 // A radius past half the height would overlap itself, so it stops at a pill.
                 let radius = background.radius.min(rect.height * 0.5);
+                let border_color = match background.border_color {
+                    Some(c) if background.border_width > 0.0 => {
+                        let (br, bg, bb, ba) = c.to_rgba();
+                        aimer_cupid::utilities::Color::rgba8(br, bg, bb, ba)
+                    }
+                    _ => aimer_cupid::utilities::Color::transparent(),
+                };
+                let border_width = if background.border_color.is_some() {
+                    background.border_width
+                } else {
+                    0.0
+                };
                 canvas.fill_rect_styled(
                     rect,
                     aimer_cupid::utilities::Color::rgba8(red, green, blue, alpha),
                     [radius; 4],
-                    [0.0; 4],
-                    aimer_cupid::utilities::Color::transparent(),
+                    [border_width; 4],
+                    border_color,
                     [0.0; 4],
                     aimer_cupid::utilities::Color::transparent(),
                 );
@@ -1456,6 +1468,8 @@ mod tests {
             link: Some(hovered.clone()),
             inline_box: None,
             background_radius: None,
+            border_color: None,
+            border_width: None,
         };
         let plain = ResolvedTextSpan::plain(Rc::from(" docs"), TextStyle::default());
 
@@ -1654,6 +1668,8 @@ mod tests {
                 link: Some(target.clone()),
                 inline_box: None,
                 background_radius: None,
+                border_color: None,
+                border_width: None,
             }],
             TextAlign::TopLeft,
             TextOverflow::Wrap,

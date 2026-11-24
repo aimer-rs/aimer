@@ -89,10 +89,11 @@ use winit::window::{self, Fullscreen, Window, WindowAttributes, WindowId};
 aimer_tls::thread_local!(
     static REFRESH_RATE: Cell<u32> = Cell::new(60);
 );
-
+/// Obtain the refresh rate of the display in `u32`
 pub struct RefreshRate;
 
 impl RefreshRate {
+    /// get current display's refresh rate, it should be call after the `AimerApp::start` or `AimerApp::run(self)`
     pub fn current() -> u32 {
         REFRESH_RATE.get()
     }

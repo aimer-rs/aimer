@@ -3,9 +3,10 @@
 //! The crate is empty on every target but wasm32; `aimer_cupid` selects it with
 //! its `web` feature.
 
-#![cfg(target_arch = "wasm32")]
+
 
 // `crate::backend::..` is how this code has always named the contract.
+#![cfg(target_arch = "wasm32")]
 pub(crate) use aimer_cupid_gpu as backend;
 
 mod pipeline;

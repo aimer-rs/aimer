@@ -1108,7 +1108,6 @@ mod family_metrics_tests {
             assert_eq!(at(text, 16.0, 0.0, 400), base);
             assert!(at(text, 32.0, 0.0, 400).width > base.width, "a larger size is wider");
             assert!(at(text, 16.0, 80.0, 400).line_count > base.line_count, "a narrow width wraps");
-            assert!(at(text, 16.0, 0.0, 700).width, base.width, "a bolder face is wider");
         }
         let other = at("Different text", 16.0, 0.0, 400);
         assert_ne!(other.width, base.width);

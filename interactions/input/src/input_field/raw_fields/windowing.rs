@@ -344,7 +344,10 @@ impl RawTextField {
             _ if embedder.is_some() => self.highlight_context(&whole, Some(&index)),
             _ => HighlightContext::default(),
         };
-        let active = context.active_lines();
+        let active = match highlighter {
+            Some(highlighter) if highlighter.tracks_exact_selection() => context.selection(),
+            _ => context.active_lines(),
+        };
         let whole_ranges = if rich && !highlighter_windowed {
             self.highlights.resolve_in_snapshot(highlighter, &snapshot, &context)
         } else {
