@@ -46,8 +46,7 @@ use aimer_cupid::draw_cmd::{RenderNodeId, RenderNodeState};
 use aimer_cupid::utilities::IdBuildHasher;
 use aimer_cupid::utilities::Mat3;
 use aimer_attribute::position::Vec2d;
-
-use super::animation_only::stale_roots_waiting;
+use animation_only::stale_roots_waiting;
 use super::*;
 
 /// How many records are kept. Ids are handed out in sequence, so a window with

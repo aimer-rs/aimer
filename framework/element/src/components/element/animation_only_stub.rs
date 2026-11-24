@@ -20,6 +20,11 @@ pub(crate) fn is_animation_only_pass() -> bool {
     false
 }
 
+#[inline]
+pub(crate) fn stale_roots_waiting() -> bool {
+    false
+}
+
 pub(crate) fn register_animating_element(
     _element: ElementId,
     _ctx: &BuildContext,

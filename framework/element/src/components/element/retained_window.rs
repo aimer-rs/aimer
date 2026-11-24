@@ -104,9 +104,7 @@ impl VisibleWindow {
     /// window along that axis changes none of its answers. Two windows that only
     /// differ that way compare equal once made relative.
     ///
-    /// Only the clean-skip cache keys windows this way, and that cache is not built
-    /// for the web, where nothing leaves a subtree alone.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// Only the clean-skip cache keys windows this way.
     #[inline]
     pub(super) fn relative_to(mut self, across: f32, down: f32) -> Self {
         if let Some((x, y, width, height)) = &mut self.rect {
