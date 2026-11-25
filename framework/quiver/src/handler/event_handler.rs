@@ -262,15 +262,17 @@ impl WindowEventHandler {
                 if app.active_root().is_none() {
                     return;
                 }
+                let mut result = EventResult::ignored();
                 if is_focus {
-                    let result = app.cancel_element_events();
-                    if Self::should_redraw(result, true) {
-                        app.request_full_redraw();
-                    }
+                    result = result.merge(app.cancel_element_events());
                 } else {
                     #[cfg(target_arch = "wasm32")]
                     app.web_scroll_phase.reset();
                     app.scroll_smoother.clear();
+                }
+                result = result.merge(app.notify_window_focus(is_focus));
+                if Self::should_redraw(result, true) {
+                    app.request_full_redraw();
                 }
             }
 

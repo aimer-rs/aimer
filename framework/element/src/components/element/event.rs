@@ -865,6 +865,26 @@ impl EventDispatcher {
         self.focus.focused()
     }
 
+    /// Delivers [`ElementEvent::FocusGained`] or [`ElementEvent::FocusLost`] to the
+    /// current focus owner when the hosting OS window gains or loses focus.
+    pub fn notify_window_focus(&mut self, root: &dyn Element, is_focused: bool) -> EventResult {
+        let Some(owner) = self.focus.owner().cloned() else {
+            return EventResult::ignored();
+        };
+        let Some(element) = self.resolve_owner(root, owner.id) else {
+            return EventResult::ignored();
+        };
+        if !event_callback_enabled(element) {
+            return EventResult::ignored();
+        }
+        let event = if is_focused {
+            ElementEvent::FocusGained
+        } else {
+            ElementEvent::FocusLost
+        };
+        element.on_event(&event)
+    }
+
     /// Returns the element whose subtree keyboard focus is confined to, if any.
     ///
     /// This is the innermost element of the last indexed tree that reported

@@ -426,7 +426,15 @@ impl EventElement for RawDropZone {
             }
 
             ElementEvent::Cancel => {
-                self.logic.abandon();
+                // Cancel clears an in-flight hover, but must not discard files that were
+                // already dropped and queued for delivery (e.g. when macOS focuses the
+                // window right after `WindowEvent::DroppedFile` before the next frame).
+                if self.logic.pending.borrow().is_empty() {
+                    self.logic.abandon();
+                } else {
+                    DragSession::cancel(FILE_DRAG_POINTER);
+                }
+                clear_hover();
                 EventResult::ignored()
             }
 

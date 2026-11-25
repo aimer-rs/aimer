@@ -1443,6 +1443,13 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         result
     }
 
+    pub(crate) fn notify_window_focus(&mut self, is_focused: bool) -> EventResult {
+        if self.active_root().is_none() {
+            return EventResult::ignored();
+        }
+        self.with_event_root(|dispatcher, root| dispatcher.notify_window_focus(root, is_focused))
+    }
+
     /// Delivers this frame's share of the pending scroll distance to the
     /// widget tree.
     ///
