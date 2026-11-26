@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::{Hash, Hasher};
 use std::cell::Cell;
 
 use aimer_attribute::dimension::Dimension;
@@ -354,6 +356,28 @@ impl<W> Resizable<W> {
 }
 
 impl<W: Widget + 'static> Widget for Resizable<W> {
+    /// The callbacks are compared by identity: the same one is unchanged, another
+    /// one is a change.
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hasher.write_f32(self.width);
+        hasher.write_f32(self.height);
+        hasher.write_f32(self.min_width);
+        hasher.write_f32(self.min_height);
+        hasher.write_f32(self.max_width);
+        hasher.write_f32(self.max_height);
+        hasher.write_f32(self.handle_thickness);
+        hasher.write_u8(u8::from(self.handle_outset.is_some()));
+        if let Some(outset) = self.handle_outset {
+            hasher.write_f32(outset);
+        }
+        self.direction.hash(&mut hasher);
+        self.on_resize.hash(&mut hasher);
+        self.on_resize_zone.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let min = ResolvedSize {
             width: self.min_width.max(0.0),

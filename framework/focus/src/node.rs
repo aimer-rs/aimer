@@ -91,6 +91,15 @@ pub struct FocusNode {
     state: Rc<FocusNodeState>,
 }
 
+/// A node is its identity: clones are the same node, and no two nodes made
+/// separately are.
+impl std::hash::Hash for FocusNode {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Rc::as_ptr(&self.state) as usize);
+    }
+}
+
 impl FocusNode {
     /// Creates a node that does not currently own focus.
     #[inline]

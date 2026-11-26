@@ -109,3 +109,28 @@ fn record(element: &dyn Element, ctx: &BuildContext<'_>, recorded: &mut Vec<Reco
         record(child, &child_ctx, recorded);
     });
 }
+
+/// Asserts that `base` and every entry of `variants` are hashes (not `None`),
+/// that no variant equals `base`, and that no two variants equal each other.
+///
+/// For tests of `Widget::hash` implementations: each variant changes exactly one
+/// thing the widget is built from, and each of those must show in the hash.
+#[track_caller]
+pub fn assert_hashes_distinct(
+    base: Option<crate::ContentHash>,
+    variants: &[Option<crate::ContentHash>],
+) {
+    assert!(base.is_some(), "the base widget has no hash");
+    for (index, hash) in variants.iter().enumerate() {
+        assert!(hash.is_some(), "variant {index} has no hash");
+        assert_ne!(*hash, base, "variant {index} left the hash unchanged");
+    }
+    for first in 0..variants.len() {
+        for second in first + 1..variants.len() {
+            assert_ne!(
+                variants[first], variants[second],
+                "variants {first} and {second} collide"
+            );
+        }
+    }
+}

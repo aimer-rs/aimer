@@ -4,6 +4,8 @@ use aimer_attribute::position::Vec2d;
 use aimer_container::ZeroSizedBox;
 use aimer_widget::InteractionBounds;
 use aimer_widget::base::{BuildContext, ResolvedSize};
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, Rebuildable,
     VisitorElement, Widget,
@@ -167,6 +169,19 @@ impl<W: Widget + 'static> Positioned<W> {
 }
 
 impl<W: Widget> Widget for Positioned<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("Positioned");
+        self.position.hash(&mut hasher);
+        self.left.hash(&mut hasher);
+        self.top.hash(&mut hasher);
+        self.right.hash(&mut hasher);
+        self.bottom.hash(&mut hasher);
+        self.transform.hash(&mut hasher);
+        self.layer.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self.child.to_element(ctx);
         RawPositionedElement {
@@ -198,7 +213,7 @@ pub enum Transform {
     None,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Position {
     Absolute,
     #[default]
@@ -206,6 +221,26 @@ pub enum Position {
     Static,
     Sticky,
     Fixed,
+}
+
+impl std::hash::Hash for Transform {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use aimer_attribute::hash_f32;
+        // The variant first, so the same number under another transform differs.
+        std::mem::discriminant(self).hash(state);
+        match *self {
+            Self::Translate(x, y) | Self::Scale(x, y) => {
+                hash_f32(x, state);
+                hash_f32(y, state);
+            }
+            Self::TranslateX(value)
+            | Self::TranslateY(value)
+            | Self::ScaleX(value)
+            | Self::ScaleY(value)
+            | Self::Rotate(value) => hash_f32(value, state),
+            Self::None => {}
+        }
+    }
 }
 
 #[allow(dead_code)]

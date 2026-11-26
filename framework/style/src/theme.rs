@@ -235,6 +235,23 @@ pub trait Theme: Animatable + Clone + PartialEq + Sized + 'static {
         theme
     }
 
+    /// Returns a content hash of this theme, or `None` when it has none.
+    ///
+    /// Widgets that carry a theme report their own hash from it, so a part
+    /// dressed in a theme can be recognised as unchanged. Two themes that hash
+    /// equal must be the same theme: the hash covers every field, and a field
+    /// that cannot be hashed leaves the theme without a hash.
+    ///
+    /// `#[derive(Theme)]` implements this from the fields: floats, integers,
+    /// booleans, colors and anything that implements
+    /// [`HashContent`](aimer_widget::HashContent) or [`Hash`](std::hash::Hash).
+    /// The default, `None`, is what a hand-written theme gets until it overrides
+    /// this, and it is never taken to equal another theme's.
+    #[inline]
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        None
+    }
+
     /// Returns a copy of the current theme without subscribing the building
     /// widget to changes.
     ///
@@ -256,7 +273,19 @@ pub trait Theme: Animatable + Clone + PartialEq + Sized + 'static {
     }
 }
 
-impl Theme for ThemeData {}
+impl Theme for ThemeData {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        use std::hash::Hash;
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        self.primary_color.hash(&mut hasher);
+        self.on_primary_color.hash(&mut hasher);
+        self.background_color.hash(&mut hasher);
+        self.on_background_color.hash(&mut hasher);
+        self.surface_color.hash(&mut hasher);
+        self.on_surface_color.hash(&mut hasher);
+        hasher.finish_hash()
+    }
+}
 
 #[cfg(test)]
 mod tests {

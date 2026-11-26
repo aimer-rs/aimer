@@ -3,9 +3,11 @@ use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_cupid::draw_cmd::Rect;
 use aimer_macro::{Rebuildable};
 use aimer_widget::base::{Color, *};
+use std::hash::{Hash, Hasher};
+
 use aimer_widget::{
-    AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutCache,
-    LayoutElement, VisitorElement, Widget,
+    AnyElement, AnyWidget, ContentHash, ContentHasher, Drawable, Element, EventElement,
+    EventTreeRole, LayoutCache, LayoutElement, VisitorElement, Widget,
 };
 
 use crate::ZeroSizedBox;
@@ -107,6 +109,20 @@ impl SizedBox {
 }
 
 impl<W: Widget + 'static> Widget for SizedBox<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.width.hash(&mut hasher);
+        self.height.hash(&mut hasher);
+        self.color.hash(&mut hasher);
+        // A box without a child is built over a `ZeroSizedBox`, which has no
+        // configuration of its own, so absence is all there is to say.
+        hasher.write_u8(u8::from(self.child.is_some()));
+        if let Some(child) = &self.child {
+            hasher.write_child(child.hash());
+        }
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self
             .child
@@ -487,3 +503,71 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod hash_tests {
+    use aimer_widget::base::Color;
+    use aimer_widget::{AnyElement, ContentHash, Widget};
+    use aimer_widget::base::BuildContext;
+
+    use super::SizedBox;
+
+    fn hash_of(widget: impl Widget + 'static) -> Option<ContentHash> {
+        Widget::hash(&widget)
+    }
+
+    /// A widget that cannot be hashed, as one holding a closure would be.
+    struct Unhashable;
+
+    impl Widget for Unhashable {
+        fn to_element(self, _ctx: &BuildContext) -> AnyElement {
+            unreachable!("the hash tests never build elements")
+        }
+    }
+
+    #[test]
+    fn a_box_has_a_hash_and_equal_boxes_share_it() {
+        let hash = hash_of(SizedBox::new().width(10.0).height(20.0));
+        assert!(hash.is_some(), "a box must be hashable");
+        assert_eq!(hash, hash_of(SizedBox::new().width(10.0).height(20.0)));
+    }
+
+    #[test]
+    fn every_field_changes_the_hash() {
+        let base = hash_of(SizedBox::new().width(10.0).height(20.0));
+        let changed = [
+            hash_of(SizedBox::new().width(11.0).height(20.0)),
+            hash_of(SizedBox::new().width(10.0).height(21.0)),
+            hash_of(SizedBox::new().width(10.0).height(20.0).color(Color::RED)),
+            // The same number under another unit is another size.
+            hash_of(SizedBox::new().width(aimer_attribute::Dimension::Percent(10.0)).height(20.0)),
+            hash_of(SizedBox::new().width(10.0).height(20.0).child(SizedBox::new())),
+        ];
+        for (index, hash) in changed.iter().enumerate() {
+            assert!(hash.is_some(), "variant {index} has no hash");
+            assert_ne!(*hash, base, "variant {index} left the hash unchanged");
+        }
+    }
+
+    #[test]
+    fn the_childs_hash_is_part_of_the_boxs() {
+        let a = hash_of(SizedBox::new().child(SizedBox::new().width(1.0)));
+        let b = hash_of(SizedBox::new().child(SizedBox::new().width(2.0)));
+        assert!(a.is_some() && b.is_some());
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn a_child_without_a_hash_leaves_the_box_without_one() {
+        assert_eq!(hash_of(SizedBox::new().child(Unhashable)), None);
+    }
+
+    /// A box and a different widget over the same child must not agree.
+    #[test]
+    fn the_same_child_under_another_widget_type_differs() {
+        use crate::{Center, Padding};
+        let child = || SizedBox::new().width(5.0);
+        assert_ne!(hash_of(Center::new().child(child())), hash_of(SizedBox::new().child(child())));
+        let _ = Padding::new();
+    }
+}

@@ -1,5 +1,6 @@
 //! [`ForegroundDecorationBox`], which paints a decoration over its child.
 
+use aimer_widget::{ContentHash, ContentHasher};
 use std::cell::Cell;
 
 use crate::decoration_box::{PaintGeometry, PaintKey, sanitized_outsets};
@@ -97,6 +98,13 @@ impl<D: Decoration> ForegroundDecorationBox<D> {
 }
 
 impl<D: Decoration + 'static, W: Widget> Widget for ForegroundDecorationBox<D, W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("ForegroundDecorationBox");
+        hasher.write_child(self.decoration.content_hash());
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         foreground_element(
             self.decoration,

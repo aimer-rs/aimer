@@ -29,7 +29,7 @@ pub type RangeChangeCallback<T = f64> = Rc<dyn Fn(T)>;
 pub type RangePairChangeCallback<T = f64> = Rc<dyn Fn((T, T))>;
 
 /// Defines how a range constructor handles `min > max`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReversedBoundsPolicy {
     /// Reject reversed bounds with [`RangeError::ReversedBounds`].
     Reject,

@@ -252,6 +252,23 @@ impl Gradient {
 }
 
 impl Decoration for Gradient {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        std::hash::Hash::hash(&self.shape, &mut hasher);
+        hasher.write_f32(self.angle);
+        hasher.write_f32(self.center[0]);
+        hasher.write_f32(self.center[1]);
+        hasher.write_f32(self.radius);
+        // Only the stops in use: the rest is padding.
+        let stops = usize::from(self.stop_count).min(self.offsets.len());
+        std::hash::Hasher::write_usize(&mut hasher, stops);
+        for index in 0..stops {
+            hasher.write_f32(self.offsets[index]);
+            std::hash::Hasher::write_u32(&mut hasher, self.colors[index]);
+        }
+        hasher.finish_hash()
+    }
+
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, _scale: f32) {
         if size.width <= 0.0 || size.height <= 0.0 || self.is_empty() {
             return;

@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::panic::Location;
@@ -117,6 +119,17 @@ impl<T: Widget + 'static> AnimatedSwitcher<T> {
 }
 
 impl<T: Widget + 'static> Widget for AnimatedSwitcher<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.duration.hash(&mut hasher);
+        self.curve.hash(&mut hasher);
+        self.switch_out_curve.hash(&mut hasher);
+        self.transition_key.hash(&mut hasher);
+        self.widget_key.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn key(&self) -> Option<Key> {
         self.widget_key.clone()
     }

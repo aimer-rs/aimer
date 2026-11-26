@@ -124,6 +124,8 @@ pub mod screen {
     pub use aimer_screen::*;
 }
 
+pub use aimer_tls as tls;
+
 
 /// A system tray icon with a menu; see [`tray::Tray`].
 pub use aimer_platform::tray;

@@ -6,6 +6,7 @@
 //! ([`Gradient`], [`OpacityGradient`]) live in child modules and are re-exported
 //! from here.
 
+use aimer_widget::{ContentHash, ContentHasher};
 use std::cell::Cell;
 
 mod backdrop_filter;
@@ -104,6 +105,13 @@ impl<D: Decoration> DecorationBox<D> {
 }
 
 impl<D: Decoration + 'static, W: Widget> Widget for DecorationBox<D, W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("DecorationBox");
+        hasher.write_child(self.decoration.content_hash());
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         decoration_element(self.decoration, self.child, ctx, "DecorationBox")
     }

@@ -5,6 +5,8 @@
 //! the item in a [`SharedElement`] and the transition asks the registry here
 //! where that tag currently is.
 
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::{Hash, Hasher};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -279,6 +281,18 @@ impl Widget for Repeated {
 }
 
 impl<W: Widget> Widget for SharedElement<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("SharedElement");
+        self.tag.hash(&mut hasher);
+        // The producer is a closure, so only the very same one is unchanged.
+        hasher.write_u8(u8::from(self.content.is_some()));
+        if let Some(content) = &self.content {
+            hasher.write_identity(Rc::as_ptr(&content.0));
+        }
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         if let (Some(tag), Some(content)) = (&self.tag, &self.content) {
             refresh_content(tag, content);

@@ -124,9 +124,11 @@ fn gradient_page_paints_each_shape_and_places_decorations_behind_over_and_throug
         assert_eq!(edges("DecorationBox"), 1, "the edge behind the card");
         assert_eq!(edges("ForegroundDecorationLayer"), 1, "the edge over the card");
 
+        // A retained child is reached through a proxy that records an empty list
+        // under the child's name; only lists with commands are paint.
         let masked: Vec<_> = paints
             .iter()
-            .filter(|paint| paint.element == "MaskedDecorationBox")
+            .filter(|paint| paint.element == "MaskedDecorationBox" && !paint.commands.is_empty())
             .collect();
         assert_eq!(masked.len(), 2, "a rainbow and a glass caption, scale {scale}");
         for paint in &masked {
@@ -147,4 +149,89 @@ fn gradient_page_paints_each_shape_and_places_decorations_behind_over_and_throug
             "a seven-stop rainbow, then a backdrop filter"
         );
     }
+}
+
+/// Every pointer move of a drag re-describes the page, and the slider being
+/// dragged changes its hash each time. It must still be the same slider: a part
+/// that threw its state away on a changed hash would lose the pointer after the
+/// first move, and the gradient would stop following.
+#[test]
+fn dragging_a_retained_slider_keeps_following_the_pointer() {
+    use aimer::quiver::winit::dpi::PhysicalPosition;
+    use aimer::quiver::winit::event::{DeviceId, ElementState, MouseButton, WindowEvent};
+    use aimer_cupid::draw_cmd::RenderOp;
+
+    let paints: Rc<RefCell<Vec<RecordedPaint>>> = Rc::default();
+    let mut app = AimerApp::start_headless_with(
+        theme::provide(Captured(paints.clone())),
+        HeadlessOptions {
+            size: PhysicalSize::new(900, 900),
+            scale_factor: 1.0,
+        },
+    );
+    app.pump_frames(3);
+
+    let linear_geometry = || -> [f32; 4] {
+        paints
+            .borrow()
+            .iter()
+            .filter(|paint| paint.element == "DecorationBox")
+            .flat_map(materials)
+            .find(|request| {
+                request.kind == MaterialKind::Gradient && request.gradient.shape == GradientShape::Linear
+            })
+            .map(|request| request.gradient.geometry)
+            .expect("the linear card paints a gradient")
+    };
+
+    // The first slider's thumb: the top-left square of the slider thumb's size.
+    let thumb = app
+        .render_ops()
+        .into_iter()
+        .filter_map(|operation| match operation {
+            RenderOp::Draw(item) if item.bounds.width == 20.0 && item.bounds.height == 20.0 => {
+                Some((item.bounds.y, item.bounds.x, item.bounds.width, item.bounds.height))
+            }
+            _ => None,
+        })
+        .reduce(|a, b| if (b.0, b.1) < (a.0, a.1) { b } else { a })
+        .expect("a slider thumb is on screen");
+    let (start_x, y) = (f64::from(thumb.1 + thumb.2 / 2.0), f64::from(thumb.0 + thumb.3 / 2.0));
+
+    let device = DeviceId::dummy();
+    let mut seen = vec![linear_geometry()];
+    app.send_window_event(WindowEvent::CursorMoved {
+        device_id: device,
+        position: PhysicalPosition::new(start_x, y),
+    });
+    app.render_frame();
+    app.send_window_event(WindowEvent::MouseInput {
+        device_id: device,
+        state: ElementState::Pressed,
+        button: MouseButton::Left,
+    });
+    app.render_frame();
+    for step in 1..=6 {
+        app.send_window_event(WindowEvent::CursorMoved {
+            device_id: device,
+            position: PhysicalPosition::new(start_x + f64::from(step) * 20.0, y),
+        });
+        app.render_frame();
+        app.render_frame();
+        seen.push(linear_geometry());
+    }
+    app.send_window_event(WindowEvent::MouseInput {
+        device_id: device,
+        state: ElementState::Released,
+        button: MouseButton::Left,
+    });
+    app.render_frame();
+
+    let mut distinct = seen.clone();
+    distinct.dedup();
+    assert!(
+        distinct.len() >= 6,
+        "the gradient stopped following the drag after {} distinct states: {seen:?}",
+        distinct.len()
+    );
 }

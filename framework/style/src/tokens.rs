@@ -335,7 +335,29 @@ impl Animatable for ThemeTokens {
     }
 }
 
-impl crate::Theme for ThemeTokens {}
+impl aimer_widget::HashContent for ThemeTokens {
+    fn hash_content(&self, hasher: &mut aimer_widget::ContentHasher) {
+        use aimer_widget::HashContent;
+        self.colors.hash_content(hasher);
+        self.typography.hash_content(hasher);
+        self.spacing.hash_content(hasher);
+        self.shape.hash_content(hasher);
+        self.density.hash_content(hasher);
+        self.focus.hash_content(hasher);
+        self.state.hash_content(hasher);
+        self.control.hash_content(hasher);
+        self.elevation.hash_content(hasher);
+        self.motion.hash_content(hasher);
+    }
+}
+
+impl crate::Theme for ThemeTokens {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        aimer_widget::HashContent::hash_content(self, &mut hasher);
+        hasher.finish_hash()
+    }
+}
 
 /// A light/dark/high-contrast token selection with explicit fallback rules.
 ///
@@ -1252,6 +1274,16 @@ impl Default for MotionTokens {
     }
 }
 
+impl aimer_widget::HashContent for MotionTokens {
+    fn hash_content(&self, hasher: &mut aimer_widget::ContentHasher) {
+        use aimer_widget::HashContent;
+        self.fast_ms.hash_content(hasher);
+        self.standard_ms.hash_content(hasher);
+        self.slow_ms.hash_content(hasher);
+        self.reduced_motion.hash_content(hasher);
+    }
+}
+
 impl Animatable for MotionTokens {
     fn lerp(&self, other: &Self, t: f32) -> Self {
         Self {
@@ -1291,6 +1323,12 @@ macro_rules! impl_fieldwise_animatable {
                 Self {
                     $($field: Animatable::lerp(&self.$field, &other.$field, t),)+
                 }
+            }
+        }
+
+        impl aimer_widget::HashContent for $type {
+            fn hash_content(&self, hasher: &mut aimer_widget::ContentHasher) {
+                $(aimer_widget::HashContent::hash_content(&self.$field, hasher);)+
             }
         }
     };

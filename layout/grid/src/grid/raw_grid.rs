@@ -18,7 +18,7 @@ pub enum GridTrack {
     Auto,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GridPlacement {
     pub row: Option<usize>,
     pub column: Option<usize>,
@@ -1641,5 +1641,21 @@ mod tests {
         apply_auto_minimum(&tracks, &mut minima, 0, 3, 120.0, 5.0);
 
         assert_eq!(minima, vec![0.0, 45.0, 45.0]);
+    }
+}
+
+impl std::hash::Hash for GridTrack {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match *self {
+            Self::Px(value) => {
+                state.write_u8(0);
+                aimer_attribute::hash_f32(value, state);
+            }
+            Self::Fr(value) => {
+                state.write_u8(1);
+                aimer_attribute::hash_f32(value, state);
+            }
+            Self::Auto => state.write_u8(2),
+        }
     }
 }

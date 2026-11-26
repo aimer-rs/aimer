@@ -4,6 +4,8 @@ use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_macro::{EventElement, Rebuildable};
 use aimer_style::{LayoutSpacing, Spacing};
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, LayoutElement, RequiredChild, VisitorElement, Widget,
 };
@@ -145,6 +147,13 @@ impl Margin {
 }
 
 impl<W: Widget + 'static> Widget for Padding<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.padding.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawPadding {
             padding: self.padding,
@@ -155,6 +164,13 @@ impl<W: Widget + 'static> Widget for Padding<W> {
 }
 
 impl<W: Widget + 'static> Widget for Margin<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.margin.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawMargin {
             margin: self.margin,

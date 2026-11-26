@@ -16,6 +16,8 @@ pub use platform::{web_overscroll, web_recovery_end};
 pub use rendering::{cache_extent, draw_scroll, scroll_bar};
 pub use state::{controller, scroll_storage};
 
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -387,6 +389,23 @@ pub struct ScrollableState<W: Widget + 'static> {
 }
 
 impl<W: Widget + 'static> Widget for Scrollable<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.scroll_behavior.hash(&mut hasher);
+        hasher.write_f32(self.key_scroll_strength);
+        self.axis.hash(&mut hasher);
+        self.scroll_bar_placement.hash(&mut hasher);
+        self.vertical_scroll_bar.hash(&mut hasher);
+        self.horizontal_scroll_bar.hash(&mut hasher);
+        self.key.hash(&mut hasher);
+        self.remember_scroll_offset.hash(&mut hasher);
+        self.controller.hash(&mut hasher);
+        self.web_overscroll.hash(&mut hasher);
+        self.reverse.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         StatefulElement::new_with_name::<Self, ScrollableState<W>>(self, ctx, "Scrollable", None)
             .0

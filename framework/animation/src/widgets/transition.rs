@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use std::cell::Cell;
 
 use aimer_attribute::position::Vec2d;
@@ -55,6 +57,13 @@ impl<T: Widget> FadeTransition<T> {
 }
 
 impl<T: Widget + 'static> Widget for FadeTransition<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.opacity.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self.child.to_element(ctx);
         let controller = self.opacity.clone();
@@ -234,6 +243,15 @@ impl<T: Widget> SlideTransition<T> {
 }
 
 impl<T: Widget + 'static> Widget for SlideTransition<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.position.hash(&mut hasher);
+        hasher.write_f32(self.offset.0);
+        hasher.write_f32(self.offset.1);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self.child.to_element(ctx);
         let controller = self.position.clone();
@@ -403,6 +421,13 @@ impl<T: Widget> ScaleTransition<T> {
 }
 
 impl<T: Widget + 'static> Widget for ScaleTransition<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.scale.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self.child.to_element(ctx);
         let controller = self.scale.clone();
@@ -591,6 +616,15 @@ impl<T: Widget> RotationTransition<T> {
 }
 
 impl<T: Widget + 'static> Widget for RotationTransition<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.turns.hash(&mut hasher);
+        hasher.write_f32(self.begin_turns);
+        hasher.write_f32(self.end_turns);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self.child.to_element(ctx);
         let controller = self.turns.clone();

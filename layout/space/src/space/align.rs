@@ -4,6 +4,8 @@ use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_macro::{EventElement, Rebuildable};
 use aimer_style::TextAlign;
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, LayoutElement, RequiredChild, VisitorElement, Widget,
 };
@@ -87,6 +89,14 @@ impl Align {
 }
 
 impl<W: Widget + 'static> Widget for Align<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.alignment.hash(&mut hasher);
+        self.layer.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawAlign {
             child: self.child.to_element(ctx),

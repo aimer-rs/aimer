@@ -43,6 +43,16 @@ use crate::multi_decoration_box::extend_outsets;
 ///     .child(SizedBox::new().width(240).height(160));
 /// ```
 impl<D: Decoration> Decoration for [D] {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        use std::hash::Hash;
+        let mut hasher = aimer_widget::ContentHasher::named("Decoration slice");
+        self.len().hash(&mut hasher);
+        for layer in self {
+            hasher.write_child(layer.content_hash());
+        }
+        hasher.finish_hash()
+    }
+
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         for layer in self {
             layer.paint_layer(canvas, origin, size, scale);
@@ -174,6 +184,11 @@ macro_rules! forward_to_slice {
             #[inline]
             fn revision(&self) -> u64 {
                 self.as_slice().revision()
+            }
+
+            #[inline]
+            fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+                self.as_slice().content_hash()
             }
         }
     };

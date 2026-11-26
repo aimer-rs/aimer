@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use std::cell::Cell;
 
 use aimer_attribute::position::Vec2d;
@@ -35,6 +37,30 @@ pub enum AnimationEffect {
     SlideX { from: f32, to: f32 },
     /// Animate a slide-in vertically.
     SlideY { from: f32, to: f32 },
+}
+
+impl std::hash::Hash for AnimationEffect {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use aimer_attribute::hash_f32;
+        // The variant first, so the same numbers under another effect differ.
+        std::mem::discriminant(self).hash(state);
+        match *self {
+            Self::Opacity { from, to }
+            | Self::Scale { from, to }
+            | Self::Rotate { from, to }
+            | Self::SlideX { from, to }
+            | Self::SlideY { from, to } => {
+                hash_f32(from, state);
+                hash_f32(to, state);
+            }
+            Self::Translate { from_x, from_y, to_x, to_y } => {
+                hash_f32(from_x, state);
+                hash_f32(from_y, state);
+                hash_f32(to_x, state);
+                hash_f32(to_y, state);
+            }
+        }
+    }
 }
 
 impl AnimationEffect {
@@ -206,6 +232,14 @@ impl<T: Widget> Animated<T> {
 }
 
 impl<T: Widget + 'static> Widget for Animated<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.controller.hash(&mut hasher);
+        self.effect.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child_element = self.child.to_element(ctx);
 

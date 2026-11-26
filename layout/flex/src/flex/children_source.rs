@@ -59,6 +59,7 @@
 //! final, which keeps a container from alternating between the two regimes frame
 //! after frame.
 
+use std::any::TypeId;
 use std::cell::{Cell, UnsafeCell};
 use std::collections::VecDeque;
 use std::ops::Range;
@@ -85,6 +86,34 @@ pub(crate) struct RetainedRow {
     /// The live element, boxed because [`AnyElement`] stores small elements
     /// inline and the row has to keep its address across the hand-off.
     element: Box<AnyElement>,
+}
+
+/// What a windowed source's data looks like from outside: where it lives, how
+/// long it is, and what it holds.
+///
+/// Two sources are over the same data when these are equal, because a
+/// [`ShareRef`] slice is immutable and a source keeps its own handle alive: the
+/// allocation cannot be freed and handed out again while either exists. Equality
+/// is pointer identity, never a comparison of the elements.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ItemsIdentity {
+    address: usize,
+    len: usize,
+    item: TypeId,
+}
+
+/// The rows of a windowed source, moved whole to the source that replaces it.
+///
+/// Unlike [`RetainedRow`]s, which are only claimed when the replacement builds
+/// the same identity, these stay in the positions they held: nothing is rebuilt
+/// and nothing is carried, because the elements are the same elements.
+pub(crate) struct WindowedRows {
+    start: usize,
+    elements: VecDeque<Box<AnyElement>>,
+    recycled: VecDeque<(usize, Box<AnyElement>)>,
+    inherited: Vec<RetainedRow>,
+    probe: Option<usize>,
+    eager: bool,
 }
 
 /// Extra children materialized on each side of the requested range.
@@ -216,6 +245,30 @@ pub(crate) trait ChildrenSource {
     #[inline]
     #[allow(unused_variables)]
     fn adopt_retained(&self, children: Vec<RetainedRow>) {}
+
+    /// Identifies the data this source was declared to render by, when its rows
+    /// may be handed over whole to a source over the same data.
+    ///
+    /// `None` is the default and means a replacement must rebuild its rows: a
+    /// source only answers when the caller declared that a row depends on its
+    /// datum alone — see [`ListFlex::rows_follow_items`](crate::flex::flex_list::ListFlex::rows_follow_items).
+    #[inline]
+    fn items_identity(&self) -> Option<ItemsIdentity> {
+        None
+    }
+
+    /// Surrenders the materialized rows, their position and the pool of rows
+    /// that left the window, emptying the source.
+    #[inline]
+    fn take_window(&self) -> Option<WindowedRows> {
+        None
+    }
+
+    /// Installs rows surrendered by [`ChildrenSource::take_window`] of a source
+    /// over the same data. Only called on a source that has no rows yet.
+    #[inline]
+    #[allow(unused_variables)]
+    fn adopt_window(&self, rows: WindowedRows) {}
 }
 
 /// Children that were all built up front.
@@ -314,6 +367,9 @@ pub(crate) struct WindowedChildren<T: 'static, F> {
     /// Set once the container gave up on windowing, after which every child
     /// exists and [`ChildrenSource::window`] does nothing.
     eager: Cell<bool>,
+    /// The caller declared a row to be a function of its datum, so the rows can
+    /// move to a replacement over the same data instead of being rebuilt.
+    reuses_rows: bool,
 }
 
 impl<T, F> WindowedChildren<T, F> {
@@ -336,7 +392,16 @@ impl<T, F> WindowedChildren<T, F> {
             }),
             recycled: UnsafeCell::new(VecDeque::new()),
             eager: Cell::new(false),
+            reuses_rows: false,
         }
+    }
+
+    /// Declares that a row depends on its datum alone, which lets a replacement
+    /// over the very same data take this source's rows as they are.
+    #[inline]
+    pub(crate) fn reusing_rows(mut self, reuses: bool) -> Self {
+        self.reuses_rows = reuses;
+        self
     }
 
     /// Borrows the window.
@@ -673,6 +738,53 @@ where
         // would otherwise grow without bound. The order is by relevance, so the
         // rows dropped here are the ones furthest from any viewport.
         inherited.truncate(RECYCLED);
+    }
+
+    fn items_identity(&self) -> Option<ItemsIdentity> {
+        // Zero-sized data all live at one dangling address, so the address says
+        // nothing about them; an empty slice has no rows to hand over.
+        if !self.reuses_rows || self.len == 0 || std::mem::size_of::<T>() == 0 {
+            return None;
+        }
+        Some(ItemsIdentity {
+            address: self.items.get().as_ptr() as usize,
+            len: self.len,
+            item: TypeId::of::<T>(),
+        })
+    }
+
+    fn take_window(&self) -> Option<WindowedRows> {
+        let live = unsafe { self.window_mut() };
+        let start = std::mem::take(&mut live.start);
+        Some(WindowedRows {
+            start,
+            elements: std::mem::take(&mut live.elements),
+            recycled: std::mem::take(unsafe { self.recycled_mut() }),
+            inherited: std::mem::take(unsafe { self.inherited_mut() }),
+            probe: self.probe.take(),
+            eager: self.eager.get(),
+        })
+    }
+
+    fn adopt_window(&self, rows: WindowedRows) {
+        let live = unsafe { self.window_mut() };
+        debug_assert!(
+            live.elements.is_empty(),
+            "a window is only adopted by a source that has no rows"
+        );
+        live.start = rows.start;
+        live.elements = rows.elements;
+        *unsafe { self.recycled_mut() } = rows.recycled;
+        unsafe { self.inherited_mut() }.extend(rows.inherited);
+        if self.probe.get().is_none() {
+            self.probe.set(rows.probe);
+        }
+        if rows.eager {
+            self.eager.set(true);
+        }
+        if !live.elements.is_empty() {
+            aimer_widget::notify_live_children_changed();
+        }
     }
 }
 

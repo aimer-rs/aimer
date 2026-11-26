@@ -2,6 +2,7 @@ use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_macro::{EventElement, Rebuildable};
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, LayoutElement, RequiredChild, VisitorElement, Widget,
 };
@@ -62,6 +63,13 @@ impl Default for Scalable {
 }
 
 impl<W: Widget + 'static> Widget for Scalable<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hasher.write_f32(self.scale);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawScalable {
             scale: normalized_scale(self.scale),

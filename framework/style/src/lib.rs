@@ -22,7 +22,53 @@ pub use tokens::{
 
 #[doc(hidden)]
 pub mod __private {
+    use std::hash::Hash;
+
     pub use aimer_animation::Animatable;
+    pub use aimer_widget::{ContentHash, ContentHasher, HashContent};
+
+    /// What `#[derive(Theme)]` hashes a field through.
+    ///
+    /// Which of the three traits below answers is picked by method resolution on
+    /// `(&&Probe(&field))`, so a field is hashed by its [`HashContent`] when it
+    /// has one, by [`Hash`] when it has that instead, and otherwise marks the
+    /// theme as unhashable. This is autoref-based specialization: it resolves at
+    /// the field's concrete type, so a field of a generic type parameter is
+    /// always unhashable.
+    pub struct Probe<'a, T: ?Sized>(pub &'a T);
+
+    /// A field with [`HashContent`]: highest priority.
+    pub trait ViaContent {
+        fn hash_field(&self, hasher: &mut ContentHasher);
+    }
+    impl<T: HashContent + ?Sized> ViaContent for &Probe<'_, T> {
+        #[inline]
+        fn hash_field(&self, hasher: &mut ContentHasher) {
+            self.0.hash_content(hasher);
+        }
+    }
+
+    /// A field with [`Hash`] only.
+    pub trait ViaHash {
+        fn hash_field(&self, hasher: &mut ContentHasher);
+    }
+    impl<T: Hash + ?Sized> ViaHash for &&Probe<'_, T> {
+        #[inline]
+        fn hash_field(&self, hasher: &mut ContentHasher) {
+            self.0.hash(hasher);
+        }
+    }
+
+    /// A field with neither: the theme has no hash.
+    pub trait ViaNothing {
+        fn hash_field(&self, hasher: &mut ContentHasher);
+    }
+    impl<T: ?Sized> ViaNothing for Probe<'_, T> {
+        #[inline]
+        fn hash_field(&self, hasher: &mut ContentHasher) {
+            hasher.mark_unavailable();
+        }
+    }
 }
 
 // layout export

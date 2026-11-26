@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use std::cell::Cell;
 
 use aimer_canvas::{Canvas, MaterialDrawRequest, MaterialKind};
@@ -13,7 +15,7 @@ use aimer_widget::{
 /// The policy is deliberately platform-neutral. A host can choose the reduced
 /// policy for an accessibility or battery preference without exposing a
 /// renderer or system visual-effect handle to the widget tree.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum MaterialMotionPolicy {
     /// Permit the material's configured animation and interaction response.
     #[default]
@@ -655,7 +657,37 @@ impl Default for Glass {
     }
 }
 
+impl std::hash::Hash for GlassMaterial {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use aimer_attribute::hash_f32;
+        self.tint.hash(state);
+        hash_f32(self.opacity, state);
+        hash_f32(self.blur_radius, state);
+        hash_f32(self.saturation, state);
+        hash_f32(self.brightness, state);
+        hash_f32(self.contrast, state);
+        hash_f32(self.border_width, state);
+        self.border_color.hash(state);
+        self.border_radius.hash(state);
+        self.shadow_color.hash(state);
+        hash_f32(self.shadow_blur, state);
+        hash_f32(self.elevation, state);
+        hash_f32(self.edge_lighting, state);
+        hash_f32(self.specular_highlight, state);
+        self.quality.hash(state);
+        self.motion_policy.hash(state);
+    }
+}
+
 impl<W: Widget + 'static> Widget for Glass<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.material.hash(&mut hasher);
+        hash_optional_decoration(&mut hasher, self.decoration.as_ref());
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawGlass {
             child: self.child.to_element(ctx),
@@ -1007,5 +1039,15 @@ mod tests {
             material.motion_policy_value(),
             MaterialMotionPolicy::Reduced
         );
+    }
+}
+
+/// Adds an optional decoration to `hasher`: its absence, or its own hash, which
+/// leaves the whole hash without one when the decoration has none.
+pub(crate) fn hash_optional_decoration(hasher: &mut ContentHasher, decoration: Option<&AnyDecor>) {
+    use std::hash::Hasher;
+    hasher.write_u8(u8::from(decoration.is_some()));
+    if let Some(decoration) = decoration {
+        hasher.write_child(decoration.content_hash());
     }
 }

@@ -5,6 +5,8 @@ use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::{ResolvedSize, Size};
 
 use crate::base::*;
+use std::hash::Hash;
+use crate::{ContentHash, ContentHasher};
 use crate::widget::recovery::{BuildPhase, build_or_error};
 use crate::widget::stateful::{RebuildCallBack, SyncChild};
 use crate::{
@@ -82,6 +84,13 @@ impl NamedWidget {
 }
 
 impl Widget for NamedWidget {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.name.hash(&mut hasher);
+        hasher.write_child(self.inner.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self.inner.into_element(ctx);
         if child.name() == self.name {

@@ -29,6 +29,15 @@ pub struct ScrollController {
     inner: Rc<ScrollControllerInner>,
 }
 
+/// A controller is the object clones share: the same controller is the same
+/// scroll position, and no other is.
+impl std::hash::Hash for ScrollController {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Rc::as_ptr(&self.inner) as usize);
+    }
+}
+
 #[derive(Default)]
 struct ScrollControllerInner {
     /// The live engine, attached by `Scrollable::to_element` once the widget is

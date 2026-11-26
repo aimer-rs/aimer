@@ -1,5 +1,6 @@
 //! [`MaskedDecorationBox`], which shows a decoration only where its child has coverage.
 
+use aimer_widget::{ContentHash, ContentHasher};
 use crate::decoration_box::{ChildMask, decoration_element_with};
 use crate::{BoxDecoration, Decoration};
 use aimer_widget::base::BuildContext;
@@ -104,6 +105,13 @@ impl<D: Decoration> MaskedDecorationBox<D> {
 }
 
 impl<D: Decoration + 'static, W: Widget> Widget for MaskedDecorationBox<D, W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("MaskedDecorationBox");
+        hasher.write_child(self.decoration.content_hash());
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         decoration_element_with(
             self.decoration,

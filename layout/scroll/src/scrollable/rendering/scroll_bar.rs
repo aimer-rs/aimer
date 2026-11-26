@@ -29,7 +29,7 @@ use crate::scrollable::controller::{DragMode, ScrollState};
 
 /// Controls whether a scroll bar overlays the content or occupies layout
 /// space beside it.
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ScrollBarPlacement {
     /// Draws the scroll bar over the content at the viewport edge.
     #[default]
@@ -53,7 +53,7 @@ impl ScrollBarPlacement {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Hash)]
 pub struct ScrollTrack {
     pub width: Dimension,
     pub color: Colors,
@@ -72,7 +72,7 @@ impl Default for ScrollTrack {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Hash)]
 pub struct ScrollThumb {
     pub width: Dimension,
     pub radius: Dimension,
@@ -93,7 +93,7 @@ impl Default for ScrollThumb {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Hash)]
 pub struct ScrollButton {
     pub width: Dimension,
     pub height: Dimension,
@@ -133,6 +133,13 @@ pub struct ScrollBarState {
 }
 
 impl Widget for ScrollBar {
+    fn hash(&self) -> Option<aimer_widget::ContentHash> {
+        use std::hash::Hash;
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        Hash::hash(self, &mut hasher);
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         StatefulElement::new_with_name::<Self, ScrollBarState>(self, ctx, "ScrollBar", None)
             .0
@@ -1229,5 +1236,17 @@ mod tests {
     fn the_default_track_has_a_visible_hover_color() {
         let hover: Color = ScrollTrack::default().hover_color.into();
         assert!(hover.to_rgba().3 > 0, "a transparent hover color shows no track");
+    }
+}
+
+/// What the bar looks like and which way it runs. The scrollable it is bound to
+/// is filled in when the scrollable is built, so it is not part of the bar.
+impl std::hash::Hash for ScrollBar {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.track.hash(state);
+        self.thumb.hash(state);
+        self.up_button.hash(state);
+        self.down_button.hash(state);
+        self.axis.hash(state);
     }
 }

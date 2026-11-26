@@ -9,6 +9,7 @@
 use std::rc::Rc;
 
 use crate::BoxDecoration;
+use aimer_widget::{ContentHash, ContentHasher};
 use aimer_attribute::{ResolvedSize, Vec2d};
 use aimer_canvas::Canvas;
 use aimer_rubick::ErasedFrom;
@@ -175,6 +176,20 @@ pub trait Decoration {
         0
     }
 
+    /// Returns a content hash of everything this decoration paints, or `None`.
+    ///
+    /// Unlike [`revision`](Decoration::revision), which tells one decoration's
+    /// successive states apart, this compares two decorations: equal `Some`
+    /// hashes mean they paint the same, and a widget wearing one uses it to
+    /// report its own hash. The default, `None`, means no hash is available and
+    /// is never taken to equal another's. An override must cover every field
+    /// that affects paint, outsets, insets or clipping, and should seed its
+    /// hasher with its own type.
+    #[inline]
+    fn content_hash(&self) -> Option<ContentHash> {
+        None
+    }
+
     /// Consumes this decoration and erases its concrete type into [`AnyDecor`].
     ///
     /// Small values stay inline. Heap storage uses the active UI allocator, or
@@ -199,6 +214,11 @@ pub trait Decoration {
 }
 
 impl Decoration for BoxDecoration {
+    #[inline]
+    fn content_hash(&self) -> Option<ContentHash> {
+        hash_of_value(self)
+    }
+
     #[inline]
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         self.record_local_v2(
@@ -288,6 +308,11 @@ impl Decoration for BoxDecoration {
 
 impl<D: Decoration + ?Sized> Decoration for Box<D> {
     #[inline]
+    fn content_hash(&self) -> Option<ContentHash> {
+        self.as_ref().content_hash()
+    }
+
+    #[inline]
     fn paint_layer(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         self.as_ref().paint_layer(canvas, origin, size, scale);
     }
@@ -343,6 +368,11 @@ impl<D: Decoration + ?Sized> Decoration for Box<D> {
 
 impl<D: Decoration + ?Sized> Decoration for Rc<D> {
     #[inline]
+    fn content_hash(&self) -> Option<ContentHash> {
+        self.as_ref().content_hash()
+    }
+
+    #[inline]
     fn paint_layer(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         self.as_ref().paint_layer(canvas, origin, size, scale);
     }
@@ -394,4 +424,15 @@ impl<D: Decoration + ?Sized> Decoration for Rc<D> {
     fn revision(&self) -> u64 {
         self.as_ref().revision()
     }
+}
+
+/// The content hash of a value that is `Hash` and seeds its own type.
+///
+/// What a plain-data decoration answers with: everything it paints is in the
+/// fields its `Hash` covers.
+#[inline]
+pub(crate) fn hash_of_value<T: std::hash::Hash + 'static>(value: &T) -> Option<ContentHash> {
+    let mut hasher = ContentHasher::new::<T>();
+    value.hash(&mut hasher);
+    hasher.finish_hash()
 }

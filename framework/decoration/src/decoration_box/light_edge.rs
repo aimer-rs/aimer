@@ -123,6 +123,16 @@ impl LightEdge {
 }
 
 impl Decoration for LightEdge {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        std::hash::Hash::hash(&self.color, &mut hasher);
+        hasher.write_f32(self.strength);
+        hasher.write_f32(self.reflection_strength);
+        hasher.write_f32(self.width);
+        hasher.write_f32(self.light_angle);
+        hasher.finish_hash()
+    }
+
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, _scale: f32) {
         if size.width <= 0.0 || size.height <= 0.0 || self.is_empty() {
             return;

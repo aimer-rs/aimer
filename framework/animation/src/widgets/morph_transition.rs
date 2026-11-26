@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use std::cell::{Cell, UnsafeCell};
 use std::marker::PhantomData;
 use std::panic::Location;
@@ -50,6 +52,23 @@ const DEFAULT_BLUR: f32 = 10.0;
 /// How far, in logical pixels, a [`MorphStyle::Goo`] reaches at its widest unless
 /// told otherwise. It decides how wide a gap the shapes can bridge.
 const DEFAULT_GOO_REACH: f32 = 14.0;
+
+impl std::hash::Hash for MorphLook {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use aimer_attribute::hash_f32;
+        self.style.hash(state);
+        hash_f32(self.direction[0], state);
+        hash_f32(self.direction[1], state);
+        hash_f32(self.softness, state);
+        hash_f32(self.amplitude, state);
+        hash_f32(self.frequency, state);
+        hash_f32(self.seed, state);
+        self.blur.is_some().hash(state);
+        if let Some(blur) = self.blur {
+            hash_f32(blur, state);
+        }
+    }
+}
 
 impl MorphLook {
     #[cfg(test)]
@@ -275,6 +294,17 @@ impl<T: Widget> MorphTransition<T> {
 }
 
 impl<T: Widget + 'static> Widget for MorphTransition<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.duration.hash(&mut hasher);
+        self.curve.hash(&mut hasher);
+        self.look.hash(&mut hasher);
+        self.transition_key.hash(&mut hasher);
+        self.widget_key.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn key(&self) -> Option<Key> {
         self.widget_key.clone()
     }

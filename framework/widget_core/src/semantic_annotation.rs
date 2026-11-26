@@ -6,6 +6,8 @@ use aimer_events::element::ElementEvent;
 use aimer_utils::callback::{CallbackExecutor, VoidCallback};
 
 use crate::base::BuildContext;
+use std::hash::Hash;
+use crate::{ContentHash, ContentHasher};
 use crate::components::event_element::{EventElement, EventResult, EventTreeRole};
 use crate::components::layout_element::LayoutElement;
 use crate::components::rebuildable::Rebuildable;
@@ -150,6 +152,19 @@ impl Default for Semantics {
 }
 
 impl<W: Widget + 'static> Widget for Semantics<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.spec.role.hash(&mut hasher);
+        self.spec.label.hash(&mut hasher);
+        self.spec.value.hash(&mut hasher);
+        self.spec.enabled.hash(&mut hasher);
+        self.spec.merge.hash(&mut hasher);
+        // By identity: the same callback is unchanged, another one is not.
+        self.spec.activate.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawSemantics { spec: self.spec, child: self.child.to_element(ctx) }.boxed()
     }

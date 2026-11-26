@@ -444,3 +444,298 @@ mod retain_slots_profile {
         }
     }
 }
+
+/// `BuildContext::retain_hashed` keeps a part alive for as long as the widget
+/// that describes it keeps the same content hash.
+mod retain_hashed {
+    use super::*;
+
+    /// A stateful leaf that takes the configuration of a rebuilt twin into its live
+    /// state, as real widgets do through `adopt_config_from`.
+    struct AdoptingLeaf {
+        label: &'static str,
+        builds: Rc<Cell<usize>>,
+        log: Rc<RefCell<Vec<&'static str>>>,
+        adoptions: Rc<Cell<usize>>,
+    }
+
+    struct AdoptingLeafState {
+        label: &'static str,
+        builds: Rc<Cell<usize>>,
+        log: Rc<RefCell<Vec<&'static str>>>,
+        adoptions: Rc<Cell<usize>>,
+    }
+
+    impl State<AdoptingLeaf> for AdoptingLeafState {
+        fn create(widget: AdoptingLeaf) -> Self {
+            AdoptingLeafState {
+                label: widget.label,
+                builds: widget.builds,
+                log: widget.log,
+                adoptions: widget.adoptions,
+            }
+        }
+
+        fn adopt_config_from(&mut self, new: Self) {
+            self.label = new.label;
+            self.adoptions.set(self.adoptions.get() + 1);
+        }
+
+        fn build(this: StateView<Self>, _ctx: &BuildContext) -> impl Widget {
+            this.builds.set(this.builds.get() + 1);
+            this.log.borrow_mut().push(this.label);
+            ErrorWidget::new("leaf")
+        }
+    }
+
+    impl Widget for AdoptingLeaf {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, AdoptingLeafState>(self, ctx, "AdoptingLeaf", None)
+        }
+    }
+
+    /// A leaf that reports a hash the test chooses; `0` stands for no hash.
+    struct HashedLeaf {
+        leaf: AdoptingLeaf,
+        hash: usize,
+    }
+
+    impl Widget for HashedLeaf {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            self.leaf.to_element(ctx)
+        }
+
+        fn hash(&self) -> Option<crate::ContentHash> {
+            use std::hash::Hash;
+            if self.hash == 0 {
+                return None;
+            }
+            let mut hasher = crate::ContentHasher::new::<Self>();
+            self.hash.hash(&mut hasher);
+            hasher.finish_hash()
+        }
+    }
+
+    /// A stateful owner that describes one hashed part on every build.
+    struct HashOwner {
+        label: &'static str,
+        hash: usize,
+        leaf_builds: Rc<Cell<usize>>,
+        log: Rc<RefCell<Vec<&'static str>>>,
+        described: Rc<Cell<usize>>,
+        adoptions: Rc<Cell<usize>>,
+    }
+
+    struct HashOwnerState {
+        label: &'static str,
+        hash: usize,
+        leaf_builds: Rc<Cell<usize>>,
+        log: Rc<RefCell<Vec<&'static str>>>,
+        described: Rc<Cell<usize>>,
+        adoptions: Rc<Cell<usize>>,
+    }
+
+    impl State<HashOwner> for HashOwnerState {
+        fn create(widget: HashOwner) -> Self {
+            HashOwnerState {
+                label: widget.label,
+                hash: widget.hash,
+                leaf_builds: widget.leaf_builds,
+                log: widget.log,
+                described: widget.described,
+                adoptions: widget.adoptions,
+            }
+        }
+
+        fn build(this: StateView<Self>, ctx: &BuildContext) -> impl Widget {
+            // The owner always describes the part: that is the cheap half. What
+            // `retain_hashed` decides is whether it becomes elements again.
+            this.described.set(this.described.get() + 1);
+            ctx.retain_hashed(
+                "part",
+                HashedLeaf {
+                    leaf: AdoptingLeaf {
+                        label: this.label,
+                        builds: this.leaf_builds.clone(),
+                        log: this.log.clone(),
+                        adoptions: this.adoptions.clone(),
+                    },
+                    hash: this.hash,
+                },
+            )
+        }
+    }
+
+    impl Widget for HashOwner {
+        fn to_element(self, ctx: &BuildContext) -> AnyElement {
+            StatefulElement::from_widget::<Self, HashOwnerState>(self, ctx, "HashOwner", None)
+        }
+    }
+
+    struct Hashed {
+        ctx: BuildContext<'static>,
+        element: StatefulElement,
+        owner: StateUpdater<HashOwnerState>,
+        leaf_builds: Rc<Cell<usize>>,
+        log: Rc<RefCell<Vec<&'static str>>>,
+        described: Rc<Cell<usize>>,
+        adoptions: Rc<Cell<usize>>,
+    }
+
+    fn hashed(label: &'static str, hash: usize) -> Hashed {
+        let ctx = context();
+        let leaf_builds = Rc::new(Cell::new(0));
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let described = Rc::new(Cell::new(0));
+        let adoptions = Rc::new(Cell::new(0));
+        let (element, owner) = StatefulElement::new_with_name::<HashOwner, HashOwnerState>(
+            HashOwner {
+                label,
+                hash,
+                leaf_builds: leaf_builds.clone(),
+                log: log.clone(),
+                described: described.clone(),
+                adoptions: adoptions.clone(),
+            },
+            &ctx,
+            "HashOwner",
+            None,
+        );
+        Hashed {
+            ctx,
+            element,
+            owner,
+            leaf_builds,
+            log,
+            described,
+            adoptions,
+        }
+    }
+
+    impl Hashed {
+        fn update(&self, change: impl FnOnce(&mut HashOwnerState) + 'static) {
+            self.owner.set_state(change);
+            self.element.rebuild_if_dirty(&self.ctx);
+        }
+    }
+
+    /// The point of the hash: the owner describes the part again, the part is
+    /// not turned into elements again because nothing about it changed.
+    #[tokio::test]
+    async fn an_unchanged_hash_keeps_the_part_across_the_owners_rebuilds() {
+        let fixture = hashed("part", 7);
+        assert_eq!(fixture.leaf_builds.get(), 1);
+
+        for _ in 0..8 {
+            fixture.update(|_| {});
+        }
+
+        assert_eq!(fixture.described.get(), 9, "the owner describes the part every time");
+        assert_eq!(
+            fixture.leaf_builds.get(),
+            1,
+            "an unchanged part was built into elements again"
+        );
+    }
+
+    /// A different hash means the configuration changed, so the part is built
+    /// from the new widget.
+    #[tokio::test]
+    async fn a_changed_hash_builds_the_part_from_the_new_widget() {
+        let fixture = hashed("before", 1);
+
+        fixture.update(|state| {
+            state.label = "after";
+            state.hash = 2;
+        });
+
+        assert_eq!(*fixture.log.borrow(), ["before", "after"]);
+    }
+
+    /// A changed hash is the same part with new configuration, so it is rebuilt the
+    /// way any rebuild is: the state below it lives on and is handed the new
+    /// configuration, rather than being thrown away. A slider being dragged
+    /// changes its hash on every tick and must not lose the drag.
+    #[tokio::test]
+    async fn a_changed_hash_keeps_the_live_state_and_hands_it_the_new_configuration() {
+        let fixture = hashed("before", 1);
+        assert_eq!(fixture.adoptions.get(), 0);
+
+        fixture.update(|state| {
+            state.label = "after";
+            state.hash = 2;
+        });
+
+        assert_eq!(
+            fixture.adoptions.get(),
+            1,
+            "the part was built afresh instead of adopting into the live state"
+        );
+        assert_eq!(*fixture.log.borrow(), ["before", "after"]);
+    }
+
+    /// The slot follows the latest hash: after a change the new part is the one
+    /// kept, and it is kept again rather than rebuilt on every later build.
+    #[tokio::test]
+    async fn the_part_built_after_a_change_is_the_one_retained() {
+        let fixture = hashed("before", 1);
+
+        fixture.update(|state| {
+            state.label = "after";
+            state.hash = 2;
+        });
+        for _ in 0..4 {
+            fixture.update(|_| {});
+        }
+
+        assert_eq!(fixture.leaf_builds.get(), 2, "one build per distinct hash");
+        assert_eq!(*fixture.log.borrow(), ["before", "after"]);
+    }
+
+    /// No hash is never taken to be equal to another widget's, so the part is
+    /// not retained at all.
+    #[tokio::test]
+    async fn a_widget_without_a_hash_is_never_retained() {
+        let retained = hashed("part", 5);
+        let unhashed = hashed("part", 0);
+
+        for _ in 0..4 {
+            retained.update(|_| {});
+            unhashed.update(|_| {});
+        }
+
+        assert_eq!(retained.leaf_builds.get(), 1);
+        assert!(
+            unhashed.leaf_builds.get() > retained.leaf_builds.get(),
+            "a widget without a hash was treated as unchanged"
+        );
+    }
+
+    /// A hash that comes back after a different one is not resurrected: the slot
+    /// holds the latest part only.
+    #[tokio::test]
+    async fn an_earlier_hash_is_not_resurrected() {
+        let fixture = hashed("first", 1);
+
+        fixture.update(|state| {
+            state.label = "second";
+            state.hash = 2;
+        });
+        fixture.update(|state| {
+            state.label = "first";
+            state.hash = 1;
+        });
+
+        assert_eq!(*fixture.log.borrow(), ["first", "second", "first"]);
+    }
+
+    /// Outside a build there is no scope to keep a slot in; the call still
+    /// answers with the part.
+    #[tokio::test]
+    async fn retain_hashed_outside_a_build_still_produces_the_part() {
+        let ctx = context();
+        let part = ctx.retain_hashed("row", ErrorWidget::new("row"));
+
+        let _ = part.build(&ctx);
+    }
+}

@@ -85,12 +85,22 @@ pub(crate) fn generate_theme_impl(
     let (theme_impl_generics, theme_ty_generics, theme_where_clause) =
         theme_generics.split_for_impl();
 
+    let field_names = fields.iter().filter_map(|field| field.ident.as_ref());
+
     Ok(quote! {
         #animation_impl
 
         impl #theme_impl_generics #style_path::Theme
             for #name #theme_ty_generics #theme_where_clause
-        {}
+        {
+            fn content_hash(&self) -> ::core::option::Option<#style_path::__private::ContentHash> {
+                #[allow(unused_imports)]
+                use #style_path::__private::{ViaContent as _, ViaHash as _, ViaNothing as _};
+                let mut hasher = #style_path::__private::ContentHasher::new::<Self>();
+                #( (&&#style_path::__private::Probe(&self.#field_names)).hash_field(&mut hasher); )*
+                hasher.finish_hash()
+            }
+        }
     })
 }
 
@@ -121,6 +131,25 @@ mod tests {
         assert!(output.contains("if t >= 1.0"));
         assert!(!output.contains("is_finite"));
         assert!(!output.contains("is_nan"));
+    }
+
+    #[test]
+    fn the_derived_theme_hashes_every_field_through_the_probe() {
+        let input = parse_quote! {
+            struct AppTheme {
+                accent: f32,
+                radius: i32,
+            }
+        };
+
+        let output = generate_theme_impl(input, quote!(::aimer::style))
+            .expect("named structs should derive Theme")
+            .to_string();
+
+        assert!(output.contains("fn content_hash"));
+        assert!(output.contains("Probe (& self . accent)"));
+        assert!(output.contains("Probe (& self . radius)"));
+        assert!(output.contains("finish_hash"));
     }
 
     #[test]

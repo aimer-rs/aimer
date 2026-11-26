@@ -41,6 +41,25 @@ pub enum RawInnerCallback<P, R> {
     Async(Rc<AsyncBody<P>>),
 }
 
+/// Hashes the identity of the body, not what it does: two callbacks are the same
+/// only when they share one body, which is what cloning one gives. A closure
+/// cannot be compared by behavior, so a callback made again is always another
+/// one — the answer that is safe for deciding whether anything changed.
+impl<P, R> std::hash::Hash for RawInnerCallback<P, R> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            RawInnerCallback::Sync(body) => {
+                state.write_u8(0);
+                state.write_usize(Rc::as_ptr(body) as *const () as usize);
+            }
+            RawInnerCallback::Async(body) => {
+                state.write_u8(1);
+                state.write_usize(Rc::as_ptr(body) as *const () as usize);
+            }
+        }
+    }
+}
+
 impl<P, R> Clone for RawInnerCallback<P, R> {
     fn clone(&self) -> Self {
         match self {

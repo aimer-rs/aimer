@@ -41,6 +41,33 @@ pub enum Dimension {
     Percent(f32),
     Auto,
 }
+
+/// Feeds `value` to `state` so that numbers which compare equal hash equal.
+///
+/// `f32` is not `Hash`. Hashing its bits would tell `0.0` from `-0.0`, which
+/// `==` does not, so the sign of zero is dropped first (`-0.0 + 0.0` is `0.0`).
+/// `NaN` never equals anything, so it needs no care.
+#[inline]
+pub fn hash_f32<H: std::hash::Hasher>(value: f32, state: &mut H) {
+    state.write_u32((value + 0.0).to_bits());
+}
+
+impl std::hash::Hash for Dimension {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match *self {
+            Self::Px(value) => {
+                state.write_u8(0);
+                hash_f32(value, state);
+            }
+            Self::Percent(value) => {
+                state.write_u8(1);
+                hash_f32(value, state);
+            }
+            Self::Auto => state.write_u8(2),
+        }
+    }
+}
 #[allow(clippy::derivable_impls)]
 impl Default for Dimension {
     fn default() -> Self {

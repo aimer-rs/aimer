@@ -262,3 +262,14 @@ mod tests {
         assert_eq!(named, hexadecimal);
     }
 }
+
+impl std::hash::Hash for BoxDecoration {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.border.hash(state);
+        self.outline.hash(state);
+        self.border_radius.hash(state);
+        self.box_shadow.hash(state);
+        // The fallback background is interior-mutable, so it is read as it is now.
+        self.background_color.get().hash(state);
+    }
+}

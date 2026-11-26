@@ -5,12 +5,14 @@ use aimer_attribute::BoxConstraint;
 use aimer_attribute::position::Vec2d;
 use aimer_macro::{LayoutElement, Rebuildable};
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, LayoutElement, VisitorElement, Widget,
     COVERED_CURSOR, pointer_occluded_at, request_pointer_view_frame,
 };
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StackDirection {
     #[default]
     Normal,
@@ -98,6 +100,17 @@ impl Stack {
 }
 
 impl<W: Widget + 'static> Widget for Stack<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.direction.hash(&mut hasher);
+        // The count first, so where one run of children ends is unambiguous.
+        self.children.len().hash(&mut hasher);
+        for child in &self.children {
+            hasher.write_child(child.hash());
+        }
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let children = self
             .children

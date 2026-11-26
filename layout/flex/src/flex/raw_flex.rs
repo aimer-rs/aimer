@@ -13,6 +13,8 @@ use aimer_attribute::size::ResolvedSize;
 use aimer_attribute::{BoxConstraint, Dimension};
 use aimer_style::LayoutSpacing;
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutCache,
     LayoutElement, Rebuildable, VisitorElement, Widget,
@@ -215,6 +217,18 @@ impl<W: Widget + 'static> Flex<W> {
 }
 
 impl<W: Widget + 'static> Widget for Flex<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.direction.hash(&mut hasher);
+        self.vertical_alignment.hash(&mut hasher);
+        self.horizontal_alignment.hash(&mut hasher);
+        self.justify_content.hash(&mut hasher);
+        self.gaps.hash(&mut hasher);
+        self.overflow.hash(&mut hasher);
+        crate::flex::hash_children(&mut hasher, &self.children);
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let elements = self
             .children
@@ -1468,7 +1482,23 @@ impl Rebuildable for RawFlex {
             return;
         };
 
-        self.children.adopt_retained(old.children.take_retained());
+        // A list declared to build its rows from its data alone, over the very same
+        // data, keeps its rows as they are: nothing is rebuilt, so nothing has to
+        // be carried. The replacement must not have rows of its own yet, which a
+        // measurement before this hand-off can have given it; it then claims the
+        // old rows by identity like any other rebuilt list.
+        let rows = match (old.children.items_identity(), self.children.items_identity()) {
+            (Some(held), Some(wanted))
+                if held == wanted && self.children.live_start().is_none() =>
+            {
+                old.children.take_window()
+            }
+            _ => None,
+        };
+        match rows {
+            Some(rows) => self.children.adopt_window(rows),
+            None => self.children.adopt_retained(old.children.take_retained()),
+        }
 
         let same_rules = old.direction == self.direction
             && old.gaps == self.gaps

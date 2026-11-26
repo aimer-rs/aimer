@@ -14,6 +14,7 @@ use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_events::element::ElementEvent;
 
 use crate::base::BuildContext;
+use crate::{ContentHash, ContentHasher};
 use crate::components::element::{Element, EventDispatchContext};
 use crate::components::event_element::{EventElement, EventResult};
 use crate::components::layout_element::LayoutElement;
@@ -92,6 +93,12 @@ impl<W> RepaintBoundary<W> {
 }
 
 impl<W: Widget + 'static> Widget for RepaintBoundary<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         StatefulElement::new_with_name::<Self, RepaintBoundaryState<W>>(self, ctx, "RepaintBoundary", None)
             .0

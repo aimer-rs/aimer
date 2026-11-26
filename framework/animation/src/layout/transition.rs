@@ -940,6 +940,17 @@ impl<T> AnimatedLayout<T> {
 }
 
 impl<T: aimer_widget::Widget + 'static> aimer_widget::Widget for AnimatedLayout<T> {
+    fn hash(&self) -> Option<aimer_widget::ContentHash> {
+        use std::hash::Hash;
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        self.config.duration.hash(&mut hasher);
+        self.config.curve.hash(&mut hasher);
+        self.config.enabled.hash(&mut hasher);
+        self.config.reduced_motion.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &aimer_widget::base::BuildContext) -> aimer_widget::AnyElement {
         AnimatedLayoutElement {
             child: self.child.to_element(ctx),

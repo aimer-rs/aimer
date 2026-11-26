@@ -10,6 +10,8 @@ use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_events::element::ElementEvent;
 
 use aimer_widget_core::base::BuildContext;
+use aimer_widget_core::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget_core::components::event_element::{EventElement, EventResult, EventTreeRole};
 use aimer_widget_core::components::layout_element::LayoutElement;
 use aimer_widget_core::components::rebuildable::Rebuildable;
@@ -113,6 +115,13 @@ impl Default for FocusScope {
 }
 
 impl<W: Widget + 'static> Widget for FocusScope<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.traps.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawFocusScope {
             traps: self.traps,

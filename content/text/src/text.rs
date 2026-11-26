@@ -6,7 +6,9 @@ use std::cell::Cell;
 
 use aimer_style::{LineHeight, TextAlign, TextOverflow, TextShadow, TextStyle, TextTransform};
 use aimer_widget::base::BuildContext;
-use aimer_widget::{AnyElement, Element, LayoutCache, Widget};
+use std::hash::Hash;
+
+use aimer_widget::{AnyElement, ContentHash, ContentHasher, Element, LayoutCache, Widget};
 
 use crate::selection::selectable::SelectionScope;
 use crate::text::raw_text::RawTextWidget;
@@ -167,6 +169,18 @@ impl Text {
 }
 
 impl Widget for Text {
+    /// Everything that shows in the text: the string itself, however it is
+    /// stored, and every style, alignment and spacing setting.
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.text.as_str().hash(&mut hasher);
+        self.text_align.hash(&mut hasher);
+        self.text_style.hash(&mut hasher);
+        self.line_height.hash(&mut hasher);
+        hasher.write_f32(self.text_indent);
+        hasher.finish_hash()
+    }
+
     /// Emits the paragraph-backed selectable element inside a
     /// [`SelectionArea`](crate::SelectionArea) and the plain fast path
     /// everywhere else.
@@ -400,5 +414,59 @@ mod tests {
         outside.adopt_runtime_state_from(inside.as_ref());
 
         assert_eq!(outside.name(), RAW_TEXT_NAME);
+    }
+}
+
+#[cfg(test)]
+mod hash_tests {
+    use std::rc::Rc;
+
+    use aimer_style::{LineHeight, TextAlign, TextStyle, TextTransform};
+    use aimer_widget::{ContentHash, Widget};
+
+    use super::Text;
+
+    fn hash_of(text: Text) -> Option<ContentHash> {
+        Widget::hash(&text)
+    }
+
+    #[test]
+    fn a_text_has_a_hash_and_equal_texts_share_it() {
+        let hash = hash_of(Text::new("Aimer"));
+        assert!(hash.is_some(), "a text must be hashable");
+        assert_eq!(hash, hash_of(Text::new("Aimer")));
+    }
+
+    /// The source variant is how the string is stored, not what is shown.
+    #[test]
+    fn the_same_string_hashes_equal_whatever_holds_it() {
+        let shared: Rc<str> = Rc::from("Aimer");
+        assert!(hash_of(Text::new("Aimer")).is_some());
+        assert_eq!(hash_of(Text::new("Aimer")), hash_of(Text::new(String::from("Aimer"))));
+        assert_eq!(hash_of(Text::new("Aimer")), hash_of(Text::new(shared)));
+    }
+
+    #[test]
+    fn everything_that_shows_in_the_text_changes_the_hash() {
+        let base = hash_of(Text::new("Aimer"));
+        let changed = [
+            hash_of(Text::new("Aimer!")),
+            hash_of(Text::new("Aimer").text_align(TextAlign::MidCenter)),
+            hash_of(Text::new("Aimer").text_style(TextStyle::default().font_size(40))),
+            hash_of(Text::new("Aimer").text_transform(TextTransform::Uppercase)),
+            hash_of(Text::new("Aimer").letter_spacing(2.0)),
+            hash_of(Text::new("Aimer").word_spacing(2.0)),
+            hash_of(Text::new("Aimer").line_height(LineHeight::Px(30.0))),
+            hash_of(Text::new("Aimer").line_height(LineHeight::Factor(30.0))),
+        ];
+        for (index, hash) in changed.iter().enumerate() {
+            assert!(hash.is_some(), "variant {index} has no hash");
+            assert_ne!(*hash, base, "variant {index} left the hash unchanged");
+        }
+        for first in 0..changed.len() {
+            for second in first + 1..changed.len() {
+                assert_ne!(changed[first], changed[second], "variants {first} and {second} collide");
+            }
+        }
     }
 }

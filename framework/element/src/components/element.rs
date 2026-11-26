@@ -1651,12 +1651,12 @@ pub trait Element: VisitorElement + EventElement + LayoutElement + Rebuildable +
     /// Returns a cheap content hash of the configuration this element was
     /// built from.
     ///
-    /// The default, `0`, means "no hash available" and is never assumed equal
+    /// The default, `None`, means "no hash available" and is never assumed equal
     /// to another element's. An element that overrides this must hash every
     /// field that influences how it lays out, paints or reacts.
     #[inline]
-    fn hash(&self) -> usize {
-        0
+    fn hash(&self) -> Option<crate::content_hash::ContentHash> {
+        None
     }
 
     /// Returns this element's stable logical identity.

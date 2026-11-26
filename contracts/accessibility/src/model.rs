@@ -27,7 +27,7 @@ impl From<u64> for NodeId {
 }
 
 /// The platform-neutral role exposed for a semantic node.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Role {
     /// A node with no more specific role.
     Generic,

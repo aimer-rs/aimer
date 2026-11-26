@@ -3,6 +3,7 @@ use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::ResolvedSize;
 use aimer_macro::{EventElement, Rebuildable};
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, LayoutElement, RequiredChild, VisitorElement, Widget,
 };
@@ -79,6 +80,12 @@ impl Center {
 }
 
 impl<W: Widget + 'static> Widget for Center<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawCenter {
             child: self.child.to_element(ctx),

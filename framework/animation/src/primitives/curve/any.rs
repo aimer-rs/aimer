@@ -27,6 +27,28 @@ enum Repr {
     Custom(Arc<dyn Curve>),
 }
 
+/// A standard curve or a Bézier is its parameters; a custom curve is the object
+/// the handle shares, since its behavior cannot be read.
+impl std::hash::Hash for AnyCurve {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use std::hash::Hash;
+        match &self.0 {
+            Repr::Standard(standard) => {
+                state.write_u8(0);
+                standard.hash(state);
+            }
+            Repr::Bezier(bezier) => {
+                state.write_u8(1);
+                bezier.hash(state);
+            }
+            Repr::Custom(curve) => {
+                state.write_u8(2);
+                state.write_usize(std::sync::Arc::as_ptr(curve) as *const () as usize);
+            }
+        }
+    }
+}
+
 impl AnyCurve {
     /// Wraps `curve`. Equivalent to [`Curve::into_any`].
     pub fn new(curve: impl Curve) -> Self {

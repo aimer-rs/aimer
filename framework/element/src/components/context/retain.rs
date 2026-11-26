@@ -111,6 +111,20 @@ impl Slots {
             part: Box::new(part),
         });
     }
+
+    /// Keeps `part` under `key`, replacing a part already kept there.
+    ///
+    /// The replaced part is returned for the caller to drop: dropping a subtree
+    /// can run arbitrary code, which must not happen under this borrow.
+    fn replace<P: Any + Clone>(&mut self, key: Key, part: P) -> Option<Box<dyn Any>> {
+        let build = self.build;
+        if let Some(slot) = self.slots.iter_mut().find(|slot| slot.key == key) {
+            slot.requested = build;
+            return Some(std::mem::replace(&mut slot.part, Box::new(part)));
+        }
+        self.insert(key, part);
+        None
+    }
 }
 
 impl BuildConsumer {
@@ -129,6 +143,15 @@ impl BuildConsumer {
     #[doc(hidden)]
     pub fn retain_part<P: Any + Clone>(&self, key: Key, part: P) {
         self.retained.borrow_mut().insert(key, part);
+    }
+
+    /// Keeps `part` under `key` like [`BuildConsumer::retain_part`], replacing
+    /// the part already kept there, if any.
+    #[doc(hidden)]
+    pub fn replace_part<P: Any + Clone>(&self, key: Key, part: P) {
+        let replaced = self.retained.borrow_mut().replace(key, part);
+        // Outside the borrow, as for a released value.
+        drop(replaced);
     }
 
     /// Returns the value of type `V` this scope keeps under `key`, counting it

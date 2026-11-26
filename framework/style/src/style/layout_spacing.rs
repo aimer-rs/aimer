@@ -1,7 +1,7 @@
 pub type Padding = LayoutSpacing;
 pub type Margin = LayoutSpacing;
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LayoutSpacing {
     pub top: Spacing,
     pub bottom: Spacing,
@@ -74,7 +74,7 @@ impl LayoutSpacing {
     }
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Spacing {
     Px(u32),
     Percent(u32),

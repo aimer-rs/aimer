@@ -18,7 +18,7 @@
 pub const MORPH_PIPELINE_NAME: &str = "aimer.morph";
 
 /// How the outgoing picture turns into the incoming one.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum MorphStyle {
     /// Pixels switch from outgoing to incoming as a noise threshold sweeps

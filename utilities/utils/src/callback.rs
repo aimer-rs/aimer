@@ -119,6 +119,17 @@ pub struct Callback<Args = (), Return = ()> {
     inner: Option<RawInnerCallback<Args, Return>>,
 }
 
+/// Hashes the identity of the registered body; see [`RawInnerCallback`]'s impl.
+/// An unset callback hashes alike with every other unset one.
+impl<Args, Return> std::hash::Hash for Callback<Args, Return> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match &self.inner {
+            Some(body) => body.hash(state),
+            None => state.write_u8(2),
+        }
+    }
+}
+
 impl<Args, Return> Callback<Args, Return> {
     /// Whether a body was registered, synchronous or asynchronous.
     ///
@@ -235,6 +246,13 @@ pub type VoidParamedFunction<R> = Callback<R, ()>;
 /// ```
 #[derive(Default, Clone)]
 pub struct VoidCallback(Callback<(), ()>);
+
+impl std::hash::Hash for VoidCallback {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
 
 impl VoidCallback {
     /// Whether a body was registered, synchronous or asynchronous.
@@ -496,5 +514,47 @@ mod tests {
             "Callback(i32 -> bool)"
         );
         assert_eq!(format!("{:?}", VoidCallback::default()), "VoidCallback()");
+    }
+}
+
+#[cfg(test)]
+mod hash_tests {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    use super::{Callback, VoidCallback};
+
+    fn hash_of(value: &impl Hash) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// A clone runs the same body, so it is the same callback.
+    #[test]
+    fn a_clone_hashes_like_its_original() {
+        let callback = VoidCallback::from(|| {});
+        assert_eq!(hash_of(&callback), hash_of(&callback.clone()));
+    }
+
+    /// Two closures are two callbacks even when they are written the same: the
+    /// hash cannot see what they capture, so only identity is safe.
+    #[test]
+    fn separately_made_callbacks_hash_differently() {
+        let first = VoidCallback::from(|| {});
+        let second = VoidCallback::from(|| {});
+        assert_ne!(hash_of(&first), hash_of(&second));
+    }
+
+    #[test]
+    fn unset_callbacks_hash_alike_and_differ_from_set_ones() {
+        assert_eq!(hash_of(&VoidCallback::default()), hash_of(&VoidCallback::default()));
+        assert_ne!(hash_of(&VoidCallback::default()), hash_of(&VoidCallback::from(|| {})));
+    }
+
+    #[test]
+    fn a_callback_with_arguments_hashes_by_identity_too() {
+        let callback = Callback::from(|x: i32| x + 1);
+        assert_eq!(hash_of(&callback), hash_of(&callback.clone()));
+        assert_ne!(hash_of(&callback), hash_of(&Callback::from(|x: i32| x + 1)));
     }
 }

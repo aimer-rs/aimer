@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::{Hash, Hasher};
 use aimer_attribute::position::Vec2d;
 use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_canvas::Mat3;
@@ -226,6 +228,21 @@ impl<T: Widget> AnimatedPaint<T> {
 }
 
 impl<T: Widget + 'static> Widget for AnimatedPaint<T> {
+    /// A custom effect is a closure made where the widget is built, which can
+    /// never be the one a previous build made, so it has no hash.
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        match self.effect {
+            PaintEffect::Noop => hasher.write_u8(0),
+            PaintEffect::Opacity => hasher.write_u8(1),
+            PaintEffect::Presentation(_) | PaintEffect::Geometry(_) => return None,
+        }
+        self.controller.hash(&mut hasher);
+        self.inert.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn name(&self) -> &'static str {
         "AnimatedPaint"
     }

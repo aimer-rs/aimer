@@ -1,5 +1,7 @@
 //! [`MultiDecorationBox`], which stacks decorations behind and over one child.
 
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use std::cell::Cell;
 
 use aimer_attribute::{ResolvedSize, Vec2d};
@@ -60,7 +62,7 @@ pub struct MultiDecorationBox<D = BoxDecoration, W = RequiredChild> {
 }
 
 /// Where a stack paints relative to its child.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 enum Placement {
     /// Before the child, so the child paints over it.
     #[default]
@@ -200,6 +202,14 @@ impl<D: Decoration> MultiDecorationBox<D> {
 }
 
 impl<D: Decoration + 'static, W: Widget> Widget for MultiDecorationBox<D, W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("MultiDecorationBox");
+        self.placement.hash(&mut hasher);
+        hasher.write_child(self.decoration.content_hash());
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         const NAME: &str = "MultiDecorationBox";
         match self.placement {
@@ -253,6 +263,13 @@ impl<A, B> Layers<A, B> {
 }
 
 impl<A: Decoration, B: Decoration> Decoration for Layers<A, B> {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        let mut hasher = aimer_widget::ContentHasher::named("Decoration layers");
+        hasher.write_child(self.first.content_hash());
+        hasher.write_child(self.second.content_hash());
+        hasher.finish_hash()
+    }
+
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         self.first.paint_layer(canvas, origin, size, scale);
         self.second.paint_layer(canvas, origin, size, scale);

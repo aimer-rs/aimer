@@ -3,6 +3,7 @@ extern crate self as aimer_element;
 
 // #[doc(hidden)]
 pub mod components;
+pub mod content_hash;
 // #[doc(hidden)]
 pub mod element_invalidation;
 // #[doc(hidden)]
@@ -65,6 +66,7 @@ impl CalledCounter {
 pub static CALLED: CalledCounter = CalledCounter::new();
 
 // #[doc(hidden)]
+pub use crate::content_hash::{ContentHash, ContentHasher, HashContent};
 pub use crate::components::context::{InheritedScope, InheritedStates, RetainedNodeHandle};
 // #[doc(hidden)]
 pub use crate::components::drawable::{

@@ -152,6 +152,12 @@ impl OpacityGradient {
 }
 
 impl Decoration for OpacityGradient {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        hasher.write_child(self.ramp.content_hash());
+        hasher.finish_hash()
+    }
+
     #[inline]
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         self.ramp.paint(canvas, origin, size, scale);

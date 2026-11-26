@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::{Hash, Hasher};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -270,7 +272,28 @@ struct ResolvedTheme<T> {
     key: Option<Key>,
 }
 
+/// Adds a theme selection to `hasher`: both themes, and which one is in use. A
+/// theme without a hash leaves the whole hash without one.
+fn hash_selection<T: Theme>(hasher: &mut ContentHasher, selection: &ThemeSelection<T>) {
+    hasher.write_child(selection.light.content_hash());
+    hasher.write_u8(u8::from(selection.dark.is_some()));
+    if let Some(dark) = &selection.dark {
+        hasher.write_child(dark.content_hash());
+    }
+    selection.mode.hash(hasher);
+}
+
 impl<T: Theme> Widget for ResolvedTheme<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hasher.write_child(self.data.content_hash());
+        self.duration.hash(&mut hasher);
+        self.curve.hash(&mut hasher);
+        self.key.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
@@ -405,6 +428,16 @@ struct ThemeHost<T> {
 }
 
 impl<T: Theme> Widget for ThemeHost<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hash_selection(&mut hasher, &self.selection);
+        self.duration.hash(&mut hasher);
+        self.curve.hash(&mut hasher);
+        self.key.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn key(&self) -> Option<Key> {
         self.key.clone()
     }
@@ -544,6 +577,16 @@ impl<T: Theme> AdaptiveTheme<T> {
 }
 
 impl<T: Theme> Widget for AdaptiveTheme<T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hash_selection(&mut hasher, &self.selection);
+        self.duration.hash(&mut hasher);
+        self.curve.hash(&mut hasher);
+        self.controller.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         // Resolving the appearance always happens in this one place, whether the
         // system is followed or overridden. Both answers therefore hang under
@@ -575,6 +618,15 @@ impl<T: Theme> Widget for AdaptiveTheme<T> {
 }
 
 impl<W: Widget + 'static, T: Theme> Widget for AnimatedTheme<W, T> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hash_selection(&mut hasher, &self.selection);
+        self.duration.hash(&mut hasher);
+        self.curve.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let key = self.key();
         ThemeHost {

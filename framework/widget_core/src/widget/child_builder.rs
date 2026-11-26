@@ -11,6 +11,7 @@ use aimer_events::window::request_animation_frame;
 use aimer_focus::FocusNode;
 
 use crate::base::BuildContext;
+use crate::{ContentHash, ContentHasher};
 use crate::diagnostics::ErrorWidget;
 use crate::components::drawable::Drawable;
 use crate::components::element::{Element, ElementId, EventDispatchContext, VisitorElement};
@@ -292,6 +293,26 @@ impl Clone for ChildBuilder {
 }
 
 impl Widget for ChildBuilder {
+    /// A child nobody has built yet is the widget it will build, so it hashes as
+    /// that widget. Anything else — a slot, a child that was built and kept, a
+    /// closure — is one particular subtree, and hashes as its identity.
+    fn hash(&self) -> Option<ContentHash> {
+        let child = self.source.as_ref()?;
+        let mut hasher = ContentHasher::new::<Self>();
+        match &child.origin {
+            Origin::Once(widget) if !child.slot && child.element.get().is_none() => {
+                // Looked at, not consumed: the cell is refilled before anyone can
+                // build from it.
+                let held = widget.take();
+                let inner = held.as_ref().and_then(Widget::hash);
+                widget.set(held);
+                hasher.write_child(inner);
+            }
+            _ => hasher.write_identity(Rc::as_ptr(child)),
+        }
+        hasher.finish_hash()
+    }
+
     #[inline]
     fn key(&self) -> Option<Key> {
         self.key.clone()

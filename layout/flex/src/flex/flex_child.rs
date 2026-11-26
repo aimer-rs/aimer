@@ -1,6 +1,7 @@
 use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_macro::Rebuildable;
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, EventElement, EventTreeRole, LayoutElement,
     RequiredChild, VisitorElement, Widget,
@@ -91,6 +92,13 @@ impl Expanded {
 }
 
 impl<W: Widget + 'static> Widget for Expanded<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hasher.write_f32(self.flex);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawExpanded {
             child: self.child.to_element(ctx),

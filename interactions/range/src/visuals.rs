@@ -1,5 +1,7 @@
 //! Composable visual parts used by [`Slider`](super::Slider) controls.
 
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_attribute::{Dimension, ResolvedSize, Size, Vec2d};
 use aimer_canvas::Canvas;
 use aimer_cupid::utilities::{Color as V2Color, Rect};
@@ -27,6 +29,10 @@ impl SliderTrack {
 }
 
 impl Widget for SliderTrack {
+    fn hash(&self) -> Option<ContentHash> {
+        ContentHasher::new::<Self>().finish_hash()
+    }
+
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         RawSliderTrack {
             bounds: InteractionBounds::new(),
@@ -236,6 +242,16 @@ impl Default for SliderThumb {
 }
 
 impl Widget for SliderThumb {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hasher.write_f32(self.size);
+        hasher.write_f32(self.radius);
+        self.color.hash(&mut hasher);
+        self.focused_color.hash(&mut hasher);
+        self.disabled_color.hash(&mut hasher);
+        hasher.finish_hash()
+    }
+
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         RawSliderThumb {
             size: self.size,
@@ -460,6 +476,17 @@ impl Default for SliderTrail {
 }
 
 impl Widget for SliderTrail {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.width.hash(&mut hasher);
+        hasher.write_f32(self.height);
+        hasher.write_f32(self.radius);
+        self.color.hash(&mut hasher);
+        self.pressed_color.hash(&mut hasher);
+        self.disabled_color.hash(&mut hasher);
+        hasher.finish_hash()
+    }
+
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         RawSliderTrail {
             width: self.width,

@@ -7,7 +7,7 @@ use super::{AnyCurve, Curve};
 /// This is private: the public surface is the curve types below. It exists so
 /// that holding a standard curve takes no allocation and evaluating it takes no
 /// virtual call.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Standard {
     Linear,
     EaseIn,
@@ -233,4 +233,13 @@ fn bezier(t: f32, p1: f32, p2: f32) -> f32 {
 fn bezier_derivative(t: f32, p1: f32, p2: f32) -> f32 {
     let inv = 1.0 - t;
     3.0 * inv * inv * p1 + 6.0 * inv * t * (p2 - p1) + 3.0 * t * t * (1.0 - p2)
+}
+
+impl std::hash::Hash for CubicBezier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        aimer_attribute::hash_f32(self.x1, state);
+        aimer_attribute::hash_f32(self.y1, state);
+        aimer_attribute::hash_f32(self.x2, state);
+        aimer_attribute::hash_f32(self.y2, state);
+    }
 }

@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use aimer_attribute::dimension::Dimension;
@@ -225,6 +227,25 @@ impl<D: Decoration + 'static> Container<RequiredChild, D> {
 }
 
 impl<W: Widget, D: Decoration + 'static> Widget for Container<W, D> {
+    /// The decoration answers for what it paints; a retained decoration source is
+    /// compared by identity, since what it paints is read from the object.
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("Container");
+        self.width.hash(&mut hasher);
+        self.height.hash(&mut hasher);
+        self.padding.hash(&mut hasher);
+        self.margin.hash(&mut hasher);
+        hasher.write_child(self.box_decoration.content_hash());
+        hasher.write_u8(u8::from(self.decoration_source.is_some()));
+        if let Some(source) = &self.decoration_source {
+            hasher.write_identity(Rc::as_ptr(source));
+        }
+        self.fit.hash(&mut hasher);
+        self.color.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let child = self.child.to_element(ctx);
         RawContainer {

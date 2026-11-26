@@ -1,5 +1,6 @@
 //! [`OpacityMaskBox`], which scales its child by the alpha of a decoration.
 
+use aimer_widget::{ContentHash, ContentHasher};
 use crate::decoration_box::{ChildMask, decoration_element_with};
 use crate::{BoxDecoration, Decoration};
 use aimer_widget::base::BuildContext;
@@ -93,6 +94,13 @@ impl<D: Decoration> OpacityMaskBox<D> {
 }
 
 impl<D: Decoration + 'static, W: Widget> Widget for OpacityMaskBox<D, W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("OpacityMaskBox");
+        hasher.write_child(self.decoration.content_hash());
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         decoration_element_with(
             self.decoration,

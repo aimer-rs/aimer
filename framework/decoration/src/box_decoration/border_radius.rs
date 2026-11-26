@@ -8,7 +8,7 @@ use crate::border::resolve_dim;
 /// Containers clip children to these radii and round their fallback background.
 /// Without a background this paints nothing; paint-only decoration wrappers
 /// do not apply child clipping. Zero radii still declare a rectangular clip.
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Debug, Hash)]
 pub struct BorderRadius {
     /// Radius of the top-left corner.
     pub top_left: Dimension,

@@ -59,9 +59,23 @@ impl ScrollBehavior {
     }
 }
 
-#[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ScrollAxis {
     #[default]
     Vertical,
     Horizontal,
+}
+
+impl std::hash::Hash for ScrollBehavior {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use aimer_attribute::hash_f32;
+        for vector in [self.max_scroll, self.min_scroll, self.velocity, self.scroll_offset] {
+            hash_f32(vector.x, state);
+            hash_f32(vector.y, state);
+        }
+        self.bouncy.hash(state);
+        hash_f32(self.bouncy_resistance, state);
+        hash_f32(self.bouncy_recovery, state);
+        hash_f32(self.friction, state);
+    }
 }

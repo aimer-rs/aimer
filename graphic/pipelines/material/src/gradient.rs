@@ -13,7 +13,7 @@ pub const MAX_GRADIENT_STOPS: usize = 8;
 pub const GRADIENT_PACKET_EXTENSION_LEN: usize = 4 + 16 + MAX_GRADIENT_STOPS * 4 * 2;
 
 /// The geometry a gradient's color ramp follows.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum GradientShape {
     /// Colors change along the line from `geometry[0..2]` to `geometry[2..4]`.

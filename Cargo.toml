@@ -85,6 +85,7 @@ aimer_cupid.workspace = true
 aimer_std.workspace = true
 aimer_time.workspace = true
 aimer_arrlist.workspace = true
+aimer_tls.workspace = true
 
 [dev-dependencies]
 # The `http_request_button` example fetches a real URL, to show that a

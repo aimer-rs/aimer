@@ -29,6 +29,11 @@ use crate::{BorderRadius, BoxBorder, BoxDecoration, BoxOutline, BoxShadow, Decor
 /// ```
 impl Decoration for Color {
     #[inline]
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        crate::decoration::hash_of_value(self)
+    }
+
+    #[inline]
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         if !scale.is_finite() || scale <= 0.0 {
             return;
@@ -66,6 +71,11 @@ impl Decoration for Color {
 /// The border alone does not clip the child or supply a background color.
 impl Decoration for BoxBorder {
     #[inline]
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        crate::decoration::hash_of_value(self)
+    }
+
+    #[inline]
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         BoxDecoration::new().border(*self).paint(canvas, origin, size, scale);
     }
@@ -99,6 +109,11 @@ impl Decoration for BoxBorder {
 /// Paints outside the box without changing child insets or clipping.
 impl Decoration for BoxOutline {
     #[inline]
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        crate::decoration::hash_of_value(self)
+    }
+
+    #[inline]
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         BoxDecoration::new().outline(*self).paint(canvas, origin, size, scale);
     }
@@ -130,6 +145,11 @@ impl Decoration for BoxOutline {
 /// Paints a rectangular shadow without changing child geometry.
 /// Outer shadows precede a fallback background; inset shadows follow it.
 impl Decoration for BoxShadow {
+    #[inline]
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        crate::decoration::hash_of_value(self)
+    }
+
     #[inline]
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         if !scale.is_finite() || scale <= 0.0 {
@@ -172,6 +192,11 @@ impl Decoration for BoxShadow {
 /// [`Magnification`](crate::Magnification) and [`LightEdge`](crate::LightEdge)
 /// round their corners to the nearest preceding radius.
 impl Decoration for BorderRadius {
+    #[inline]
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        crate::decoration::hash_of_value(self)
+    }
+
     #[inline]
     fn paint(&self, canvas: &Canvas, _origin: Vec2d, size: ResolvedSize, scale: f32) {
         if !scale.is_finite() || scale <= 0.0 {

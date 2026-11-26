@@ -173,6 +173,17 @@ impl Magnification {
 }
 
 impl Decoration for Magnification {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        hasher.write_f32(self.zoom);
+        hasher.write_f32(self.thickness);
+        std::hash::Hash::hash(&self.style, &mut hasher);
+        hasher.write_f32(self.bulge);
+        hasher.write_f32(self.bulge_radius);
+        hasher.write_f32(self.bevel_width);
+        hasher.finish_hash()
+    }
+
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, _scale: f32) {
         let active = (self.style.contains(MagnificationStyle::UNIFORM) && self.zoom != 1.0)
             || (self.style.contains(MagnificationStyle::BULGE) && self.bulge > 0.0)

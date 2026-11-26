@@ -1,6 +1,7 @@
 use aimer_attribute::size::{ResolvedSize, Size};
 use aimer_macro::{EventElement, Rebuildable};
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, LayoutElement, RequiredChild, VisitorElement, Widget,
 };
@@ -67,6 +68,13 @@ impl Default for Opacity {
 }
 
 impl<W: Widget + 'static> Widget for Opacity<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        hasher.write_f32(self.opacity);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawOpacity {
             child: self.child.to_element(ctx),

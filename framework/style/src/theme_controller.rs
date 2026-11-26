@@ -47,6 +47,15 @@ struct ControllerState {
 #[derive(Clone)]
 pub struct ThemeController(Rc<ControllerState>);
 
+/// A controller is the object clones share: the same controller is the same
+/// theme mode, and no other is.
+impl std::hash::Hash for ThemeController {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Rc::as_ptr(&self.0) as usize);
+    }
+}
+
 impl ThemeController {
     #[inline]
     pub(crate) fn new(mode: ThemeMode) -> Self {

@@ -244,3 +244,26 @@ impl BoxShadow {
         );
     }
 }
+
+impl std::hash::Hash for BoxShadow {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use aimer_attribute::hash_f32;
+        hash_f32(self.offset_x, state);
+        hash_f32(self.offset_y, state);
+        hash_f32(self.blur, state);
+        hash_f32(self.spread, state);
+        self.color.hash(state);
+        self.inset.hash(state);
+        self.side.hash(state);
+    }
+}
+
+impl std::hash::Hash for ShadowSide {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        if let Self::Range(start, end) = *self {
+            aimer_attribute::hash_f32(start, state);
+            aimer_attribute::hash_f32(end, state);
+        }
+    }
+}

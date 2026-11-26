@@ -71,6 +71,15 @@ impl std::fmt::Debug for AnimationController {
     }
 }
 
+/// A controller is its playback state: clones are the same controller, and two
+/// made separately are not, whatever they are configured with.
+impl std::hash::Hash for AnimationController {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Rc::as_ptr(&self.state) as *const () as usize);
+    }
+}
+
 impl AnimationController {
     /// Create a new controller with the given duration and curve.
     pub fn new(duration: Duration, curve: impl Curve) -> Self {

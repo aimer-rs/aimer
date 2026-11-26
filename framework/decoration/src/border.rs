@@ -17,7 +17,7 @@ use aimer_widget::base::BuildContext;
 /// until the pipeline supports them. The default is [`BorderStyle::None`],
 /// which suppresses the side entirely regardless of its stroke width.
 #[allow(dead_code)]
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Debug, Hash)]
 pub enum BorderStyle {
     /// A continuous line.
     Solid,
@@ -32,7 +32,7 @@ pub enum BorderStyle {
 
 /// Which side of the box edge a border grows towards.
 #[allow(dead_code)]
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Debug, Hash)]
 pub enum BorderMode {
     /// The stroke is drawn inside the box edge.
     #[default]
@@ -51,7 +51,7 @@ pub type Stroke = Dimension;
 ///
 /// A slice is visible only when its style is not [`BorderStyle::None`] and its
 /// stroke resolves to a positive width.
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Debug, Hash)]
 pub struct BorderSlice {
     /// How the side is drawn.
     pub style: BorderStyle,
@@ -105,7 +105,7 @@ pub fn resolve_dim(dim: Dimension, parent_val: f32, scale: f32) -> f32 {
 
 /// An inside border usable directly as a [`crate::Decoration`].
 /// Containers reserve its stroke widths as child insets without clipping.
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Debug, Hash)]
 pub struct BoxBorder {
     /// The left side.
     pub left: BorderSlice,
@@ -119,7 +119,7 @@ pub struct BoxBorder {
 
 /// An outside outline usable directly as a [`crate::Decoration`].
 /// Its paint outsets include the stroke widths; child geometry is unchanged.
-#[derive(Default, Clone, Copy, PartialEq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Debug, Hash)]
 pub struct BoxOutline {
     /// The left side.
     pub left: BorderSlice,

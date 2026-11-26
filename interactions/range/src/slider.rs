@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::{Hash, Hasher};
 use std::{fmt, ops::Range};
 
 use aimer_widget::{ChildBuilder, Widget};
@@ -32,6 +34,37 @@ pub struct Slider<T: RangeValue = f64> {
 }
 
 impl<T: RangeValue> Slider<T> {
+    /// A content hash of everything the slider is configured with.
+    ///
+    /// The callbacks are compared by identity — see [`Slider::on_change_shared`]
+    /// — and the visual parts by the widgets they hold, so a custom part without
+    /// a hash leaves the slider without one.
+    pub(crate) fn content_hash(&self) -> Option<ContentHash> {
+        use aimer_widget::HashContent;
+        let mut hasher = ContentHasher::new::<Self>();
+        self.range.start.to_f64().hash_content(&mut hasher);
+        self.range.end.to_f64().hash_content(&mut hasher);
+        self.step_value.to_f64().hash_content(&mut hasher);
+        self.value.to_f64().hash_content(&mut hasher);
+        self.bounds_policy.hash(&mut hasher);
+        self.disabled.hash(&mut hasher);
+        hasher.write_f32(self.width);
+        hasher.write_f32(self.height);
+        for part in [&self.track, &self.trail, &self.thumb] {
+            hasher.write_u8(u8::from(part.is_some()));
+            if let Some(part) = part {
+                hasher.write_child(part.hash());
+            }
+        }
+        for callback in [&self.on_change, &self.on_change_end] {
+            hasher.write_u8(u8::from(callback.is_some()));
+            if let Some(callback) = callback {
+                hasher.write_identity(std::rc::Rc::as_ptr(callback));
+            }
+        }
+        hasher.finish_hash()
+    }
+
     /// Creates a slider with the default range `0..1`, step `1`, and value `0`.
     ///
     /// Configure the control with [`Self::range`], [`Self::step`], and
@@ -228,6 +261,40 @@ impl<T: RangeValue> Slider<T> {
         F: Fn(T) + 'static,
     {
         self.on_change = Some(std::rc::Rc::new(callback));
+        self
+    }
+
+    /// Registers a callback that is shared rather than written here.
+    ///
+    /// Behaves as [`Self::on_change`], but takes the callback as an object that
+    /// keeps its identity. [`Widget::hash`] compares a callback by identity, so a
+    /// slider given the same shared callback on every build hashes the same and
+    /// can be kept by `retain_hashed`; a closure written again in each build is a
+    /// new callback each time, and never can be.
+    ///
+    /// ```
+    /// use std::rc::Rc;
+    /// use aimer_range::{RangeChangeCallback, Slider};
+    ///
+    /// let on_change: RangeChangeCallback = Rc::new(|value| println!("{value}"));
+    /// // The same callback each time, so the same slider each time.
+    /// let first = Slider::new().on_change_shared(Rc::clone(&on_change));
+    /// let second = Slider::new().on_change_shared(on_change);
+    /// # let _ = (first, second);
+    /// ```
+    #[inline]
+    pub fn on_change_shared(mut self, callback: RangeChangeCallback<T>) -> Self {
+        self.on_change = Some(callback);
+        self
+    }
+
+    /// Registers a shared callback for the value a completed change settled on.
+    ///
+    /// The shared counterpart of [`Self::on_change_end`], as
+    /// [`Self::on_change_shared`] is of [`Self::on_change`].
+    #[inline]
+    pub fn on_change_end_shared(mut self, callback: RangeChangeCallback<T>) -> Self {
+        self.on_change_end = Some(callback);
         self
     }
 

@@ -998,14 +998,28 @@ pub use list_items::ListItems;
 pub use raw_flex::Flex;
 pub use row_column::{Column, Row};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+/// Feeds a container's children to `hasher`: how many there are, then each one's
+/// hash in order. One child without a hash leaves the container without one.
+pub(crate) fn hash_children<W: aimer_widget::Widget>(
+    hasher: &mut aimer_widget::ContentHasher,
+    children: &[W],
+) {
+    use std::hash::Hash;
+    // The count first, so where one run of children ends is unambiguous.
+    children.len().hash(hasher);
+    for child in children {
+        hasher.write_child(child.hash());
+    }
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FlexDirection {
     Row,
     Column,
     #[default]
     Inherit,
 }
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BoxAlignment {
     #[default]
     Start,
@@ -1032,7 +1046,7 @@ pub enum BoxAlignment {
 /// let around = JustifyContent::SpaceAround;
 /// let evenly = JustifyContent::SpaceEvenly;
 /// ```
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JustifyContent {
     #[default]
     Start,
@@ -1043,7 +1057,7 @@ pub enum JustifyContent {
     SpaceEvenly,
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OverflowBehavior {
     #[default]
     Hidden,

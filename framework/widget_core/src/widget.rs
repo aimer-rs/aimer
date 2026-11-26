@@ -65,13 +65,16 @@ pub trait Widget {
 
     /// Returns a cheap content hash of this widget's configuration.
     ///
-    /// The framework treats equal non-zero hashes as "configuration unchanged",
-    /// so a widget that overrides this must hash every field that influences
-    /// the element it builds. The default, `0`, means "no hash available" and
-    /// is never assumed equal to another widget's.
+    /// The framework treats equal `Some` hashes as "configuration unchanged", so
+    /// a widget that overrides this must hash every field that influences the
+    /// element it builds, its children's hashes included. Build it with a
+    /// [`ContentHasher`](crate::ContentHasher) seeded with the widget's own type.
+    /// The default, `None`, means "no hash available" and is never assumed equal
+    /// to another widget's; a widget holding a closure has to answer `None`,
+    /// since a closure cannot be hashed.
     #[inline]
-    fn hash(&self) -> usize {
-        0
+    fn hash(&self) -> Option<crate::ContentHash> {
+        None
     }
 
     /// Erases this widget into an inline-or-heap [`AnyWidget`].
@@ -240,7 +243,7 @@ pub trait DynWidget: 'static {
     fn dyn_name(&self) -> &'static str;
 
     /// Forwards [`Widget::hash`].
-    fn dyn_hash(&self) -> usize;
+    fn dyn_hash(&self) -> Option<crate::ContentHash>;
 
     /// Forwards [`Widget::text_content`].
     fn dyn_text_content(&self) -> Option<&str>;
@@ -268,7 +271,7 @@ impl<W: Widget + 'static> DynWidget for W {
     }
 
     #[inline]
-    fn dyn_hash(&self) -> usize {
+    fn dyn_hash(&self) -> Option<crate::ContentHash> {
         Widget::hash(self)
     }
 
@@ -408,7 +411,7 @@ impl Widget for AnyWidget {
     }
 
     #[inline]
-    fn hash(&self) -> usize {
+    fn hash(&self) -> Option<crate::ContentHash> {
         self.as_ref().dyn_hash()
     }
 
@@ -568,27 +571,32 @@ mod tests {
         assert_eq!(Widget::name(&owners[1]), "StorageWidget");
     }
 
-    struct HashedWidget(usize);
+    struct HashedWidget(u32);
 
     impl Widget for HashedWidget {
         fn to_element(self, _ctx: &BuildContext) -> AnyElement {
             panic!("hash contract test does not build an element")
         }
 
-        fn hash(&self) -> usize {
-            self.0
+        fn hash(&self) -> Option<crate::ContentHash> {
+            use std::hash::Hash;
+            let mut hasher = crate::ContentHasher::new::<Self>();
+            self.0.hash(&mut hasher);
+            hasher.finish_hash()
         }
     }
 
     #[test]
-    fn hash_defaults_to_zero_and_is_forwarded_through_erasure() {
-        assert_eq!(Widget::hash(&StorageWidget([0; 1])), 0);
-        assert_eq!(Widget::hash(&StorageWidget([0; 1]).boxed()), 0);
+    fn hash_defaults_to_none_and_is_forwarded_through_erasure() {
+        assert_eq!(Widget::hash(&StorageWidget([0; 1])), None);
+        assert_eq!(Widget::hash(&StorageWidget([0; 1]).boxed()), None);
 
+        let expected = Widget::hash(&HashedWidget(0xA11CE));
+        assert!(expected.is_some());
         let inline = HashedWidget(0xA11CE).boxed();
-        assert_eq!(Widget::hash(&inline), 0xA11CE);
+        assert_eq!(Widget::hash(&inline), expected);
         let moved = std::hint::black_box(inline);
-        assert_eq!(Widget::hash(&moved), 0xA11CE);
+        assert_eq!(Widget::hash(&moved), expected);
         assert_eq!(Widget::name(&moved), "Unknown");
     }
 

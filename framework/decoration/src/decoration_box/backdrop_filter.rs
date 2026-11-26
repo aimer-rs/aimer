@@ -141,6 +141,16 @@ impl BackdropFilter {
 }
 
 impl Decoration for BackdropFilter {
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        let mut hasher = aimer_widget::ContentHasher::new::<Self>();
+        hasher.write_f32(self.blur_radius);
+        hasher.write_f32(self.saturation);
+        hasher.write_f32(self.brightness);
+        hasher.write_f32(self.contrast);
+        std::hash::Hasher::write_u8(&mut hasher, u8::from(self.confined));
+        hasher.finish_hash()
+    }
+
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, _scale: f32) {
         if size.width <= 0.0 || size.height <= 0.0 {
             return;

@@ -266,6 +266,7 @@ impl<T: 'static> FlexList<T> {
             keyed: self.keyed,
             items: self.items.into_shared(),
             builder: Rc::new(builder),
+            rows_follow_items: false,
         }
     }
 }
@@ -309,6 +310,8 @@ pub struct ListFlex<T: 'static, F> {
     /// data to a source that outlives the call.
     items: ShareRef<[T]>,
     builder: Rc<F>,
+    /// Declared by [`ListFlex::rows_follow_items`].
+    rows_follow_items: bool,
 }
 
 impl<T, F> ListFlex<T, F> {
@@ -338,6 +341,53 @@ impl<T, F> ListFlex<T, F> {
     #[inline]
     pub fn justify_content(mut self, justify_content: JustifyContent) -> Self {
         self.justify_content = Some(justify_content);
+        self
+    }
+
+    /// Declares that a row is a function of its datum and nothing else, so a
+    /// rebuild over unchanged data keeps the rows it has.
+    ///
+    /// A list is rebuilt whenever anything above it rebuilds, and by default
+    /// every row on screen is then built again from the builder and has the state
+    /// of its predecessor carried into it. With this declaration, a rebuild whose
+    /// data is the very same allocation — [`ListItems::ptr_eq`], with the same
+    /// length — hands the rows already built to the replacement as they are: the
+    /// builder does not run, and the rows keep their elements, state, and layout
+    /// caches. Any other rebuild behaves as it does without the declaration.
+    ///
+    /// The declaration is a promise by the caller, because the builder is a new
+    /// closure on every rebuild and cannot be compared. Make it only when the
+    /// builder reads nothing but the datum it is given: no selection, theme, or
+    /// callback captured from the surrounding build, and no inherited state read
+    /// while a row is built. A row that does read such state rebuilds itself when
+    /// it changes only if it is a stateful widget that tracks the read; every
+    /// other kind would keep showing what it was built with. State the rows need
+    /// belongs in the data, so that changing it is a change of the allocation.
+    ///
+    /// The data must also not change *in place* behind the handle, which a
+    /// `Cell`, `RefCell` or signal inside a datum can do; identity cannot see it.
+    /// The replacement must not have been measured, and so have built rows,
+    /// before the rebuild reaches it; if it was, it claims the old rows by
+    /// identity as usual. Wrapping lists, which build every row up front, and
+    /// lists of zero-sized data never reuse rows.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use std::rc::Rc;
+    /// use aimer_container::SizedBox;
+    /// use aimer_flex::Column;
+    /// use aimer_rubick::RcProjectExt;
+    ///
+    /// let widths = Rc::new(vec![40, 60, 80]);
+    /// let column = Column::new()
+    ///     .list(widths.project(|widths| widths.as_slice()))
+    ///     .builder(|width| SizedBox::new().width(*width))
+    ///     .rows_follow_items();
+    /// ```
+    #[inline]
+    pub fn rows_follow_items(mut self) -> Self {
+        self.rows_follow_items = true;
         self
     }
 
@@ -373,11 +423,14 @@ where
     /// a window to speak of.
     fn children_source(&self, ctx: &BuildContext) -> Box<dyn ChildrenSource> {
         if self.overflow != OverflowBehavior::Wrap {
-            return Box::new(WindowedChildren::new(
-                self.items.clone(),
-                Rc::clone(&self.builder),
-                self.keyed.clone(),
-            ));
+            return Box::new(
+                WindowedChildren::new(
+                    self.items.clone(),
+                    Rc::clone(&self.builder),
+                    self.keyed.clone(),
+                )
+                .reusing_rows(self.rows_follow_items),
+            );
         }
 
         Box::new(EagerChildren(
@@ -1540,5 +1593,207 @@ mod tests {
             flex.to_element(&ctx).computed_size(&ctx),
             flex_from_vec.to_element(&ctx).computed_size(&ctx)
         );
+    }
+
+    /// `len` numbers held by one owner, shared the way a provider shares them.
+    fn numbers(len: u32) -> (Rc<Vec<u32>>, ShareRef<[u32]>) {
+        use aimer_rubick::RcProjectExt;
+
+        let owner = Rc::new((0..len).collect::<Vec<_>>());
+        let shared = owner.project(|owner| owner.as_slice());
+        (owner, shared)
+    }
+
+    /// A declared-extent column over `items` whose rows count their builds.
+    fn shared_column(counters: &Counters, items: ShareRef<[u32]>, follow: bool) -> impl Widget + use<> {
+        let counters = counters.clone();
+        let list = Column::new()
+            .list(items)
+            .item_extent(Dimension::Px(ROW_EXTENT))
+            .builder(move |_: &u32| Counting::new(&counters));
+        if follow { list.rows_follow_items() } else { list }
+    }
+
+    /// What a rebuild above the list does: build the replacement, hand the live
+    /// state over, paint it. Returns the replacement.
+    fn rebuilt(old: &AnyElement, new: impl Widget, ctx: &BuildContext) -> AnyElement {
+        let new = new.to_element(ctx);
+        carry_element_state(old.as_ref(), new.as_ref(), ctx);
+        new.update(ctx);
+        new
+    }
+
+    fn row_ids(element: &AnyElement) -> Vec<aimer_widget::ElementId> {
+        let mut ids = Vec::new();
+        element.visit_children(&mut |row| ids.push(row.id()));
+        ids
+    }
+
+    /// The point of the opt-in: the same data, declared to be all a row depends on,
+    /// means the rows already built are still right, so the rebuild builds none.
+    #[test]
+    fn unchanged_items_skip_the_row_builder_when_rows_follow_items() {
+        let counters = Counters::default();
+        let ctx = dummy_build_context(400.0, VIEWPORT, Some((0.0, 0.0, 400.0, VIEWPORT)));
+        let (_owner, items) = numbers(1_000);
+
+        let old = shared_column(&counters, items.clone(), true).to_element(&ctx);
+        old.update(&ctx);
+        let built = counters.built.get();
+        let ids = row_ids(&old);
+        assert!(built > 0 && !ids.is_empty(), "the first frame built nothing");
+        counters.drawn.set(0);
+
+        let new = rebuilt(&old, shared_column(&counters, items, true), &ctx);
+
+        assert_eq!(counters.built.get(), built, "the rebuild ran the row builder again");
+        assert_eq!(row_ids(&new), ids, "the rows were not handed over as they were");
+        assert!(counters.drawn.get() > 0, "the handed-over rows were not painted");
+    }
+
+    /// Without the declaration nothing may be assumed about what the builder
+    /// captured, so a rebuild builds its rows again, as it always did.
+    #[test]
+    fn unchanged_items_still_rebuild_rows_without_the_declaration() {
+        let counters = Counters::default();
+        let ctx = dummy_build_context(400.0, VIEWPORT, Some((0.0, 0.0, 400.0, VIEWPORT)));
+        let (_owner, items) = numbers(1_000);
+
+        let old = shared_column(&counters, items.clone(), false).to_element(&ctx);
+        old.update(&ctx);
+        let built = counters.built.get();
+
+        rebuilt(&old, shared_column(&counters, items, false), &ctx);
+
+        assert!(counters.built.get() > built, "an undeclared list skipped its builder");
+    }
+
+    /// Equal data in another allocation is a changed list as far as identity can
+    /// tell, so the declaration alone does not skip it.
+    #[test]
+    fn another_allocation_of_equal_items_rebuilds_the_rows() {
+        let counters = Counters::default();
+        let ctx = dummy_build_context(400.0, VIEWPORT, Some((0.0, 0.0, 400.0, VIEWPORT)));
+        let (_first_owner, first) = numbers(1_000);
+        let (_second_owner, second) = numbers(1_000);
+
+        let old = shared_column(&counters, first, true).to_element(&ctx);
+        old.update(&ctx);
+        let built = counters.built.get();
+
+        rebuilt(&old, shared_column(&counters, second, true), &ctx);
+
+        assert!(counters.built.get() > built, "a different allocation was treated as unchanged");
+    }
+
+    /// A list that changed shape must show the new data, declaration or not.
+    #[test]
+    fn a_shorter_slice_of_the_same_allocation_is_a_changed_list() {
+        let counters = Counters::default();
+        let ctx = dummy_build_context(400.0, VIEWPORT, Some((0.0, 0.0, 400.0, VIEWPORT)));
+        let (owner, items) = numbers(1_000);
+        let shorter = {
+            use aimer_rubick::RcProjectExt;
+            owner.project(|owner| &owner[..999])
+        };
+
+        let old = shared_column(&counters, items, true).to_element(&ctx);
+        old.update(&ctx);
+        let built = counters.built.get();
+
+        let new = rebuilt(&old, shared_column(&counters, shorter, true), &ctx);
+
+        assert!(counters.built.get() > built, "a slice of another length was treated as unchanged");
+        assert_eq!(new.computed_size(&ctx).height, 999.0 * ROW_EXTENT);
+    }
+
+    /// Zero-sized data all share one dangling address, so address equality says
+    /// nothing about them.
+    #[test]
+    fn zero_sized_items_are_never_treated_as_unchanged() {
+        let counters = Counters::default();
+        let ctx = dummy_build_context(400.0, VIEWPORT, Some((0.0, 0.0, 400.0, VIEWPORT)));
+        let column = |items: Vec<()>| {
+            let counters = counters.clone();
+            Column::new()
+                .list(items)
+                .item_extent(Dimension::Px(ROW_EXTENT))
+                .builder(move |_: &()| Counting::new(&counters))
+                .rows_follow_items()
+        };
+
+        let old = column(vec![(); 50]).to_element(&ctx);
+        old.update(&ctx);
+        let built = counters.built.get();
+
+        rebuilt(&old, column(vec![(); 50]), &ctx);
+
+        assert!(counters.built.get() > built);
+    }
+
+    /// Cost of one rebuild of an unchanged list, with and without the declaration.
+    ///
+    /// A measurement, not a check: run it with `--run-ignored only`. The rows are
+    /// the cheapest element there is, so the saving is a floor; a row that is a
+    /// tree of containers saves proportionally more.
+    #[test]
+    #[ignore = "profile harness"]
+    fn rebuild_cost_of_an_unchanged_list_profile() {
+        use std::time::Instant;
+
+        const ROUNDS: u32 = 200;
+        let ctx = dummy_build_context(400.0, VIEWPORT, Some((0.0, 0.0, 400.0, VIEWPORT)));
+        let (_owner, items) = numbers(100_000);
+
+        for follow in [false, true] {
+            let counters = Counters::default();
+            let mut live = shared_column(&counters, items.clone(), follow).to_element(&ctx);
+            live.update(&ctx);
+            let mut samples = Vec::new();
+            for _ in 0..ROUNDS {
+                let started = Instant::now();
+                live = rebuilt(&live, shared_column(&counters, items.clone(), follow), &ctx);
+                samples.push(started.elapsed());
+            }
+            samples.sort();
+            eprintln!(
+                "rows_follow_items={follow}: p50 {:?}, p95 {:?}, rows built {}",
+                samples[samples.len() / 2],
+                samples[samples.len() * 95 / 100],
+                counters.built.get(),
+            );
+        }
+    }
+
+    /// Handing the rows over keeps what they hold: a stateful row keeps its state.
+    #[test]
+    fn a_handed_over_row_keeps_its_state() {
+        let ctx = scrolled_context(0.0);
+        let observed = Observed::default();
+        let (_owner, items) = numbers(100);
+        let column = |observed: &Observed, items: ShareRef<[u32]>| {
+            let observed = observed.clone();
+            Column::new()
+                .list(items)
+                .builder(move |item: &u32| StatefulRow {
+                    item: *item,
+                    seen: observed.seen.clone(),
+                    updaters: observed.updaters.clone(),
+                })
+                .rows_follow_items()
+        };
+
+        let old = column(&observed, items.clone()).to_element(&ctx);
+        old.update(&ctx);
+        observed.bump(1, 7);
+        old.update(&ctx);
+
+        let new = rebuilt(&old, column(&observed, items), &ctx);
+        assert_eq!(observed.counter_of(1), Some(7), "row 1 lost its state");
+
+        // The row is the one the old list built, so its updater still drives it.
+        observed.bump(1, 9);
+        new.update(&ctx);
+        assert_eq!(observed.counter_of(1), Some(9), "the handed-over row is no longer live");
     }
 }

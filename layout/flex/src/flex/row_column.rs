@@ -1,5 +1,7 @@
 use aimer_style::LayoutSpacing;
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget::{AnyElement, AnyWidget, Element, RequiredChild, Widget};
 
 use crate::flex::children_source::EagerChildren;
@@ -201,6 +203,17 @@ impl Column {
 }
 
 impl<W: Widget + 'static> Widget for Column<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.vertical_alignment.hash(&mut hasher);
+        self.horizontal_alignment.hash(&mut hasher);
+        self.justify_content.hash(&mut hasher);
+        self.gaps.hash(&mut hasher);
+        self.overflow.hash(&mut hasher);
+        crate::flex::hash_children(&mut hasher, &self.children);
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let children = EagerChildren(
             self.children
@@ -414,6 +427,17 @@ impl Row {
 // }
 
 impl<W: Widget + 'static> Widget for Row<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.vertical_alignment.hash(&mut hasher);
+        self.horizontal_alignment.hash(&mut hasher);
+        self.justify_content.hash(&mut hasher);
+        self.gaps.hash(&mut hasher);
+        self.overflow.hash(&mut hasher);
+        crate::flex::hash_children(&mut hasher, &self.children);
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let children = EagerChildren(
             self.children

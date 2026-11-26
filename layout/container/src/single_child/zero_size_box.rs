@@ -1,5 +1,6 @@
 use aimer_attribute::{Dimension, Size};
 use aimer_widget::base::BuildContext;
+use aimer_widget::ContentHasher;
 use aimer_widget::{
     AnyElement, Drawable, Element, EventElement, EventTreeRole, LayoutElement, Rebuildable,
     VisitorElement, Widget,
@@ -71,6 +72,11 @@ impl LayoutElement for ZeroSizedBox {
 impl Rebuildable for ZeroSizedBox {}
 
 impl Widget for ZeroSizedBox {
+    /// It has no configuration, so its type is all there is to hash.
+    fn hash(&self) -> Option<aimer_widget::ContentHash> {
+        ContentHasher::new::<Self>().finish_hash()
+    }
+
     fn to_element(self, _: &BuildContext) -> AnyElement {
         Element::boxed(ZeroSizedBox)
     }

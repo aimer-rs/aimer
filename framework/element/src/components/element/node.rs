@@ -494,7 +494,7 @@ impl<E: Element + 'static> Element for ElementNode<E> {
     }
 
     #[inline]
-    fn hash(&self) -> usize {
+    fn hash(&self) -> Option<crate::content_hash::ContentHash> {
         self.element.hash()
     }
 }

@@ -2,11 +2,13 @@ use aimer_attribute::size::ResolvedSize;
 use aimer_attribute::{BoxConstraint, Size};
 use aimer_macro::{EventElement, Rebuildable};
 use aimer_widget::base::BuildContext;
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget::{
     AnyElement, AnyWidget, Drawable, Element, LayoutElement, RequiredChild, VisitorElement, Widget,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RatioOption {
     Width,
     Height,
@@ -98,6 +100,14 @@ impl Default for AspectRatio {
 }
 
 impl<W: Widget> Widget for AspectRatio<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::named("AspectRatio");
+        hasher.write_f32(self.aspect_ratio);
+        self.ratio_option.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawAspectRatio {
             child: self.child.to_element(ctx),

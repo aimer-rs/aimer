@@ -15,6 +15,8 @@ use std::marker::PhantomData;
 use std::panic::Location;
 
 use aimer_widget_core::base::BuildContext;
+use aimer_widget_core::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use aimer_widget_core::components::drawable::Drawable;
 use aimer_widget_core::components::element::{Element, dispatch_focused_event};
 use aimer_widget_core::components::event_element::{EventElement, EventResult, EventTreeRole};
@@ -260,6 +262,21 @@ pub struct FocusableState<W: Widget + 'static> {
 }
 
 impl<W: Widget + 'static> Widget for Focusable<W> {
+    /// The node and the callbacks are compared by identity: a supplied node is
+    /// the focus identity itself, and a callback is its body.
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.node.hash(&mut hasher);
+        self.on_focus.hash(&mut hasher);
+        self.on_focus_lost.hash(&mut hasher);
+        self.on_focus_change.hash(&mut hasher);
+        self.behavior.hash(&mut hasher);
+        self.gate.hash(&mut hasher);
+        self.widget_key.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn key(&self) -> Option<Key> {
         self.widget_key.clone()
     }

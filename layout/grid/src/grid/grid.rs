@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::{Hash, Hasher};
 use std::cell::RefCell;
 
 use aimer_widget::base::BuildContext;
@@ -7,7 +9,7 @@ use super::raw_grid::{
     GridPlacement, GridTrack, RawGrid, RawGridItem, resolve_placements, resolve_tracks,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum GridAlignment {
     Start,
     Center,
@@ -16,7 +18,7 @@ pub enum GridAlignment {
     Stretch,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum GridOverflow {
     #[default]
     Clip,
@@ -235,6 +237,26 @@ impl<W: Widget + 'static> Grid<W> {
 }
 
 impl<W: Widget + 'static> Widget for Grid<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.columns.hash(&mut hasher);
+        self.rows.hash(&mut hasher);
+        hasher.write_f32(self.column_gap);
+        hasher.write_f32(self.row_gap);
+        self.horizontal_alignment.hash(&mut hasher);
+        self.vertical_alignment.hash(&mut hasher);
+        self.overflow.hash(&mut hasher);
+        // The count first, so where one run of items ends is unambiguous.
+        self.children.len().hash(&mut hasher);
+        for item in &self.children {
+            item.placement.hash(&mut hasher);
+            item.horizontal_alignment.hash(&mut hasher);
+            item.vertical_alignment.hash(&mut hasher);
+            hasher.write_child(item.child.hash());
+        }
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let placements = self
             .children

@@ -6,6 +6,8 @@ use aimer_canvas::{FontFamily, FontStyle};
 use aimer_color::prelude::Color;
 
 use crate::base::BuildContext;
+use std::hash::Hash;
+use crate::{ContentHash, ContentHasher};
 use crate::{
     AnyElement, Drawable, Element, EventElement, LayoutElement, Rebuildable, VisitorElement,
     Widget,
@@ -60,6 +62,12 @@ impl ErrorWidget {
 }
 
 impl Widget for ErrorWidget {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.message.hash(&mut hasher);
+        hasher.finish_hash()
+    }
+
     fn to_element(self, _ctx: &BuildContext) -> AnyElement {
         #[cfg(not(debug_assertions))]
         aimer_utils::log::error(&self.message);
@@ -223,6 +231,14 @@ impl<W: Widget + 'static> OverflowIndicator<W> {
 }
 
 impl<W: Widget + 'static> Widget for OverflowIndicator<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.label.hash(&mut hasher);
+        self.clip.hash(&mut hasher);
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         let label = self
             .label

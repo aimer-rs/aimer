@@ -85,6 +85,11 @@ impl AsMut<dyn Decoration> for AnyDecor {
 
 impl Decoration for AnyDecor {
     #[inline]
+    fn content_hash(&self) -> Option<aimer_widget::ContentHash> {
+        self.as_ref().content_hash()
+    }
+
+    #[inline]
     fn paint(&self, canvas: &Canvas, origin: Vec2d, size: ResolvedSize, scale: f32) {
         self.as_ref().paint(canvas, origin, size, scale);
     }

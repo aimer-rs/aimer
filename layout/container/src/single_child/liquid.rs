@@ -1,3 +1,5 @@
+use aimer_widget::{ContentHash, ContentHasher};
+use std::hash::Hash;
 use std::cell::Cell;
 
 use aimer_decoration::{AnyDecor, BorderRadius, Decoration};
@@ -730,7 +732,34 @@ impl Default for Liquid {
     }
 }
 
+impl std::hash::Hash for LiquidMaterial {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use aimer_attribute::hash_f32;
+        self.base.hash(state);
+        hash_f32(self.distortion_strength, state);
+        hash_f32(self.edge_lighting, state);
+        hash_f32(self.specular_highlight, state);
+        hash_f32(self.animation_speed, state);
+        hash_f32(self.animation_time, state);
+        hash_f32(self.interaction, state);
+        hash_f32(self.blob_amount, state);
+        hash_f32(self.blob_seed, state);
+        hash_f32(self.magnification, state);
+        hash_f32(self.tip_pull, state);
+        hash_f32(self.chromatic_aberration, state);
+        hash_f32(self.bevel_radius, state);
+    }
+}
+
 impl<W: Widget + 'static> Widget for Liquid<W> {
+    fn hash(&self) -> Option<ContentHash> {
+        let mut hasher = ContentHasher::new::<Self>();
+        self.material.hash(&mut hasher);
+        super::glass::hash_optional_decoration(&mut hasher, self.decoration.as_ref());
+        hasher.write_child(self.child.hash());
+        hasher.finish_hash()
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         RawLiquid {
             child: self.child.to_element(ctx),

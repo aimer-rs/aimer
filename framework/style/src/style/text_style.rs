@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use aimer_color::prelude::{Color, Colors};
 pub use aimer_cupid::font::{FontFamily, FontStyle, FontWeight};
 
@@ -6,7 +8,7 @@ pub use aimer_cupid::font::{FontFamily, FontStyle, FontWeight};
 /// Transformations operate on the source text's Unicode scalar values and may
 /// change the number of rendered scalars. Selection and link code must retain
 /// the source ranges when a transform is applied.
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextTransform {
     /// Paints the source text without changing its case.
     #[default]
@@ -119,7 +121,7 @@ impl TextShadow {
 /// lines (e.g. underline + line-through) can be combined without the awkward
 /// `Combine(&'static [Self])` slice the old enum used.
 #[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TextDecorationLine(u8);
 
 impl Default for TextDecorationLine {
@@ -163,7 +165,7 @@ impl core::ops::BitOr for TextDecorationLine {
 /// The stroke style of a decoration line, mirroring the CSS
 /// `text-decoration-style`.
 #[allow(dead_code)]
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TextDecorationStyle {
     #[default]
     Solid,
@@ -297,7 +299,7 @@ impl Default for TextDecoration {
 }
 
 #[allow(dead_code)]
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextAlign {
     #[default]
     TopLeft,
@@ -458,7 +460,7 @@ impl Default for TextStyle {
 }
 
 #[allow(dead_code)]
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextOverflow {
     Clip,
     Ellipsis,
@@ -549,5 +551,66 @@ mod tests {
         assert_eq!(style.text_shadow, Some(shadow));
         assert_eq!(LineHeight::Px(24.0), LineHeight::Px(24.0));
         assert_eq!(LineHeight::Factor(1.5), LineHeight::Factor(1.5));
+    }
+}
+
+// Hashing for content hashes. `f32` is not `Hash`, so the types that hold one are
+// hashed by hand; the rest derive it.
+
+impl std::hash::Hash for LineHeight {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match *self {
+            Self::Normal => state.write_u8(0),
+            Self::Px(value) => {
+                state.write_u8(1);
+                aimer_attribute::hash_f32(value, state);
+            }
+            Self::Factor(value) => {
+                state.write_u8(2);
+                aimer_attribute::hash_f32(value, state);
+            }
+        }
+    }
+}
+
+impl std::hash::Hash for TextShadow {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        aimer_attribute::hash_f32(self.offset_x, state);
+        aimer_attribute::hash_f32(self.offset_y, state);
+        aimer_attribute::hash_f32(self.blur, state);
+        self.color.hash(state);
+    }
+}
+
+impl std::hash::Hash for TextDecoration {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.line.hash(state);
+        self.style.hash(state);
+        self.color.hash(state);
+        self.thickness.is_some().hash(state);
+        if let Some(thickness) = self.thickness {
+            aimer_attribute::hash_f32(thickness, state);
+        }
+        aimer_attribute::hash_f32(self.offset, state);
+    }
+}
+
+impl std::hash::Hash for TextStyle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.font_size.hash(state);
+        self.font_family.hash(state);
+        self.font_style.hash(state);
+        self.font_weight.hash(state);
+        self.color.hash(state);
+        self.background_color.hash(state);
+        self.text_overflow.hash(state);
+        self.text_decoration.hash(state);
+        self.text_transform.hash(state);
+        aimer_attribute::hash_f32(self.letter_spacing, state);
+        aimer_attribute::hash_f32(self.word_spacing, state);
+        self.text_shadow.is_some().hash(state);
+        if let Some(shadow) = self.text_shadow {
+            shadow.hash(state);
+        }
     }
 }

@@ -1,5 +1,6 @@
 //! Stateful widget adapters for range controls.
 
+use aimer_widget::ContentHash;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -309,6 +310,11 @@ impl<T: RangeValue> State<Slider<T>> for SliderState<T> {
 }
 
 impl<T: RangeValue> Widget for Slider<T> {
+    /// Everything the slider is configured with; see [`Slider::content_hash`].
+    fn hash(&self) -> Option<ContentHash> {
+        Slider::content_hash(self)
+    }
+
     fn to_element(self, ctx: &BuildContext) -> AnyElement {
         StatefulElement::new_with_name::<Self, SliderState<T>>(self, ctx, "Slider", None)
             .0
