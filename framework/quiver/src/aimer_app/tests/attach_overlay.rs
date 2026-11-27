@@ -219,3 +219,23 @@ fn the_overlay_does_not_intercept_input_under_the_badge_or_the_pointer() {
     });
     assert_eq!(clicks.get(), 1, "the marker is a picture, not a target");
 }
+
+#[test]
+fn arming_attach_refresh_before_end_frame_keeps_frame_request_scoped() {
+    let _detach = Detach;
+    let mut app = AimerApp::start_headless_with(recording(), options());
+    app.render_frame();
+    attachment::set_attached(vec!["aimer-cli".to_owned()]);
+    app.send_user_event(AimerNativePlatformEvent::AttachmentChanged);
+    app.send_user_event(moved(400.0, 300.0));
+    app.render_frame();
+    let _ = app.app.take_frame_request_reason();
+
+    app.app.arm_attach_refresh();
+    app.app.end_frame();
+    assert_eq!(
+        app.app.frame_request_reason.get(),
+        Some(FrameRequestKind::Scoped),
+        "a delayed attach refresh armed before end_frame must stay Scoped and not force a Full tree walk"
+    );
+}

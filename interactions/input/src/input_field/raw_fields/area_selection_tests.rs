@@ -121,3 +121,47 @@ fn a_jump_ends_the_press_the_area_holds_and_the_caret_stays_where_it_went() {
     field.sync_cursor_from_area();
     assert_eq!((field.cursor.offset(), field.cursor.selection_anchor()), (2, None));
 }
+
+/// Scrolling or repainting without changing the area's selection must not copy the
+/// field's text and recount graphemes from byte zero on every frame.
+#[test]
+fn unchanged_area_selection_does_not_rescan_graphemes_on_repeat_sync() {
+    let (field, participant) = field_in_an_area();
+    participant.set_range(4, 4);
+    field.sync_cursor_from_area();
+    assert_eq!(field.area_sync_scans.get(), 1);
+
+    field.sync_cursor_from_area();
+    field.sync_cursor_from_area();
+    assert_eq!(
+        field.area_sync_scans.get(),
+        1,
+        "repeat sync with unchanged area endpoints should skip scanning the text"
+    );
+
+    // Changing the area's selection triggers a new scan and updates the cursor.
+    participant.set_range(2, 8);
+    field.sync_cursor_from_area();
+    assert_eq!(field.area_sync_scans.get(), 2);
+    assert_eq!((field.cursor.selection_anchor(), field.cursor.offset()), (Some(2), 8));
+}
+
+#[test]
+fn default_window_threshold_windows_medium_large_source_files() {
+    let text = "fn sample_line_of_rust_code() -> usize { 42 }\n".repeat(400); // ~18.4 KiB
+    let caret = CaretBlink::new();
+    let mut config = field_config(TextEditingController::with_text(&text));
+    config.max_lines = Some(20);
+    let field = RawTextField::with_caret_context(
+        config,
+        caret.clone(),
+        CaretContext::new(caret),
+        FocusNode::new(),
+        None,
+        None,
+    );
+    assert!(
+        field.windowed_display().is_some(),
+        "a 400-line (~18 KiB) source file should use windowed layout by default"
+    );
+}

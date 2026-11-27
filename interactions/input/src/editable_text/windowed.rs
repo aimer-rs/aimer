@@ -21,7 +21,7 @@ use crate::editable_text::line_index::LineIndex;
 
 /// How much text, in bytes, a field must hold before it lays out a window of it and not
 /// all of it. Below this the layout of the whole text is cheap, and it is exact.
-pub(crate) const WINDOWED_MIN_BYTES: usize = 64 * 1024;
+pub(crate) const WINDOWED_MIN_BYTES: usize = 8 * 1024;
 
 /// Lays out one hard line, with its line feed, as a text of its own: what the field
 /// would have laid out for the whole text, restricted to that line.

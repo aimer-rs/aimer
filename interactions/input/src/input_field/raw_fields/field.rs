@@ -798,6 +798,12 @@ pub(crate) struct RawTextField {
     pub touch_hold: TouchHold,
     /// The shared selection participant installed by the enclosing area.
     pub(crate) selection: RefCell<Option<SelectionParticipant>>,
+    /// The area endpoints last mirrored with the cursor, together with the
+    /// controller revision they belonged to, so unchanged layout passes skip
+    /// copying the text and recounting graphemes.
+    synced_area_endpoints: Cell<Option<(u64, usize, usize)>>,
+    #[cfg(test)]
+    area_sync_scans: Cell<usize>,
     /// A menu asked for by an event and raised by the next frame, once the
     /// deferred click has been resolved into a caret offset.
     pending_menu: Cell<Option<MenuOrigin>>,
@@ -1110,6 +1116,9 @@ impl RawTextField {
             menu_shape: Cell::new(None),
             touch_hold: TouchHold::new(),
             selection: RefCell::new(selection),
+            synced_area_endpoints: Cell::new(None),
+            #[cfg(test)]
+            area_sync_scans: Cell::new(0),
             pending_menu: Cell::new(None),
             menu_origin: Cell::new(None),
             menu_shared: RefCell::new(Rc::default()),
@@ -1556,13 +1565,19 @@ impl RawTextField {
         let text = self.controller.text();
         selection.set_text(Rc::from(text.as_str()));
         if selection.active_pointer().is_some() {
+            self.synced_area_endpoints.set(None);
             return;
         }
         let (anchor, focus) = self.cursor_selection();
-        selection.set_range(
-            grapheme_byte_offset(&text, anchor),
-            grapheme_byte_offset(&text, focus),
-        );
+        let anchor_byte = grapheme_byte_offset(&text, anchor);
+        let focus_byte = if focus == anchor {
+            anchor_byte
+        } else {
+            grapheme_byte_offset(&text, focus)
+        };
+        selection.set_range(anchor_byte, focus_byte);
+        self.synced_area_endpoints
+            .set(Some((self.controller.revision(), anchor_byte, focus_byte)));
     }
 
     /// Mirrors a shared selection handle or cross-widget drag into the field.
@@ -1574,25 +1589,43 @@ impl RawTextField {
         let Some(selection) = selection_state.as_ref() else {
             return;
         };
-        let text = self.controller.text();
         // Not `selected_range`: that one is ordered, and the caret belongs where the
         // pointer is, which for a drag that goes backwards is the start.
-        let Some((anchor, focus)) = selection.selected_endpoints() else {
+        let Some((anchor_byte, focus_byte)) = selection.selected_endpoints() else {
+            self.synced_area_endpoints.set(None);
             return;
         };
-        let anchor = grapheme_count(&text[..anchor.min(text.len())]);
-        let focus = grapheme_count(&text[..focus.min(text.len())]);
+        let revision = self.controller.revision();
+        if self.synced_area_endpoints.get() == Some((revision, anchor_byte, focus_byte)) {
+            return;
+        }
+        #[cfg(test)]
+        self.area_sync_scans.set(self.area_sync_scans.get() + 1);
+        let text = self.controller.text();
+        let anchor_clamped = anchor_byte.min(text.len());
+        let focus_clamped = focus_byte.min(text.len());
+        let anchor = grapheme_count(&text[..anchor_clamped]);
+        let focus = if focus_clamped == anchor_clamped {
+            anchor
+        } else {
+            grapheme_count(&text[..focus_clamped])
+        };
         let anchor = (anchor != focus).then_some(anchor);
         // Asked on every layout pass, and the area usually says what the field already has. Then
         // nothing is done, and above all the view is not taken back to the caret: it would undo
         // where the user scrolled to each time the window is resized or activated again.
         if self.cursor.offset() == focus && self.cursor.selection_anchor() == anchor {
+            self.synced_area_endpoints
+                .set(Some((revision, anchor_byte, focus_byte)));
             return;
         }
         self.cursor.set_selection_anchor(anchor);
         self.cursor.set_offset(focus);
         self.controller.set_selection_graphemes(anchor.unwrap_or(focus), focus);
-        self.observed_revision.set(self.controller.revision());
+        let next_revision = self.controller.revision();
+        self.observed_revision.set(next_revision);
+        self.synced_area_endpoints
+            .set(Some((next_revision, anchor_byte, focus_byte)));
         self.reveal_caret.set(true);
     }
 

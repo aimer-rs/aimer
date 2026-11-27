@@ -69,6 +69,7 @@ struct ChunkKey {
     content: u64,
     len: usize,
     runs: usize,
+    has_prefix: bool,
     paragraph: u64,
 }
 
@@ -237,7 +238,7 @@ impl ChunkSpec {
     /// The chunk after one that ended in a line feed held by `span`, whose style
     /// (`header`) it takes part in the key of.
     fn following(start: usize, span: usize, header: u64) -> Self {
-        Self { start, len: 0, slices: Vec::new(), content: mix(0, header), prefix: Some(span) }
+        Self { start, len: 0, slices: Vec::new(), content: mix(1, header), prefix: Some(span) }
     }
 
     /// How many bytes of the layout's own text come before the chunk's: the line
@@ -410,6 +411,7 @@ impl Paragraph {
                 content: chunk.content,
                 len: chunk.len,
                 runs: chunk.slices.len(),
+                has_prefix: chunk.prefix.is_some(),
                 paragraph: signature,
             };
             let found = CACHE.with(|cache| cache.borrow_mut().get(&key));
@@ -1132,7 +1134,7 @@ mod tests {
             }));
             Rc::new(layout)
         };
-        let key = |content: u64| ChunkKey { content, len: 1, runs: 1, paragraph: 0 };
+        let key = |content: u64| ChunkKey { content, len: 1, runs: 1, has_prefix: false, paragraph: 0 };
         let one = layout_bytes(&layout_of(100));
         assert!(one >= 100 * std::mem::size_of::<aimer_cupid::text_layout::TextCluster>());
 
@@ -1204,6 +1206,40 @@ mod tests {
             // Short text is not worth it.
             let short = paragraph(spans(60, false), TextAlign::TopLeft, LineHeight::default());
             assert!(short.chunked_layout(ctx, true, usize::MAX).is_none());
+        });
+    }
+
+    /// A chunk cached with a leading newline prefix (chunk 1+) whose prefix span has
+    /// style_id 0 and no link must not collide with the same chunk laid out at the start
+    /// of a scrolled window (chunk 0, no prefix).
+    #[test]
+    fn prefixed_chunk_with_first_style_does_not_collide_with_unprefixed_chunk() {
+        with_context(300.0, 1.0, |ctx| {
+            // Reset cache so `base()` gets style_id == 0 (and link == None => header == 0).
+            super::CACHE.with(|cache| *cache.borrow_mut() = super::ChunkCache::default());
+            let other = base().color(Color::Rgba(200, 100, 100, 255));
+            let mut all = Vec::new();
+            for i in 0..80 {
+                // End every line in `other` (the first style seen => style_id 0, header == 0)
+                // so every chunk boundary has prefix header == 0.
+                all.push(ResolvedTextSpan::plain(Rc::from(format!("line {i} ")), other));
+                all.push(ResolvedTextSpan::plain(Rc::from("mid "), base()));
+                all.push(ResolvedTextSpan::plain(Rc::from("tail\n"), other));
+            }
+            let first_chunk_end = super::CACHE.with(|cache| {
+                let planned = super::plan_chunks(&all, &mut cache.borrow_mut());
+                assert!(planned.len() >= 3, "need at least 3 chunks to test chunk 1 becoming chunk 0");
+                planned[1].slices[0].span
+            });
+            // Lay out the full paragraph so chunk 1 is cached with `prefix: Some(...)`.
+            let full = paragraph(all.clone(), TextAlign::TopLeft, LineHeight::default());
+            let _ = full.chunked_layout(ctx, true, 0).expect("chunked");
+
+            // Now lay out a window starting at chunk 1, where that same text is chunk 0 (`prefix: None`).
+            let shifted = paragraph(all[first_chunk_end..].to_vec(), TextAlign::TopLeft, LineHeight::default());
+            let got = shifted.chunked_layout(ctx, true, 0).expect("chunked shifted window");
+            let want = shifted.compute_layout_whole(ctx, true, false);
+            assert_same(&got, &want, "shifted window must match whole layout without colliding");
         });
     }
 }

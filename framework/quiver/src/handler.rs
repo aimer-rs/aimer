@@ -1397,7 +1397,13 @@ impl<W: Widget + 'static> AimerApplicationHandler<W> {
         }
 
         if self.venus.has_ready_work() {
-            self.request_animation_frame();
+            // Waking the next frame to continue pending Venus work is neutral,
+            // matching `venus.set_notifier`: if a task later invalidates the
+            // tree it promotes the request to `Full`; otherwise scoped passes
+            // (like overlay timers) skip walking the widget tree.
+            crate::aimer_app::with_frame_request_kind(FrameRequestKind::Scoped, || {
+                self.request_animation_frame();
+            });
         }
     }
 
