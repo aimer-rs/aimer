@@ -550,6 +550,19 @@ impl EditableGeometry {
         Some(window.grapheme_base + self.display_grapheme_offset(byte))
     }
 
+    /// Trims the trailing inlay gap from the last selection rectangle when `end_byte` lands at a
+    /// non-word, non-EOL inlay: the gap is letter spacing appended to the character before
+    /// `end_byte`, so it belongs to the inlay note that follows the range, not to the range itself.
+    fn trim_trailing_inlay(&self, rects: &mut [SelectionRect], end_byte: usize) {
+        if let Some(last) = rects.last_mut()
+            && let Ok(found) = self.inlays.binary_search_by_key(&end_byte, |place| place.at)
+            && !self.inlays[found].eol
+            && !self.inlays[found].word
+        {
+            last.width = (last.width - self.inlays[found].gap * self.inlay_scale).max(0.0);
+        }
+    }
+
     /// Returns canonical selection rectangles for displayed grapheme offsets.
     #[inline]
     pub(crate) fn selection_rects(&self, start: usize, end: usize) -> Vec<SelectionRect> {
@@ -557,19 +570,26 @@ impl EditableGeometry {
             return Vec::new();
         };
         let Some(window) = self.window.as_ref() else {
-            return layout
-                .selection_rects(self.display_byte_offset(start)..self.display_byte_offset(end));
+            let end_byte = self.display_byte_offset(end);
+            let mut rects = layout.selection_rects(self.display_byte_offset(start)..end_byte);
+            self.trim_trailing_inlay(&mut rects, end_byte);
+            return rects;
         };
         // Only the part of the selection in the window has been laid out; the rest is
         // not on screen.
         let low = window.grapheme_base;
         let high = window.grapheme_base + window.grapheme_len;
+        let ends_in_window = end <= high;
         let (start, end) = (start.clamp(low, high) - low, end.clamp(low, high) - low);
         if start >= end {
             return Vec::new();
         }
+        let local_end_byte = self.display_byte_offset(end);
         let mut rects =
-            layout.selection_rects(self.display_byte_offset(start)..self.display_byte_offset(end));
+            layout.selection_rects(self.display_byte_offset(start)..local_end_byte);
+        if ends_in_window {
+            self.trim_trailing_inlay(&mut rects, window.byte_base + local_end_byte);
+        }
         for rect in &mut rects {
             rect.y += window.y_base;
         }

@@ -1228,6 +1228,7 @@ impl RawTextField {
         base_y: f32,
         scroll_x: f32,
         scroll_y: f32,
+        (clip_top, clip_height): (f32, f32),
         scale: f32,
     ) {
         let rects = if multiline { geometry.embed_rects() } else { Vec::new() };
@@ -1236,8 +1237,8 @@ impl RawTextField {
         }
         let scale = if scale > 0.0 { scale } else { 1.0 };
         let (origin_x, origin_y) = self.caret_origin.get();
-        let (view_width, view_height) = self.caret_viewport.get().unwrap_or((0.0, 0.0));
-        let clip = (origin_x / scale, origin_y / scale, view_width / scale, view_height / scale);
+        let (view_width, _) = self.caret_viewport.get().unwrap_or((0.0, 0.0));
+        let clip = (origin_x / scale, clip_top / scale, view_width / scale, clip_height / scale);
         self.embeds.publish(
             rects
                 .into_iter()

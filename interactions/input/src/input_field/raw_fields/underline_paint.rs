@@ -16,11 +16,12 @@ impl RawTextField {
         let window_top = layout.geometry.window.as_ref().map_or(0.0, |window| window.y_base);
         let content_top = layout.outline_top + layout.padding_top;
         let text_top = content_top + layout.base_y - layout.scroll_y + window_top;
+        let (clip_top, clip_height) = self.clip_rows(layout);
         let mut seen: Option<(usize, usize)> = None;
         for (row, line) in layout.geometry.visual_lines.iter().zip(&interaction.lines) {
             let row_height = (line.ascent - line.descent + line.line_gap).max(1.0);
             let row_top = text_top + line.baseline - line.ascent - line.line_gap * 0.5;
-            if row_top + row_height <= content_top || row_top >= content_top + layout.content_height {
+            if row_top + row_height <= clip_top || row_top >= clip_top + clip_height {
                 continue;
             }
             seen = Some(seen.map_or((row.byte_start, row.byte_end), |(from, to)| (from.min(row.byte_start), to.max(row.byte_end))));
@@ -42,6 +43,7 @@ impl RawTextField {
         let edit = underlines.text().and_then(|made_for| made_for.diff(&value.snapshot()));
         let scale = layout.scale;
         let content_top = layout.outline_top + layout.padding_top;
+        let (clip_top, clip_height) = self.clip_rows(layout);
         // What the geometry says of a range is in the coordinates of the whole text, a window's offset included.
         let text_top = content_top + layout.base_y - layout.scroll_y;
         let text_left = layout.outline_left + layout.padding_left - layout.scroll_x;
@@ -64,7 +66,7 @@ impl RawTextField {
                 }
                 // A line of the range that is out of view is not drawn.
                 let band_top = text_top + rect.y;
-                if band_top + rect.height <= content_top || band_top >= content_top + layout.content_height {
+                if band_top + rect.height <= clip_top || band_top >= clip_top + clip_height {
                     continue;
                 }
                 // A little above the bottom of the line, which is where a line under a name is read.

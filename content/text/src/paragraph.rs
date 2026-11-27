@@ -544,12 +544,21 @@ impl Paragraph {
                 .dedicated_color
                 .unwrap_or_else(|| display_color(span, hovered_link, link_hover_color));
             let paint = decoration.paint;
+            // Exclude trailing letter spacing after the last glyph (e.g. an inlay hint gap
+            // appended to the final character of an underlined identifier).
+            let trailing_spacing =
+                if span.style.letter_spacing.is_finite() && span.style.letter_spacing > 0.0 {
+                    span.style.letter_spacing
+                } else {
+                    0.0
+                };
+            let decoration_width = (fragment.width - trailing_spacing).max(0.0);
             let draw_decoration = |center_y: f32| {
                 canvas.draw_text_decoration(
                     aimer_cupid::utilities::Rect::new(
                         fragment.x / scale + origin_offset.x,
                         (center_y - paint.band_height / 2.0) / scale + origin_offset.y,
-                        fragment.width / scale,
+                        decoration_width / scale,
                         paint.band_height / scale,
                     ),
                     color.into(),

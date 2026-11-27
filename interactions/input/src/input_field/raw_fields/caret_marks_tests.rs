@@ -397,3 +397,165 @@ fn brace_highlight_starts_transition_at_60_percent_progress_and_settles_at_point
     assert_eq!(settled[1], 77, "box line has 0.3 opacity after animation end");
 }
 
+#[test]
+fn pulse_draws_solid_pill_and_scales_marked_glyph_with_box() {
+    let controller = TextEditingController::with_text("\na(b)c\n");
+    let mut config = field_config(controller.clone());
+    config.max_lines = Some(4);
+    config.wrap = false;
+    config.caret_marks = Some(CaretMarks::new(|_, selection| {
+        if selection == (5..5) {
+            vec![CaretMark::new(2..3, PINK), CaretMark::new(4..5, TEAL)]
+        } else {
+            Vec::new()
+        }
+    }));
+    let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+    field.test_clock.set(Some(AnimInstant::now()));
+    let _ = field.on_event(&ElementEvent::FocusGained);
+    let ctx = dummy_build_context(400.0, 300.0);
+    field.update(&ctx);
+    let _ = commands(&field, &ctx);
+
+    let base_font_size = field.text_style.font_size as f32;
+    let brace_glyphs = |commands: &[DrawCommand]| -> Vec<(String, f32, u8, f32)> {
+        commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::DrawText { text, font_size, color, position, .. }
+                    if matches!(text.as_ref(), "(" | ")") =>
+                {
+                    Some((text.to_string(), *font_size, color.a, position.y))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    let pill_rects = |commands: &[DrawCommand]| -> Vec<(f32, f32, u8)> {
+        commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::FillRect { rect, color, border_width, .. }
+                    if border_width.iter().any(|width| *width > 0.0) =>
+                {
+                    Some((rect.y, rect.height, color.a))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+
+    move_caret(&field, &controller, 5);
+    let at_start = frame(&field, &ctx);
+    let start_pills = pill_rects(&at_start);
+    assert_eq!(start_pills.iter().map(|p| p.2).collect::<Vec<_>>(), vec![255, 255], "solid opaque pill at start of pulse");
+    let start_glyphs = brace_glyphs(&at_start);
+    assert_eq!(start_glyphs.len(), 2, "both braces drawn inside pulsing pills: {start_glyphs:?}");
+    assert!(
+        start_glyphs.iter().all(|(_, size, alpha, _)| *size > base_font_size * 1.5 && *alpha == 255),
+        "braces start scaled up to match pulsing box at full opacity: {start_glyphs:?}"
+    );
+    // `DrawText` uses baseline Y, which must sit below the pill's vertical center and above its bottom.
+    for ((_, _, _, baseline_y), (pill_y, pill_h, _)) in start_glyphs.iter().zip(start_pills.iter()) {
+        let center_y = pill_y + pill_h * 0.5;
+        let bottom_y = pill_y + pill_h;
+        assert!(
+            *baseline_y > center_y && *baseline_y < bottom_y,
+            "baseline_y={baseline_y} must sit between pill center ({center_y}) and bottom ({bottom_y})"
+        );
+    }
+
+    later(&field, Duration::from_millis(300));
+    let mid = frame(&field, &ctx);
+    let mid_glyphs = brace_glyphs(&mid);
+    assert_eq!(mid_glyphs.len(), 2);
+    assert!(
+        mid_glyphs[0].1 < start_glyphs[0].1 && mid_glyphs[0].1 > base_font_size,
+        "braces shrink smoothly with the box: start={} mid={} base={}",
+        start_glyphs[0].1,
+        mid_glyphs[0].1,
+        base_font_size
+    );
+
+    later(&field, Duration::from_secs(2));
+    let settled = frame(&field, &ctx);
+    assert!(brace_glyphs(&settled).is_empty(), "scaled brace overlays are gone once settled");
+    let settled_pills = pill_rects(&settled);
+    assert_eq!(settled_pills.len(), 2);
+    assert!(
+        settled_pills.iter().all(|&(_, _, a)| a > 0 && a < 64),
+        "settled boxes return to translucent fill: {settled_pills:?}"
+    );
+}
+
+#[test]
+fn adjacent_braces_draw_all_pills_before_glyphs_and_separate_overlapping_glyphs() {
+    let controller = TextEditingController::with_text("\n{}\n");
+    let mut config = field_config(controller.clone());
+    config.max_lines = Some(4);
+    config.wrap = false;
+    config.caret_marks = Some(CaretMarks::new(|_, selection| {
+        if selection == (3..3) {
+            vec![CaretMark::new(1..2, PINK), CaretMark::new(2..3, TEAL)]
+        } else {
+            Vec::new()
+        }
+    }));
+    let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+    field.test_clock.set(Some(AnimInstant::now()));
+    let _ = field.on_event(&ElementEvent::FocusGained);
+    let ctx = dummy_build_context(400.0, 300.0);
+    field.update(&ctx);
+    let _ = commands(&field, &ctx);
+
+    move_caret(&field, &controller, 3);
+    let at_start = frame(&field, &ctx);
+
+    let mut last_pill_idx = None;
+    let mut first_glyph_idx = None;
+    let mut glyph_centers = Vec::new();
+    for (idx, cmd) in at_start.iter().enumerate() {
+        match cmd {
+            DrawCommand::FillRect { border_width, .. } if border_width.iter().any(|w| *w > 0.0) => {
+                last_pill_idx = Some(idx);
+            }
+            DrawCommand::DrawText { text, position, bounds_width, .. }
+                if matches!(text.as_ref(), "{" | "}") =>
+            {
+                first_glyph_idx.get_or_insert(idx);
+                let cx = position.x + bounds_width.unwrap_or(0.0) * 0.5;
+                glyph_centers.push((text.to_string(), cx));
+            }
+            _ => {}
+        }
+    }
+
+    assert_eq!(glyph_centers.len(), 2, "both adjacent braces drawn: {glyph_centers:?}");
+    let last_pill = last_pill_idx.expect("pills drawn");
+    let first_glyph = first_glyph_idx.expect("glyphs drawn");
+    assert!(
+        last_pill < first_glyph,
+        "all pulsing pills must be drawn before any scaled brace glyph so no pill covers a brace (last_pill={last_pill}, first_glyph={first_glyph})"
+    );
+
+    // Measure resting cell separation once settled.
+    later(&field, Duration::from_secs(2));
+    let settled = frame(&field, &ctx);
+    let settled_centers: Vec<f32> = settled
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DrawCommand::FillRect { rect, border_width, .. } if border_width.iter().any(|w| *w > 0.0) => {
+                Some(rect.x + rect.width * 0.5)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(settled_centers.len(), 2);
+    let resting_dx = (settled_centers[1] - settled_centers[0]).abs();
+    let start_dx = (glyph_centers[1].1 - glyph_centers[0].1).abs();
+    assert!(
+        start_dx > resting_dx + 1.0,
+        "adjacent scaled braces should separate during pulse (start_dx={start_dx}, resting_dx={resting_dx})"
+    );
+}
+

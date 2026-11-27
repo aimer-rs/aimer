@@ -312,3 +312,56 @@ fn a_hint_between_styled_tokens_does_not_change_the_color_of_the_character_after
     let r_style = ranges.iter().find(|run| run.range.contains(&paren_end)).expect("the character after hint");
     assert_eq!(r_style.style.color, Some(green), "the character after the hint keeps its own color");
 }
+
+#[test]
+fn selection_rects_and_text_decorations_exclude_trailing_inlay_gap() {
+    use crate::input_field::highlight::TextHighlighter;
+    use aimer_cupid::draw_cmd::DrawCommand;
+    use aimer_style::TextDecoration;
+    use aimer_text::{SpanStyle, StyledRange};
+
+    let ctx = dummy_build_context(400.0, 200.0);
+
+    // Case 1: `get("x")` with a parameter inlay `uri:` right after `(` (no space -> letter_spacing gap).
+    let code = r#"get("x")"#;
+    let plain = field(code, None);
+    let hinted = field(code, Some(hint(4, "uri:")));
+    let plain_paren = plain.editable_geometry(&ctx, 380.0).selection_rects(3, 4);
+    let hinted_paren = hinted.editable_geometry(&ctx, 380.0).selection_rects(3, 4);
+    assert_eq!(plain_paren.len(), 1);
+    assert_eq!(hinted_paren.len(), 1);
+    assert!(
+        (hinted_paren[0].width - plain_paren[0].width).abs() < 0.5,
+        "paren box should not include trailing inlay gap: plain={} hinted={}",
+        plain_paren[0].width,
+        hinted_paren[0].width
+    );
+
+    // Case 2: `|str|{` with a type inlay `: &mut String` right after `str` and Underline on `str`.
+    let closure = "|str|{";
+    let mut plain_u = field(closure, None);
+    plain_u.highlighter = Some(TextHighlighter::new(|_| {
+        vec![StyledRange::new(1..4, SpanStyle::new().text_decoration(TextDecoration::Underline))]
+    }));
+    let mut hinted_u = field(closure, Some(hint(4, ": &mut String")));
+    hinted_u.highlighter = Some(TextHighlighter::new(|_| {
+        vec![StyledRange::new(1..4, SpanStyle::new().text_decoration(TextDecoration::Underline))]
+    }));
+    let underline_span = |f: &RawTextField| -> f32 {
+        f.update(&ctx);
+        super::marker_tests::commands(f, &ctx)
+            .iter()
+            .filter_map(|cmd| match cmd {
+                DrawCommand::DrawTextDecoration { rect, .. } => Some(rect.width),
+                _ => None,
+            })
+            .sum()
+    };
+    let plain_w = underline_span(&plain_u);
+    let hinted_w = underline_span(&hinted_u);
+    assert!(plain_w > 0.0, "underline drawn on plain field");
+    assert!(
+        (hinted_w - plain_w).abs() < 1.0,
+        "underline on `str` should not stretch across trailing inlay: plain={plain_w} hinted={hinted_w}"
+    );
+}

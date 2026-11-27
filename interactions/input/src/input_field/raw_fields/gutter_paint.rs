@@ -89,7 +89,8 @@ impl RawTextField {
         let scale = layout.scale;
         let top = layout.outline_top + layout.padding_top + layout.base_y + caret.y - layout.scroll_y;
         let height = line_box_height(caret.height, layout.line_height);
-        let (view_top, view_bottom) = (layout.outline_top + layout.padding_top, layout.outline_top + layout.padding_top + layout.content_height);
+        let (view_top, clip_height) = self.clip_rows(layout);
+        let view_bottom = view_top + clip_height;
         if top + height <= view_top || top >= view_bottom {
             return;
         }
@@ -155,13 +156,14 @@ impl RawTextField {
         let window_top = layout.geometry.window.as_ref().map_or(0.0, |window| window.y_base);
         let content_top = layout.outline_top + layout.padding_top;
         let text_top = content_top + layout.base_y - layout.scroll_y + window_top;
+        let (clip_top, clip_height) = self.clip_rows(layout);
 
         canvas.push_clip(
             Rect::new(
                 (layout.outline_left + layout.padding_left - gutter_width) / scale,
-                content_top / scale,
+                clip_top / scale,
                 gutter_width / scale,
-                layout.content_height / scale,
+                clip_height / scale,
             ),
             [0.0; 4].into(),
         );
@@ -169,7 +171,7 @@ impl RawTextField {
         // is taller than a line and has its number at the top; any other has it on the baseline.
         let plain_top = |baseline: f32| text_top + baseline - number_top_to_baseline;
         let tall_top = |row_top: f32| text_top + row_top + (plain_line - number_height) * 0.5;
-        let in_view = |top: f32| top + number_height > content_top && top < content_top + layout.content_height;
+        let in_view = |top: f32| top + number_height > clip_top && top < clip_top + clip_height;
         // `row` is a visual row of the laid-out lines: a number on the first row of a line.
         let rows: Vec<(usize, f32, f32, f32, bool)> = match layout.geometry.interaction.as_ref() {
             Some(interaction) if !layout.geometry.visual_lines.is_empty() => layout
@@ -259,9 +261,10 @@ impl RawTextField {
         let text_top = content_top + layout.base_y - layout.scroll_y + window_top;
         let text_left = layout.outline_left + layout.padding_left - self.scroll_x_offset();
         let content_left = layout.outline_left + layout.padding_left;
+        let (clip_top, clip_height) = self.clip_rows(layout);
 
         canvas.push_clip(
-            Rect::new(content_left / scale, content_top / scale, layout.content_width / scale, layout.content_height / scale),
+            Rect::new(content_left / scale, clip_top / scale, layout.content_width / scale, clip_height / scale),
             [0.0; 4].into(),
         );
         // The line a row belongs to, and what it was asked, so a line that wraps is asked once. The list is kept from line to
@@ -273,7 +276,7 @@ impl RawTextField {
             // asked about: finding its line and its bar is for nothing.
             let height = (line.ascent - line.descent + line.line_gap).max(1.0);
             let top = text_top + line.baseline - line.ascent - line.line_gap * 0.5;
-            if top + height <= content_top || top >= content_top + layout.content_height {
+            if top + height <= clip_top || top >= clip_top + clip_height {
                 continue;
             }
             let number = text.byte_to_line(row.byte_start.min(text.len()));

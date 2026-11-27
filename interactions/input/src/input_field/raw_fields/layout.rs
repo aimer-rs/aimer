@@ -337,6 +337,19 @@ fn field_text_context<'a>(
 }
 
 impl RawTextField {
+    /// Vertical clip `(top, height)` in physical pixels from the field's outer origin,
+    /// matching [`text_clip_rows`].
+    #[inline]
+    fn clip_rows(&self, layout: &LocalFieldLayout) -> (f32, f32) {
+        text_clip_rows(
+            layout.outline_top,
+            layout.padding_top,
+            layout.content_height,
+            layout.box_height,
+            self.clip_to_padding,
+        )
+    }
+
     fn local_v2_layout(&self, ctx: &BuildContext) -> Option<LocalFieldLayout> {
         let measurement_canvas = ctx.canvas.fork_for_recording();
         measurement_canvas.set_text_language(self.controller.input_language());
@@ -846,7 +859,8 @@ impl Drawable for RawTextField {
                 .set(vertical_scroll_extent(total_height, content_height));
             self.reveal_caret.set(false);
         }
-        self.publish_embeds(&layout.geometry, is_multiline, layout.base_y, layout.scroll_x, layout.scroll_y, scale);
+        let embed_clip = self.clip_rows(&layout);
+        self.publish_embeds(&layout.geometry, is_multiline, layout.base_y, layout.scroll_x, layout.scroll_y, embed_clip, scale);
 
         if self.is_focused() {
             self.cursor.blink().tick(self.now());
@@ -1261,7 +1275,8 @@ impl Drawable for RawTextField {
                     scroll,
                 );
 
-                self.publish_embeds(&geometry, true, base_y, scroll_x, scroll, scale);
+                let embed_clip = text_clip_rows(ot, pad_top, content_height, box_height, self.clip_to_padding);
+                self.publish_embeds(&geometry, true, base_y, scroll_x, scroll, embed_clip, scale);
 
                 // Draw cursor / composition from the same canonical caret.
                 if self.is_focused() {
@@ -1521,13 +1536,7 @@ impl Drawable for RawTextField {
         self.paint_line_bars(&canvas, &layout);
         self.paint_gutter(&canvas, ctx, &layout);
 
-        let (clip_top, clip_height) = text_clip_rows(
-            layout.outline_top,
-            layout.padding_top,
-            layout.content_height,
-            layout.box_height,
-            self.clip_to_padding,
-        );
+        let (clip_top, clip_height) = self.clip_rows(&layout);
         canvas.push_clip(
             Rect::new(
                 (layout.outline_left + layout.padding_left) / scale,
@@ -1573,9 +1582,9 @@ impl Drawable for RawTextField {
             // The part of the field that shows text, which the clip is: what is drawn round a range is kept inside it.
             let content = Rect::new(
                 (layout.outline_left + layout.padding_left) / scale,
-                (layout.outline_top + layout.padding_top) / scale,
+                clip_top / scale,
                 layout.content_width / scale,
-                layout.content_height / scale,
+                clip_height / scale,
             );
             let recorded = text_widget.record_local_v2_into(
                 &canvas,
@@ -1593,7 +1602,7 @@ impl Drawable for RawTextField {
             assert!(recorded, "field text v2 support must be checked before painting");
             self.paint_link(&canvas, &text_context, &layout.geometry, &style, scale, text_origin);
             self.paint_pulse(&canvas, &layout.geometry, scale, text_origin, &content);
-            self.paint_mark_pulses(&canvas, &layout.geometry, scale, text_origin, &content, &marks);
+            self.paint_mark_pulses(&canvas, ctx, &layout.geometry, &style, scale, text_origin, &content, &marks);
             self.paint_underlines(&canvas, &layout);
             self.paint_inlays(&canvas, ctx, &layout);
             self.paint_line_labels(&canvas, ctx, &layout);
@@ -1783,6 +1792,64 @@ mod clip_rows_tests {
     #[test]
     fn a_box_without_padding_is_cut_in_the_same_place_either_way() {
         assert_eq!(text_clip_rows(0.0, 0.0, 50.0, 50.0, true), text_clip_rows(0.0, 0.0, 50.0, 50.0, false));
+    }
+
+    #[test]
+    fn gutter_and_line_bars_respect_clip_to_padding_false() {
+        use aimer_cupid::draw_cmd::{DrawCommand, Rect, RenderTree};
+        use aimer_style::LayoutSpacing;
+        use aimer_widget::Drawable;
+        use aimer_widget::base::Color;
+
+        use super::test_support::{dummy_build_context, focused_multiline_field};
+        use crate::input_field::controller::TextFieldController;
+        use crate::input_field::gutter::{LineBar, LineBars, LineNumbers};
+
+        let text = (0..30).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let mut field = focused_multiline_field(TextFieldController::with_initial(text), 4);
+        field.padding = LayoutSpacing::new().top(8).bottom(8);
+        field.clip_to_padding = false;
+        field.line_numbers = Some(LineNumbers::new());
+        field.line_bars = Some(LineBars::new(2, |_, _| {
+            Some(LineBar::new(Color::Rgba(255, 0, 128, 255), 4))
+        }));
+
+        let ctx = dummy_build_context(300.0, 120.0);
+        field.update(&ctx);
+
+        let tree = RenderTree::new();
+        let root = tree.add_root(Rect::new(0.0, 0.0, 300.0, 120.0)).expect("root node");
+        let node_context = tree.context(root).expect("root context");
+        ctx.with_local_v2_paint_context(node_context, |ctx| {
+            assert!(field.can_paint(ctx));
+            field.paint(ctx);
+        });
+
+        let clips: Vec<Rect> = tree
+            .draw_list_snapshot(root)
+            .expect("draw list")
+            .commands
+            .iter()
+            .filter_map(|cmd| match cmd {
+                DrawCommand::PushClip { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .collect();
+
+        assert!(clips.len() >= 3, "expected clips for line bars, gutter, and text, got {}", clips.len());
+        for clip in clips {
+            assert!(
+                clip.y <= 0.5,
+                "clip top should reach the top edge (y=0) when clip_to_padding is false, got y={}",
+                clip.y
+            );
+            assert!(
+                (clip.y + clip.height - 120.0).abs() <= 1.0,
+                "clip bottom should reach box height (120) when clip_to_padding is false, got y={} height={}",
+                clip.y,
+                clip.height
+            );
+        }
     }
 }
 

@@ -55,13 +55,14 @@ impl RawTextField {
         let content_top = layout.outline_top + layout.padding_top;
         let text_top = content_top + layout.base_y - layout.scroll_y + window_top;
         let text_left = layout.outline_left + layout.padding_left - layout.scroll_x;
+        let (clip_top, clip_height) = self.clip_rows(layout);
         let rows = &layout.geometry.visual_lines;
         let base_size = if self.text_style.font_size == 0 { 14.0 } else { self.text_style.font_size as f32 };
         for (index, (row, line)) in rows.iter().zip(&interaction.lines).enumerate() {
             // A window holds many more rows than are in view, and a row that is clipped away is not asked about.
             let row_height = (line.ascent - line.descent + line.line_gap).max(1.0);
             let row_top = text_top + line.baseline - line.ascent - line.line_gap * 0.5;
-            if row_top + row_height <= content_top || row_top >= content_top + layout.content_height {
+            if row_top + row_height <= clip_top || row_top >= clip_top + clip_height {
                 continue;
             }
             let number = text.byte_to_line(row.byte_start.min(text.len()));
