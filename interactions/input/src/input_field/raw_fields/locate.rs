@@ -9,21 +9,27 @@ use std::time::Duration;
 
 use aimer_attribute::position::Vec2d;
 use aimer_cupid::draw_cmd::Rect;
+use aimer_style::TextStyle;
+use aimer_widget::base::BuildContext;
 
 use super::{Canvas, EditableGeometry, RawTextField, vertical_scroll_extent};
 
 /// How long the mark takes to close on the range and fade.
 const DURATION: Duration = Duration::from_millis(650);
-/// How much larger than the range the mark starts, on each side, in logical pixels.
+/// How much larger than the range a multi-line fallback mark starts, on each side, in logical pixels.
 const GROW: f32 = 14.0;
 /// How far the mark is from the range when it has closed, on each side, in logical pixels.
 const SETTLED: f32 = 2.0;
+/// Peak scale factor for the Xcode-style solid pop-and-shrink pill on a single-line located range.
+const TEXT_POP_SCALE: f32 = 1.4;
+/// Progress fraction at which the solid pill begins fading out (matching the brace hint pulse).
+const TRANSITION_START: f32 = 0.6;
 /// How thick the mark's line is, in logical pixels.
-const STROKE: f32 = 1.5;
-/// How much of the color is inside the mark, as it begins, out of `1.0`.
+const STROKE: f32 = 1.0;
+/// How much of the color is inside a multi-line fallback mark, as it begins, out of `1.0`.
 const FILL: f32 = 0.16;
 /// How round the mark's corners are, in logical pixels.
-const RADIUS: f32 = 4.0;
+const RADIUS: f32 = 3.0;
 
 /// How far along the mark is, from `0.0` as it begins to `1.0` as it ends, `elapsed` into it.
 pub(super) fn phase_of(elapsed: Duration) -> f32 {
@@ -37,9 +43,14 @@ fn spread_at(phase: f32) -> f32 {
     SETTLED + GROW * (1.0 - eased)
 }
 
-/// How opaque the mark is, `phase` of the way: all of it as it begins and none as it ends.
+/// How opaque the mark is, `phase` of the way: solid until [`TRANSITION_START`], then fading smoothly to `0.0`.
 fn opacity_at(phase: f32) -> f32 {
-    (1.0 - phase).clamp(0.0, 1.0)
+    if phase < TRANSITION_START {
+        1.0
+    } else {
+        let t = ((phase - TRANSITION_START) / (1.0 - TRANSITION_START)).clamp(0.0, 1.0);
+        (1.0 - t).clamp(0.0, 1.0)
+    }
 }
 
 impl RawTextField {
@@ -100,8 +111,19 @@ impl RawTextField {
         Some(phase)
     }
 
-    /// Draws the mark over the range, closing on it and fading, and asks for the next frame while it is going.
-    pub(super) fn paint_pulse(&self, canvas: &Canvas, geometry: &EditableGeometry, scale: f32, text_origin: Vec2d, content: &Rect) {
+    /// Draws the mark over the range as an Xcode-style solid pop-and-shrink pill with scaled text
+    /// (matching the brace hint pulse), and asks for the next frame while it is going.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn paint_pulse(
+        &self,
+        canvas: &Canvas,
+        ctx: &BuildContext,
+        geometry: &EditableGeometry,
+        style: &TextStyle,
+        scale: f32,
+        text_origin: Vec2d,
+        content: &Rect,
+    ) {
         let (Some(phase), Some((start, end, _))) = (self.pulse_phase(), self.pulse.get()) else {
             return;
         };
@@ -111,8 +133,88 @@ impl RawTextField {
         let Some(bounds) = self.range_box(geometry, start, end) else {
             return;
         };
-        let color = self.locate_color.or(self.caret_color.map(Into::into)).unwrap_or(self.text_style.color);
-        self.paint_zoom(canvas, bounds, scale, text_origin, content, color, phase);
+        let byte_base = geometry.window.as_ref().map_or(0, |window| window.byte_base);
+        let text_color = start.checked_sub(byte_base).and_then(|local_start| {
+            geometry
+                .ranges
+                .as_ref()?
+                .iter()
+                .find(|range| range.range.start <= local_start && local_start < range.range.end)
+                .and_then(|range| range.style.color)
+        });
+        let color = text_color
+            .or(self.locate_color)
+            .or(self.caret_color.map(Into::into))
+            .unwrap_or(self.text_style.color);
+        let start_b = value.floor_to_boundary(start);
+        let end_b = value.ceil_to_boundary(end);
+        let slice = (start_b < end_b).then(|| value.slice(start_b..end_b));
+        let single_line = slice
+            .as_deref()
+            .filter(|text| !text.is_empty() && !text.contains('\n'));
+        if let Some(text) = single_line {
+            let (left, top, right, bottom) = bounds;
+            let cell_w = (right - left) / scale;
+            let cell_h = (bottom - top) / scale;
+            let eased = 1.0 - (1.0 - phase).powi(3);
+            let pop_scale = 1.0 + (TEXT_POP_SCALE - 1.0) * (1.0 - eased);
+            let settled_w = (cell_w + 2.0 * SETTLED).max(1.0);
+            let settled_h = (cell_h + 2.0 * SETTLED).max(1.0);
+            let pill_w = settled_w * pop_scale;
+            let pill_h = settled_h * pop_scale;
+            let cx = text_origin.x + left / scale + cell_w * 0.5;
+            let cy = text_origin.y + top / scale + cell_h * 0.5;
+            let box_rect = super::within(
+                Rect::new(cx - pill_w * 0.5, cy - pill_h * 0.5, pill_w, pill_h),
+                content,
+            );
+            let opacity = opacity_at(phase);
+            let (red, green, blue, alpha) = color.to_rgba();
+            let pill_alpha = (alpha as f32 * opacity).round() as u8;
+            let solid = aimer_cupid::utilities::Color::rgba8(red, green, blue, pill_alpha);
+            let radius = RADIUS + (pop_scale - 1.0) * 6.0;
+            canvas.fill_rect_with_border(box_rect, solid, [radius; 4], STROKE, solid);
+
+            if pill_alpha > 0 {
+                let glyph_scale = (box_rect.width / settled_w)
+                    .min(box_rect.height / settled_h)
+                    .max(1.0);
+                let base_font_size = self.scaled_font_size(style, scale) / scale;
+                let scaled_font_size = base_font_size * glyph_scale;
+                let weight = style.font_weight.numeric().max(600);
+                let metrics = ctx.canvas.measure_text_metrics_styled(
+                    text,
+                    scaled_font_size * scale,
+                    0.0,
+                    style.font_family,
+                    style.font_style,
+                    weight,
+                );
+                let baseline_offset = if metrics.ascent > 0.0 {
+                    (metrics.ascent + metrics.descent) * 0.5 / scale
+                } else {
+                    scaled_font_size * 0.35
+                };
+                let baseline_y = box_rect.y + box_rect.height * 0.5 + baseline_offset;
+                canvas.draw_text_styled(
+                    std::sync::Arc::<str>::from(text),
+                    aimer_cupid::utilities::Vec2d::new(box_rect.x, baseline_y),
+                    scaled_font_size,
+                    super::contrast_ink(red, green, blue, pill_alpha),
+                    Some(box_rect.width),
+                    Some(box_rect.height),
+                    aimer_cupid::text_pipeline::TextOverflowMode::Clip,
+                    aimer_cupid::text_pipeline::text_layout::TextHorizontalAlign::Center,
+                    style.font_family,
+                    style.font_style,
+                    weight,
+                    None,
+                    true,
+                );
+            }
+        } else {
+            self.paint_zoom(canvas, bounds, scale, text_origin, content, color, phase);
+        }
     }
 
     /// The box of all of the bytes `start` to `end` of the text, as `(left, top, right, bottom)` in physical pixels from the
@@ -188,6 +290,7 @@ mod tests {
             assert!(spread <= last, "it only closes");
             last = spread;
         }
-        assert!((opacity_at(0.25) - 0.75).abs() < 1e-6);
+        assert_eq!(opacity_at(0.25), 1.0);
+        assert!(opacity_at(0.8) > 0.0 && opacity_at(0.8) < 1.0);
     }
 }

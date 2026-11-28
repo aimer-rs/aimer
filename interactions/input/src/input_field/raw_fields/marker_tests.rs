@@ -1045,7 +1045,7 @@ mod locate {
         field.test_clock.set(Some(field.test_clock.get().unwrap() + Duration::from_secs(5)));
         let late = frame(&field, &ctx);
         assert_eq!(field.pulse_phase(), None, "over");
-        assert_eq!(early.len(), late.len() + 1, "one rectangle was drawn over the range, and none is drawn for it any more");
+        assert_eq!(early.len(), late.len() + 2, "solid pill + scaled text drawn over the range, and neither is drawn once settled");
     }
 
     /// The rectangle drawn for the mark: the one with a border, as `(fill, border)`.
@@ -1070,12 +1070,25 @@ mod locate {
         frame(&field, &ctx);
         let at = byte_of_line(&controller, 20);
         controller.locate(at..at + 6);
-        let (fill, border) = mark_of(&frame(&field, &ctx)).expect("the mark is drawn");
+        let early = frame(&field, &ctx);
+        let (fill, border) = mark_of(&early).expect("the mark is drawn");
         assert_eq!((border.r, border.g, border.b), (255, 92, 150), "the outline is in the color it was given");
         assert_eq!((fill.r, fill.g, fill.b), (255, 92, 150), "and so is what is inside it");
-        assert!(border.a > 240, "the outline is whole as it begins: {}", border.a);
-        assert!(fill.a > 0 && fill.a < border.a / 2, "what is inside is faint, and shows the text through it: {}", fill.a);
-        field.test_clock.set(Some(field.test_clock.get().unwrap() + Duration::from_millis(400)));
+        assert_eq!(border.a, 255, "the outline is solid as it begins: {}", border.a);
+        assert_eq!(fill.a, 255, "the pill fill is solid as it begins: {}", fill.a);
+        let base_font = field.text_style.font_size as f32;
+        let scaled_text = early.iter().find_map(|cmd| match cmd {
+            DrawCommand::DrawText { text, font_size, color, .. } if text.as_ref() == "line 2" => {
+                Some((*font_size, color.a))
+            }
+            _ => None,
+        });
+        assert!(
+            scaled_text.is_some_and(|(size, a)| size > base_font && a == 255),
+            "located text is drawn scaled inside the solid pill: {scaled_text:?}"
+        );
+        // Past 60% progress (390ms): both fill and outline fade smoothly toward 0.
+        field.test_clock.set(Some(field.test_clock.get().unwrap() + Duration::from_millis(500)));
         let (later_fill, later_border) = mark_of(&frame(&field, &ctx)).expect("still drawn");
         assert!(later_border.a < border.a && later_fill.a < fill.a, "both fade: {} {}", later_fill.a, later_border.a);
     }
@@ -1089,6 +1102,32 @@ mod locate {
         let (red, green, blue, _) = field.caret_color.map_or(field.text_style.color, Into::into).to_rgba();
         assert_eq!((border.r, border.g, border.b), (red, green, blue));
         assert_eq!((fill.r, fill.g, fill.b), (red, green, blue));
+    }
+
+    #[test]
+    fn a_located_range_with_a_highlighted_color_uses_that_text_color_for_its_pill() {
+        use crate::input_field::highlight::TextHighlighter;
+        use aimer_text::{SpanStyle, StyledRange};
+
+        let text: String = (0..60).map(|n| format!("line {n}\n")).collect();
+        let controller = TextEditingController::with_text(text);
+        let at = byte_of_line(&controller, 20);
+        let teal = aimer_widget::base::Color::Rgba(84, 205, 236, 255);
+        let mut config = field_config(controller.clone());
+        config.line_numbers = Some(LineNumbers::new());
+        config.max_lines = Some(8);
+        config.locate_color = Some(aimer_widget::base::Color::Rgba(255, 92, 150, 255));
+        config.highlighter = Some(TextHighlighter::new(move |_| {
+            vec![StyledRange::new(at..at + 6, SpanStyle::new().color(teal))]
+        }));
+        let field = RawTextField::new(config, CaretBlink::new(), FocusNode::new());
+        field.test_clock.set(Some(AnimInstant::now()));
+        let ctx = dummy_build_context(400.0, 300.0);
+        frame(&field, &ctx);
+        controller.locate(at..at + 6);
+        let (fill, border) = mark_of(&frame(&field, &ctx)).expect("the mark is drawn");
+        assert_eq!((fill.r, fill.g, fill.b), (84, 205, 236), "pill fill matches the highlighted text color");
+        assert_eq!((border.r, border.g, border.b), (84, 205, 236), "pill border matches the highlighted text color");
     }
 
     #[test]

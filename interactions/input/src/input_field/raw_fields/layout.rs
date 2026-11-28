@@ -875,6 +875,11 @@ impl Drawable for RawTextField {
                 aimer_events::window::request_animation_frame();
             }
         }
+        // Keep field pulse animations alive even when a synchronous resize/exit-fullscreen frame
+        // lands inside the same quantized bucket and `paint_needs_recording` skips `paint()`.
+        if self.pulse_phase().is_some() || self.marks_phase().is_some() {
+            aimer_events::window::request_animation_frame();
+        }
 
         let caret_context = self.caret_context();
         caret_context.publish(
@@ -894,7 +899,7 @@ impl Drawable for RawTextField {
                 caret.x - layout.scroll_x,
                 layout.base_y + caret.y - layout.scroll_y,
             );
-            let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
+            let (cursor_top, cursor_height) = caret_band_for(&layout.geometry, caret.offset, caret.height, line_y, line_height);
             let content_origin = (abs_x + padding_left, abs_y + padding_top);
             self.publish_ime_caret(
                 cursor_x,
@@ -945,6 +950,9 @@ impl Drawable for RawTextField {
                 // direct callers.
                 aimer_events::window::request_animation_frame();
             }
+        }
+        if self.pulse_phase().is_some() || self.marks_phase().is_some() {
+            aimer_events::window::request_animation_frame();
         }
         let caret_context = self.caret_context();
         caret_context.publish(
@@ -1185,7 +1193,7 @@ impl Drawable for RawTextField {
                     .expect("an empty interaction layout always has a caret");
                 let cursor_x = caret.x;
                 let line_y = base_y + caret.y;
-                let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
+                let (cursor_top, cursor_height) = caret_band_for(&geometry, caret.offset, caret.height, line_y, line_height);
 
                 self.publish_ime_caret(
                     cursor_x,
@@ -1285,7 +1293,7 @@ impl Drawable for RawTextField {
                         .expect("a non-empty interaction layout has a caret");
                     let cursor_x = caret.x - scroll_x;
                     let line_y = base_y + caret.y - scroll;
-                    let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
+                    let (cursor_top, cursor_height) = caret_band_for(&geometry, caret.offset, caret.height, line_y, line_height);
 
                     self.publish_ime_caret(
                         cursor_x,
@@ -1352,7 +1360,7 @@ impl Drawable for RawTextField {
                         .expect("a non-empty interaction layout has a caret");
                     let cursor_x = caret.x - scroll;
                     let line_y = base_y + caret.y;
-                    let (cursor_top, cursor_height) = caret_band(line_y, line_box_height(caret.height, line_height));
+                    let (cursor_top, cursor_height) = caret_band_for(&geometry, caret.offset, caret.height, line_y, line_height);
 
                     self.publish_ime_caret(
                         cursor_x,
@@ -1601,7 +1609,7 @@ impl Drawable for RawTextField {
             );
             assert!(recorded, "field text v2 support must be checked before painting");
             self.paint_link(&canvas, &text_context, &layout.geometry, &style, scale, text_origin);
-            self.paint_pulse(&canvas, &layout.geometry, scale, text_origin, &content);
+            self.paint_pulse(&canvas, ctx, &layout.geometry, &style, scale, text_origin, &content);
             self.paint_mark_pulses(&canvas, ctx, &layout.geometry, &style, scale, text_origin, &content, &marks);
             self.paint_underlines(&canvas, &layout);
             self.paint_inlays(&canvas, ctx, &layout);
@@ -1761,6 +1769,26 @@ fn vertical_block_offset(align: TextAlign, content_height: f32, block_height: f3
 fn caret_band(line_y: f32, line_height: f32) -> (f32, f32) {
     let height = line_height * CARET_LINE_FRACTION;
     (line_y + (line_height - height) / 2.0, height)
+}
+
+/// Computes `(cursor_top, cursor_height)` for `caret` on a line at `line_y`.
+///
+/// When the caret stands on a line raised by an embedded widget / inline box (such as a rendered
+/// doc comment block), the caret stays at normal `line_height` anchored at the baseline instead of
+/// stretching to the entire block's height.
+fn caret_band_for(
+    geometry: &EditableGeometry,
+    caret_offset: usize,
+    caret_height: f32,
+    line_y: f32,
+    line_height: f32,
+) -> (f32, f32) {
+    let box_height = line_box_height(caret_height, line_height);
+    if geometry.caret_is_on_inline_box(caret_offset) && box_height > line_height {
+        caret_band(line_y + box_height - line_height, line_height)
+    } else {
+        caret_band(line_y, box_height)
+    }
 }
 
 /// The height of the line a caret stands on.

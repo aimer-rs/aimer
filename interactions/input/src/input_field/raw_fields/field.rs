@@ -1281,17 +1281,26 @@ impl RawTextField {
         let scale = if scale > 0.0 { scale } else { 1.0 };
         let (origin_x, origin_y) = self.caret_origin.get();
         // A caret on a line the field has scrolled away from is not on the field: the caret
-        // is drawn by a child that is not clipped to the text's box, so it would be drawn
-        // where the line would be, outside.
-        let in_view = self.caret_viewport.get().is_none_or(|(view_width, view_height)| {
-            y + height > 0.0 && y < view_height && x + width > 0.0 && x < view_width
-        });
+        // is drawn by a child that is not clipped to the text's box, so clamp its vertical band
+        // to the viewport so it never overflows into surrounding bars (breadcrumbs, tabs, status).
+        let (draw_y, draw_height) = match self.caret_viewport.get() {
+            Some((_, view_height)) => {
+                let top = y.max(0.0);
+                let bottom = (y + height).min(view_height);
+                (top, (bottom - top).max(0.0))
+            }
+            None => (y, height),
+        };
+        let in_view = draw_height > 0.0
+            && self.caret_viewport.get().is_none_or(|(view_width, _)| {
+                x + width > 0.0 && x < view_width
+            });
         self.caret_context.publish(
             CaretGeometry {
                 x: (origin_x + x) / scale,
-                y: (origin_y + y) / scale,
+                y: (origin_y + draw_y) / scale,
                 width: width / scale,
-                height: height / scale,
+                height: draw_height / scale,
             },
             self.cursor.offset(),
             self.is_focused(),
@@ -1896,9 +1905,10 @@ impl RawTextField {
     // ── Word / line selection helpers ────────────────────────────────
 
     /// Select the word at the given grapheme offset using Unicode word
-    /// boundaries.
+    /// boundaries, splitting dotted/colon-separated expressions (e.g.
+    /// `space.toggle_problems`, `foo:bar`) on `.` and `:` while keeping
+    /// `snake_case` identifiers intact.
     fn select_word_at(&self, grapheme_offset: usize) {
-        use unicode_segmentation::UnicodeSegmentation;
         let value = self.controller.value();
         if value.is_empty() {
             return;
@@ -1922,14 +1932,39 @@ impl RawTextField {
             )
         };
         let window = value.slice(from..to);
-        for (start, segment) in window.split_word_bound_indices() {
-            let (start, end) = (from + start, from + start + segment.len());
-            if byte_offset >= start && byte_offset < end {
-                self.cursor.set_selection_anchor(Some(value.grapheme_of_byte(start)));
-                self.cursor.set_offset(value.grapheme_of_byte(end));
-                return;
-            }
+        if let Some(range) = Self::word_range_at(&window, byte_offset - from) {
+            let (start, end) = (from + range.start, from + range.end);
+            self.cursor.set_selection_anchor(Some(value.grapheme_of_byte(start)));
+            self.cursor.set_offset(value.grapheme_of_byte(end));
         }
+    }
+
+    /// Finds the byte range of the word at `local_byte` inside `window`, splitting UAX #29 word
+    /// segments on `.` and `:` so expressions like `space.toggle_problems` select each identifier
+    /// independently while keeping `snake_case` identifiers (`toggle_problems`) intact.
+    fn word_range_at(window: &str, local_byte: usize) -> Option<Range<usize>> {
+        use unicode_segmentation::UnicodeSegmentation;
+        for (seg_start, segment) in window.split_word_bound_indices() {
+            let seg_end = seg_start + segment.len();
+            if local_byte < seg_start || local_byte >= seg_end {
+                continue;
+            }
+            let mut cursor = 0;
+            for (idx, ch) in segment.char_indices() {
+                if matches!(ch, '.' | ':') {
+                    if local_byte < seg_start + idx {
+                        return Some((seg_start + cursor)..(seg_start + idx));
+                    }
+                    let sep_end = idx + ch.len_utf8();
+                    if local_byte < seg_start + sep_end {
+                        return Some((seg_start + idx)..(seg_start + sep_end));
+                    }
+                    cursor = sep_end;
+                }
+            }
+            return Some((seg_start + cursor)..seg_end);
+        }
+        None
     }
 
     /// Select the line (between newline characters) containing the given
@@ -2594,6 +2629,35 @@ mod grapheme_tests {
 
         assert_eq!(field.cursor.selection_anchor(), Some(2));
         assert_eq!(field.cursor.offset(), 6);
+    }
+
+    #[test]
+    fn word_selection_splits_dotted_and_colon_identifiers() {
+        let field = focused_field(TextFieldController::with_initial("space.toggle_problems"));
+
+        // Double-clicking inside `space` selects only `space` (0..5).
+        field.select_word_at(2);
+        assert_eq!(field.cursor.selection_anchor(), Some(0));
+        assert_eq!(field.cursor.offset(), 5);
+
+        // Double-clicking inside `toggle_problems` selects only `toggle_problems` (6..21).
+        field.select_word_at(10);
+        assert_eq!(field.cursor.selection_anchor(), Some(6));
+        assert_eq!(field.cursor.offset(), 21);
+
+        // Double-clicking on `.` selects only `.` (5..6).
+        field.select_word_at(5);
+        assert_eq!(field.cursor.selection_anchor(), Some(5));
+        assert_eq!(field.cursor.offset(), 6);
+
+        // Colon-separated identifiers also split cleanly.
+        let colon = focused_field(TextFieldController::with_initial("foo:bar"));
+        colon.select_word_at(1);
+        assert_eq!(colon.cursor.selection_anchor(), Some(0));
+        assert_eq!(colon.cursor.offset(), 3);
+        colon.select_word_at(5);
+        assert_eq!(colon.cursor.selection_anchor(), Some(4));
+        assert_eq!(colon.cursor.offset(), 7);
     }
 
     #[test]

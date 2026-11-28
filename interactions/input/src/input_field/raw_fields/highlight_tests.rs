@@ -741,3 +741,43 @@ fn the_scroll_extent_counts_the_height_of_a_box() {
     assert!(stacked > 48.0);
     assert!((field.scroll_y_extent.get() - (stacked - viewport)).abs() < 1.0, "{} for {stacked} in {viewport}", field.scroll_y_extent.get());
 }
+
+#[test]
+fn caret_on_a_tall_embed_stays_line_height_and_is_clipped_to_viewport() {
+    use aimer_events::element::ElementEvent;
+    use aimer_widget::EventElement;
+
+    let tall_box = TextHighlighter::new(|text| {
+        text.find("/// doc")
+            .map(|start| {
+                StyledRange::new(
+                    start..start + 7,
+                    SpanStyle::new().inline_box(aimer_text::InlineBox::new(200.0, 160.0)),
+                )
+            })
+            .into_iter()
+            .collect()
+    });
+    let field = growing_field("/// doc\nfn main() {}", tall_box);
+    let _ = field.on_event(&ElementEvent::FocusGained);
+    let ctx = dummy_build_context(400.0, 300.0);
+    field.cursor.set_offset(0);
+    field.update(&ctx);
+    let _ = field.sync_paint_state(&ctx);
+
+    let line_h = field.local_v2_layout(&ctx).expect("laid out").line_height / ctx.scale;
+    let caret_geom = field.caret_context().geometry();
+    assert!(
+        caret_geom.height <= line_h + 1.0,
+        "caret on tall embed must stay at normal line height (got {}, line_height={line_h})",
+        caret_geom.height
+    );
+
+    // Partially scrolled caret above the viewport top must be clipped to `y >= 0.0`.
+    field.caret_origin.set((0.0, 0.0));
+    field.caret_viewport.set(Some((300.0, 100.0)));
+    field.publish_caret(10.0, -8.0, 1.5, 20.0, 1.0);
+    let clipped = field.caret_context().geometry();
+    assert_eq!(clipped.y, 0.0, "caret top clamped to viewport top");
+    assert_eq!(clipped.height, 12.0, "caret height trimmed by top overflow");
+}

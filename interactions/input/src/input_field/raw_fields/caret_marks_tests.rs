@@ -559,3 +559,40 @@ fn adjacent_braces_draw_all_pills_before_glyphs_and_separate_overlapping_glyphs(
     );
 }
 
+#[test]
+fn mark_pulse_keeps_requesting_frames_even_when_a_tick_skips_repaint() {
+    let (field, controller, ctx, _) = field();
+    move_caret(&field, &controller, 4);
+    frame(&field, &ctx);
+    assert!(field.marks_phase().is_some(), "pulse is active");
+
+    // Advance by less than one quantized bucket (0.1ms < 0.65ms), so `marks_pulse` has the same
+    // bucket and `paint_needs_recording` skips painting. `sync_paint_state` must still request
+    // the next animation frame or the pulse freezes at this tick.
+    later(&field, Duration::from_micros(100));
+    assert!(!field.paint_needs_recording(&ctx), "sub-bucket tick skips repaint");
+
+    let count_sync_requests = || {
+        let requested = Rc::new(Cell::new(0usize));
+        let counter = Rc::clone(&requested);
+        let prev = aimer_events::window::set_thread_redraw_requester(move || {
+            counter.set(counter.get() + 1);
+        });
+        let _ = field.sync_paint_state(&ctx);
+        aimer_events::window::restore_thread_redraw_requester(prev);
+        requested.get()
+    };
+
+    let during_pulse = count_sync_requests();
+
+    later(&field, Duration::from_secs(2));
+    frame(&field, &ctx);
+    assert_eq!(field.marks_phase(), None, "pulse settled");
+    let after_settled = count_sync_requests();
+
+    assert!(
+        during_pulse > after_settled,
+        "sync_paint_state must request an animation frame while mark pulse is active even when repaint is skipped (during={during_pulse}, settled={after_settled})"
+    );
+}
+

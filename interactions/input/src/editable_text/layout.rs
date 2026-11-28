@@ -282,6 +282,29 @@ impl EditableGeometry {
         self
     }
 
+    /// Whether a caret at byte `offset` stands on or beside an embedded widget / inline box (such
+    /// as a rendered doc comment block) whose height raised the line box.
+    pub(crate) fn caret_is_on_inline_box(&self, offset: usize) -> bool {
+        let byte_base = self.window.as_ref().map_or(0, |window| window.byte_base);
+        let Some(local) = offset.checked_sub(byte_base) else {
+            return false;
+        };
+        if self
+            .embeds
+            .iter()
+            .any(|embed| local >= embed.range.start && local <= embed.range.end)
+        {
+            return true;
+        }
+        self.ranges.as_ref().is_some_and(|ranges| {
+            ranges.iter().any(|range| {
+                range.style.inline_box.is_some()
+                    && local >= range.range.start
+                    && local <= range.range.end
+            })
+        })
+    }
+
     /// Records the room that was left for inlays.
     #[inline]
     pub(crate) fn with_inlays(mut self, inlays: Rc<[Placed]>, scale: f32) -> Self {
