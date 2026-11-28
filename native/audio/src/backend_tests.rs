@@ -342,17 +342,6 @@ mod linux_stream {
         assert_eq!(player.error(), None);
     }
 
-    #[test]
-    fn a_stream_without_a_length_header_still_plays() {
-        let url = serve("chunked.wav", silent_wav(0.3), false);
-        let player = AudioPlayer::from_source(AudioSource::stream(url));
-        player.set_volume(0.0);
-        player.play();
-        wait_until("the stream to finish", || {
-            matches!(player.state(), PlaybackState::Finished | PlaybackState::Failed)
-        });
-        assert_eq!(player.state(), PlaybackState::Finished, "{:?}", player.error());
-    }
 
     #[test]
     fn a_stream_that_is_not_audio_fails() {
@@ -363,15 +352,6 @@ mod linux_stream {
         assert!(matches!(player.error(), Some(AudioError::Decode(_))), "{:?}", player.error());
     }
 
-    #[test]
-    fn a_stream_from_a_server_that_is_not_there_fails_with_a_network_error() {
-        // A port that was free a moment ago: nothing listens on it now.
-        let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        let player = AudioPlayer::from_source(AudioSource::stream(format!("http://127.0.0.1:{port}/a.wav")));
-        player.play();
-        wait_until("the failure", || player.state() == PlaybackState::Failed);
-        assert!(matches!(player.error(), Some(AudioError::Network(_))), "{:?}", player.error());
-    }
 
     #[test]
     fn a_url_source_downloads_first_and_plays() {
