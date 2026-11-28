@@ -277,3 +277,48 @@ fn a_press_on_a_focusable_region_in_the_strip_is_the_regions() {
 
     assert!(!dragging(&app), "the region took the press for focus");
 }
+
+#[test]
+fn a_subpixel_move_during_window_drag_is_not_dropped_by_the_hover_deadzone() {
+    let _serial = VIRTUALIZED_RENDER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let mut app = headless_with_band(Some(BAND));
+
+    // When moving the window to track the pointer, consecutive events during a
+    // steady-speed drag report nearly identical window-relative coordinates.
+    // The hover deadzone (< 1.0 pt) must not drop them while a drag is active.
+    press_at(&mut app, 250.0, 20.0, MouseButton::Left);
+    assert!(dragging(&app));
+
+    move_to(&mut app, 250.5, 20.25);
+
+    assert_eq!(app.app.cursor_pos, Vec2d { x: 250.5, y: 20.25 });
+    assert!(dragging(&app));
+}
+
+#[test]
+fn a_stale_drag_ends_even_on_a_subpixel_move() {
+    let _serial = VIRTUALIZED_RENDER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let mut app = headless_with_band(Some(BAND));
+
+    press_at(&mut app, 250.0, 20.0, MouseButton::Left);
+    app.app.pressed_button = None;
+    move_to(&mut app, 250.5, 20.0);
+
+    assert!(!dragging(&app));
+}
+
+#[test]
+fn resolve_press_cursor_pos_recovers_outside_position_only_when_needed() {
+    use crate::handler::event_handler::{CURSOR_OUTSIDE_POSITION, resolve_press_cursor_pos};
+
+    let recovered = resolve_press_cursor_pos(CURSOR_OUTSIDE_POSITION, || Some((250.0, 20.0)));
+    assert_eq!(recovered, Vec2d { x: 250.0, y: 20.0 });
+
+    let known = Vec2d { x: 100.0, y: 15.0 };
+    let kept = resolve_press_cursor_pos(known, || panic!("fallback should not run for a known cursor"));
+    assert_eq!(kept, known);
+}

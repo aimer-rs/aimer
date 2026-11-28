@@ -69,9 +69,26 @@ and a tier 2 problem does not block a release.
 
 ## Built with Aimer
 
-[**Rust Forum**](https://github.com/Cottons29/rust-forum) is a [**Rust Programming Language Forum**](https://users.rust-lang.org/)'s Client written with Aimer, a real-world example to read, run and learn from.
+### Rust Forum
+
+[**Rust Forum**](https://github.com/Cottons29/rust-forum) is a [**Rust Programming Language Forum**](https://users.rust-lang.org/)'s Client written with Aimer.
 
 ![Aimer Logo](.assets/rust-forum-screenshot.png)
+
+
+
+
+### Refractor 
+
+It's a code-editor that provide daily-use coding editor. I am built it for find the issue on complex layout, as the result it work without any issue. currently I am using it for daily code editing. I also add rust-analyzer and some rust config files support too.
+
+![screenshot of Refrector](.assets/refractor-screenshot.png)
+
+### Saltty
+
+Saltty is a terminal enumator that build using **Aimer**. In Saltty, **Aimer**  handles the entire GUI, platform, input, and rendering layer around the terminal engine. The pty is provided by `wezterm` project and `vte-parsing` is provided by `alacritty` project. It's just simple light and fast, Mostly it enough for my daily use. It's also intergrated into the the Refractor too.
+
+![Saltty is too saltty](.assets/saltty-screenshot.png)
 
 ## AI usage
 

@@ -38,6 +38,25 @@ pub(crate) const CURSOR_OUTSIDE_POSITION: Vec2d = Vec2d {
     y: f32::MIN,
 };
 
+/// Resolves the cursor position to use for a mouse press/release.
+///
+/// When `cached` is [`CURSOR_OUTSIDE_POSITION`] (for example right after
+/// `CursorEntered` or on a first-mouse click into an inactive window before a
+/// `CursorMoved` arrives), `fallback` is queried for the platform's live
+/// pointer position in the window.
+#[inline]
+pub(crate) fn resolve_press_cursor_pos(
+    cached: Vec2d,
+    fallback: impl FnOnce() -> Option<(f32, f32)>,
+) -> Vec2d {
+    if cached == CURSOR_OUTSIDE_POSITION
+        && let Some((x, y)) = fallback()
+    {
+        return Vec2d { x, y };
+    }
+    cached
+}
+
 /// What a headless application has to do after an event was handled.
 ///
 /// The windowed loop answers these three questions to `winit` — exit, redraw,
@@ -466,6 +485,15 @@ impl WindowEventHandler {
         app: &mut AimerApplicationHandler<W>,
     ) {
         let new_pos = Self::logical_cursor(position, app);
+        // Moving the window shifts its origin under the pointer, so consecutive
+        // events during a steady-speed drag can report nearly identical
+        // window-relative coordinates. Handle an active window drag before the
+        // sub-pixel hover deadzone so those steps are never dropped.
+        if Self::move_window_with_pointer(app, new_pos) {
+            app.cursor_pos = new_pos;
+            app.touch_pointer = false;
+            return;
+        }
         let dx = (new_pos.x - app.cursor_pos.x).abs();
         let dy = (new_pos.y - app.cursor_pos.y).abs();
         if dx < 1.0 && dy < 1.0 && !app.touch_pointer {
@@ -473,9 +501,6 @@ impl WindowEventHandler {
         }
         app.cursor_pos = new_pos;
         app.touch_pointer = false;
-        if Self::move_window_with_pointer(app, new_pos) {
-            return;
-        }
         // Aiming at another target ends the scroll intent. A browser never
         // reports the lift, so a real pointer move is the only evidence that
         // the next wheel event belongs to a new gesture.
@@ -562,7 +587,11 @@ impl WindowEventHandler {
         button: MouseButton,
         app: &mut AimerApplicationHandler<W>,
     ) {
-        let c = app.cursor_pos;
+        let c = resolve_press_cursor_pos(app.cursor_pos, || {
+            let window = app.window.as_ref()?.native_window()?;
+            aimer_clipboard::macos_windowing::MacosWindowing::cursor_position_in_window(window)
+        });
+        app.cursor_pos = c;
         let pressed = state.is_pressed();
         let button = Self::pointer_button(button);
         let pointer = PointerInfo::mouse(c, button);

@@ -240,12 +240,17 @@ pub(crate) fn fallback_for_codepoint(
     // run asked for: the regular cut adopted for an earlier line would
     // otherwise shadow the bold one a fresh resolution finds, and the emphasis
     // would be lost to whichever run happened to be drawn first.
+    // Color emoji faces map many text-presentation-default symbols (such as
+    // `⏺` U+23FA, `▶`, `⏸`, `ℹ`) in their `cmap`, so reusing a color face
+    // before consulting the platform would hijack monochrome symbols onto
+    // Apple Color Emoji.
     let known: Vec<FontRecord> = STORE.read().ok()?.records.clone();
     let reusable = pick_reusable_face(
         &known,
         |record| weight_distance(record, weight),
         |record| {
-            cached_record_decodes_codepoint(record, codepoint)
+            !record.is_color
+                && cached_record_decodes_codepoint(record, codepoint)
                 && cached_record_decodes_all(record, requirement)
         },
     );
@@ -1518,6 +1523,27 @@ mod tests {
         let record = fallback_for_codepoint('😀', ScriptRequirement::EMPTY, REGULAR_WEIGHT)
             .expect("emoji must resolve");
         assert!(record.is_color, "emoji faces carry color glyph tables");
+    }
+
+    #[cfg(all(
+        any(target_os = "ios", target_os = "macos"),
+        feature = "apple-core-text"
+    ))]
+    #[test]
+    fn color_emoji_face_in_store_does_not_hijack_text_presentation_symbol() {
+        let emoji = fallback_for_codepoint('😀', ScriptRequirement::EMPTY, REGULAR_WEIGHT)
+            .expect("emoji must resolve");
+        assert!(emoji.is_color);
+
+        for weight in [REGULAR_WEIGHT, BOLD_WEIGHT] {
+            let record = fallback_for_codepoint('\u{23FA}', ScriptRequirement::EMPTY, weight)
+                .expect("U+23FA must resolve");
+            assert!(
+                !record.is_color,
+                "U+23FA defaults to text presentation and must not reuse Apple Color Emoji (weight={weight}): {:?}",
+                record.path
+            );
+        }
     }
 
     #[cfg(all(

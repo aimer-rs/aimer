@@ -82,6 +82,23 @@ fn dragged_origin(outer: (i32, i32), grab: (f32, f32), cursor: (f32, f32), scale
     (shift(outer.0, grab.0, cursor.0), shift(outer.1, grab.1, cursor.1))
 }
 
+/// Converts a point in an AppKit view's local coordinate space into logical
+/// points measured from the view's top-left corner.
+#[cfg(any(target_os = "macos", test))]
+fn content_point_to_top_left(
+    x: f64,
+    y: f64,
+    view_height: f64,
+    is_flipped: bool,
+) -> Option<(f32, f32)> {
+    let top_y = if is_flipped { y } else { view_height - y };
+    if x.is_finite() && top_y.is_finite() {
+        Some((x as f32, top_y as f32))
+    } else {
+        None
+    }
+}
+
 /// Picks the height of the strip a press drags the window from: what the
 /// application asked for, else the strip the traffic lights were laid out in,
 /// else the standard titlebar. A height of zero leaves no strip at all.
@@ -477,6 +494,35 @@ impl MacosWindowing {
         if (x, y) != (outer.x, outer.y) {
             window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
         }
+    }
+
+    /// Returns the pointer's current position in `window`'s content view, in
+    /// logical points from its top-left corner, or `None` when the platform
+    /// does not expose it.
+    ///
+    /// Used when a press arrives while the framework's cached cursor position
+    /// is [`CURSOR_OUTSIDE_POSITION`](https://docs.rs/winit) (for example
+    /// right after `CursorEntered` or a first-mouse click on an inactive
+    /// window without an intervening `CursorMoved`).
+    #[doc(hidden)]
+    #[cfg(target_os = "macos")]
+    pub fn cursor_position_in_window(window: &Window) -> Option<(f32, f32)> {
+        let native_window = native_window(window)?;
+        let content_view = native_window.contentView()?;
+        let point_in_window = native_window.mouseLocationOutsideOfEventStream();
+        let point = content_view.convertPoint_fromView(point_in_window, None);
+        content_point_to_top_left(
+            point.x,
+            point.y,
+            content_view.bounds().size.height,
+            content_view.isFlipped(),
+        )
+    }
+
+    #[doc(hidden)]
+    #[cfg(not(target_os = "macos"))]
+    pub fn cursor_position_in_window(_window: &Window) -> Option<(f32, f32)> {
+        None
     }
 
     #[doc(hidden)]
@@ -995,6 +1041,14 @@ mod tests {
         assert!(!windowing.window_drag_active());
         windowing.end_window_drag();
         assert!(!windowing.window_drag_active(), "ending twice is harmless");
+    }
+
+    #[test]
+    fn content_point_to_top_left_handles_flipped_and_unflipped_views() {
+        assert_eq!(super::content_point_to_top_left(120.0, 18.0, 500.0, true), Some((120.0, 18.0)));
+        assert_eq!(super::content_point_to_top_left(120.0, 482.0, 500.0, false), Some((120.0, 18.0)));
+        assert_eq!(super::content_point_to_top_left(f64::NAN, 18.0, 500.0, true), None);
+        assert_eq!(super::content_point_to_top_left(120.0, f64::INFINITY, 500.0, false), None);
     }
 
     #[test]

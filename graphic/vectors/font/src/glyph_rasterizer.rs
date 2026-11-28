@@ -1734,9 +1734,12 @@ impl GlyphRasterizer {
         if let Some((font_id, glyph_id, true)) = chain {
             return (font_id, glyph_id, true);
         }
+        let chain_is_color = chain
+            .and_then(|(font_id, _, _)| self.font_record_by_id(font_id))
+            .is_some_and(|record| record.is_color);
         if let Some((font_id, glyph_id)) =
             self.resolve_system_fallback(codepoint, requirement, weight)
-            && (chain.is_none() || self.face_matches_weight(font_id, weight))
+            && (chain.is_none() || chain_is_color || self.face_matches_weight(font_id, weight))
         {
             return (font_id, glyph_id, true);
         }
@@ -2019,13 +2022,14 @@ impl GlyphRasterizer {
         weight: u16,
     ) -> Option<(FontId, u16, bool)> {
         let fallback_count = self.fallbacks.as_ref().map_or(0, Vec::len);
-        let mut first: Option<(FontId, u16)> = None;
+        let mut first_non_color: Option<(FontId, u16)> = None;
+        let mut first_color: Option<(FontId, u16)> = None;
         for index in 0..fallback_count {
-            let Some(font_id) = self
+            let Some((font_id, is_color)) = self
                 .fallbacks
                 .as_ref()
                 .and_then(|fallbacks| fallbacks.get(index))
-                .map(|record| record.id)
+                .map(|record| (record.id, record.is_color))
             else {
                 break;
             };
@@ -2048,12 +2052,22 @@ impl GlyphRasterizer {
             if !self.font_covers_script(font_id, requirement) {
                 continue;
             }
+            // Color emoji faces map many text-presentation-default symbols in
+            // their `cmap`. Defer them behind non-color faces and platform
+            // resolution so an adopted emoji face cannot hijack monochrome
+            // symbols like `⏺` (U+23FA).
+            if is_color {
+                first_color.get_or_insert((font_id, glyph_id));
+                continue;
+            }
             if self.face_matches_weight(font_id, weight) {
                 return Some((font_id, glyph_id, true));
             }
-            first.get_or_insert((font_id, glyph_id));
+            first_non_color.get_or_insert((font_id, glyph_id));
         }
-        first.map(|(font_id, glyph_id)| (font_id, glyph_id, false))
+        first_non_color
+            .or(first_color)
+            .map(|(font_id, glyph_id)| (font_id, glyph_id, false))
     }
 
     /// Reports whether `font_id` can serve a run asking for `weight`.
@@ -5930,13 +5944,72 @@ mod tests {
         feature = "apple-core-text"
     ))]
     #[test]
+    fn adopted_color_emoji_does_not_hijack_text_presentation_symbols() {
+        let mut rasterizer = GlyphRasterizer::new();
+
+        // Adopt Apple Color Emoji into the per-rasterizer fallback chain first.
+        let emoji_key = rasterizer.glyph_key_for_codepoint('😀', 18.0);
+        assert!(rasterizer.glyph_metrics_for_key(emoji_key, 18.0).is_color);
+
+        // U+23FA (⏺) defaults to monochrome text presentation in Unicode even
+        // though Apple Color Emoji also maps it in its cmap. Both regular and
+        // bold requests must resolve to a monochrome outline face.
+        for weight in [FontWeight::Normal, FontWeight::Bold] {
+            let key = rasterizer.glyph_key_for_codepoint_at_weight('\u{23FA}', 18.0, weight);
+            let glyph = rasterizer.glyph_metrics_for_key(key, 18.0);
+            assert!(
+                !glyph.is_color,
+                "U+23FA must not be hijacked by Apple Color Emoji at {weight:?}"
+            );
+            assert!(glyph.width > 0 && glyph.height > 0);
+        }
+
+        // Explicit VS16 (U+FE0F) must still opt into the color emoji face.
+        let emoji_font_id = rasterizer
+            .font_id_for_family_cluster(
+                "\u{23FA}\u{FE0F}",
+                18.0,
+                FontFamily::SANS_SERIF,
+                FontWeight::Normal,
+                FontStyle::Normal,
+            )
+            .expect("U+23FA + VS16 must resolve");
+        assert!(
+            rasterizer
+                .font_record_by_id(emoji_font_id)
+                .is_some_and(|record| record.is_color),
+            "U+23FA + VS16 should still select the color emoji face"
+        );
+    }
+
+    #[cfg(all(
+        any(target_os = "ios", target_os = "macos"),
+        feature = "apple-core-text"
+    ))]
+    #[test]
     fn apple_color_symbol_glyphs_keep_their_bitmap_near_the_text_baseline() {
         let mut rasterizer = GlyphRasterizer::new();
 
-        for codepoint in ['♿', '☑', '↔', '⌨'] {
-            let key = rasterizer.glyph_key_for_codepoint(codepoint, 18.0);
+        // `☑`, `↔`, and `⌨` default to monochrome text presentation in Unicode,
+        // so request their emoji presentation explicitly with VS16 (`\u{FE0F}`)
+        // to exercise Apple Color Emoji's zero-origin `sbix` strikes.
+        for cluster in ["♿", "☑\u{FE0F}", "↔\u{FE0F}", "⌨\u{FE0F}"] {
+            let font_id = rasterizer
+                .font_id_for_family_cluster(
+                    cluster,
+                    18.0,
+                    FontFamily::SANS_SERIF,
+                    FontWeight::Normal,
+                    FontStyle::Normal,
+                )
+                .expect("emoji symbol must resolve");
+            let base = cluster.chars().next().expect("cluster is non-empty");
+            let glyph_id = rasterizer
+                .glyph_index_for_font(font_id, base)
+                .expect("emoji face must map the symbol");
+            let key = GlyphKey::new(font_id, glyph_id, 18.0);
             let glyph = rasterizer.glyph_metrics_for_key(key, 18.0);
-            assert!(glyph.is_color, "{codepoint:?} should use a color fallback");
+            assert!(glyph.is_color, "{cluster:?} should use a color fallback");
             assert!(glyph.width > 0 && glyph.height > 0);
 
             // In the shared y-down layout contract the bitmap bottom is
@@ -5945,7 +6018,7 @@ mod tests {
             // puts the entire symbol below the baseline and outside a row.
             assert!(
                 glyph.offset_y > -4.0 && glyph.offset_y < 4.0,
-                "{codepoint:?} bitmap bottom drifted from the baseline: offset_y={}",
+                "{cluster:?} bitmap bottom drifted from the baseline: offset_y={}",
                 glyph.offset_y
             );
         }
